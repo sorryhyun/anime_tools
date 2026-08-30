@@ -22,6 +22,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, JSONResponse, Response, StreamingResponse
 
 from anime_tools._env import curation_home, models_dir, resolve_path
+from anime_tools.gui import dataset as D
 from anime_tools.gui import stages as S
 from anime_tools.gui.jobs import JobManager
 
@@ -189,6 +190,100 @@ def create_app(
             raise HTTPException(404, f"report not found: {p}")
         return JSONResponse(
             {"path": str(p), "report": json.loads(p.read_text(encoding="utf-8"))}
+        )
+
+    # ---- dataset browsing (the sidebar's image/caption tree) -------------
+
+    def _roots(src: str = "", dst: str = "", masks: str = "") -> D.Roots:
+        """Query params win; anything blank falls back to the saved roots, then
+        to :data:`D.DEFAULT_ROOTS`."""
+        saved = load_settings().get(D.SETTINGS_KEY) or {}
+        merged = {
+            **saved,
+            **{k: v for k, v in (("src", src), ("dst", dst), ("masks", masks)) if v},
+        }
+        try:
+            return D.resolve_roots(merged)
+        except D.DatasetError as e:
+            raise HTTPException(400, str(e)) from e
+
+    @app.get("/api/dataset/roots")
+    def dataset_roots() -> dict[str, Any]:
+        return {"roots": _roots().as_dict(), "defaults": D.DEFAULT_ROOTS}
+
+    @app.put("/api/dataset/roots")
+    async def put_dataset_roots(request: Request) -> dict[str, Any]:
+        body = await request.json()
+        picked = {k: str(body.get(k) or "").strip() for k in D.DEFAULT_ROOTS}
+        try:
+            roots = D.resolve_roots(picked)
+        except D.DatasetError as e:
+            raise HTTPException(400, str(e)) from e
+        data = load_settings()
+        data[D.SETTINGS_KEY] = picked
+        save_settings(data)
+        return {"roots": roots.as_dict(), "defaults": D.DEFAULT_ROOTS}
+
+    @app.get("/api/dataset")
+    def dataset_list(
+        src: str = "",
+        dst: str = "",
+        masks: str = "",
+        pattern: str = "",
+        q: str = "",
+        limit: int = 2000,
+    ) -> dict[str, Any]:
+        return D.list_items(
+            _roots(src, dst, masks), pattern=pattern or None, query=q, limit=limit
+        )
+
+    @app.get("/api/dataset/item")
+    def dataset_item(
+        rel: str, src: str = "", dst: str = "", masks: str = ""
+    ) -> dict[str, Any]:
+        try:
+            return D.item_detail(_roots(src, dst, masks), rel)
+        except D.DatasetError as e:
+            raise HTTPException(404, str(e)) from e
+
+    @app.put("/api/dataset/item")
+    async def put_dataset_item(request: Request) -> dict[str, Any]:
+        body = await request.json()
+        try:
+            return D.write_caption(
+                _roots(*(str(body.get(k) or "") for k in ("src", "dst", "masks"))),
+                str(body.get("rel") or ""),
+                str(body.get("kind") or ""),
+                body.get("text") or "",
+            )
+        except D.DatasetError as e:
+            raise HTTPException(400, str(e)) from e
+        except OSError as e:
+            raise HTTPException(500, f"write failed: {e}") from e
+
+    @app.post("/api/dataset/parse")
+    async def dataset_parse(request: Request) -> dict[str, Any]:
+        """Parse an *unsaved* caption for the editor's live clause preview.
+
+        The grammar has exactly one implementation and it is
+        ``captions.position_clauses`` — the browser must never hand-split a
+        caption on commas, so it asks instead.
+        """
+        body = await request.json()
+        return D.parsed_caption(str(body.get("text") or ""))
+
+    @app.get("/api/thumb")
+    def thumb(path: str, size: int = 192) -> Response:
+        try:
+            data = D.thumbnail(path, size)
+        except D.DatasetError as e:
+            raise HTTPException(404, str(e)) from e
+        except Exception as e:  # unreadable / corrupt image
+            raise HTTPException(415, f"cannot thumbnail: {e}") from e
+        return Response(
+            data,
+            media_type="image/webp",
+            headers={"cache-control": "max-age=3600"},
         )
 
     @app.get("/api/files")

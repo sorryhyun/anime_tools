@@ -45,15 +45,36 @@ cd <your dataset folder>   # image_dataset/, post_image_dataset/, models/ live h
 anime-tools-gui --open     # http://127.0.0.1:8790
 ```
 
-A small standalone panel over the stage CLIs: pick a stage, fill the form
-(generated from the CLI's own `--help`), **Dry run**, read the log and
-`report.json`, then **Apply**. Stages run as `python -m …` subprocesses, one at
-a time; the server never loads a model. `--host 0.0.0.0` exposes it on the LAN
-for a headless GPU box (no auth — use your own tunnel), `--home` overrides the
-curation home. Sign in to Hugging Face under ⚙ Settings once: the tagger
-backbone and SAM3 weights are gated. FastAPI + uvicorn are plain dependencies;
-the trainer's own PySide6 GUI remains the rich editor — this one only runs
-stages. Design notes: [`docs/gui_plan.md`](docs/gui_plan.md).
+A small standalone panel on your dataset. The **sidebar is the dataset**: every
+source image, and under each one its captions as child nodes —
+
+```
+▾ chars/alice
+  ▾ chars_alice_001.png
+      master      image_dataset/…/chars_alice_001.txt      (editable)
+      derived     post_image_dataset/resized/…/….txt       (editable)
+      variants    …/….variants.txt                         (generated, read-only)
+```
+
+Selecting an image shows it (source / resized / mask) beside its captions,
+each with its flat tag bag and position clauses broken out — parsed by
+`captions.position_clauses` server-side, never by splitting on commas in the
+browser. Master and derived are editable: type, watch the clause preview
+update, **Save**. Editing is a file write, so it must still be followed by the
+trainer's TE re-encode; a derived edit also says so, because it leaves the
+`.variants.txt` sidecar stale. `↑`/`↓` (or `j`/`k`) walk the images, the filter
+box narrows the tree, and `#<rel>|<kind>` in the URL is a link to one caption.
+
+The **stage runner is the bottom dock**: pick a stage, fill the form (generated
+from the CLI's own `--help`), **Dry run**, read the log and `report.json`, then
+**Apply** — the dataset stays on screen throughout, and refreshes when the job
+finishes. Stages run as `python -m …` subprocesses, one at a time; the server
+never loads a model. `--host 0.0.0.0` exposes it on the LAN for a headless GPU
+box (no auth — use your own tunnel), `--home` overrides the curation home. ⚙
+Settings holds the three dataset roots and a one-time Hugging Face sign-in (the
+tagger backbone and SAM3 weights are gated). FastAPI + uvicorn are plain
+dependencies; the trainer's own PySide6 GUI remains the rich editor. Design
+notes: [`docs/gui_plan.md`](docs/gui_plan.md).
 
 ## Layout of a curated dataset
 

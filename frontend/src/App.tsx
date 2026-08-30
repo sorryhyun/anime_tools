@@ -1,31 +1,147 @@
-import { createEffect, createMemo, createResource, createSignal, For, on, onCleanup, Show } from "solid-js";
+import {
+  batch,
+  createEffect,
+  createMemo,
+  createResource,
+  createSignal,
+  For,
+  on,
+  onCleanup,
+  Show,
+} from "solid-js";
 import { createStore, reconcile } from "solid-js/store";
 import { api, followLog } from "./api";
-import type { Info, Job, Settings, Stage, Values } from "./types";
-import { StageForm } from "./components/StageForm";
+import type {
+  CaptionEntry,
+  DatasetRoots,
+  Info,
+  ItemDetail,
+  Job,
+  NodeKind,
+  RootName,
+  Settings,
+  Stage,
+  Values,
+} from "./types";
+import { DatasetTree, type Sel } from "./components/DatasetTree";
+import { ItemView } from "./components/ItemView";
+import { StagePanel } from "./components/StagePanel";
 import { Report } from "./components/Report";
 import { Dialog } from "./components/Dialog";
 
-type Tab = "log" | "report" | "jobs";
+type DockTab = "stages" | "log" | "report" | "jobs";
+const DOCK_TABS: DockTab[] = ["stages", "log", "report", "jobs"];
+const ROOT_NAMES: RootName[] = ["src", "dst", "masks"];
+const ROOT_HELP: Record<RootName, string> = {
+  src: "source images + hand-written master captions",
+  dst: "resized images + derived captions + .variants.txt",
+  masks: "{stem}_mask.png, mirroring the source subdirs",
+};
 
 const fmtTime = (t: number) => new Date(t * 1000).toLocaleTimeString();
+
+/** `#rel|kind` — the dataset item is what a GUI link should point at now. */
+function parseHash(): Sel | null {
+  const raw = decodeURIComponent(location.hash.slice(1));
+  if (!raw) return null;
+  const cut = raw.lastIndexOf("|");
+  if (cut < 0) return { rel: raw, kind: "image" };
+  return { rel: raw.slice(0, cut), kind: raw.slice(cut + 1) as NodeKind };
+}
 
 export default function App() {
   const [info, { refetch: refetchInfo }] = createResource<Info>(api.info);
   const [stages] = createResource<Stage[]>(api.stages);
   const [settings, setSettings] = createStore<Settings>({});
   const [jobs, { refetch: refetchJobs }] = createResource<Job[]>(api.jobs);
+  const [roots, { refetch: refetchRoots }] = createResource<DatasetRoots>(api.datasetRoots);
 
-  const [curId, setCurId] = createSignal(location.hash.slice(1));
+  // ---- dataset ----
+  const [query, setQuery] = createSignal("");
+  const [debouncedQuery, setDebouncedQuery] = createSignal("");
+  const [reload, setReload] = createSignal(0);
+  const [list, { refetch: refetchList, mutate: mutateList }] = createResource(
+    () => [debouncedQuery(), roots(), reload()] as const,
+    ([q]) => api.dataset({ q }),
+  );
+  const [sel, setSel] = createSignal<Sel | null>(parseHash());
+  const [item, { mutate: mutateItem, refetch: refetchItem }] = createResource<
+    ItemDetail | undefined,
+    string
+  >(() => sel()?.rel, api.item);
+
+  let queryTimer: ReturnType<typeof setTimeout> | undefined;
+  createEffect(
+    on(query, (q) => {
+      clearTimeout(queryTimer);
+      queryTimer = setTimeout(() => setDebouncedQuery(q), 200);
+    }),
+  );
+  createEffect(
+    on(sel, (s) => {
+      location.hash = s ? encodeURIComponent(s.rel) + (s.kind === "image" ? "" : `|${s.kind}`) : "";
+    }),
+  );
+  const onHash = () => {
+    const h = parseHash();
+    if (h?.rel !== sel()?.rel || h?.kind !== sel()?.kind) setSel(h);
+  };
+  window.addEventListener("hashchange", onHash);
+
+  /** ↑/↓ (and j/k) walk the images in listing order, outside text fields. */
+  const onKey = (e: KeyboardEvent) => {
+    const t = e.target as HTMLElement | null;
+    if (t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))) return;
+    const step = e.key === "ArrowDown" || e.key === "j" ? 1 : e.key === "ArrowUp" || e.key === "k" ? -1 : 0;
+    if (!step) return;
+    const items = list()?.items ?? [];
+    if (!items.length) return;
+    const i = items.findIndex((x) => x.rel === sel()?.rel);
+    const at =
+      i < 0
+        ? step > 0
+          ? 0
+          : items.length - 1
+        : Math.min(items.length - 1, Math.max(0, i + step));
+    e.preventDefault();
+    // Keep the caption kind, so arrowing down a column compares the same file.
+    setSel({ rel: items[at].rel, kind: sel()?.kind ?? "image" });
+  };
+  window.addEventListener("keydown", onKey);
+
+  /** Fold a just-saved caption back into the loaded item and its tree row,
+      so neither has to be re-fetched. */
+  const onSaved = (entry: CaptionEntry) => {
+    mutateItem((prev) =>
+      prev
+        ? { ...prev, captions: prev.captions.map((c) => (c.kind === entry.kind ? entry : c)) }
+        : prev,
+    );
+    const rel = sel()?.rel;
+    mutateList((prev) =>
+      prev
+        ? {
+            ...prev,
+            items: prev.items.map((x) =>
+              x.rel === rel ? { ...x, [entry.kind]: true } : x,
+            ),
+          }
+        : prev,
+    );
+  };
+
+  // ---- stages ----
+  const [curId, setCurId] = createSignal(localStorage.getItem("stage") ?? "");
   const cur = createMemo(() => stages()?.find((s) => s.id === curId()));
-  // Per-stage form state; seeded from the server's last-used values.
   const [forms, setForms] = createStore<Record<string, Values>>({});
   const values = () => forms[curId()] ?? {};
   const setValue = (dest: string, v: unknown) =>
     setForms(curId(), (prev) => ({ ...(prev ?? {}), [dest]: v }));
   const resetForm = () => setForms(curId(), reconcile({}));
 
-  const [tab, setTab] = createSignal<Tab>("log");
+  const [tab, setTab] = createSignal<DockTab>("stages");
+  const [dockOpen, setDockOpen] = createSignal(localStorage.getItem("dock") !== "0");
+  const [dockH, setDockH] = createSignal(Number(localStorage.getItem("dockh")) || 320);
   const [log, setLog] = createSignal("");
   const [jobId, setJobId] = createSignal<string | null>(null);
   const [busy, setBusy] = createSignal(false);
@@ -42,28 +158,55 @@ export default function App() {
     setForms(reconcile(structuredClone(s.values ?? {})));
   });
 
-  // First available stage if the hash is empty/unknown; reattach to a running job.
   createEffect(
     on(stages, (ss) => {
-      if (!ss) return;
-      if (!ss.some((s) => s.id === curId())) setCurId(ss.find((s) => s.available)?.id ?? "");
+      if (ss && !ss.some((s) => s.id === curId())) setCurId(ss.find((s) => s.available)?.id ?? "");
     }),
   );
-  createEffect(on(curId, (id) => { if (id) location.hash = id; }));
+  createEffect(on(curId, (id) => id && localStorage.setItem("stage", id)));
+  createEffect(on(dockOpen, (o) => localStorage.setItem("dock", o ? "1" : "0")));
   createEffect(on(info, (i) => { if (i?.running && !jobId()) attach(i.running); }));
-  const onHash = () => setCurId(location.hash.slice(1));
-  window.addEventListener("hashchange", onHash);
-  onCleanup(() => { es?.close(); window.removeEventListener("hashchange", onHash); });
+  onCleanup(() => {
+    es?.close();
+    window.removeEventListener("hashchange", onHash);
+    window.removeEventListener("keydown", onKey);
+  });
+
+  /** Drag the dock's top edge. The dataset view and the stage form both want
+      the vertical space, and which one wins changes by the minute. */
+  function grip(e: PointerEvent) {
+    e.preventDefault();
+    const y0 = e.clientY;
+    const h0 = dockH();
+    const move = (ev: PointerEvent) =>
+      setDockH(Math.max(120, Math.min(window.innerHeight - 220, h0 + (y0 - ev.clientY))));
+    const up = () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+      localStorage.setItem("dockh", String(dockH()));
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+  }
+
+  function openDock(t: DockTab) {
+    batch(() => {
+      setTab(t);
+      setDockOpen(true);
+    });
+  }
 
   function attach(id: string) {
     es?.close();
-    setJobId(id);
-    setLog("");
-    setReport(null);
-    setReportErr("");
-    setTab("log");
-    setBusy(true);
-    setStatus({ text: `running ${id}`, state: "running" });
+    batch(() => {
+      setJobId(id);
+      setLog("");
+      setReport(null);
+      setReportErr("");
+      setBusy(true);
+      setStatus({ text: `running ${id}`, state: "running" });
+    });
+    openDock("log");
     es = followLog(
       id,
       (line) => {
@@ -76,6 +219,9 @@ export default function App() {
         setStatus({ text: `exit ${job.exit_code}`, state: job.state });
         refetchJobs();
         refetchInfo();
+        // A finished stage rewrote captions/masks under our feet.
+        refetchList();
+        refetchItem();
         if (job.report_path) loadReport(job.id);
       },
       () => {
@@ -90,7 +236,7 @@ export default function App() {
   async function loadReport(id: string) {
     try {
       setReport(await api.report(id));
-      setTab("report");
+      openDock("report");
     } catch (e) {
       setReportErr((e as Error).message);
     }
@@ -105,135 +251,135 @@ export default function App() {
       attach(job.id);
     } catch (e) {
       setStatus({ text: (e as Error).message, state: "failed" });
+      openDock("stages");
     }
   }
-
-  const groups = createMemo(() => {
-    const m = new Map<string, Stage[]>();
-    for (const s of stages() ?? []) m.set(s.group, [...(m.get(s.group) ?? []), s]);
-    return [...m];
-  });
 
   return (
     <>
       <header>
         <b>anime_tools</b>
-        <span class="dim">{info()?.home}</span>
+        <span class="dim mono" title={info()?.home}>{info()?.home}</span>
+        <Show when={list()}>
+          {(l) => (
+            <span class="dim">
+              {l().total} image{l().total === 1 ? "" : "s"} in {l().root}
+            </span>
+          )}
+        </Show>
         <span class="sp" />
         <span class="dim">{info()?.hf_token ? "HF token ✓" : "no HF token"}</span>
         <button onClick={() => setSettingsOpen(true)}>⚙ Settings</button>
       </header>
 
-      <nav>
-        <Show when={stages.error}><div class="err" style="padding:12px">{String(stages.error)}</div></Show>
-        <For each={groups()}>
-          {([g, ss]) => (
-            <>
-              <h4>{g}</h4>
-              <For each={ss}>
-                {(s) => (
-                  <a
-                    classList={{ sel: curId() === s.id, na: !s.available }}
-                    title={s.available ? s.module : `not installed: ${s.error}`}
-                    onClick={() => setCurId(s.id)}
-                  >
-                    {s.title}
-                  </a>
-                )}
-              </For>
-            </>
-          )}
-        </For>
-      </nav>
+      <DatasetTree
+        list={list()}
+        loading={list.loading}
+        error={list.error ? String(list.error) : undefined}
+        resetKey={`${debouncedQuery()}|${reload()}`}
+        sel={sel()}
+        onSelect={setSel}
+        query={query()}
+        onQuery={setQuery}
+        onRefresh={() => setReload((n) => n + 1)}
+      />
 
-      <main>
-        <div class="form">
-          <Show when={cur()} fallback={<div class="doc">Pick a stage on the left.</div>}>
-            {(s) => (
-              <Show
-                when={s().available}
-                fallback={
-                  <div class="doc">
-                    {s().title} is unavailable: {s().error}
-                    {"\n\nReinstall:  uv tool install --force \"anime-tools @ git+https://github.com/sorryhyun/anime_tools\""}
-                  </div>
-                }
+      <ItemView
+        item={item()}
+        loading={item.loading}
+        error={item.error ? String(item.error) : undefined}
+        kind={sel()?.kind ?? "image"}
+        onSaved={onSaved}
+      />
+
+      <div classList={{ dock: true, closed: !dockOpen() }} style={{ "--dock-h": `${dockH()}px` }}>
+        <Show when={dockOpen()}>
+          <div class="dockgrip" onPointerDown={grip} title="Drag to resize" />
+        </Show>
+        <div class="tabs">
+          <For each={DOCK_TABS}>
+            {(t) => (
+              <a
+                classList={{ sel: dockOpen() && tab() === t }}
+                onClick={() => {
+                  if (dockOpen() && tab() === t) setDockOpen(false);
+                  else openDock(t);
+                  if (t === "jobs") refetchJobs();
+                }}
               >
-                <StageForm stage={s()} values={values()} setValue={setValue} reset={resetForm} />
-                <div class="actions">
-                  <button classList={{ primary: !s().apply }} disabled={busy()} onClick={() => run(false)}>
-                    {s().apply ? "Dry run" : "Run"}
-                  </button>
-                  <Show when={s().apply}>
-                    <button class="primary" disabled={busy()} onClick={() => setConfirmOpen(true)}>
-                      Apply…
-                    </button>
-                  </Show>
-                  <button disabled={!busy()} onClick={() => jobId() && api.cancel(jobId()!)}>
-                    Cancel
-                  </button>
-                  <span class="status">
-                    <Show when={status().state}>
-                      <span class={`badge ${status().state}`}>{status().state}</span>{" "}
-                    </Show>
-                    {status().text}
-                  </span>
-                </div>
-              </Show>
+                {t[0].toUpperCase() + t.slice(1)}
+                <Show when={t === "log" && busy()}>
+                  {" "}
+                  <span class="badge running">running</span>
+                </Show>
+              </a>
             )}
-          </Show>
+          </For>
+          <span class="sp" />
+          <button class="link" onClick={() => setDockOpen(!dockOpen())}>
+            {dockOpen() ? "▾" : "▴"}
+          </button>
         </div>
 
-        <div class="right">
-          <div class="tabs">
-            <For each={["log", "report", "jobs"] as Tab[]}>
-              {(t) => (
-                <a classList={{ sel: tab() === t }} onClick={() => { setTab(t); if (t === "jobs") refetchJobs(); }}>
-                  {t[0].toUpperCase() + t.slice(1)}
-                </a>
-              )}
-            </For>
-          </div>
-          <div class="pane" ref={logPane} style={{ display: tab() === "log" ? "block" : "none" }}>
-            <pre class="log">{log()}</pre>
-          </div>
-          <Show when={tab() === "report"}>
-            <div class="pane">
-              <Show
-                when={report()}
-                fallback={<div class="dim">{reportErr() || "Run a stage; its report.json shows here."}</div>}
-              >
-                {(r) => <Report path={r().path} report={r().report} />}
-              </Show>
+        <Show when={dockOpen()}>
+          <div class="dockbody">
+            <Show when={tab() === "stages"}>
+              <StagePanel
+                stages={stages()}
+                error={stages.error}
+                curId={curId()}
+                setCurId={setCurId}
+                values={values()}
+                setValue={setValue}
+                reset={resetForm}
+                busy={busy()}
+                status={status()}
+                onRun={run}
+                onApply={() => setConfirmOpen(true)}
+                onCancel={() => jobId() && api.cancel(jobId()!)}
+              />
+            </Show>
+            <div class="pane" ref={logPane} style={{ display: tab() === "log" ? "block" : "none" }}>
+              <pre class="log">{log()}</pre>
             </div>
-          </Show>
-          <Show when={tab() === "jobs"}>
-            <div class="pane">
-              <Show when={jobs()?.length} fallback={<span class="dim">No jobs yet.</span>}>
-                <table>
-                  <thead>
-                    <tr><th>started</th><th>job</th><th>stage</th><th>state</th><th>apply</th><th>argv</th></tr>
-                  </thead>
-                  <tbody>
-                    <For each={[...(jobs() ?? [])].reverse()}>
-                      {(j) => (
-                        <tr>
-                          <td>{fmtTime(j.started)}</td>
-                          <td><button class="link" onClick={() => attach(j.id)}>{j.id}</button></td>
-                          <td>{j.stage}</td>
-                          <td><span class={`badge ${j.state}`}>{j.state}</span></td>
-                          <td>{j.apply ? "yes" : ""}</td>
-                          <td class="mono">{j.argv.slice(2).join(" ")}</td>
-                        </tr>
-                      )}
-                    </For>
-                  </tbody>
-                </table>
-              </Show>
-            </div>
-          </Show>
-        </div>
-      </main>
+            <Show when={tab() === "report"}>
+              <div class="pane">
+                <Show
+                  when={report()}
+                  fallback={<div class="dim">{reportErr() || "Run a stage; its report.json shows here."}</div>}
+                >
+                  {(r) => <Report path={r().path} report={r().report} />}
+                </Show>
+              </div>
+            </Show>
+            <Show when={tab() === "jobs"}>
+              <div class="pane">
+                <Show when={jobs()?.length} fallback={<span class="dim">No jobs yet.</span>}>
+                  <table>
+                    <thead>
+                      <tr><th>started</th><th>job</th><th>stage</th><th>state</th><th>apply</th><th>argv</th></tr>
+                    </thead>
+                    <tbody>
+                      <For each={[...(jobs() ?? [])].reverse()}>
+                        {(j) => (
+                          <tr>
+                            <td>{fmtTime(j.started)}</td>
+                            <td><button class="link" onClick={() => attach(j.id)}>{j.id}</button></td>
+                            <td>{j.stage}</td>
+                            <td><span class={`badge ${j.state}`}>{j.state}</span></td>
+                            <td>{j.apply ? "yes" : ""}</td>
+                            <td class="mono">{j.argv.slice(2).join(" ")}</td>
+                          </tr>
+                        )}
+                      </For>
+                    </tbody>
+                  </table>
+                </Show>
+              </div>
+            </Show>
+          </div>
+        </Show>
+      </div>
 
       <Dialog open={confirmOpen()} onClose={(v) => { setConfirmOpen(false); if (v === "ok") run(true); }}>
         <h3>Apply for real?</h3>
@@ -252,11 +398,17 @@ export default function App() {
       <SettingsDialog
         open={settingsOpen()}
         info={info()}
-        onClose={async (token) => {
+        roots={roots()}
+        onClose={async (out) => {
           setSettingsOpen(false);
-          if (token) {
-            await api.putSettings({ hf_token: token });
+          if (!out) return;
+          if (out.token) {
+            await api.putSettings({ hf_token: out.token });
             refetchInfo();
+          }
+          if (out.roots) {
+            await api.putDatasetRoots(out.roots);
+            refetchRoots();
           }
         }}
       />
@@ -264,36 +416,85 @@ export default function App() {
   );
 }
 
-function SettingsDialog(props: { open: boolean; info?: Info; onClose: (token: string | null) => void }) {
+interface SettingsOut {
+  token: string | null;
+  roots: Record<string, string> | null;
+}
+
+function SettingsDialog(props: {
+  open: boolean;
+  info?: Info;
+  roots?: DatasetRoots;
+  onClose: (out: SettingsOut | null) => void;
+}) {
   let tokenEl!: HTMLInputElement;
+  const rootEls: Partial<Record<RootName, HTMLInputElement>> = {};
+  const current = (n: RootName) => props.roots?.roots[n];
+
   return (
     <Dialog
       open={props.open}
       onClose={(v) => {
         const t = tokenEl.value.trim();
         tokenEl.value = "";
-        props.onClose(v === "ok" && t ? t : null);
+        if (v !== "ok") return props.onClose(null);
+        const picked = Object.fromEntries(
+          ROOT_NAMES.map((n) => [n, rootEls[n]?.value.trim() ?? ""]),
+        );
+        const changed = ROOT_NAMES.some((n) => picked[n] !== (current(n)?.path ?? ""));
+        props.onClose({ token: t || null, roots: changed ? picked : null });
       }}
     >
       <h3>Settings</h3>
       <div class="kv">
-        <b>Home</b><span>{props.info?.home}</span>
-        <b>Models dir</b><span>{props.info?.models_dir}</span>
-        <b>HF token</b>
+        <b>Home</b><span class="mono">{props.info?.home}</span>
+        <b>Models dir</b><span class="mono">{props.info?.models_dir}</span>
+      </div>
+
+      <h4>Dataset roots</h4>
+      <p class="dim" style="margin:0 0 8px">
+        Relative to the curation home; the three trees are joined by the same relative path.
+      </p>
+      <div class="kv">
+        <For each={ROOT_NAMES}>
+          {(n) => (
+            <>
+              <b>{n}</b>
+              <span>
+                <input
+                  type="text"
+                  ref={(el) => (rootEls[n] = el)}
+                  value={current(n)?.path ?? props.roots?.defaults[n] ?? ""}
+                  placeholder={props.roots?.defaults[n]}
+                />
+                <span classList={{ dim: true, err: current(n) ? !current(n)!.exists : false }}>
+                  {current(n) && !current(n)!.exists ? "missing — " : ""}
+                  {ROOT_HELP[n]}
+                </span>
+              </span>
+            </>
+          )}
+        </For>
+      </div>
+
+      <h4>Hugging Face</h4>
+      <div class="kv">
+        <b>Token</b>
         <span>
           {props.info?.hf_token ? "present" : "missing"}
-          <br />
           <input
             ref={tokenEl}
             type="password"
             placeholder="hf_… (stored by huggingface_hub, never shown again)"
             style="margin-top:4px"
           />
+          <span class="dim">
+            The tagger backbone and SAM3 weights are gated on the Hub — a token with read access is
+            needed on first run.
+          </span>
         </span>
       </div>
-      <p class="dim">
-        The tagger backbone and SAM3 weights are gated on the Hub — a token with read access is needed on first run.
-      </p>
+
       <div class="dlg-actions">
         <button value="cancel">Close</button>
         <button value="ok" class="primary">Save</button>

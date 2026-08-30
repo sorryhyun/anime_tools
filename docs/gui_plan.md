@@ -21,6 +21,26 @@ Status: v1 shipped 2026-08-30 (`anime_tools/gui/`, `install.sh` / `install.ps1`,
 - No `sse-starlette`: SSE is a plain `StreamingResponse`.
 - Settings live in `<home>/.anime_tools_gui.json`; the HF token goes through
   `huggingface_hub.login` and is never read back.
+- **Dataset-first UI (2026-08-30).** The plan below made the *stage list* the
+  sidebar; shipped v1 did too. That was backwards for the actual job — you look
+  at images and captions, and reach for a stage occasionally. So the sidebar is
+  now the image/caption tree (`gui/dataset.py` + `frontend/src/components/
+  DatasetTree.tsx`), the centre is one dataset item (image / resized / mask
+  beside its master, derived and variants captions), and the stage runner moved
+  into a resizable bottom dock (Stages / Log / Report / Jobs). New endpoints:
+  `/api/dataset` (tree), `/api/dataset/item` (GET detail, PUT one caption),
+  `/api/dataset/parse`, `/api/dataset/roots`, `/api/thumb`.
+  Two rules the new surface keeps:
+  - **The browser never splits a caption.** Clause structure — for a saved
+    caption and for the unsaved editor buffer alike — comes from
+    `captions.position_clauses.parse_caption` over `/api/dataset/parse`. There
+    is one implementation of the grammar and it is in Python.
+  - **Only `master` and `derived` are writable.** `.variants.txt` is generated,
+    so it is served read-only; a derived write reports `variants_stale` so the
+    UI can say the sidecar (and the TE cache) now needs regenerating.
+  `gui/dataset.py` stays torch-free like the rest of the server
+  (`tests/test_boundary.py`); it uses Pillow only for image dimensions and
+  thumbnails.
 
 ## Goal
 

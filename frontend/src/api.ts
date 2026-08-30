@@ -1,4 +1,17 @@
-import type { Info, Job, Listing, Settings, Stage, Values } from "./types";
+import type {
+  CaptionEntry,
+  CaptionKind,
+  DatasetList,
+  DatasetRoots,
+  Info,
+  ItemDetail,
+  Job,
+  Listing,
+  Parsed,
+  Settings,
+  Stage,
+  Values,
+} from "./types";
 
 async function req<T>(url: string, init?: RequestInit): Promise<T> {
   const r = await fetch(url, init);
@@ -32,6 +45,23 @@ export const api = {
   report: (id: string) => req<{ path: string; report: unknown }>(`/api/jobs/${id}/report`),
   ls: (path: string) => req<Listing>(`/api/ls?path=${encodeURIComponent(path)}`),
   fileUrl: (path: string) => `/api/files?path=${encodeURIComponent(path)}`,
+  thumbUrl: (path: string, size = 96) =>
+    `/api/thumb?path=${encodeURIComponent(path)}&size=${size}`,
+
+  // ---- dataset ----
+  datasetRoots: () => req<DatasetRoots>("/api/dataset/roots"),
+  putDatasetRoots: (body: Record<string, string>) =>
+    req<DatasetRoots>("/api/dataset/roots", json("PUT", body)),
+  dataset: (q: { q?: string; pattern?: string; limit?: number } = {}) => {
+    const p = new URLSearchParams();
+    for (const [k, v] of Object.entries(q)) if (v) p.set(k, String(v));
+    return req<DatasetList>(`/api/dataset?${p}`);
+  },
+  item: (rel: string) => req<ItemDetail>(`/api/dataset/item?rel=${encodeURIComponent(rel)}`),
+  /** Parse an unsaved caption server-side; the grammar has one implementation. */
+  parse: (text: string) => req<Parsed>("/api/dataset/parse", json("POST", { text })),
+  saveCaption: (rel: string, kind: CaptionKind, text: string) =>
+    req<CaptionEntry>("/api/dataset/item", json("PUT", { rel, kind, text })),
 };
 
 /** Follow a job's stdout. Resolves with the final job dict; `onLine` per line. */

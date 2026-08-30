@@ -65,3 +65,84 @@ export interface Listing {
 }
 
 export type Values = Record<string, unknown>;
+
+// ---- dataset browser (mirrors anime_tools/gui/dataset.py) ----
+
+/** One row of the sidebar tree: a source image plus which sidecars it has. */
+export interface DatasetItem {
+  rel: string;
+  dir: string;
+  name: string;
+  stem: string;
+  master: boolean;
+  derived: boolean;
+  variants: boolean;
+  mask: boolean;
+}
+
+export interface DatasetList {
+  root: string;
+  missing: boolean;
+  total: number;
+  truncated?: boolean;
+  items: DatasetItem[];
+}
+
+export interface RootInfo {
+  path: string;
+  exists: boolean;
+}
+
+export type RootName = "src" | "dst" | "masks";
+
+export interface DatasetRoots {
+  roots: Record<RootName, RootInfo>;
+  defaults: Record<RootName, string>;
+}
+
+export interface Clause {
+  header: string;
+  prefix: string;
+  position: string;
+  tags: string[];
+}
+
+/** The caption grammar, already parsed server-side — never split(",") here. */
+export interface Parsed {
+  flat_tags: string[];
+  clauses: Clause[];
+}
+
+export type CaptionKind = "master" | "derived";
+/** What a tree row can select: the image itself, or one caption under it. */
+export type NodeKind = "image" | CaptionKind | "variants";
+
+export interface CaptionEntry {
+  kind: CaptionKind;
+  path: string;
+  exists: boolean;
+  text: string;
+  mtime?: number;
+  parsed: Parsed | null;
+  /** Set by the PUT: the .variants.txt sidecar no longer matches v0. */
+  variants_stale?: boolean;
+}
+
+export interface ImageInfo {
+  path: string;
+  bytes: number;
+  width?: number;
+  height?: number;
+}
+
+export interface ItemDetail {
+  rel: string;
+  dir: string;
+  name: string;
+  stem: string;
+  image: ImageInfo | null;
+  resized: ImageInfo | null;
+  mask: ImageInfo | null;
+  captions: CaptionEntry[];
+  variants: { path: string; exists: boolean; rows: { label: string; text: string }[] };
+}
