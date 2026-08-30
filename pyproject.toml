@@ -34,6 +34,13 @@ dev = ["pytest>=8", "pytest-xdist", "ruff"]
 
 [tool.uv]
 default-groups = ["dev"]
+# sam3 pins numpy>=1.26,<2, but its tree is numpy-2 clean -- the pin is stale, not a real
+# constraint. The only suspect usage is three `np.bool` calls in
+# sam3/agent/helpers/visualizer.py, and numpy 2.0 restored `np.bool` as an alias for
+# `np.bool_` (it was absent only in 1.24-1.26), so they work as-is. Nothing else in the tree
+# touches a removed alias. Override the pin rather than fork; verified by importing
+# sam3.model_builder / sam3.model.sam3_image_processor under numpy 2.4.
+override-dependencies = ["numpy>=2.0"]
 
 [build-system]
 requires = ["setuptools>=68.0"]
