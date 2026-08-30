@@ -38,6 +38,7 @@ if not hasattr(np, "bool"):
 
 from PIL import Image, ImageDraw
 
+from anime_tools._device import resolve_device
 from anime_tools._env import resolve_path
 from anime_tools._walk import walk_images
 from anime_tools.captions.position_clauses import parse_caption
@@ -114,8 +115,10 @@ def parse_args() -> argparse.Namespace:
         help="Also render pre-detection skips (single-subject etc.) as rows. "
         "Off by default — nothing was proposed and there is nothing to see",
     )
-    p.add_argument("--device", default="cuda")
-    return p.parse_args()
+    p.add_argument("--device", default=None, help="cuda|cpu (default: auto)")
+    args = p.parse_args()
+    args.device = resolve_device(args.device)
+    return args
 
 
 def build_options(flags: str):

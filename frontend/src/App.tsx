@@ -14,6 +14,7 @@ import { api, followLog } from "./api";
 import type {
   CaptionEntry,
   DatasetRoots,
+  Field,
   Info,
   ItemDetail,
   ModelAsset,
@@ -154,12 +155,29 @@ export default function App() {
   const [busy, setBusy] = createSignal(false);
   const [status, setStatus] = createSignal<{ text: string; state?: string }>({ text: "" });
   const [confirmOpen, setConfirmOpen] = createSignal(false);
+  /** What the pending Apply is aimed at: one image's `rel`, or null = the
+      batch the Settings `path_pattern` names. Rebuilt per click so the dialog
+      and the run it starts can never disagree about the scope. */
+  const [applyRel, setApplyRel] = createSignal<string | null>(null);
   const [settingsOpen, setSettingsOpen] = createSignal(false);
   /** Per stage, the last dry run that finished cleanly: its report, and the
       form it ran on. Apply replays that report (`--from_report`) instead of
       re-running the tagger/SAM3 pass that produced it -- but only while the
       form still says what it said, or the proposals would not be this form's. */
   const [dry, setDry] = createStore<Record<string, { report: string; values: string }>>({});
+  /** `path_pattern` / `tagger_dir`: one value each, from Settings, for every
+      stage that takes them. The server fills the flags; this is only the copy
+      the run bar and the Settings dialog show. */
+  const stageDefaults = () => settings.stage_defaults ?? {};
+  /** One Field descriptor per Settings-bound dest, first stage that has it
+      wins: the input's label, help and placeholder all come from the real
+      argparse action, so Settings never re-describes a flag. */
+  const settingFields = createMemo(() => {
+    const m = new Map<string, Field>();
+    for (const st of stages() ?? [])
+      for (const f of st.fields) if (f.setting && !m.has(f.setting)) m.set(f.setting, f);
+    return [...m.values()];
+  });
   const [reuse, setReuse] = createSignal(true);
   /** The form as it matters to a replay: everything the stage actually reads,
       minus the managed field itself. */
@@ -300,7 +318,9 @@ export default function App() {
     setStatus((st) => ({ ...st, text: `${st.text} — ${touched.length} file(s) changed` }));
   }
 
-  async function run(apply: boolean) {
+  /** Start the current stage. `rel` narrows it to that one image; null (the
+      default) runs the batch the Settings `path_pattern` names. */
+  async function run(apply: boolean, rel?: string | null) {
     const s = cur();
     if (!s) return;
     // Apply replays the dry run when the form has not moved since it ran. The
@@ -310,7 +330,7 @@ export default function App() {
     const { [REPLAY_FIELD]: _stale, ...rest } = values() ?? {};
     const v = report ? { ...rest, [REPLAY_FIELD]: report } : rest;
     try {
-      const job = await api.start(s.id, v, apply);
+      const job = await api.start(s.id, v, apply, rel);
       if (!apply) sent.set(job.id, formKey(values()));
       setSettings("values", (prev) => ({ ...(prev ?? {}), [s.id]: job.values }));
       attach(job.id);
@@ -413,10 +433,12 @@ export default function App() {
               reset={resetForm}
               busy={busy()}
               status={status()}
+              rel={sel()?.rel ?? null}
               onRun={run}
-              onApply={() => { setReuse(true); setConfirmOpen(true); }}
+              onApply={(rel) => { setReuse(true); setApplyRel(rel); setConfirmOpen(true); }}
               onCancel={() => jobId() && api.cancel(jobId()!)}
               roots={roots()}
+              defaults={stageDefaults()}
               onSettings={() => setSettingsOpen(true)}
               help={help()}
               onHelp={() => setHelp(!help())}
@@ -425,9 +447,15 @@ export default function App() {
         </Show>
       </div>
 
-      <Dialog open={confirmOpen()} onClose={(v) => { setConfirmOpen(false); if (v === "ok") run(true); }}>
+      <Dialog open={confirmOpen()} onClose={(v) => { setConfirmOpen(false); if (v === "ok") run(true, applyRel()); }}>
         <h3>Apply for real?</h3>
-        <p style="max-width:520px">{cur()?.title} will write its changes.</p>
+        <p style="max-width:520px">
+          {cur()?.title} will write its changes to{" "}
+          <Show when={applyRel()} fallback={<>every image <code>{stageDefaults().path_pattern || "*"}</code> names</>}>
+            {(rel) => <code>{rel()}</code>}
+          </Show>
+          .
+        </p>
         {/* Replaying the dry run is the difference between writing text that is
             already computed and a second full tagger/SAM3 pass, so it is the
             default whenever one is on file for this exact form. */}
@@ -467,6 +495,8 @@ export default function App() {
         open={settingsOpen()}
         info={info()}
         roots={roots()}
+        fields={settingFields()}
+        defaults={stageDefaults()}
         models={models()}
         busy={busy()}
         help={help()}
@@ -483,6 +513,7 @@ export default function App() {
             await api.putDatasetRoots(out.roots);
             refetchRoots();
           }
+          if (out.defaults) setSettings(await api.putSettings({ stage_defaults: out.defaults }));
         }}
       />
     </>
@@ -492,12 +523,17 @@ export default function App() {
 interface SettingsOut {
   token: string | null;
   roots: Record<string, string> | null;
+  /** The stage defaults (`path_pattern` / `tagger_dir`), or null if untouched. */
+  defaults: Record<string, string> | null;
 }
 
 function SettingsDialog(props: {
   open: boolean;
   info?: Info;
   roots?: DatasetRoots;
+  /** One argparse Field per Settings-bound stage flag. */
+  fields: Field[];
+  defaults: Record<string, string>;
   models?: ModelCatalog;
   busy: boolean;
   help: boolean;
@@ -507,6 +543,7 @@ function SettingsDialog(props: {
 }) {
   let tokenEl!: HTMLInputElement;
   const rootEls: Partial<Record<RootName, HTMLInputElement>> = {};
+  const defEls: Record<string, HTMLInputElement> = {};
   const current = (n: RootName) => props.roots?.roots[n];
   const missing = () => (props.models?.models ?? []).filter((m) => !m.installed);
 
@@ -521,7 +558,17 @@ function SettingsDialog(props: {
           ROOT_NAMES.map((n) => [n, rootEls[n]?.value.trim() ?? ""]),
         );
         const changed = ROOT_NAMES.some((n) => picked[n] !== (current(n)?.path ?? ""));
-        props.onClose({ token: t || null, roots: changed ? picked : null });
+        const defaults = Object.fromEntries(
+          props.fields.map((f) => [f.setting!, defEls[f.setting!]?.value.trim() ?? ""]),
+        );
+        const defChanged = props.fields.some(
+          (f) => defaults[f.setting!] !== (props.defaults[f.setting!] ?? ""),
+        );
+        props.onClose({
+          token: t || null,
+          roots: changed ? picked : null,
+          defaults: defChanged ? defaults : null,
+        });
       }}
     >
       {/* `type=button`, like the model rows: every other button in here submits
@@ -558,6 +605,32 @@ function SettingsDialog(props: {
                   {current(n) && !current(n)!.exists ? "missing — " : ""}
                   {ROOT_HELP[n]}
                 </span>
+              </span>
+            </>
+          )}
+        </For>
+      </div>
+
+      <h4>Stage defaults</h4>
+      <Show when={props.help}>
+        <p class="dim" style="margin:0 0 8px">
+          Filled into every stage that takes them, so no stage form re-asks. Leave one blank for the
+          CLI's own default. <code>--device</code> is not here on purpose: each stage auto-detects it.
+        </p>
+      </Show>
+      <div class="kv">
+        <For each={props.fields}>
+          {(f) => (
+            <>
+              <b>{f.setting}</b>
+              <span>
+                <input
+                  type="text"
+                  ref={(el) => (defEls[f.setting!] = el)}
+                  value={props.defaults[f.setting!] ?? ""}
+                  placeholder={f.default == null ? "(none)" : String(f.default)}
+                />
+                <span class="dim">{f.help}</span>
               </span>
             </>
           )}

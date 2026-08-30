@@ -16,6 +16,11 @@ export interface Field {
   label: string;
   /** Bound to a dataset root — filled server-side from Settings, hidden here. */
   root: RootName | null;
+  /** Bound to a Settings *stage default* (`path_pattern` / `tagger_dir`) —
+      filled server-side the same way, and hidden here for the same reason. */
+  setting: string | null;
+  /** Auto-detected by the stage (`--device`): never shown, never sent. */
+  auto: boolean;
 }
 
 /** The argparse dest a replay-capable stage exposes. Like `--apply` it is
@@ -36,6 +41,8 @@ export interface Stage {
   apply?: boolean;
   /** Has `--from_report`: Apply can write a dry run's proposals as-is. */
   replay?: boolean;
+  /** Has `--path_pattern`: a run can be narrowed to the selected image. */
+  scoped?: boolean;
   fields: Field[];
 }
 
@@ -64,6 +71,8 @@ export interface Info {
 
 export interface Settings {
   values?: Record<string, Record<string, unknown>>;
+  /** `path_pattern` / `tagger_dir`: set once here, not on every stage form. */
+  stage_defaults?: Record<string, string>;
   [k: string]: unknown;
 }
 

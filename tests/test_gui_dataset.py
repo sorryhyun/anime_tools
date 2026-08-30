@@ -261,3 +261,33 @@ def test_thumbnails_are_webp_and_confined(client):
     assert (
         c.get("/api/thumb", params={"path": "image_dataset/a.txt"}).status_code == 415
     )
+
+
+def test_item_pattern_selects_exactly_the_one_image():
+    """How the GUI runs a stage on the selected image: it narrows the
+    ``--path_pattern`` the stage already takes, so one image and a batch share
+    the same code path."""
+    from anime_tools.gui import dataset as D
+    from anime_tools.path_filter import filter_paths_by_glob
+
+    # The extension is a wildcard: the resize step may have re-encoded it.
+    assert D.item_pattern("char/a.jpg") == "char/a.*"
+    paths = ["/r/char/a.png", "/r/char/ab.png", "/r/other/a.png"]
+    assert filter_paths_by_glob(paths, "/r", D.item_pattern("char/a.jpg")) == [
+        True,
+        False,
+        False,
+    ]
+
+    # fnmatch metacharacters in the name stay literal…
+    pat = D.item_pattern("char/b[1].png")
+    assert filter_paths_by_glob(
+        ["/r/char/b[1].webp", "/r/char/b1.webp"], "/r", pat
+    ) == [True, False]
+
+    # …but '|' is the pattern's own separator and cannot be escaped, so a name
+    # carrying one is refused instead of silently matching nothing.
+    with pytest.raises(D.DatasetError, match=r"\|"):
+        D.item_pattern("char/a|b.png")
+    with pytest.raises(D.DatasetError):
+        D.item_pattern("../escape.png")

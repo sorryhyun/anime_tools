@@ -38,6 +38,7 @@ if not hasattr(np, "bool"):
 
 from PIL import Image, ImageDraw
 
+from anime_tools._device import resolve_device
 from anime_tools._env import resolve_path
 from anime_tools._walk import walk_images
 from anime_tools.captions.position_clauses import parse_caption
@@ -96,8 +97,10 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--a_label", default=None)
     p.add_argument("--b_label", default=None)
     p.add_argument("--limit", type=int, default=0, help="0 = no cap")
-    p.add_argument("--device", default="cuda")
-    return p.parse_args()
+    p.add_argument("--device", default=None, help="cuda|cpu (default: auto)")
+    args = p.parse_args()
+    args.device = resolve_device(args.device)
+    return args
 
 
 def build_options(flags: str) -> tuple[PositionCaptionOptions, argparse.Namespace]:

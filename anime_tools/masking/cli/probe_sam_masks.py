@@ -34,6 +34,7 @@ if not hasattr(np, "bool"):
 
 from PIL import Image, ImageDraw
 
+from anime_tools._device import resolve_device
 from anime_tools._env import resolve_path
 from anime_tools._walk import walk_images
 from anime_tools.downloads import DEFAULT_SAM3_CHECKPOINT
@@ -97,7 +98,7 @@ def parse_args() -> argparse.Namespace:
         "proposal including the ones the audit filters out",
     )
     p.add_argument("--checkpoint", default=DEFAULT_SAM3_CHECKPOINT)
-    p.add_argument("--device", default="cuda")
+    p.add_argument("--device", default=None, help="cuda|cpu (default: auto)")
     p.add_argument("--out", default="post_image_dataset/captions/mask_probe")
     p.add_argument(
         "--summary",
@@ -109,7 +110,9 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Also write every binary mask as its own PNG (first prompt only)",
     )
-    return p.parse_args()
+    args = p.parse_args()
+    args.device = resolve_device(args.device)
+    return args
 
 
 def resolve_images(args: argparse.Namespace) -> list[Path]:

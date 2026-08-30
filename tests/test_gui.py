@@ -59,18 +59,24 @@ def test_defaults_produce_empty_argv():
 def test_argv_round_trips_through_the_real_parser():
     st, fs = _stage("position")
     values = {
-        "src": "img",
-        "path_pattern": "a/*|b/*",
         "score_threshold": "0.4",
         "blank_crops": False,
         "max_instances": 3,
         "flatten": True,
     }
-    argv = S.build_argv(fs, values, apply=True)
+    argv = S.build_argv(
+        fs,
+        values,
+        apply=True,
+        roots={"src": "img"},
+        settings={"path_pattern": "a/*|b/*"},
+    )
     ns = S.load_parser(st).parse_args(argv)
     assert ns.src == "img" and ns.path_pattern == "a/*|b/*"
     assert ns.score_threshold == 0.4 and ns.blank_crops is False
     assert ns.max_instances == 3 and ns.flatten and ns.apply
+    # --device never reaches the argv: the stage auto-detects it.
+    assert "--device" not in argv and ns.device is None
 
 
 def test_enum_and_float_kinds():
@@ -100,6 +106,51 @@ def test_dataset_roots_fill_the_bound_fields():
     assert S.build_argv(fs, {}, roots={"src": "image_dataset"}) == []
 
 
+def test_settings_fill_the_bound_stage_defaults():
+    """--path_pattern / --tagger_dir are set once in Settings, not per form."""
+    _, fs = _stage("autotag")
+    assert {f["dest"]: f["setting"] for f in fs if f["setting"]} == {
+        "path_pattern": "path_pattern",
+        "tagger_dir": "tagger_dir",
+    }
+    argv = S.build_argv(
+        fs, {}, settings={"path_pattern": "char/*", "tagger_dir": "ckpt"}
+    )
+    assert argv == ["--path_pattern", "char/*", "--tagger_dir", "ckpt"]
+    # A value stranded in a saved form never beats (or fills in for) Settings.
+    assert S.build_argv(fs, {"path_pattern": "stale/*", "tagger_dir": "stale"}) == []
+    # ...and it is not written back into the settings file either.
+    assert S.form_values(fs, {"path_pattern": "stale/*", "mode": "merge"}) == {
+        "mode": "merge"
+    }
+
+
+def test_device_is_never_on_the_form_or_the_argv():
+    """Auto-detected in the child (``_device.resolve_device``), because this
+    process is torch-free and cannot see the child's hardware."""
+    required = {"config": "c.yaml", "mask_dir": "m", "out": "g.json"}
+    for stage_id in ("autotag", "position", "masks_sam", "masks_mit", "groups"):
+        _, fs = _stage(stage_id)
+        device = next(f for f in fs if f["dest"] == "device")
+        assert device["auto"] is True
+        argv = S.build_argv(fs, {**required, "device": "cuda"}, roots={"src": "i"})
+        assert "--device" not in argv and "cuda" not in argv
+
+
+def test_scoped_stages_are_the_ones_taking_a_pattern():
+    """The run bar's per-image button exists exactly where the stage has a
+    ``--path_pattern`` to narrow."""
+    scoped = {s.id for s in S.STAGES if S.schema(s).get("scoped")}
+    assert scoped == {
+        "autotag",
+        "position",
+        "correct",
+        "audit",
+        "masks_sam",
+        "masks_mit",
+    }
+
+
 def test_required_field_is_enforced():
     _, fs = _stage("correct")
     with pytest.raises(ValueError, match="--src"):
@@ -108,10 +159,10 @@ def test_required_field_is_enforced():
 
 def test_boolean_optional_action_and_positional_list():
     _, fs = _stage("masks_mit")
-    argv = S.build_argv(fs, {"image_dir": "i", "mask_dir": "m", "ctd_gate": False})
+    argv = S.build_argv(fs, {"mask_dir": "m", "ctd_gate": False}, roots={"src": "i"})
     assert argv == ["--image-dir", "i", "--mask-dir", "m", "--no-ctd-gate"]
     _, fs = _stage("masks_merge")
-    argv = S.build_argv(fs, {"mask_dirs": "a\nb\n", "output_dir": "o"})
+    argv = S.build_argv(fs, {"mask_dirs": "a\nb\n"}, roots={"masks": "o"})
     assert argv == ["--output-dir", "o", "a", "b"]
 
 
@@ -234,6 +285,10 @@ def client(tmp_path, monkeypatch):
         "    p = argparse.ArgumentParser(); p.add_argument('--n', type=int, default=1)\n"
         "    p.add_argument('--apply', action='store_true')\n"
         "    p.add_argument('--sleep', type=float, default=0)\n"
+        # The two Settings-bound dests and the auto-detected one, so the stub
+        # exercises the same binding the real stages get.
+        "    p.add_argument('--path_pattern', default='*')\n"
+        "    p.add_argument('--device', default=None)\n"
         "    p.add_argument('--report_dir', default='out'); return p\n"
         "if __name__ == '__main__':\n"
         "    a = build_parser().parse_args()\n"
@@ -312,6 +367,39 @@ def test_job_start_creates_the_report_directory(client):
     )
     assert job["state"] == "done", job
     assert (home / "deep/nested/reports/report.json").is_file()
+
+
+def test_settings_pattern_and_rel_pick_the_run_scope(client):
+    """The batch button sends no ``rel`` and gets the Settings pattern; the
+    per-image button sends one and gets a pattern naming just that file."""
+    c, _home = client
+    c.put("/api/settings", json={"stage_defaults": {"path_pattern": "sub/*"}})
+
+    batch = c.post(
+        "/api/jobs", json={"stage": "stub", "values": {"n": 1, "path_pattern": "old/*"}}
+    ).json()
+    assert batch["argv"][-2:] == ["--path_pattern", "sub/*"]
+    _await_job(c, c.get(f"/api/jobs/{batch['id']}"))
+    # A bound dest is not the form's to remember, so it is not written back.
+    assert c.get("/api/settings").json()["values"]["stub"] == {"n": 1}
+
+    one = c.post("/api/jobs", json={"stage": "stub", "rel": "sub/b.jpg"}).json()
+    # Stem, not filename: the resize step may have re-encoded it.
+    assert one["argv"][-2:] == ["--path_pattern", "sub/b.*"]
+    _await_job(c, c.get(f"/api/jobs/{one['id']}"))
+
+    # --device is auto-detected in the child and never sent.
+    assert "--device" not in batch["argv"] + one["argv"]
+
+
+def test_scoping_an_unscopable_stage_is_refused(client):
+    """No ``--path_pattern`` means nothing to narrow -- and "this image"
+    quietly meaning "everything" is the one outcome worth a 400."""
+    c, _home = client
+    r = c.post("/api/jobs", json={"stage": "audit_apply", "rel": "a.png"})
+    assert r.status_code == 400 and "scoped" in r.json()["detail"]
+    r = c.post("/api/jobs", json={"stage": "stub", "rel": "../escape.png"})
+    assert r.status_code == 400
 
 
 def test_second_concurrent_job_is_refused(client):

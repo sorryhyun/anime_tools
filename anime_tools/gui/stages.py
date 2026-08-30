@@ -50,6 +50,32 @@ _PATH_HINTS = (
 )
 
 
+SETTINGS_KEY = "stage_defaults"
+"""Where :data:`SETTING_FIELDS`' values live in the settings file."""
+
+SETTING_FIELDS: dict[str, str] = {
+    # argparse dest → settings key. Stage-independent knobs that mean the same
+    # thing everywhere they appear, so they are set once in ⚙ Settings instead
+    # of on nine forms: which images a run touches, and which tagger checkpoint
+    # loads. Like ROOT_FIELDS these are hidden from the form and filled by
+    # :func:`build_argv`.
+    "path_pattern": "path_pattern",
+    "tagger_dir": "tagger_dir",
+}
+
+SCOPE_FIELD = "path_pattern"
+"""The :data:`SETTING_FIELDS` key the GUI narrows to run a stage on one image."""
+
+AUTO_FIELDS: frozenset[str] = frozenset({"device"})
+"""Dests the GUI neither shows nor sends: the stage auto-detects them.
+
+``--device`` is the only one. This process is torch-free by design, so it
+cannot see whether the *child* will find a GPU; every stage CLI defaults it to
+``None`` and resolves it through ``anime_tools._device.resolve_device``, which
+is a better answer than anything a form could hold.
+"""
+
+
 ROOT_FIELDS: dict[str, dict[str, str]] = {
     # stage id → {argparse dest: dataset root name}. These fields are filled
     # from the Settings dialog's dataset roots (the same three trees the
@@ -176,6 +202,11 @@ class Field:
     root: str | None = None
     """Bound to a dataset root (``src``/``dst``/``masks``): the GUI hides the
     field and :func:`build_argv` fills it from the Settings roots."""
+    setting: str | None = None
+    """Bound to a :data:`SETTING_FIELDS` key: hidden from the form the same
+    way, filled from the Settings dialog's stage defaults."""
+    auto: bool = False
+    """In :data:`AUTO_FIELDS`: never shown, never sent, always auto-detected."""
 
 
 def load_parser(stage: Stage) -> argparse.ArgumentParser:
@@ -265,11 +296,16 @@ def schema(stage: Stage) -> dict[str, Any]:
     bound = ROOT_FIELDS.get(stage.id, {})
     for f in fs:
         f.root = bound.get(f.dest)
+        f.setting = SETTING_FIELDS.get(f.dest)
+        f.auto = f.dest in AUTO_FIELDS
     return {
         **base,
         "available": True,
         "doc": parser.description or "",
         "apply": any(f.dest == "apply" for f in fs),
+        # This stage takes a ``--path_pattern``, so the GUI can narrow one run
+        # to the selected image and offer the batch as a separate button.
+        "scoped": any(f.dest == SCOPE_FIELD for f in fs),
         # This stage can write a previous dry run's proposals instead of
         # recomputing them (``--from_report``); the GUI's Apply offers it.
         "replay": any(f.dest == REPLAY_FIELD for f in fs),
@@ -283,6 +319,7 @@ def build_argv(
     *,
     apply: bool = False,
     roots: dict[str, str] | None = None,
+    settings: dict[str, str] | None = None,
 ) -> list[str]:
     """Turn a ``{dest: value}`` form payload into argv for ``python -m <module>``.
 
@@ -295,17 +332,30 @@ def build_argv(
     ``roots`` (``{"src": …, "dst": …, "masks": …}``) fills every field bound by
     :data:`ROOT_FIELDS`, overriding whatever the form sent: the dataset roots
     are set once in Settings and no stage gets to disagree with them.
+    ``settings`` does the same for :data:`SETTING_FIELDS` (``path_pattern`` /
+    ``tagger_dir``) — and it is also how the GUI narrows one run to a single
+    image, by handing in a ``path_pattern`` that matches just that file.
+
+    :data:`AUTO_FIELDS` (``--device``) never reach the argv at all: the stage
+    auto-detects them.
     """
     argv: list[str] = []
     positional: list[str] = []
     for fd in fields:
         f = Field(**fd) if isinstance(fd, dict) else fd
+        if f.auto or f.dest in AUTO_FIELDS:
+            continue
         if f.dest == "apply":
             if apply:
                 argv.append(f.flags[0])
             continue
-        bound = (roots or {}).get(f.root or "")
-        v = bound if bound else values.get(f.dest, f.default)
+        if f.root or f.setting:
+            # Bound fields come from Settings and *only* from Settings: a stale
+            # value left in a saved form must never win over the roots or the
+            # pattern the user set, so `values` is not consulted at all.
+            v = (roots or {}).get(f.root or "") or (settings or {}).get(f.setting or "")
+        else:
+            v = values.get(f.dest, f.default)
         if f.kind == "bool":
             v = bool(v)
             if v == f.default:
@@ -342,6 +392,26 @@ def build_argv(
         else:
             positional.append(str(v))
     return argv + positional
+
+
+def form_values(fields: list[dict[str, Any]], values: dict[str, Any]) -> dict[str, Any]:
+    """``values`` minus everything the form does not own.
+
+    The GUI persists the last form per stage; dests that are bound (to a root
+    or a Settings default) or auto-detected are not the form's to remember, and
+    a copy left behind from before they moved to Settings is pure confusion in
+    the settings file. :func:`build_argv` already ignores them — this keeps them
+    from being written down in the first place.
+    """
+    drop = {
+        f["dest"]
+        for f in fields
+        if f.get("root")
+        or f.get("setting")
+        or f.get("auto")
+        or f["dest"] in AUTO_FIELDS
+    }
+    return {k: v for k, v in values.items() if k not in drop}
 
 
 def report_path(

@@ -4,14 +4,16 @@ import type { DatasetRoots, Field, Stage, Values } from "../types";
 import { PathPicker } from "./PathPicker";
 
 /** Group fields by argparse group, preserving order. Fields bound to a dataset
-    root are left out: the server fills them from Settings. So are the two the
+    root or to a Settings stage default (`path_pattern`, `tagger_dir`) are left
+    out: the server fills them from Settings, so no two forms can disagree about
+    them. So is `--device`, which the stage auto-detects. And so are the two the
     buttons own -- `--apply` (Dry run / Apply) and `--from_report` (the Apply
     dialog's reuse box): a stale path left in a form field would quietly turn
     the next Dry run into a replay of an old one. */
 function grouped(fields: Field[]): [string, Field[]][] {
   const m = new Map<string, Field[]>();
   for (const f of fields) {
-    if (f.dest === "apply" || f.dest === REPLAY_FIELD || f.root) continue;
+    if (f.dest === "apply" || f.dest === REPLAY_FIELD || f.root || f.setting || f.auto) continue;
     const g = m.get(f.group) ?? [];
     g.push(f);
     m.set(f.group, g);
@@ -28,13 +30,19 @@ export function StageForm(props: {
   setValue: (dest: string, v: unknown) => void;
   reset: () => void;
   roots?: DatasetRoots;
+  /** The Settings stage defaults (`path_pattern` / `tagger_dir`), for the strip. */
+  defaults?: Record<string, string>;
   onSettings: () => void;
   help: boolean;
   onHelp: () => void;
 }) {
   const [picking, setPicking] = createSignal<string | null>(null);
   const groups = createMemo(() => grouped(props.stage.fields));
-  const bound = createMemo(() => props.stage.fields.filter((f) => f.root));
+  const bound = createMemo(() => props.stage.fields.filter((f) => f.root || f.setting));
+  /** What the server will actually send for a Settings-bound field: the saved
+      value, or -- when it is blank -- the CLI's own default. */
+  const settingValue = (f: Field) =>
+    (props.defaults?.[f.setting!] ?? "").trim() || (f.default == null ? "—" : String(f.default));
   const value = (f: Field) => props.values[f.dest] ?? f.default;
   const dirty = (f: Field) => {
     const v = props.values[f.dest];
@@ -71,19 +79,19 @@ export function StageForm(props: {
         <div class="rootstrip">
           <For each={bound()}>
             {(f) => {
-              const info = () => props.roots?.roots[f.root!];
+              const info = () => (f.root ? props.roots?.roots[f.root] : undefined);
               return (
                 <span title={f.help}>
                   <span class="mono">{f.label || f.flags[0] || f.dest}</span>{" "}
                   <span classList={{ mono: true, err: info() ? !info()!.exists : false }}>
-                    {info()?.path ?? "…"}
+                    {f.root ? (info()?.path ?? "…") : settingValue(f)}
                   </span>
                 </span>
               );
             }}
           </For>
           <button class="link" type="button" onClick={props.onSettings}>
-            dataset roots ⚙
+            set in Settings ⚙
           </button>
         </div>
       </Show>

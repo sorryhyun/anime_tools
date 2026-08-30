@@ -4,7 +4,20 @@ import { HelpToggle } from "./HelpToggle";
 import type { DatasetRoots, Stage, Values } from "../types";
 
 /** The stage runner's body: the run bar + the schema-driven form for the stage
-    picked in the dock's button strip (the picker itself lives in App). */
+    picked in the dock's button strip (the picker itself lives in App).
+
+    A stage that takes a `--path_pattern` runs at one of two scopes, and the run
+    bar spells both out rather than hiding a mode behind a toggle:
+
+    * the plain button acts on the **selected image** -- the server narrows the
+      pattern to that one file, so the iteration loop is pick an image, run,
+      look at the caption;
+    * the `batch` button acts on the **Settings `path_pattern`** -- everything
+      the pattern names.
+
+    Dry run stays batch on purpose: it is the pass that writes the report both
+    Applies replay, so scoping it to one image would leave the batch Apply with
+    nothing to reuse. */
 export function StagePanel(props: {
   stages?: Stage[];
   error?: unknown;
@@ -14,15 +27,25 @@ export function StagePanel(props: {
   reset: () => void;
   busy: boolean;
   status: { text: string; state?: string };
-  onRun: (apply: boolean) => void;
-  onApply: () => void;
+  /** The selected image, or null -- what the per-image buttons act on. */
+  rel?: string | null;
+  onRun: (apply: boolean, rel?: string | null) => void;
+  onApply: (rel: string | null) => void;
   onCancel: () => void;
   roots?: DatasetRoots;
+  defaults?: Record<string, string>;
   onSettings: () => void;
   help: boolean;
   onHelp: () => void;
 }) {
   const cur = createMemo(() => props.stages?.find((s) => s.id === props.curId));
+  /** Per-image buttons need a stage that takes a pattern and an image to aim at. */
+  const scoped = createMemo(() => !!cur()?.scoped);
+  const noImage = createMemo(() => !props.rel);
+  const off = createMemo(() => props.busy || !cur()?.available);
+  const aim = () =>
+    props.rel ? `just ${props.rel}` : "select an image in the sidebar first";
+  const batchTitle = () => `every image the Settings path_pattern names`;
 
   return (
     <div class="stagepanel">
@@ -32,12 +55,31 @@ export function StagePanel(props: {
           <span class="dim mono">{cur()?.module}</span>
           <HelpToggle open={props.help} warn={!!cur()?.notes} onToggle={props.onHelp} />
           <span class="sp" />
-          <button classList={{ primary: !cur()?.apply }} disabled={props.busy || !cur()?.available} onClick={() => props.onRun(false)}>
-            {cur()?.apply ? "Dry run" : "Run"}
-          </button>
-          <Show when={cur()?.apply}>
-            <button class="primary" disabled={props.busy || !cur()?.available} onClick={props.onApply}>
-              Apply…
+          <Show
+            when={cur()?.apply}
+            fallback={
+              <>
+                <Show when={scoped()}>
+                  <button class="primary" disabled={off() || noImage()} title={aim()} onClick={() => props.onRun(false, props.rel)}>
+                    Run
+                  </button>
+                </Show>
+                <button classList={{ primary: !scoped() }} disabled={off()} title={scoped() ? batchTitle() : undefined} onClick={() => props.onRun(false)}>
+                  {scoped() ? "Run batch" : "Run"}
+                </button>
+              </>
+            }
+          >
+            <button disabled={off()} title={batchTitle()} onClick={() => props.onRun(false)}>
+              Dry run
+            </button>
+            <Show when={scoped()}>
+              <button class="primary" disabled={off() || noImage()} title={aim()} onClick={() => props.onApply(props.rel ?? null)}>
+                Apply
+              </button>
+            </Show>
+            <button classList={{ primary: !scoped() }} disabled={off()} title={scoped() ? batchTitle() : undefined} onClick={() => props.onApply(null)}>
+              {scoped() ? "Apply batch…" : "Apply…"}
             </button>
           </Show>
           <button disabled={!props.busy} onClick={props.onCancel}>
@@ -69,6 +111,7 @@ export function StagePanel(props: {
                   setValue={props.setValue}
                   reset={props.reset}
                   roots={props.roots}
+                  defaults={props.defaults}
                   onSettings={props.onSettings}
                   help={props.help}
                   onHelp={props.onHelp}

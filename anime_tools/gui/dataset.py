@@ -19,6 +19,7 @@ so out loud.
 
 from __future__ import annotations
 
+import glob
 import os
 from dataclasses import dataclass
 from functools import lru_cache
@@ -138,6 +139,34 @@ def _rel_key(rel: str) -> Path:
     if p.is_absolute() or any(part == ".." for part in p.parts) or not p.parts:
         raise DatasetError(f"bad relative path: {rel!r}")
     return p
+
+
+def item_pattern(rel: str) -> str:
+    """A ``path_pattern`` matching exactly the one dataset image ``rel``.
+
+    This is how the GUI runs a stage on the selected image: the stages have no
+    "just this file" flag, and they should not grow one — narrowing the glob
+    they already take means a one-image run and a batch run take the identical
+    code path (a replay included, see ``stages.replay._keep_by_pattern``).
+
+    ``<dir>/<stem>.*``, not the full filename: a stage matches the pattern
+    against the *resized* tree and the resize step may re-encode (``.jpg``
+    master → ``.png`` resized), so the extension has to be a wildcard. That
+    cannot widen the match — :func:`~anime_tools._walk.assert_unique_stems`
+    already refuses two images sharing a stem in one folder.
+
+    fnmatch metacharacters in the path are escaped, so a literal ``[`` in a
+    filename stays a ``[``; a literal ``|`` cannot be, because ``|`` is the
+    pattern's own alternative separator, so such a name is refused outright
+    rather than silently selecting nothing.
+    """
+    p = _rel_key(rel)
+    if "|" in p.as_posix():
+        raise DatasetError(
+            f"cannot scope a run to {rel!r}: '|' separates path_pattern "
+            "alternatives, so no pattern can name this file"
+        )
+    return glob.escape(p.with_suffix("").as_posix()) + ".*"
 
 
 def _sibling_image(directory: Path, stem: str) -> Path | None:

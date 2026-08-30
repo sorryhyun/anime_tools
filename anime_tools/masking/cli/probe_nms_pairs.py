@@ -36,6 +36,7 @@ PREFETCH_DEPTH = 4
 
 from PIL import Image
 
+from anime_tools._device import resolve_device
 from anime_tools._env import resolve_path
 from anime_tools._walk import walk_images
 from anime_tools.downloads import DEFAULT_SAM3_CHECKPOINT
@@ -74,8 +75,10 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--iou_threshold", type=float, default=0.65)
     p.add_argument("--min_area_frac", type=float, default=0.005)
     p.add_argument("--checkpoint", default=DEFAULT_SAM3_CHECKPOINT)
-    p.add_argument("--device", default="cuda")
-    return p.parse_args()
+    p.add_argument("--device", default=None, help="cuda|cpu (default: auto)")
+    args = p.parse_args()
+    args.device = resolve_device(args.device)
+    return args
 
 
 def mask_fill(det, size: tuple[int, int]) -> float | None:

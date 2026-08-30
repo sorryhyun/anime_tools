@@ -44,8 +44,10 @@ export const api = {
   downloadModels: (ids: string[]) => req<Job>("/api/models/download", json("POST", { ids })),
   jobs: () => req<Job[]>("/api/jobs"),
   job: (id: string) => req<Job>(`/api/jobs/${id}`),
-  start: (stage: string, values: Values, apply: boolean) =>
-    req<Job>("/api/jobs", json("POST", { stage, values, apply })),
+  /** `rel` narrows the run to that one dataset image (the stage's own
+      `--path_pattern`); omit it to run the batch the Settings pattern names. */
+  start: (stage: string, values: Values, apply: boolean, rel?: string | null) =>
+    req<Job>("/api/jobs", json("POST", { stage, values, apply, rel: rel ?? "" })),
   cancel: (id: string) => req<{ cancelled: boolean }>(`/api/jobs/${id}/cancel`, { method: "POST" }),
   report: (id: string) => req<{ path: string; report: unknown }>(`/api/jobs/${id}/report`),
   ls: (path: string) => req<Listing>(`/api/ls?path=${encodeURIComponent(path)}`),

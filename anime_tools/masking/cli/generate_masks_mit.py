@@ -29,6 +29,7 @@ from tqdm import tqdm
 if TYPE_CHECKING:
     from torch import nn
 
+from anime_tools._device import resolve_device
 from anime_tools._walk import walk_images
 
 # The repo/filename live in the download catalog so the GUI can pre-fetch this
@@ -252,7 +253,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--force", action="store_true", help="Regenerate existing masks"
     )
     parser.add_argument(
-        "--device", type=str, default="cuda", help="Device (default: cuda)"
+        "--device", type=str, default=None, help="cuda|cpu (default: auto)"
     )
     parser.add_argument(
         "--text-threshold",
@@ -305,6 +306,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main() -> None:
     args = build_parser().parse_args()
+    args.device = resolve_device(args.device)
 
     dilate_kernel = (
         np.ones((args.dilate, args.dilate), dtype=np.uint8) if args.dilate > 0 else None

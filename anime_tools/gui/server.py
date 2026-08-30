@@ -195,6 +195,13 @@ def create_app(
 
     @app.post("/api/jobs")
     async def start_job(request: Request) -> dict[str, Any]:
+        """Start a stage.
+
+        ``rel`` scopes the run to one dataset image: the stage's own
+        ``--path_pattern`` is narrowed to that file (``D.item_pattern``), which
+        is what the run bar's per-image button sends. Without it the run uses
+        the pattern from Settings — the batch.
+        """
         body = await request.json()
         stage = S.BY_ID.get(body.get("stage", ""))
         sc = store.get().get(stage.id) if stage else None
@@ -202,10 +209,28 @@ def create_app(
             raise HTTPException(404, "unknown stage")
         if not sc["available"]:
             raise HTTPException(400, f"stage unavailable: {sc['error']}")
-        values = body.get("values") or {}
+        values = S.form_values(sc["fields"], body.get("values") or {})
         apply = bool(body.get("apply"))
+        rel = str(body.get("rel") or "").strip()
+        defaults = _stage_defaults()
+        if rel:
+            # Refuse rather than silently run the batch: a stage with no
+            # --path_pattern has nothing to narrow, and "apply to this image"
+            # quietly meaning "apply to everything" is the worst outcome here.
+            if not sc.get("scoped"):
+                raise HTTPException(400, f"{stage.id} cannot be scoped to one image")
+            try:
+                defaults = {**defaults, S.SCOPE_FIELD: D.item_pattern(rel)}
+            except D.DatasetError as e:
+                raise HTTPException(400, str(e)) from e
         try:
-            argv = S.build_argv(sc["fields"], values, apply=apply, roots=_root_paths())
+            argv = S.build_argv(
+                sc["fields"],
+                values,
+                apply=apply,
+                roots=_root_paths(),
+                settings=defaults,
+            )
         except ValueError as e:
             raise HTTPException(400, str(e)) from e
         report = S.report_path(stage, sc["fields"], values)
@@ -289,6 +314,21 @@ def create_app(
             return D.resolve_roots(merged)
         except D.DatasetError as e:
             raise HTTPException(400, str(e)) from e
+
+    def _stage_defaults() -> dict[str, str]:
+        """The Settings dialog's stage defaults, for the fields bound to them
+        (``S.SETTING_FIELDS``): ``path_pattern`` and ``tagger_dir`` mean the
+        same thing in every stage, so they are set once, not nine times.
+
+        Blanks are dropped, so an emptied field means "the CLI's own default",
+        not an empty pattern.
+        """
+        got = load_settings().get(S.SETTINGS_KEY) or {}
+        return {
+            k: str(got[k]).strip()
+            for k in S.SETTING_FIELDS.values()
+            if str(got.get(k) or "").strip()
+        }
 
     def _root_paths() -> dict[str, str]:
         """The saved dataset roots, home-relative, for the stage fields bound to

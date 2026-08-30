@@ -44,6 +44,7 @@ import json
 from dataclasses import asdict
 from pathlib import Path
 
+from anime_tools._device import resolve_device
 from anime_tools._env import resolve_path
 from anime_tools.stages.autotag import (
     MODES,
@@ -57,6 +58,7 @@ from anime_tools.stages.replay import (
     print_replay,
     run_replay,
 )
+from anime_tools.tagger.dbv4_meta import DEFAULT_TAGGER_DIR
 
 DEFAULT_REPORT_DIR = "post_image_dataset/captions/autotag"
 
@@ -111,8 +113,14 @@ def build_parser() -> argparse.ArgumentParser:
         default=DEFAULT_REPORT_DIR,
         help=f"Where report.json lands (default: {DEFAULT_REPORT_DIR})",
     )
-    p.add_argument("--tagger_dir", "--tagger-dir", dest="tagger_dir", default=None)
-    p.add_argument("--device", default="cuda")
+    p.add_argument(
+        "--tagger_dir",
+        "--tagger-dir",
+        dest="tagger_dir",
+        default=None,
+        help=f"Anima Tagger checkpoint dir (default: {DEFAULT_TAGGER_DIR})",
+    )
+    p.add_argument("--device", default=None, help="cuda|cpu (default: auto)")
     return p
 
 
@@ -170,9 +178,12 @@ def main() -> None:
         return
 
     options = AutotagOptions(mode=args.mode, min_confidence=args.min_confidence)
-    print(f"Loading Anima Tagger ({args.device})...", flush=True)
+    # Resolved here and not in parse_args(): --from_report returned above
+    # without importing torch, and resolve_device would have done exactly that.
+    device = resolve_device(args.device)
+    print(f"Loading Anima Tagger ({device})...", flush=True)
     tag_fn, info = build_tag_fn(
-        args.tagger_dir, device=args.device, min_confidence=args.min_confidence
+        args.tagger_dir, device=device, min_confidence=args.min_confidence
     )
 
     def progress(index: int, total: int, rel: str) -> None:

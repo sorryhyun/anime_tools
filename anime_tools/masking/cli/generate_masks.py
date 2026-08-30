@@ -16,6 +16,7 @@ import yaml
 from PIL import Image
 from tqdm import tqdm
 
+from anime_tools._device import resolve_device
 from anime_tools._walk import walk_images
 from anime_tools.path_filter import filter_paths_by_glob
 
@@ -103,7 +104,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--checkpoint", type=str, default=None, help="Local SAM3 checkpoint path"
     )
     parser.add_argument(
-        "--device", type=str, default="cuda", help="Device (default: cuda)"
+        "--device", type=str, default=None, help="cuda|cpu (default: auto)"
     )
     parser.add_argument(
         "--workers",
@@ -141,6 +142,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main() -> None:
     args = build_parser().parse_args()
+    args.device = resolve_device(args.device)
 
     with open(args.config) as f:
         config = yaml.safe_load(f)

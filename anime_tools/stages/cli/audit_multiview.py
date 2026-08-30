@@ -34,6 +34,7 @@ import numpy as np
 if not hasattr(np, "bool"):
     np.bool = np.bool_
 
+from anime_tools._device import resolve_device
 from anime_tools._env import resolve_path
 from anime_tools.downloads import DEFAULT_SAM3_CHECKPOINT
 from anime_tools.stages.cli.position_captions import build_detect_fn
@@ -58,6 +59,7 @@ from anime_tools.stages.replay import (
     print_replay,
     run_replay,
 )
+from anime_tools.tagger.dbv4_meta import DEFAULT_TAGGER_DIR
 
 DEFAULT_REPORT_DIR = "post_image_dataset/captions/multiview_audit"
 
@@ -126,8 +128,14 @@ def build_parser() -> argparse.ArgumentParser:
         "per finding under <report_dir>/sheets/, named verdict-first",
     )
     p.add_argument("--checkpoint", default=DEFAULT_SAM3_CHECKPOINT, help="SAM3 weights")
-    p.add_argument("--tagger_dir", "--tagger-dir", dest="tagger_dir", default=None)
-    p.add_argument("--device", default="cuda")
+    p.add_argument(
+        "--tagger_dir",
+        "--tagger-dir",
+        dest="tagger_dir",
+        default=None,
+        help=f"Anima Tagger checkpoint dir (default: {DEFAULT_TAGGER_DIR})",
+    )
+    p.add_argument("--device", default=None, help="cuda|cpu (default: auto)")
 
     g = p.add_argument_group("detection")
     g.add_argument("--prompt", default="girl", help="SAM3 text prompt for a subject")
@@ -278,17 +286,15 @@ def main() -> None:
 
     detect_fn, part_detect_fn, sam_model, sam_processor = build_detect_fn(args)
 
-    from anime_tools.tagger.tagger import (
-        DEFAULT_TAGGER_DIR,
-        AnimaTagger,
-        ensure_tagger_checkpoint,
-    )
+    from anime_tools.tagger.tagger import AnimaTagger, ensure_tagger_checkpoint
 
     ckpt_dir = ensure_tagger_checkpoint(
         resolve_path(args.tagger_dir or DEFAULT_TAGGER_DIR)
     )
     print(f"Loading Anima Tagger from {ckpt_dir}...", flush=True)
-    tagger = AnimaTagger(ckpt_dir, device=args.device)
+    # Resolved here and not in parse_args(): the --from_report replay returns
+    # before this and must stay torch-free, and resolving imports torch.
+    tagger = AnimaTagger(ckpt_dir, device=resolve_device(args.device))
     vocabulary = load_clause_vocabulary(ckpt_dir)
 
     options = PositionCaptionOptions(
