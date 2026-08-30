@@ -93,7 +93,7 @@ requires-dist = [
     { name = "timm", specifier = ">=1.0" },
     { name = "torch", specifier = ">=2.4" },
     { name = "tqdm" },
-    { name = "transformers", specifier = ">=4.45" },
+    { name = "transformers", specifier = ">=5.16" },
     { name = "uvicorn", specifier = ">=0.30" },
 ]
 
