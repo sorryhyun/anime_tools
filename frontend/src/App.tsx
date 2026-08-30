@@ -139,12 +139,17 @@ export default function App() {
     setForms(curId(), (prev) => ({ ...(prev ?? {}), [dest]: v }));
   const resetForm = () => setForms(curId(), reconcile({}));
 
-  /** Stages, in registry order, bucketed by their argparse group. */
-  const groups = createMemo(() => {
+  /** Stages, in registry order, bucketed into the dock's panels. One button
+      per panel; which of its stages runs is picked inside the panel. */
+  const panels = createMemo(() => {
     const m = new Map<string, Stage[]>();
-    for (const s of stages() ?? []) m.set(s.group, [...(m.get(s.group) ?? []), s]);
+    for (const s of stages() ?? []) m.set(s.panel, [...(m.get(s.panel) ?? []), s]);
     return [...m];
   });
+  const curPanel = createMemo(() => cur()?.panel ?? "");
+  /** Per panel, the stage last picked in it, so re-opening a panel comes back
+      to where you left it instead of always its first stage. */
+  const [lastInPanel, setLastInPanel] = createStore<Record<string, string>>({});
 
   const [dockOpen, setDockOpen] = createSignal(localStorage.getItem("dock") !== "0");
   const [dockH, setDockH] = createSignal(Number(localStorage.getItem("dockh")) || 320);
@@ -240,6 +245,15 @@ export default function App() {
       setCurId(id);
       setDockOpen(true);
     });
+  }
+
+  /** A dock button: open the panel on the stage it was last left on, or close
+      the dock when it is already the open one. */
+  function pickPanel(panel: string, ss: Stage[]) {
+    if (dockOpen() && curPanel() === panel) return setDockOpen(false);
+    const want = curPanel() === panel ? curId() : lastInPanel[panel];
+    const s = ss.find((x) => x.id === want) ?? ss.find((x) => x.available) ?? ss[0];
+    if (s) pickStage(s.id);
   }
 
   function attach(id: string) {
@@ -395,22 +409,15 @@ export default function App() {
           <div class="dockgrip" onPointerDown={grip} title="Drag to resize" />
         </Show>
         <div class="tabs stagetabs">
-          <For each={groups()}>
-            {([g, ss]) => (
-              <>
-                <span class="tabgroup">{g}</span>
-                <For each={ss}>
-                  {(s) => (
-                    <a
-                      classList={{ sel: dockOpen() && curId() === s.id, na: !s.available }}
-                      title={s.available ? s.module : s.error}
-                      onClick={() => pickStage(s.id)}
-                    >
-                      {s.title}
-                    </a>
-                  )}
-                </For>
-              </>
+          <For each={panels()}>
+            {([p, ss]) => (
+              <a
+                classList={{ sel: dockOpen() && curPanel() === p, na: !ss.some((s) => s.available) }}
+                title={ss.map((s) => s.title).join(" · ")}
+                onClick={() => pickPanel(p, ss)}
+              >
+                {p}
+              </a>
             )}
           </For>
           <span class="sp" />
@@ -426,6 +433,11 @@ export default function App() {
           <div class="dockbody">
             <StagePanel
               stages={stages()}
+              siblings={panels().find(([p]) => p === curPanel())?.[1] ?? []}
+              onPick={(id) => {
+                setLastInPanel(curPanel(), id);
+                setCurId(id);
+              }}
               error={stages.error}
               curId={curId()}
               values={values()}

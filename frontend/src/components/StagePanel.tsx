@@ -1,10 +1,12 @@
-import { createMemo, Show } from "solid-js";
+import { createMemo, For, Show } from "solid-js";
 import { StageForm } from "./StageForm";
 import { HelpToggle } from "./HelpToggle";
 import type { DatasetRoots, Stage, Values } from "../types";
 
-/** The stage runner's body: the run bar + the schema-driven form for the stage
-    picked in the dock's button strip (the picker itself lives in App).
+/** The stage runner's body: the run bar + the schema-driven form for the
+    current stage. The dock's button strip (in App) picks a *panel*; when that
+    panel holds more than one stage the bar leads with a picker for them, which
+    is why several CLIs can share one button.
 
     A stage that takes a `--path_pattern` runs at one of two scopes, and the run
     bar spells both out rather than hiding a mode behind a toggle:
@@ -20,6 +22,10 @@ import type { DatasetRoots, Stage, Values } from "../types";
     nothing to reuse. */
 export function StagePanel(props: {
   stages?: Stage[];
+  /** Every stage under the open dock button, including the current one: the
+      bar picks between them when the panel holds more than one. */
+  siblings?: Stage[];
+  onPick: (id: string) => void;
   error?: unknown;
   curId: string;
   values: Values;
@@ -51,7 +57,21 @@ export function StagePanel(props: {
     <div class="stagepanel">
       <Show when={!props.error} fallback={<div class="err pad">{String(props.error)}</div>}>
         <div class="stagebar">
-          <b>{cur()?.title}</b>
+          <Show when={(props.siblings?.length ?? 0) > 1} fallback={<b>{cur()?.title}</b>}>
+            <span class="tabs stagepick">
+              <For each={props.siblings}>
+                {(s) => (
+                  <a
+                    classList={{ sel: s.id === props.curId, na: !s.available }}
+                    title={s.available ? s.title : s.error}
+                    onClick={() => props.onPick(s.id)}
+                  >
+                    {s.short}
+                  </a>
+                )}
+              </For>
+            </span>
+          </Show>
           <span class="dim mono">{cur()?.module}</span>
           <HelpToggle open={props.help} warn={!!cur()?.notes} onToggle={props.onHelp} />
           <span class="sp" />

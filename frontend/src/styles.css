@@ -122,14 +122,18 @@ button.link { background:none; border:none; color:var(--accent); padding:0; font
 .tabs a.na { color:#5a606b; cursor:default }
 .tabs a { padding:6px 12px; cursor:pointer; color:var(--dim); border-radius:6px 6px 0 0 }
 .tabs a.sel { color:var(--fg); background:var(--panel) }
-/* The dock's tab strip *is* the stage picker, so it holds every stage: grouped,
-   and wrapping onto a second row on a narrow window. */
+/* The dock's tab strip is one button per *panel* (Autotag / Curate / ...); the
+   stages inside a panel are picked by `.stagepick` in the bar below, so the
+   strip stays short instead of listing all nine. */
 .stagetabs { flex-wrap:wrap; gap:2px 4px }
-.stagetabs .tabgroup { align-self:center; color:var(--dim); font-size:11px; text-transform:uppercase; letter-spacing:.06em; padding:0 4px 0 10px }
-.stagetabs .tabgroup:first-child { padding-left:0 }
 .stagetabs a { padding:6px 10px; white-space:nowrap }
 .stagetabs a.na { cursor:pointer }
 .stagetabs a:hover { color:var(--fg) }
+/* In-panel stage picker: a segmented control, not a second row of tabs. */
+.stagepick { padding:0; border:none; gap:2px; flex:none }
+.stagepick a { padding:3px 9px; border-radius:5px; font-size:12px; white-space:nowrap }
+.stagepick a.sel { background:var(--line); color:var(--fg); font-weight:600 }
+.stagepick a:hover { color:var(--fg) }
 .pane { overflow:auto; padding:12px }
 pre.log { margin:0; font:12px/1.4 var(--font-mono); white-space:pre-wrap; word-break:break-all }
 .badge { font-size:11px; padding:1px 7px; border-radius:10px; background:#2a2f3a; color:var(--dim) }

@@ -30,7 +30,10 @@ export const REPLAY_FIELD = "from_report";
 export interface Stage {
   id: string;
   title: string;
-  group: string;
+  /** Which dock button this stage lives under; several stages share one. */
+  panel: string;
+  /** Label for the in-panel picker — the title minus what the panel says. */
+  short: string;
   module: string;
   extra: string;
   notes: string;

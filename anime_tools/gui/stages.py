@@ -99,13 +99,19 @@ class Stage:
     id: str
     title: str
     module: str
-    group: str
+    panel: str
+    """Which dock button this stage lives under. Several stages share one --
+    the dock shows one button per panel and picks between its stages inside
+    the panel, so the strip stays four buttons wide instead of nine."""
     extra: str
     """Historical feature area (``tagger`` / ``stages`` / ...); informational only now that everything is a plain dependency."""
     report: tuple[str, str | None] | None = None
     """``(dest, filename)``: the form field naming the report dir (or file when
     ``filename`` is None) so the GUI can fetch the result after a run."""
     notes: str = ""
+    short: str = ""
+    """Label for the in-panel picker, where the panel already gives the
+    context the title spells out. Defaults to :attr:`title`."""
 
 
 STAGES: tuple[Stage, ...] = (
@@ -113,7 +119,7 @@ STAGES: tuple[Stage, ...] = (
         "autotag",
         "Autotag captions",
         "anime_tools.stages.cli.autotag_captions",
-        "captions",
+        "Autotag",
         "tagger",
         report=("report_dir", "report.json"),
         notes="Only `missing` mode is non-destructive.",
@@ -122,38 +128,42 @@ STAGES: tuple[Stage, ...] = (
         "position",
         "Position captions",
         "anime_tools.stages.cli.position_captions",
-        "captions",
+        "Curate",
         "stages",
         report=("report_dir", "report.json"),
+        short="Position",
     ),
     Stage(
         "correct",
         "Correct + mirror captions",
         "anime_tools.stages.cli.correct_captions",
-        "captions",
+        "Curate",
         "tokenizers",
         notes="Writes the derived captions under the resized tree; the master is never edited.",
+        short="Correct",
     ),
     Stage(
         "audit",
         "Multiview audit",
         "anime_tools.stages.cli.audit_multiview",
-        "captions",
+        "Curate",
         "stages",
         report=("report_dir", "report.json"),
+        short="Audit",
     ),
     Stage(
         "audit_apply",
         "Apply curated audit list",
         "anime_tools.stages.cli.audit_apply_curated",
-        "captions",
+        "Curate",
         "stages",
+        short="Audit apply",
     ),
     Stage(
         "groups",
         "Build groups",
         "anime_tools.grouping.cli.build_groups",
-        "grouping",
+        "Groups",
         "grouping",
         report=("out", None),
     ),
@@ -161,24 +171,32 @@ STAGES: tuple[Stage, ...] = (
         "masks_sam",
         "SAM3 subject masks",
         "anime_tools.masking.cli.generate_masks",
+        "Masks",
         "masking",
-        "masking",
+        short="Subject",
     ),
     Stage(
         "masks_mit",
         "MIT text masks",
         "anime_tools.masking.cli.generate_masks_mit",
+        "Masks",
         "masking",
-        "masking",
+        short="Text",
     ),
     Stage(
         "masks_merge",
         "Merge masks",
         "anime_tools.masking.cli.merge_masks",
+        "Masks",
         "masking",
-        "masking",
+        short="Merge",
     ),
 )
+
+
+PANELS: tuple[str, ...] = tuple(dict.fromkeys(s.panel for s in STAGES))
+"""The dock's buttons, in registry order."""
+
 
 BY_ID: dict[str, Stage] = {s.id: s for s in STAGES}
 
@@ -282,7 +300,8 @@ def schema(stage: Stage) -> dict[str, Any]:
     base = {
         "id": stage.id,
         "title": stage.title,
-        "group": stage.group,
+        "panel": stage.panel,
+        "short": stage.short or stage.title,
         "module": stage.module,
         "extra": stage.extra,
         "notes": stage.notes,

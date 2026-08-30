@@ -71,6 +71,13 @@ Status: v1 shipped 2026-08-30 (`anime_tools/gui/`, `install.sh` / `install.ps1`,
   `gui/dataset.py` stays torch-free like the rest of the server
   (`tests/test_boundary.py`); it uses Pillow only for image dimensions and
   thumbnails.
+- **One button per panel, not per stage (2026-08-30).** Nine buttons under three
+  uppercase group captions was a strip that read as a list of CLIs. Each
+  `Stage` now names a `panel` (`Autotag` / `Curate` / `Groups` / `Masks`) and the
+  strip holds one button each; the group captions are gone. A panel with more
+  than one stage leads its stage bar with a small picker over them (`Stage.short`
+  is its label), so the four caption stages and the three masking stages each
+  collapse to one dock button without merging any CLI or its form.
 
 ## Goal
 
