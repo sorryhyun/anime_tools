@@ -38,6 +38,7 @@ from PIL import Image
 
 from anime_tools._env import resolve_path
 from anime_tools._walk import walk_images
+from anime_tools.downloads import DEFAULT_SAM3_CHECKPOINT
 from anime_tools.stages.cli.position_captions import build_detect_fn
 from anime_tools.stages.instance_detection import (
     DEFAULT_SUBJECT_PROMPT_EMBED,
@@ -72,7 +73,7 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--part_score_threshold", type=float, default=0.5)
     p.add_argument("--iou_threshold", type=float, default=0.65)
     p.add_argument("--min_area_frac", type=float, default=0.005)
-    p.add_argument("--checkpoint", default="models/sam3/sam3.pt")
+    p.add_argument("--checkpoint", default=DEFAULT_SAM3_CHECKPOINT)
     p.add_argument("--device", default="cuda")
     return p.parse_args()
 

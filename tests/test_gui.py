@@ -16,6 +16,18 @@ from anime_tools.gui import stages as S
 pytest.importorskip("fastapi")
 
 
+def _await_job(c, response, tries: int = 200) -> dict:
+    """Block until a started job leaves ``running`` (or give up and say so)."""
+    assert response.status_code == 200, response.text
+    job_id = response.json()["id"]
+    for _ in range(tries):
+        job = c.get(f"/api/jobs/{job_id}").json()
+        if job["state"] != "running":
+            return job
+        time.sleep(0.05)
+    raise AssertionError(f"job {job_id} still running")
+
+
 def _stage(sid: str) -> tuple[S.Stage, list[dict]]:
     st = S.BY_ID[sid]
     sc = S.schema(st)
@@ -207,6 +219,32 @@ def test_second_concurrent_job_is_refused(client):
             break
         time.sleep(0.05)
     assert c.get(f"/api/jobs/{j['id']}").json()["state"] == "cancelled"
+
+
+def test_model_catalog_and_download_job(client, monkeypatch):
+    """The Settings rows come from the download catalog, and Download starts a
+    normal job -- so it shares the one slot with the stages."""
+    c, home = client
+    body = c.get("/api/models").json()
+    assert body["models_dir"] == str(home / "models")
+    rows = {m["id"]: m for m in body["models"]}
+    assert not rows["sam3"]["installed"]
+    assert rows["sam3"]["location"] == str(home / "models" / "sam3")
+    assert rows["tagger_backbone"]["gated"].startswith("https://huggingface.co/")
+
+    assert c.post("/api/models/download", json={"ids": ["nope"]}).status_code == 404
+
+    # Downloads and stages contend for the same slot on purpose.
+    j = c.post("/api/jobs", json={"stage": "stub", "values": {"sleep": 30}}).json()
+    assert c.post("/api/models/download", json={"ids": ["sam3"]}).status_code == 409
+    c.post(f"/api/jobs/{j['id']}/cancel")
+
+    # The child is the downloads CLI; HF_HUB_OFFLINE keeps the test off the wire
+    # (it fails fast, which is all we need to see it ran).
+    monkeypatch.setenv("HF_HUB_OFFLINE", "1")
+    job = _await_job(c, c.post("/api/models/download", json={"ids": ["mit_text"]}))
+    assert job["argv"][1:] == ["-m", "anime_tools.downloads", "mit_text"]
+    assert job["state"] in ("done", "failed")
 
 
 def test_pick_port_skips_busy_port():

@@ -61,6 +61,29 @@ export interface Settings {
   [k: string]: unknown;
 }
 
+// ---- model weights (mirrors anime_tools/downloads.py Asset.to_dict()) ----
+
+export interface ModelAsset {
+  id: string;
+  title: string;
+  repo: string;
+  files: string[];
+  /** Which stages stop working without it. */
+  used_by: string;
+  /** The directory it lands in, or "Hugging Face cache". */
+  location: string;
+  installed: boolean;
+  missing: string[];
+  /** Accept-the-terms URL when the repo is gated; "" when it is public. */
+  gated: string;
+  notes: string;
+}
+
+export interface ModelCatalog {
+  models: ModelAsset[];
+  models_dir: string;
+}
+
 export interface Listing {
   path: string;
   entries: { name: string; dir: boolean }[];

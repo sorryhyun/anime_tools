@@ -16,6 +16,8 @@ import type {
   DatasetRoots,
   Info,
   ItemDetail,
+  ModelAsset,
+  ModelCatalog,
   NodeKind,
   RootName,
   Settings,
@@ -48,6 +50,7 @@ export default function App() {
   const [stages] = createResource<Stage[]>(api.stages);
   const [settings, setSettings] = createStore<Settings>({});
   const [roots, { refetch: refetchRoots }] = createResource<DatasetRoots>(api.datasetRoots);
+  const [models, { refetch: refetchModels }] = createResource<ModelCatalog>(api.models);
 
   // ---- dataset ----
   const [query, setQuery] = createSignal("");
@@ -211,9 +214,11 @@ export default function App() {
         setBusy(false);
         setStatus({ text: `exit ${job.exit_code}`, state: job.state });
         refetchInfo();
-        // A finished stage rewrote captions/masks under our feet.
+        // A finished stage rewrote captions/masks under our feet; a finished
+        // download job changed what the Settings rows should say.
         refetchList();
         refetchItem();
+        refetchModels();
       },
       () => {
         es = null;
@@ -236,6 +241,19 @@ export default function App() {
     }
   }
 
+  /** Weights download: a job like any other, so it streams into the stage bar.
+      The dialog gets out of the way -- the progress is in the dock. */
+  async function download(ids: string[]) {
+    try {
+      const job = await api.downloadModels(ids);
+      setSettingsOpen(false);
+      attach(job.id);
+    } catch (e) {
+      setStatus({ text: (e as Error).message, state: "failed" });
+      setDockOpen(true);
+    }
+  }
+
   return (
     <>
       <header>
@@ -250,7 +268,7 @@ export default function App() {
         </Show>
         <span class="sp" />
         <span class="dim">{info()?.hf_token ? "HF token ✓" : "no HF token"}</span>
-        <button onClick={() => setSettingsOpen(true)}>⚙ Settings</button>
+        <button onClick={() => { setSettingsOpen(true); refetchModels(); }}>⚙ Settings</button>
       </header>
 
       <DatasetTree
@@ -344,6 +362,9 @@ export default function App() {
         open={settingsOpen()}
         info={info()}
         roots={roots()}
+        models={models()}
+        busy={busy()}
+        onDownload={download}
         onClose={async (out) => {
           setSettingsOpen(false);
           if (!out) return;
@@ -370,11 +391,15 @@ function SettingsDialog(props: {
   open: boolean;
   info?: Info;
   roots?: DatasetRoots;
+  models?: ModelCatalog;
+  busy: boolean;
+  onDownload: (ids: string[]) => void;
   onClose: (out: SettingsOut | null) => void;
 }) {
   let tokenEl!: HTMLInputElement;
   const rootEls: Partial<Record<RootName, HTMLInputElement>> = {};
   const current = (n: RootName) => props.roots?.roots[n];
+  const missing = () => (props.models?.models ?? []).filter((m) => !m.installed);
 
   return (
     <Dialog
@@ -440,10 +465,66 @@ function SettingsDialog(props: {
         </span>
       </div>
 
+      <h4>Models</h4>
+      <p class="dim" style="margin:0 0 8px">
+        Every stage fetches what it needs on first use — these buttons only move the wait, and any
+        gated-repo refusal, to a moment you picked. A download runs as a job: one at a time, streaming
+        into the stage bar below.
+      </p>
+      <div class="models">
+        <For each={props.models?.models}>
+          {(m) => <ModelRow m={m} busy={props.busy} onDownload={props.onDownload} />}
+        </For>
+      </div>
+      <button
+        type="button"
+        style="margin-top:8px"
+        disabled={props.busy || !missing().length}
+        onClick={() => props.onDownload([])}
+      >
+        {missing().length ? `Download all ${missing().length} missing` : "Every model is installed"}
+      </button>
+
       <div class="dlg-actions">
         <button value="cancel">Close</button>
         <button value="ok" class="primary">Save</button>
       </div>
     </Dialog>
+  );
+}
+
+/** One catalog row. The button is `type=button` on purpose: every other button
+    in the dialog submits the <form method="dialog"> and closes it. */
+function ModelRow(props: { m: ModelAsset; busy: boolean; onDownload: (ids: string[]) => void }) {
+  return (
+    <div class="modelrow">
+      <div class="mi">
+        <span class="mh">
+          <b>{props.m.title}</b>
+          <span classList={{ badge: true, done: props.m.installed, miss: !props.m.installed }}>
+            {props.m.installed ? "installed" : "missing"}
+          </span>
+          <span class="dim">{props.m.used_by}</span>
+        </span>
+        <span class="dim mono" title={props.m.location}>
+          {props.m.repo} → {props.m.location}
+        </span>
+        <Show when={props.m.notes}>
+          <span class="dim">{props.m.notes}</span>
+        </Show>
+        <Show when={props.m.gated}>
+          <span class="dim">
+            Gated —{" "}
+            <a href={props.m.gated} target="_blank" rel="noreferrer">
+              accept the terms
+            </a>{" "}
+            with the same account as the token above.
+          </span>
+        </Show>
+      </div>
+      <button type="button" disabled={props.busy} onClick={() => props.onDownload([props.m.id])}>
+        {props.m.installed ? "Re-download" : "Download"}
+      </button>
+    </div>
   );
 }

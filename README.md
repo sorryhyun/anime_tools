@@ -74,10 +74,15 @@ line shows in the stage bar; the log / `report.json` / job-history panels are
 being reworked. Stages run as `python -m …` subprocesses, one at a time; the server
 never loads a model. `--host 0.0.0.0` exposes it on the LAN for a headless GPU
 box (no auth — use your own tunnel), `--home` overrides the curation home. ⚙
-Settings holds the three dataset roots and a one-time Hugging Face sign-in (the
-tagger backbone and SAM3 weights are gated). FastAPI + uvicorn are plain
-dependencies; the trainer's own PySide6 GUI remains the rich editor. Design
-notes: [`docs/gui_plan.md`](docs/gui_plan.md).
+Settings holds the three dataset roots, a one-time Hugging Face sign-in (the
+tagger backbone and SAM3 weights are gated), and a **Models** list: one row per
+checkpoint the stages need, saying whether it is here and where it goes, with a
+Download button that runs `python -m anime_tools.downloads` as an ordinary job
+(so it shares the one slot with the stages and streams into the same bar).
+Nothing has to be pre-fetched — every loader still fetches on first use; the
+buttons only move the wait, and any gated-repo refusal, to a moment you picked.
+FastAPI + uvicorn are plain dependencies; the trainer's own PySide6 GUI remains
+the rich editor. Design notes: [`docs/gui_plan.md`](docs/gui_plan.md).
 
 ## Layout of a curated dataset
 
@@ -87,6 +92,7 @@ post_image_dataset/resized/{stem}.txt           derived caption  ← stages.capt
 post_image_dataset/resized/{stem}.variants.txt  shuffle / dropout variants (tab-delimited, v0 = pristine)
 post_image_dataset/captions/caption_index.json  typed-tag index (character / copyright / artist / count)
 models/captioners/anima-tagger-dbv4/            tagger checkpoint (auto-fetched from sorryhyun/anima-tagger)
+models/sam3/sam3.pt, models/pe/…             SAM3 / PE-Spatial weights (`python -m anime_tools.downloads --list`)
 ```
 
 Every artifact the trainer reads is a **file**; the formats are frozen in

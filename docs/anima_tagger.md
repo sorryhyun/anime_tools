@@ -15,11 +15,12 @@ checkpoint (vocab, rules, groups, thresholds, sidecar) is auto-fetched from
 the `dbv4/` subfolder of
 [`sorryhyun/anima-tagger`](https://huggingface.co/sorryhyun/anima-tagger) when
 missing; `v5/` is the last in-house PE dual-encoder head (val macro-F1
-~0.236). `DEFAULT_TAGGER_DIR` / `TAGGER_HF_SUBFOLDER` in
-`anime_tools/tagger/tagger.py` are the single source of truth for both;
-the ComfyUI node and `make download-tagger` track them. Requires `timm`.
-`make download-tagger-model` (GUI: **Models** dialog → *Anima Tagger*)
-pre-fetches both halves — our checkpoint dir *and* the gated backbone.
+~0.236). `DEFAULT_TAGGER_DIR` / `TAGGER_HF_SUBFOLDER` in the torch-free
+`anime_tools/tagger/dbv4_meta.py` are the single source of truth for both
+(`tagger.py` re-exports them); the ComfyUI node and the download catalog
+track them. Requires `timm`. `python -m anime_tools.downloads tagger
+tagger_backbone` — the GUI's ⚙ Settings → **Models** rows run exactly this —
+pre-fetches both halves: our checkpoint dir *and* the gated backbone.
 Every runtime entry point (`caption-position`, `caption-autotag`, the GUI
 autotag server, DirectEdit) goes through `ensure_tagger_checkpoint`, which
 now also runs `ensure_tagger_backbone`: an offline hub-cache probe, then a
@@ -29,8 +30,9 @@ hint (a gated 401/403 is translated in `library/runtime/hf_download.py`)
 instead of a raw traceback halfway through a daemon job. Set
 `ANIMA_TAGGER_NO_AUTOFETCH=1` to refuse the fetch (offline hosts / CI). Repo
 + file set live in the torch-free `anime_tools/tagger/dbv4_meta.py`, shared
-by the loader, `make download-tagger-model` and the GUI Models dialog; the
-repo follows the installed checkpoint's `config.json["dbv4"]["repo"]`.
+by the loader and by `anime_tools/downloads.py` (the catalog behind the GUI's
+Models rows); the repo follows the installed checkpoint's
+`config.json["dbv4"]["repo"]`.
 
 > **Doc drift.** Sections below still describe the pre-v3 single-encoder +
 > PE-LoRA stack, which no longer loads — the tagger is dual-encoder
@@ -220,9 +222,10 @@ models/captioners/anima-tagger-dbv4/
 The dbv4 weights are fetched at runtime under the user's HF token (GPL-3.0,
 gated) and never bundled; the checkpoint dir holds only our files, so it
 stays moveable across machines. The gate is *auto-approve*: `hf auth login`
-(or the GUI Models dialog's token field) plus one click on
+(or the GUI Settings dialog's token field) plus one click on
 [the repo page](https://huggingface.co/animetimm/caformer_b36.dbv4-full) is
-all it takes, and `make download-tagger-model` then pulls them eagerly. They
+all it takes, and `python -m anime_tools.downloads tagger_backbone` then
+pulls them eagerly. They
 land in the **HF hub cache**, not under `models/` — that is where
 `Dbv4Backend._load_model` looks. The dbv4 hidden-state cache lives at
 `post_image_dataset/anima_tagger/dbv4/<arch>_hidden.safetensors`

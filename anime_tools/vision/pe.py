@@ -27,6 +27,15 @@ from torch.nn.init import constant_, xavier_uniform_
 from torch.nn.parameter import Parameter
 from torch.utils.checkpoint import checkpoint
 
+# Where the PE-Spatial weights come from and land is the download catalog's
+# business (torch-free, so the GUI can offer a Download button for exactly this
+# file); re-exported here because this module is where callers look for them.
+from anime_tools.downloads import (
+    PE_SPATIAL_FILENAME,
+    PE_SPATIAL_REPO,
+    default_pe_spatial_path,
+)
+
 logger = getLogger(__name__)
 
 
@@ -597,17 +606,9 @@ def build_pe_vision(name: str = "PE-Core-L14-336") -> PEVisionTransformer:
 # ---------------------------------------------------------------------------
 # PE-Spatial-B16-512 loader (the grouping / near-twin embedder backbone).
 
+# The architecture key; the repo / filename / default path it pairs with are
+# imported from anime_tools.downloads at the top of this module.
 PE_SPATIAL_CONFIG = "PE-Spatial-B16-512"
-PE_SPATIAL_REPO = "facebook/PE-Spatial-B16-512"
-PE_SPATIAL_FILENAME = "PE-Spatial-B16-512.pt"
-
-
-def default_pe_spatial_path():
-    """``<models_dir>/pe/PE-Spatial-B16-512.pt`` — the trainer's
-    ``models/pe/`` when run in-tree, ``ANIME_TOOLS_MODELS`` standalone."""
-    from anime_tools._env import models_dir
-
-    return models_dir() / "pe" / PE_SPATIAL_FILENAME
 
 
 def load_pe_spatial(
@@ -636,7 +637,7 @@ def load_pe_spatial(
         got = Path(
             hf_download(
                 what=f"{PE_SPATIAL_CONFIG} checkpoint",
-                hint="make download-pe-spatial",
+                hint="python -m anime_tools.downloads pe_spatial",
                 repo_id=PE_SPATIAL_REPO,
                 filename=PE_SPATIAL_FILENAME,
                 local_dir=str(ckpt.parent),

@@ -339,7 +339,9 @@ def test_backbone_preflight_respects_no_autofetch(tmp_path, monkeypatch):
     monkeypatch.setattr(
         "anime_tools.tagger.dbv4_meta.backbone_cached", lambda _r: False
     )
-    with pytest.raises(FileNotFoundError, match="download-tagger-model"):
+    with pytest.raises(
+        FileNotFoundError, match=r"anime_tools\.downloads tagger_backbone"
+    ):
         at.ensure_tagger_backbone(tmp_path)
 
 

@@ -28,6 +28,7 @@ if not hasattr(np, "bool"):
     np.bool = np.bool_
 
 from anime_tools._env import resolve_path
+from anime_tools.downloads import DEFAULT_SAM3_CHECKPOINT
 from anime_tools.stages.cli.position_captions import build_detect_fn
 from anime_tools.stages.instance_detection import (
     DEFAULT_SUBJECT_PROMPT_EMBED,
@@ -101,7 +102,7 @@ def build_parser() -> argparse.ArgumentParser:
         "boxed original + the crops the tagger saw + the proposed edit, one PNG "
         "per finding under <report_dir>/sheets/, named verdict-first",
     )
-    p.add_argument("--checkpoint", default="models/sam3/sam3.pt", help="SAM3 weights")
+    p.add_argument("--checkpoint", default=DEFAULT_SAM3_CHECKPOINT, help="SAM3 weights")
     p.add_argument("--tagger_dir", "--tagger-dir", dest="tagger_dir", default=None)
     p.add_argument("--device", default="cuda")
 

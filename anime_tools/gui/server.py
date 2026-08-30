@@ -21,6 +21,7 @@ from typing import Any
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, JSONResponse, Response, StreamingResponse
 
+from anime_tools import downloads as DL
 from anime_tools._env import curation_home, models_dir, resolve_path
 from anime_tools.gui import dataset as D
 from anime_tools.gui import stages as S
@@ -111,6 +112,38 @@ def create_app(
 
             login(token=token, add_to_git_credential=False)
         return data
+
+    # ---- model weights (the Settings dialog's download rows) -------------
+
+    @app.get("/api/models")
+    def list_models() -> dict[str, Any]:
+        """The download catalog, re-probed per request: a job may have just
+        installed one, and the probe is filesystem/hub-cache only."""
+        return {
+            "models": [a.to_dict() for a in DL.catalog()],
+            "models_dir": str(models_dir()),
+        }
+
+    @app.post("/api/models/download")
+    async def download_models(request: Request) -> dict[str, Any]:
+        """Fetch weights as a normal job, so downloads and stages share the one
+        slot (a 3 GB pull must not run under a stage) and the same log stream.
+        Empty ``ids`` means every missing model."""
+        body = await request.json()
+        ids = [str(i) for i in (body.get("ids") or [])]
+        unknown = [i for i in ids if i not in DL.by_id()]
+        if unknown:
+            raise HTTPException(404, f"unknown model: {', '.join(unknown)}")
+        try:
+            job = mgr.start(
+                f"download:{','.join(ids) or 'missing'}",
+                DL.__name__,
+                ids,
+                home=curation_home(),
+            )
+        except RuntimeError as e:
+            raise HTTPException(409, str(e)) from e
+        return job.to_dict()
 
     @app.post("/api/jobs")
     async def start_job(request: Request) -> dict[str, Any]:

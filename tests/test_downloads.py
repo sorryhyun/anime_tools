@@ -1,0 +1,134 @@
+"""The model download catalog: what it claims, and that the loaders agree.
+
+The catalog is what the GUI's Settings rows and ``python -m
+anime_tools.downloads`` both read, so the one thing worth pinning is that a row
+points where the loader actually looks -- a Download button that fetches a
+checkpoint into the wrong directory is worse than no button.
+"""
+
+from __future__ import annotations
+
+import pytest
+
+from anime_tools import downloads as DL
+
+
+@pytest.fixture
+def home(tmp_path, monkeypatch):
+    monkeypatch.setenv("ANIME_TOOLS_HOME", str(tmp_path))
+    monkeypatch.delenv("ANIME_TOOLS_MODELS", raising=False)
+    return tmp_path
+
+
+def test_catalog_is_torch_free():
+    """The GUI process imports this module; it must not drag torch in."""
+    import subprocess
+    import sys
+
+    code = (
+        "import sys, anime_tools.downloads as D; D.catalog(); "
+        "assert 'torch' not in sys.modules, 'torch imported'"
+    )
+    r = subprocess.run(
+        [sys.executable, "-c", code], capture_output=True, text=True, check=False
+    )
+    assert r.returncode == 0, r.stderr
+
+
+def test_every_row_is_addressable_and_serializable(home):
+    ids = [a.id for a in DL.catalog()]
+    assert len(set(ids)) == len(ids)
+    assert set(DL.by_id()) == set(ids)
+    for a in DL.catalog():
+        d = a.to_dict()
+        assert d["id"] and d["title"] and d["repo"] and d["files"] and d["used_by"]
+        assert d["installed"] == (not d["missing"])
+        if a.dest is not None:
+            # A fresh home holds nothing, and no path-backed row may claim it does.
+            # (Hub-cache rows answer for the machine, not the home, so they are
+            # legitimately "installed" here.)
+            assert d["installed"] is False and d["missing"] == list(a.files)
+
+
+def test_destinations_follow_the_curation_home(home):
+    by = DL.by_id()
+    assert by["tagger"].dest == home / "models" / "captioners" / "anima-tagger-dbv4"
+    assert by["sam3"].dest == home / "models" / "sam3"
+    assert by["pe_spatial"].dest == home / "models" / "pe"
+    # Hub-cache assets have no path under models/ to keep in sync.
+    assert by["tagger_backbone"].dest is None and by["mit_text"].dest is None
+    assert by["mit_text"].location == "Hugging Face cache"
+
+
+def test_a_present_file_flips_the_row_to_installed(home):
+    sam3 = DL.by_id()["sam3"]
+    assert sam3.missing() == [DL.SAM3_FILENAME]
+    (home / "models" / "sam3").mkdir(parents=True)
+    (home / "models" / "sam3" / DL.SAM3_FILENAME).write_bytes(b"x")
+    assert DL.by_id()["sam3"].installed
+
+
+def test_rows_land_where_the_loaders_look():
+    """The whole point of the catalog: one source of truth for locations."""
+    pytest.importorskip("torch")
+    from anime_tools.tagger import dbv4_meta
+    from anime_tools.vision import pe
+
+    by = DL.by_id()
+    assert by["tagger"].repo == dbv4_meta.TAGGER_HF_REPO
+    assert by["tagger"].subfolder == dbv4_meta.TAGGER_HF_SUBFOLDER
+    assert by["tagger"].dest == DL.resolve_path(dbv4_meta.DEFAULT_TAGGER_DIR)
+    assert by["tagger_backbone"].files == dbv4_meta.DBV4_BACKBONE_FILES
+    assert by["pe_spatial"].repo == pe.PE_SPATIAL_REPO
+    assert (
+        by["pe_spatial"].dest / pe.PE_SPATIAL_FILENAME == pe.default_pe_spatial_path()
+    )
+
+    # The SAM3 CLIs' --checkpoint default has to be inside the row's dest.
+    from anime_tools.stages.cli import position_captions as pc
+
+    default = pc.build_parser().parse_args([]).checkpoint
+    assert DL.resolve_path(default).parent == by["sam3"].dest
+    assert DL.resolve_path(default).name == DL.SAM3_FILENAME
+
+
+def test_gated_rows_carry_their_accept_terms_url(home):
+    gated = {a.id for a in DL.catalog() if a.gated}
+    assert gated == {"tagger_backbone", "sam3"}
+    for a in DL.catalog():
+        if a.gated:
+            assert a.gated == f"https://huggingface.co/{a.repo}"
+
+
+def test_cli_rejects_an_unknown_id(home, capsys):
+    assert DL.main(["nope"]) == 2
+    assert "unknown model id: nope" in capsys.readouterr().err
+
+
+def test_cli_list_reports_every_row(home, capsys):
+    assert DL.main(["--list"]) == 0
+    out = capsys.readouterr().out
+    for a in DL.catalog():
+        assert a.id in out and a.repo in out
+
+
+def test_cli_downloads_only_what_is_missing(home, monkeypatch, capsys):
+    """No id = every missing row, and a failure does not abort the rest."""
+    fetched: list[str] = []
+
+    def fake_fetch(self, log=DL._say):
+        fetched.append(self.id)
+        if self.id == "sam3":
+            raise FileNotFoundError("gated")
+
+    monkeypatch.setattr(DL.Asset, "fetch", fake_fetch)
+    (home / "models" / "pe").mkdir(parents=True)
+    (home / "models" / "pe" / DL.PE_SPATIAL_FILENAME).write_bytes(b"x")
+
+    assert DL.main([]) == 1  # sam3 failed
+    assert "pe_spatial" not in fetched and "sam3" in fetched
+    assert "gated" in capsys.readouterr().err
+
+    fetched.clear()
+    assert DL.main(["pe_spatial"]) == 0  # an explicit id re-fetches regardless
+    assert fetched == ["pe_spatial"]

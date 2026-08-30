@@ -57,7 +57,7 @@ def _is_network_error(exc: BaseException) -> bool:
     return isinstance(exc, tuple(net))
 
 
-def hf_download(*, what: str, hint: str = "make download-models", **kwargs):
+def hf_download(*, what: str, hint: str = "python -m anime_tools.downloads", **kwargs):
     """``hf_hub_download`` with pinned timeouts and a fail-fast network error.
 
     ``what`` names the asset for the error message; ``hint`` is the suggested

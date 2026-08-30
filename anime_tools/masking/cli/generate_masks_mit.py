@@ -30,9 +30,12 @@ from tqdm import tqdm
 
 from anime_tools._walk import walk_images
 
+# The repo/filename live in the download catalog so the GUI can pre-fetch this
+# net; the loader below reads it straight out of the hub cache either way.
+from anime_tools.downloads import MIT_TEXT_FILENAME as _HF_FILENAME
+from anime_tools.downloads import MIT_TEXT_REPO as _HF_REPO
+
 _ENCODER = "tu-efficientnetv2_rw_m"
-_HF_REPO = "a-b-c-x-y-z/Manga-Text-Segmentation-2025"
-_HF_FILENAME = "model.pth"
 
 
 def _convert_batchnorm_to_groupnorm(module: nn.Module) -> None:

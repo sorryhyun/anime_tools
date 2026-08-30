@@ -67,23 +67,20 @@ from anime_tools.tagger.dbv4_backend import (
     rename_recovery_from_rules,
 )
 
-logger = logging.getLogger(__name__)
+# Checkpoint layout / repo facts live in the torch-free dbv4_meta so the
+# download catalog and the ComfyUI loader can read them without torch; they are
+# re-exported here because every caller imports them from this module.
+from anime_tools.tagger.dbv4_meta import (
+    DBV4_OPTIONAL_FILES,
+    DBV4_REQUIRED_FILES,
+    DEFAULT_TAGGER_DIR,
+    TAGGER_HF_REPO,
+    TAGGER_HF_SUBFOLDER,
+    TAGGER_OPTIONAL_FILES,
+    TAGGER_REQUIRED_FILES,
+)
 
-# Auto-fetch repo when ckpt_dir is missing required files (mirrors the ComfyUI
-# loader). Live checkpoint lives under the `dbv4/` subfolder (2026-08-27: the
-# external caformer_b36 backend + our sidecar — vocab / rules / groups /
-# thresholds / sidecar only, the GPL-3.0 backbone weights come from the
-# upstream gated repo); `v5/` is the last in-house PE dual-encoder head, kept
-# as the fallback. `v3/` and the legacy v2 root files were deleted 2026-08-29.
-TAGGER_HF_REPO = "sorryhyun/anima-tagger"
-TAGGER_HF_SUBFOLDER = "dbv4"
-TAGGER_REQUIRED_FILES = ("config.json", "model.safetensors", "vocab.json", "rules.yaml")
-TAGGER_OPTIONAL_FILES = ("thresholds.safetensors", "groups.yaml")
-# dbv4-backed checkpoints carry no model.safetensors (weights come from the
-# gated upstream repo); the sidecar pair is optional.
-DBV4_REQUIRED_FILES = ("config.json", "vocab.json", "rules.yaml")
-DBV4_OPTIONAL_FILES = TAGGER_OPTIONAL_FILES + ("sidecar.safetensors", "sidecar.json")
-DEFAULT_TAGGER_DIR = "models/captioners/anima-tagger-dbv4"
+logger = logging.getLogger(__name__)
 
 
 def ensure_tagger_checkpoint(
@@ -191,7 +188,8 @@ def ensure_tagger_backbone(ckpt_dir: str | Path) -> str:
     if os.environ.get("ANIMA_TAGGER_NO_AUTOFETCH"):
         raise FileNotFoundError(
             f"AnimaTagger backbone {repo} is not in the HF cache and "
-            f"ANIMA_TAGGER_NO_AUTOFETCH is set. Run `make download-tagger-model` "
+            f"ANIMA_TAGGER_NO_AUTOFETCH is set. Run "
+            f"`python -m anime_tools.downloads tagger_backbone` "
             f"({gated_hint(repo)})."
         )
     from anime_tools._hf import hf_download
@@ -371,8 +369,9 @@ class AnimaTagger:
                 f"unsupported tagger backend {self.backend_kind!r} in "
                 f"{self.ckpt_dir / 'config.json'}: the legacy in-house 'pe' "
                 "dual-encoder head was removed 2026-08-30. Use a dbv4-backed "
-                f"checkpoint (default {DEFAULT_TAGGER_DIR}; `make download-models` "
-                "or `python -m anime_tools.tagger.cli.build_dbv4_ckpt`)."
+                f"checkpoint (default {DEFAULT_TAGGER_DIR}; "
+                "`python -m anime_tools.downloads tagger` or "
+                "`python -m anime_tools.tagger.cli.build_dbv4_ckpt`)."
             )
         self._dbv4: Dbv4Backend | None = None
         self._sidecar: SidecarHead | None = None

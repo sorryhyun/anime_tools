@@ -127,7 +127,7 @@ th { color:var(--dim); position:sticky; top:0; background:var(--bg) }
 td.mono { font-family:var(--font-mono) }
 img.thumb { max-height:96px; max-width:160px; display:block; border-radius:3px }
 pre.json { font:12px var(--font-mono); white-space:pre-wrap; margin:0 }
-dialog { background:var(--panel); color:var(--fg); border:1px solid var(--line); border-radius:8px; min-width:520px; max-width:80vw }
+dialog { background:var(--panel); color:var(--fg); border:1px solid var(--line); border-radius:8px; min-width:520px; max-width:80vw; max-height:88vh }
 dialog h4 { margin:16px 0 4px; color:var(--dim); font-size:11px; text-transform:uppercase; letter-spacing:.06em }
 dialog::backdrop { background:#0008 }
 dialog h3 { margin:0 0 10px }
@@ -137,3 +137,13 @@ dialog h3 { margin:0 0 10px }
 .kv { display:grid; grid-template-columns:110px 1fr; gap:6px 12px; font-size:13px; align-items:baseline } .kv b { color:var(--dim); font-weight:500 }
 .kv .dim { display:block; margin-top:2px }
 .err { color:var(--err) }
+/* Settings > Models: one row per downloadable checkpoint, its own scroller so
+   the dialog stays a dialog however many models the catalog grows to. */
+.models { display:flex; flex-direction:column; gap:6px; max-height:34vh; overflow:auto }
+.modelrow { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:10px; align-items:center; border:1px solid var(--line); border-radius:6px; padding:8px 10px }
+.modelrow .mi { display:flex; flex-direction:column; gap:2px; min-width:0 }
+.modelrow .mh { display:flex; align-items:center; gap:8px; min-width:0 }
+.modelrow .mi > span { overflow:hidden; text-overflow:ellipsis; white-space:nowrap }
+.modelrow .badge { flex:none }
+.modelrow a { color:var(--accent) }
+.badge.miss { color:var(--warn) }

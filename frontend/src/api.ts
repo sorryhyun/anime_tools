@@ -7,6 +7,7 @@ import type {
   ItemDetail,
   Job,
   Listing,
+  ModelCatalog,
   Parsed,
   Settings,
   Stage,
@@ -37,6 +38,9 @@ export const api = {
   settings: () => req<Settings>("/api/settings"),
   putSettings: (body: Record<string, unknown>) =>
     req<Settings>("/api/settings", json("PUT", body)),
+  models: () => req<ModelCatalog>("/api/models"),
+  /** Fetch weights as a job; `[]` means every missing model. */
+  downloadModels: (ids: string[]) => req<Job>("/api/models/download", json("POST", { ids })),
   jobs: () => req<Job[]>("/api/jobs"),
   job: (id: string) => req<Job>(`/api/jobs/${id}`),
   start: (stage: string, values: Values, apply: boolean) =>

@@ -36,6 +36,7 @@ from PIL import Image, ImageDraw
 
 from anime_tools._env import resolve_path
 from anime_tools._walk import walk_images
+from anime_tools.downloads import DEFAULT_SAM3_CHECKPOINT
 
 COLORS = [
     (255, 60, 60),
@@ -95,7 +96,7 @@ def parse_args() -> argparse.Namespace:
         help="Processor confidence floor — low on purpose, we want to see every "
         "proposal including the ones the audit filters out",
     )
-    p.add_argument("--checkpoint", default="models/sam3/sam3.pt")
+    p.add_argument("--checkpoint", default=DEFAULT_SAM3_CHECKPOINT)
     p.add_argument("--device", default="cuda")
     p.add_argument("--out", default="post_image_dataset/captions/mask_probe")
     p.add_argument(
