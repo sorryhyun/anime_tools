@@ -15,7 +15,8 @@ dependencies = [
     "rich>=13",
     # Anima Tagger (dbv4 caformer backbone via timm; GPL weights fetched from the gated upstream repo at load)
     # + PE-Spatial grouping (vendored tower, weights fetched from the Hub at load).
-    "torch>=2.4",
+    "torch>=2.12",
+    "torchvision",
     "timm>=1.0",
     "einops",
     # Tokenizer-length checks in the correction / position stages.
@@ -23,6 +24,23 @@ dependencies = [
     "sentencepiece",
     # Position clauses, multiview audit, masking: SAM3 subject detection, contact sheets.
     "sam3 @ git+https://github.com/facebookresearch/sam3.git",
+    # sam3 under-declares what it imports; the next three rows are all "make `import sam3`
+    # work". (1) sam3.model_builder does `import pkg_resources` at module scope, to locate the
+    # CLIP bpe file, but never depends on setuptools -- and setuptools no longer ships
+    # pkg_resources (84 has none), so any sam3 import dies with ModuleNotFoundError once torch
+    # pulls a current setuptools in. Hold it on the last line that still has pkg_resources
+    # (80.x; it warns) until sam3 moves to importlib.resources.
+    "setuptools<81",
+    # (2) sam3.model.edt `import triton`s at module scope, and the CUDA nms /
+    # connected-components paths really do run triton kernels. PyPI triton is linux-only and
+    # torch's win32 wheel doesn't pull one, so on Windows take the triton-windows build --
+    # kept in step with the triton that torch 2.13 pairs with on linux (3.7.x).
+    "triton-windows>=3.7,<3.8; sys_platform == 'win32'",
+    # (3) model_builder reaches into sam3.train.data and sam3.model.sam3_video_predictor,
+    # which import pycocotools / psutil -- upstream declares pycocotools only under its `dev`
+    # extra and psutil nowhere, so we bring both ourselves.
+    "pycocotools>=2.0.8",
+    "psutil",
     "matplotlib",
     # MIT/ComicTextDetector text masks. onnxruntime(-gpu) stays optional: the CTD gate falls
     # back to cv2.dnn without it; not pinned because onnxruntime vs onnxruntime-gpu conflict.
@@ -52,6 +70,20 @@ default-groups = ["dev"]
 # touches a removed alias. Override the pin rather than fork; verified by importing
 # sam3.model_builder / sam3.model.sam3_image_processor under numpy 2.4.
 override-dependencies = ["numpy>=2.0"]
+
+# Windows has no CUDA wheels on PyPI -- `pip install torch` there is the +cpu build, so a
+# plain `uv sync` leaves --device cuda raising "Torch not compiled with CUDA enabled".
+# (Linux PyPI torch already ships CUDA, hence the marker.) cu130 is the only index that
+# carries cp313 win_amd64 wheels for the versions we resolve to, and Blackwell (sm_120)
+# needs CUDA >= 12.8 anyway.
+[[tool.uv.index]]
+name = "pytorch-cu130"
+url = "https://download.pytorch.org/whl/cu130"
+explicit = true
+
+[tool.uv.sources]
+torch = [{ index = "pytorch-cu130", marker = "sys_platform == 'win32'" }]
+torchvision = [{ index = "pytorch-cu130", marker = "sys_platform == 'win32'" }]
 
 [build-system]
 requires = ["setuptools>=68.0"]
