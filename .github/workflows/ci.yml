@@ -20,3 +20,7 @@ jobs:
       - run: uv run ruff check .
         continue-on-error: true
       - run: uv run pytest -q -n auto
+      - uses: oven-sh/setup-bun@v2
+      # The built frontend (anime_tools/gui/static/index.html) is committed; fail if stale.
+      - run: scripts/build_frontend.sh
+      - run: git diff --exit-code -- anime_tools/gui/static/index.html

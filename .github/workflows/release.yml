@@ -12,6 +12,10 @@ jobs:
       - uses: astral-sh/setup-uv@v5
         with:
           python-version: "3.13"
+      - uses: oven-sh/setup-bun@v2
+      # The built frontend is committed; rebuild and refuse to release a stale one.
+      - run: scripts/build_frontend.sh
+      - run: git diff --exit-code -- anime_tools/gui/static/index.html
       - run: uv build
       - uses: softprops/action-gh-release@v2
         with:

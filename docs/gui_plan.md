@@ -7,8 +7,12 @@ Status: v1 shipped 2026-08-30 (`anime_tools/gui/`, `install.sh` / `install.ps1`,
   `masking.cli.generate_masks_mit` imports torch at module level, so the server
   process imports no stage module at all. `build_argv` works from the cached
   field list.
-- The frontend is the **vanilla `index.html`** fallback (committed, no bun
-  build); the Solid/bun app is still milestone 3.
+- Frontend (milestone 3, 2026-08-30): Solid + TypeScript in `frontend/`, built
+  by **Vite via bun** (`vite-plugin-solid` + `vite-plugin-singlefile`) into a
+  single self-contained `anime_tools/gui/static/index.html`. Unlike the plan,
+  that file is **committed**, not gitignored: `install.sh` installs from git, so
+  a gitignored `static/` would ship no UI. CI and the release workflow rebuild
+  it and fail on drift. `bun` remains dev/CI-only.
 - No `sse-starlette`: SSE is a plain `StreamingResponse`.
 - Settings live in `<home>/.anime_tools_gui.json`; the HF token goes through
   `huggingface_hub.login` and is never read back.
