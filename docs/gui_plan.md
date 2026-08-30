@@ -8,8 +8,13 @@ Status: v1 shipped 2026-08-30 (`anime_tools/gui/`, `install.sh` / `install.ps1`,
   process imports no stage module at all. `build_argv` works from the cached
   field list.
 - Frontend (milestone 3, 2026-08-30): Solid + TypeScript in `frontend/`, built
-  by **Vite via bun** (`vite-plugin-solid` + `vite-plugin-singlefile`) into a
-  single self-contained `anime_tools/gui/static/index.html`. Unlike the plan,
+  by **bun itself** — `frontend/build.ts` calls `Bun.build` and folds the
+  script, the CSS and the bundled Pretendard woff2 into a single
+  self-contained `anime_tools/gui/static/index.html`. Vite and its two plugins
+  were dropped 2026-08-30 for the native bundler; the only thing Bun can't do
+  is Solid's compile-time JSX transform, so `frontend/solid-plugin.ts` runs
+  `babel-preset-solid` as a bundler plugin (and `bunfig.toml` hands the dev
+  server the same one). Unlike the plan,
   that file is **committed**, not gitignored: `install.sh` installs from git, so
   a gitignored `static/` would ship no UI. CI and the release workflow rebuild
   it and fail on drift. `bun` remains dev/CI-only.
@@ -114,10 +119,14 @@ Probe/bench CLIs (`probe_*`, `ab_*`, `tagger.cli.*`) stay CLI-only.
   Apply / Cancel + live log + report tab (renders `report.json` as a table,
   with image thumbnails where the report names files).
 - No router, no state library; ~1k lines target.
-- `bun` is a **dev/CI dependency only**. `bun run build` emits
-  `anime_tools/gui/static/`; the release workflow builds it and the wheel
-  ships it. Users never run bun. `static/` is gitignored; a `make`-less
-  `scripts/build_frontend.sh` is the one build entry.
+- `bun` is a **dev/CI dependency only**, and it is the bundler as well as the
+  runner. `bun run build` emits `anime_tools/gui/static/index.html`; the
+  release workflow builds it and the wheel ships it. Users never run bun.
+  A `make`-less `scripts/build_frontend.sh` is the one build entry (as built,
+  `static/index.html` is committed rather than gitignored — see above).
+- The UI font is Pretendard, the same face `anima_lora/gui/` bundles, kept as
+  one variable woff2 in `frontend/fonts/` and inlined as a base64 `data:` URL
+  so the shipped file makes no font request. See `frontend/fonts/README.md`.
 - Fallback if we don't want a JS toolchain yet: a single vanilla
   `index.html` + `<script>` using `EventSource`. Same API, swap later.
 

@@ -1,6 +1,19 @@
-:root { --bg:#14161a; --panel:#1c1f25; --line:#2a2e36; --fg:#e6e6e6; --dim:#8b919c; --accent:#7aa2f7; --ok:#9ece6a; --warn:#e0af68; --err:#f7768e; --sel:#262b35; --input:#0f1115; }
+/* Pretendard, the same UI face the desktop trainer GUI bundles. One variable
+   file (wght 45-930), inlined as a base64 data: URL by build.ts -- the shipped
+   index.html makes no font request, so the GUI looks identical offline. */
+@font-face {
+  font-family: Pretendard;
+  src: url("../fonts/PretendardVariable.subset.woff2") format("woff2");
+  font-weight: 45 930;
+  font-style: normal;
+  font-display: swap;
+}
+
+/* Pretendard leads; the subset stops at Hangul, so Han (JA/ZH) and emoji fall
+   back to the system families -- the same cascade anima_lora's Qt theme uses. */
+:root { --font-ui:Pretendard,"Apple SD Gothic Neo","Malgun Gothic","Noto Sans CJK KR",system-ui,sans-serif,"Apple Color Emoji","Segoe UI Emoji","Noto Color Emoji"; --font-mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; --bg:#14161a; --panel:#1c1f25; --line:#2a2e36; --fg:#e6e6e6; --dim:#8b919c; --accent:#7aa2f7; --ok:#9ece6a; --warn:#e0af68; --err:#f7768e; --sel:#262b35; --input:#0f1115; }
 * { box-sizing:border-box }
-body { margin:0; font:14px/1.45 system-ui,sans-serif; background:var(--bg); color:var(--fg); height:100vh; overflow:hidden }
+body { margin:0; font:14px/1.45 var(--font-ui); background:var(--bg); color:var(--fg); height:100vh; overflow:hidden }
 #root { height:100vh; display:grid; grid-template-columns:230px 1fr; grid-template-rows:44px 1fr }
 header { grid-column:1/3; display:flex; align-items:center; gap:14px; padding:0 14px; border-bottom:1px solid var(--line); background:var(--panel) }
 header b { color:var(--accent) }
@@ -19,9 +32,9 @@ main { display:grid; grid-template-columns:minmax(340px,1fr) minmax(400px,1.3fr)
 fieldset { border:1px solid var(--line); border-radius:6px; margin:0 0 12px; padding:8px 12px }
 legend { color:var(--dim); font-size:12px; padding:0 4px }
 .row { display:grid; grid-template-columns:180px 1fr; gap:8px; align-items:center; padding:3px 0 }
-.row label { font-family:ui-monospace,monospace; font-size:12px; color:#c8cdd6; overflow:hidden; text-overflow:ellipsis; white-space:nowrap }
+.row label { font-family:var(--font-mono); font-size:12px; color:#c8cdd6; overflow:hidden; text-overflow:ellipsis; white-space:nowrap }
 .row label.req::after { content:" *"; color:var(--err) }
-input[type=text], input[type=number], input[type=password], select, textarea { width:100%; background:var(--input); color:var(--fg); border:1px solid var(--line); border-radius:4px; padding:5px 7px; font:13px ui-monospace,monospace }
+input[type=text], input[type=number], input[type=password], select, textarea { width:100%; background:var(--input); color:var(--fg); border:1px solid var(--line); border-radius:4px; padding:5px 7px; font:13px var(--font-mono) }
 input.dirty, select.dirty, textarea.dirty { border-color:#4b5a80 }
 textarea { min-height:52px; resize:vertical }
 .pathrow { display:flex; gap:4px } .pathrow input { flex:1 }
@@ -36,20 +49,20 @@ button.link { background:none; border:none; color:var(--accent); padding:0; font
 .tabs a { padding:6px 12px; cursor:pointer; color:var(--dim); border-radius:6px 6px 0 0 }
 .tabs a.sel { color:var(--fg); background:var(--panel) }
 .pane { overflow:auto; padding:12px }
-pre.log { margin:0; font:12px/1.4 ui-monospace,monospace; white-space:pre-wrap; word-break:break-all }
+pre.log { margin:0; font:12px/1.4 var(--font-mono); white-space:pre-wrap; word-break:break-all }
 .badge { font-size:11px; padding:1px 7px; border-radius:10px; background:#2a2f3a; color:var(--dim) }
 .badge.running { color:var(--warn) } .badge.done { color:var(--ok) } .badge.failed, .badge.cancelled { color:var(--err) }
 table { border-collapse:collapse; font-size:12px; width:100% }
 td, th { border-bottom:1px solid var(--line); padding:4px 6px; text-align:left; vertical-align:top; max-width:360px; overflow:hidden; text-overflow:ellipsis }
 th { color:var(--dim); position:sticky; top:0; background:var(--bg) }
-td.mono { font-family:ui-monospace,monospace }
+td.mono { font-family:var(--font-mono) }
 img.thumb { max-height:96px; max-width:160px; display:block; border-radius:3px }
-pre.json { font:12px ui-monospace,monospace; white-space:pre-wrap; margin:0 }
+pre.json { font:12px var(--font-mono); white-space:pre-wrap; margin:0 }
 dialog { background:var(--panel); color:var(--fg); border:1px solid var(--line); border-radius:8px; min-width:420px; max-width:80vw }
 dialog::backdrop { background:#0008 }
 dialog h3 { margin:0 0 10px }
 .dlg-actions { display:flex; gap:8px; justify-content:flex-end; margin-top:12px }
-.picker ul { list-style:none; padding:0; margin:8px 0; max-height:50vh; overflow:auto; font-family:ui-monospace,monospace; font-size:13px }
+.picker ul { list-style:none; padding:0; margin:8px 0; max-height:50vh; overflow:auto; font-family:var(--font-mono); font-size:13px }
 .picker li { padding:3px 6px; cursor:pointer; border-radius:3px } .picker li:hover { background:var(--sel) }
 .kv { display:grid; grid-template-columns:140px 1fr; gap:6px 12px; font-size:13px } .kv b { color:var(--dim); font-weight:500 }
 .err { color:var(--err) }

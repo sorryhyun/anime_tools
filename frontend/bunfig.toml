@@ -1,0 +1,4 @@
+# Solid's JSX is a compile-time transform, so the dev server's bundler needs the
+# same plugin `build.ts` passes to `Bun.build`.
+[serve.static]
+plugins = ["./solid-plugin.ts"]

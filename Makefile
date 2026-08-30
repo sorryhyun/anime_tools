@@ -13,5 +13,5 @@ test:
 	uv run pytest -q -n auto
 frontend:  ## rebuild anime_tools/gui/static/index.html from frontend/ (needs bun)
 	scripts/build_frontend.sh
-frontend-dev:  ## Vite dev server with HMR, proxying /api to a running `make gui`
-	cd frontend && bun install && bun run dev
+frontend-dev:  ## bun dev server with hot reload, proxying /api to a running `make gui`
+	cd frontend && bun install && ANIME_TOOLS_API=http://$(GUI_HOST):$(GUI_PORT) bun run dev

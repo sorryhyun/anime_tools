@@ -3,17 +3,19 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "vite",
-    "build": "vite build",
+    "dev": "bun run dev.ts",
+    "build": "bun run build.ts",
     "check": "tsc --noEmit"
   },
   "dependencies": {
     "solid-js": "^1.9.5"
   },
   "devDependencies": {
-    "typescript": "^5.7.3",
-    "vite": "^6.2.0",
-    "vite-plugin-singlefile": "^2.2.0",
-    "vite-plugin-solid": "^2.11.6"
+    "@babel/core": "^7.29.7",
+    "@babel/preset-typescript": "^7.28.5",
+    "@types/babel__core": "^7.20.5",
+    "@types/bun": "^1.4.0",
+    "babel-preset-solid": "^1.9.15",
+    "typescript": "^5.7.3"
   }
 }
