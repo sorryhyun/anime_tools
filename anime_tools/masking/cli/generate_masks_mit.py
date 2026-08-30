@@ -13,20 +13,21 @@ the stroke-accurate mask. Trade-off: sfx text the blk head misses is no longer
 masked — use --no-ctd-gate to restore raw UNet++ behavior.
 """
 
+from __future__ import annotations
+
 import argparse
 from concurrent.futures import ThreadPoolExecutor
+from functools import cache
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import cv2
 import numpy as np
-import segmentation_models_pytorch as smp
-import torch
-import torch.nn.functional as F
-from albumentations import Compose, Normalize
-from albumentations.pytorch import ToTensorV2
 from PIL import Image
-from torch import nn
 from tqdm import tqdm
+
+if TYPE_CHECKING:
+    from torch import nn
 
 from anime_tools._walk import walk_images
 
@@ -40,6 +41,8 @@ _ENCODER = "tu-efficientnetv2_rw_m"
 
 def _convert_batchnorm_to_groupnorm(module: nn.Module) -> None:
     """Replace BatchNorm2d with GroupNorm in decoder (matches training setup)."""
+    from torch import nn
+
     for name, child in module.named_children():
         if isinstance(child, nn.BatchNorm2d):
             num_channels = child.num_features
@@ -61,6 +64,12 @@ def _convert_batchnorm_to_groupnorm(module: nn.Module) -> None:
 
 
 def _load_model(model_path: str | None = None, device: str = "cuda") -> nn.Module:
+    # segmentation_models_pytorch costs ~2s to import (it pulls timm + torchvision
+    # eagerly). Only the weight-loading path needs it, and `--help` / the GUI's
+    # schema dump import this module just for its parser -- keep it out of both.
+    import segmentation_models_pytorch as smp
+    import torch
+
     model = smp.UnetPlusPlus(
         encoder_name=_ENCODER,
         encoder_weights="imagenet",
@@ -83,38 +92,50 @@ def _load_model(model_path: str | None = None, device: str = "cuda") -> nn.Modul
     return model
 
 
-_transform = Compose(
-    [
-        Normalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225)),
-        ToTensorV2(),
-    ]
-)
+@cache
+def _transform():
+    """Albumentations is another second of import; build it on first use."""
+    from albumentations import Compose, Normalize
+    from albumentations.pytorch import ToTensorV2
+
+    return Compose(
+        [
+            Normalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225)),
+            ToTensorV2(),
+        ]
+    )
 
 
-@torch.no_grad()
 def _detect_mask(
     model: nn.Module,
     image: np.ndarray,
     device: str = "cuda",
     text_threshold: float | None = None,
 ) -> np.ndarray:
+    import torch
+    import torch.nn.functional as F
+
     h, w = image.shape[:2]
 
     pad_h = (32 - h % 32) % 32
     pad_w = (32 - w % 32) % 32
 
-    tensor = _transform(image=image)["image"].unsqueeze(0).to(device)
+    with torch.no_grad():
+        tensor = _transform()(image=image)["image"].unsqueeze(0).to(device)
 
-    if pad_h > 0 or pad_w > 0:
-        tensor = F.pad(tensor, (0, pad_w, 0, pad_h), mode="constant", value=0)
+        if pad_h > 0 or pad_w > 0:
+            tensor = F.pad(tensor, (0, pad_w, 0, pad_h), mode="constant", value=0)
 
-    if device == "cuda" or (isinstance(device, torch.device) and device.type == "cuda"):
-        with torch.amp.autocast("cuda"):
+        is_cuda = device == "cuda" or (
+            isinstance(device, torch.device) and device.type == "cuda"
+        )
+        if is_cuda:
+            with torch.amp.autocast("cuda"):
+                logits = model(tensor)
+        else:
             logits = model(tensor)
-    else:
-        logits = model(tensor)
 
-    prob_map = logits.sigmoid()[0, 0, :h, :w].cpu().numpy()
+        prob_map = logits.sigmoid()[0, 0, :h, :w].cpu().numpy()
 
     if text_threshold is not None:
         prob_map = (prob_map > text_threshold).astype(np.float32)

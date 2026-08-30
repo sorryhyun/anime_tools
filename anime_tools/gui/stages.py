@@ -366,8 +366,9 @@ def report_path(
 
 
 def dump_schemas() -> dict[str, dict[str, Any]]:
-    """Every stage's schema, keyed by id. Imports the CLI modules (some pull
-    torch) — call it in a child process from anything long-lived."""
+    """Every stage's schema, keyed by id. Imports every stage CLI module — call
+    it in a child process from anything long-lived, so a heavy import a stage
+    picks up later cannot leak into the caller."""
     return {s.id: schema(s) for s in STAGES}
 
 
@@ -393,8 +394,11 @@ def dump_schemas_in_child() -> dict[str, dict[str, Any]]:
 
 # ---- on-disk memo for the child dump ------------------------------------
 #
-# The child interpreter costs seconds (one stage CLI imports torch at module
-# level) and it is on the GUI's startup path, so its output is memoised on disk.
+# The child interpreter is on the GUI's startup path, so its output is memoised
+# on disk. Every stage CLI now defers its heavy imports (torch, smp,
+# albumentations) into the functions that need them, which took the dump from
+# ~3.4s to ~0.2s -- the memo is no longer load-bearing, but it keeps startup
+# flat if a stage regains a slow import.
 
 
 def cache_dir() -> Path:

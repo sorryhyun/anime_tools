@@ -3,6 +3,10 @@
 GUI_HOST ?= 127.0.0.1
 GUI_PORT ?= 8790
 GUI_ARGS ?=
+# xdist is a net loss on this suite: it is ~5s of work, and every worker pays the
+# ~1.4s `import torch` again (measured 2026-08-30: -n auto = 7.1s / 36s CPU vs 5.2s
+# serial). Kept as a knob for when the suite outgrows that -- `make test PYTEST_ARGS=-n4`.
+PYTEST_ARGS ?=
 
 # Windows has no sh(1) to count on -- GNU Make falls back to cmd.exe when Git Bash
 # is absent, and the recipes then mean something else entirely -- so pin PowerShell
@@ -34,7 +38,7 @@ sync:
 gui:  ## run the web GUI from this checkout and open it in a browser
 	uv run anime-tools-gui --host $(GUI_HOST) --port $(GUI_PORT) --open $(GUI_ARGS)
 test:
-	uv run pytest -q -n auto
+	uv run pytest -q $(PYTEST_ARGS)
 frontend:  ## rebuild anime_tools/gui/static/index.html from frontend/ (needs bun)
 	$(BUILD_FRONTEND)
 frontend-dev:  ## bun dev server with hot reload, proxying /api to a running `make gui`
