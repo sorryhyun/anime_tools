@@ -11,9 +11,9 @@ jobs:
       - uses: astral-sh/setup-uv@v5
         with:
           python-version: "3.13"
-      # Base install + gui + tokenizers: the caption / GUI / boundary tests. The
-      # torch extras (tagger, stages, grouping, masking) are too heavy for CI.
-      - run: uv sync --extra gui --extra tokenizers
+      # Every extra, with CPU torch (the tagger/grouping/masking tests run on
+      # CPU; conftest blanks CUDA_VISIBLE_DEVICES anyway).
+      - run: uv sync --all-extras --index https://download.pytorch.org/whl/cpu
       - run: uv run ruff format --check .
       # Lint rules live in the maintainer's user-level ruff config (see CLAUDE.md);
       # the default rule set here is advisory only.

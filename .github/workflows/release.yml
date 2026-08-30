@@ -19,4 +19,5 @@ jobs:
           files: |
             install.sh
             install.ps1
-            dist/*
+            dist/*.whl
+            dist/*.tar.gz
