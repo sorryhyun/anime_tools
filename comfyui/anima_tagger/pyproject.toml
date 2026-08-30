@@ -1,0 +1,22 @@
+[project]
+name = "comfyui-anima-tagger"
+description = "Anima Tagger for ComfyUI: a multi-label image tagger trained on the Anima caption distribution. Provides a loader (image -> tagger socket) and a captioner (image -> caption string), reusable in DirectEdit, prompt pre-fill, and any workflow that needs Anima-formatted tags."
+version = "0.3.0"
+license = { file = "LICENSE" }
+# The tagger itself is the `anime_tools` package (git dependency, see
+# requirements.txt); torch / numpy / pillow come with ComfyUI.
+dependencies = [
+    "anime-tools @ git+https://github.com/sorryhyun/anime_tools",
+    "torch",
+    "numpy",
+    "pillow",
+]
+
+[project.urls]
+Repository = "https://github.com/sorryhyun/anime_tools"
+Documentation = "https://github.com/sorryhyun/anime_tools/blob/main/comfyui/anima_tagger/README.md"
+
+[tool.comfy]
+PublisherId = "sorryhyun"
+DisplayName = "Anima Tagger"
+Icon = ""
