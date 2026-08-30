@@ -1,7 +1,7 @@
 [project]
 name = "anime-tools"
 version = "0.1.0"
-description = "Dataset curation for anime diffusion training: caption grammar + polishing, the Anima Tagger (dbv4), position clauses, multiview audit."
+description = "Dataset curation for anime diffusion training: caption grammar + polishing, the Anima Tagger (dbv4), position clauses, multiview audit, PE-Spatial grouping, SAM3/MIT masking."
 readme = "README.md"
 license = { file = "LICENSE" }
 requires-python = ">=3.13"
@@ -23,7 +23,11 @@ tagger = ["torch>=2.4", "timm>=1.0", "transformers>=4.45"]
 tokenizers = ["transformers>=4.45", "sentencepiece"]
 # Position clauses + multiview audit (SAM3 subject detection, contact sheets).
 stages = ["anime-tools[tagger,tokenizers]", "sam3 @ git+https://github.com/facebookresearch/sam3.git", "matplotlib"]
-all = ["anime-tools[stages]"]
+# Dataset grouping / near-twin features on PE-Spatial-B16-512 (vendored tower, weights fetched from the Hub at load).
+grouping = ["torch>=2.4", "einops", "timm>=1.0"]
+# SAM3 subject masks + MIT/ComicTextDetector text masks.
+masking = ["torch>=2.4", "sam3 @ git+https://github.com/facebookresearch/sam3.git", "segmentation-models-pytorch>=0.3.4", "albumentations>=1.4.0", "opencv-python>=4.11", "onnxruntime"]
+all = ["anime-tools[stages,grouping,masking]"]
 
 [dependency-groups]
 dev = ["pytest>=8", "pytest-xdist", "ruff"]
