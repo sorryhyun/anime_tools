@@ -82,6 +82,33 @@ Default `--apply_verdicts` is `multiple views` only, `--apply_confidence` is
 verbatim before-text and is the only undo. Follow any apply with
 `make preprocess-te`.
 
+**`--from_report <report.json>`**: replay a dry run's findings instead of
+re-auditing — the report already holds `caption_path`, the before-text
+(`caption`) and the `proposed` caption, so the write needs **no SAM3 and no
+tagger** (the run does not import `torch`; pinned by
+`tests/test_stage_replay.py`). The verdict/confidence gate is still applied at
+replay time, so one audit pass can be replayed at several tiers:
+
+```bash
+python -m anime_tools.stages.cli.audit_multiview            # the model pass, once
+python -m anime_tools.stages.cli.audit_multiview --apply \
+    --from_report post_image_dataset/captions/multiview_audit/report.json \
+    --apply_verdicts 'multiple views,extra-character'
+```
+
+Same staleness rules as the other two stages (full table in
+[`position_captions.md`](position_captions.md)): a report whose recorded
+`summary.src`/`dst` disagree with this run, or whose own `applied` is true, is
+refused; a master caption edited since the audit is skipped as `skip:drifted`,
+never overwritten — the same guard `apply_findings` applies in-process. Output
+goes to `apply_report.json` (never over the `report.json` it read), whose
+top-level `written[]` lists the relative image paths actually written.
+
+This is the *gate-based* replay. The reviewer-curated workflow — hand-picking
+findings across tiers from the contact sheets, with a revert manifest — is still
+`anime_tools/stages/cli/audit_apply_curated.py`, which was already a
+report-replay tool and is unchanged.
+
 **Contact sheets** (`<report_dir>/sheets/`, on by default): one PNG per finding —
 boxed original, the crops the tagger actually saw colour-matched to their box, the
 identity read off each, the verdict and its witnesses, and the proposed caption.

@@ -483,14 +483,17 @@ live train run instead of OOM-colliding. `--queue` detaches, `--inline` bypasses
 `post_image_dataset/captions/position/report.json`:
 
 ```
-summary: {applied, rewrite, attribution_margin, seen, candidates, proposed,
-          written, rewritten, moved_tags, pinned_tags{rule: n},
-          skipped{reason: n}, clause_tags, novel_tags, reuse_ratio,
-          max_tokens, over_token_budget[]}
+summary: {applied, rewrite, src, dst, path_pattern, attribution_margin, seen,
+          candidates, proposed, written, rewritten, moved_tags,
+          pinned_tags{rule: n}, skipped{reason: n}, clause_tags, novel_tags,
+          reuse_ratio, max_tokens, over_token_budget[]}
 images[]: {image, caption_path, status, detected, expected, original, proposed,
            tokens, instances[{position, box, score, tags, crop}],
            moved[{tag, position, margin}], pinned{tag: rule}}
 ```
+
+`summary.src` / `summary.dst` / `summary.path_pattern` exist so `--from_report`
+(below) can refuse to replay a report against a different pair of trees.
 
 With `--crops` it also exports the **exact mask-blanked pixels the tagger saw**,
 mirroring the dataset layout, named `<stem>_<i>_<position>.png` — the only way to
@@ -503,6 +506,58 @@ TE-cache time and, given the padding invariant, never reaches the model. v2 help
 here — asserting each attribute once instead of twice saves ~6.5% of tokens and
 took the corpus's one over-budget caption back under the cap — but check
 `summary.over_token_budget` before applying anyway.
+
+### `--from_report` — apply a dry run without re-running the models
+
+The review flow is *dry run → read the report → apply*, and the apply used to
+re-run the entire detect → crop → tag pass to produce text the dry run had
+already written down. It doesn't have to: `images[].caption_path` is the
+destination and `images[].proposed` is the exact text, so the write needs no
+pixels at all.
+
+```bash
+make caption-position                                      # the model pass, once
+make caption-position ARGS="--apply --from_report post_image_dataset/captions/position/report.json"
+make preprocess-te                                         # still REQUIRED
+```
+
+**No model is loaded** on that second line — not SAM3, not the tagger; the run
+does not even import `torch` (pinned by `tests/test_stage_replay.py`). Same flag
+on `caption-autotag` and `audit-multiview`; the shared implementation is
+`anime_tools/stages/replay.py`.
+
+What it refuses, and what it skips:
+
+| Situation | Result |
+|---|---|
+| Report's `summary.src`/`dst` ≠ this run's `--src`/`--dst` | **refused** (`SystemExit`) — the row paths are relative to those roots |
+| Report has no `src`/`dst` (pre-2026-08-30) | **refused** — re-run the dry pass |
+| Report's own `applied` is true | **refused** — its `original` text describes the pre-apply world, so every row would read as drifted |
+| Caption on disk ≠ the row's `original` | row skipped, `skip:drifted`, counted — **a hand edit between the passes is never overwritten** |
+| Caption on disk already == `proposed` | row skipped, `skip:already-applied` — replays are idempotent, so a crashed one can just be re-run |
+| Caption file gone | row skipped, `skip:missing-caption` |
+| Row status ≠ `proposed`, or `--path_pattern` excludes it | counted, not written (filtering a replay is legitimate — the pattern is matched exactly as the live pass matches it) |
+
+Without `--apply` it is a **re-play dry run**: it prints what would be written
+and still emits a report.
+
+The replay writes **`apply_report.json`**, never `report.json` — pointing
+`--from_report` and `--report_dir` at the same directory is the normal case, and
+clobbering the input would make a re-run impossible. Its shape mirrors the
+stage's (`summary` + `images`), plus:
+
+- `written[]` — **the relative image paths actually written.** This is the field
+  a UI reads to reload exactly the affected dataset items.
+- `summary.from_report` — the dry run this replayed.
+- `images[]` = `{image, caption_path, before, after, status}`, one row per
+  candidate that reached the on-disk check, so a drifted row is named rather
+  than silently missing.
+
+The replay's own report carries `applied: true`, so feeding it back in is
+refused by the rule above.
+
+`--flatten --from_report` is rejected: the flatten pass is already text-only, so
+there is no model pass to skip.
 
 ### Where the rewrite lands, and the one trap left in the ops sequence
 
@@ -632,6 +687,7 @@ falls back to the box rules, so `merge_part_detections` is unaffected.
 | Flag | Default | What it does |
 |---|---|---|
 | `--apply` | off | Write to the resized captions (else dry run) |
+| `--from_report` | — | Replay a previous dry run's `report.json` instead of re-running SAM3 + the tagger. Writes `apply_report.json`; skips any caption that changed since — see above |
 | `--path_pattern` | `*` | fnmatch glob (`\|` to OR) relative to the resized dir |
 | `--crops` | off | Export the mask-blanked crops next to the report |
 | `--prompt` | `girl` | SAM3 subject prompt (`person` sweeps the rare on-screen-boy images) |

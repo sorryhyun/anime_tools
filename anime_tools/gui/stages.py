@@ -10,12 +10,26 @@ breaking the server.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import importlib
+import importlib.util
 import json
+import os
 import subprocess
 import sys
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
+
+REPLAY_FIELD = "from_report"
+"""``--from_report``: the argparse dest a replay-capable stage exposes."""
+REPLAY_REPORT_NAME = "apply_report.json"
+"""What a replay writes, mirroring ``anime_tools.stages.replay``. Duplicated
+rather than imported: this module stays torch-free and cheap to import."""
+
+CACHE_ENV = "ANIME_TOOLS_CACHE"
+CACHE_VERSION = 1
+"""Bumped when the on-disk schema cache format changes, so old files miss."""
 
 _PATH_HINTS = (
     "dir",
@@ -256,6 +270,9 @@ def schema(stage: Stage) -> dict[str, Any]:
         "available": True,
         "doc": parser.description or "",
         "apply": any(f.dest == "apply" for f in fs),
+        # This stage can write a previous dry run's proposals instead of
+        # recomputing them (``--from_report``); the GUI's Apply offers it.
+        "replay": any(f.dest == REPLAY_FIELD for f in fs),
         "fields": [f.__dict__ for f in fs],
     }
 
@@ -330,7 +347,12 @@ def build_argv(
 def report_path(
     stage: Stage, fields: list[dict[str, Any]], values: dict[str, Any]
 ) -> str | None:
-    """Where this stage's report lands for the given form values (unresolved)."""
+    """Where this stage's report lands for the given form values (unresolved).
+
+    A replay (``--from_report``) writes :data:`REPLAY_REPORT_NAME` instead:
+    ``--from_report`` and ``--report_dir`` normally name the same directory, so
+    the stage refuses to clobber the dry run it is replaying.
+    """
     if not stage.report:
         return None
     dest, filename = stage.report
@@ -338,6 +360,8 @@ def report_path(
     base = values.get(dest) or default
     if not base:
         return None
+    if filename and values.get(REPLAY_FIELD):
+        filename = REPLAY_REPORT_NAME
     return f"{base}/{filename}" if filename else str(base)
 
 
@@ -347,7 +371,7 @@ def dump_schemas() -> dict[str, dict[str, Any]]:
     return {s.id: schema(s) for s in STAGES}
 
 
-def load_schemas() -> dict[str, dict[str, Any]]:
+def dump_schemas_in_child() -> dict[str, dict[str, Any]]:
     """:func:`dump_schemas` in a fresh interpreter, so the caller stays torch-free."""
     code = (
         "import json, anime_tools.gui.stages as S; print(json.dumps(S.dump_schemas()))"
@@ -365,3 +389,123 @@ def load_schemas() -> dict[str, dict[str, Any]]:
     if r.returncode != 0:
         raise RuntimeError(f"stage schema dump failed:\n{r.stderr}")
     return json.loads(r.stdout.strip().splitlines()[-1])
+
+
+# ---- on-disk memo for the child dump ------------------------------------
+#
+# The child interpreter costs seconds (one stage CLI imports torch at module
+# level) and it is on the GUI's startup path, so its output is memoised on disk.
+
+
+def cache_dir() -> Path:
+    """Where the GUI keeps derived, throw-away state.
+
+    Deliberately *not* under :func:`~anime_tools._env.curation_home`: a dataset
+    tree is exactly what ``docs/contract.md`` says it is, and a cache that
+    survives switching homes is the point. ``$ANIME_TOOLS_CACHE`` overrides;
+    otherwise ``$XDG_CACHE_HOME`` (or ``~/.cache``) ``/anime_tools/gui`` — the
+    same shape as grouping's ``$NEAR_TWIN_CACHE``.
+    """
+    override = os.environ.get(CACHE_ENV)
+    if override:
+        return Path(override).expanduser()
+    base = os.environ.get("XDG_CACHE_HOME")
+    root = Path(base).expanduser() if base else Path.home() / ".cache"
+    return root / "anime_tools" / "gui"
+
+
+def schema_cache_path() -> Path:
+    return cache_dir() / "schemas.json"
+
+
+def schema_cache_key() -> str:
+    """What has to change for a cached dump to be wrong.
+
+    The installed version and the interpreter, plus ``(path, mtime_ns, size)``
+    for every ``.py`` under the installed package. Whole-package, not just the
+    nine CLI shells: a parser's defaults routinely come from the stage module
+    behind its CLI, and ``ROOT_FIELDS``/``STAGES``/:func:`fields_of` live in this
+    file. Each stage's module file is resolved with
+    :func:`importlib.util.find_spec`, which does *not* import it (the parent
+    packages are docstring-only shells — nothing pulls torch), so a stage module
+    that lives outside the package is keyed on too.
+    """
+    parts = [f"v{CACHE_VERSION}", _distribution_version(), sys.version]
+    files = set(Path(__file__).resolve().parent.parent.rglob("*.py"))
+    for s in STAGES:
+        try:
+            spec = importlib.util.find_spec(s.module)
+        except (ImportError, ValueError, AttributeError):
+            spec = None
+        origin = spec.origin if spec is not None else None
+        parts.append(f"{s.id}={s.module}@{origin}")
+        if origin:
+            files.add(Path(origin).resolve())
+    for f in sorted(files):
+        try:
+            st = f.stat()
+        except OSError:
+            parts.append(f"{f}:gone")
+        else:
+            parts.append(f"{f}:{st.st_mtime_ns}:{st.st_size}")
+    return hashlib.sha256("\0".join(parts).encode("utf-8")).hexdigest()
+
+
+def _distribution_version() -> str:
+    try:
+        from importlib.metadata import PackageNotFoundError, version
+
+        return version("anime_tools")
+    except (PackageNotFoundError, ImportError, ValueError):
+        return "unknown"
+
+
+def _read_schema_cache(path: Path, key: str) -> dict[str, dict[str, Any]] | None:
+    """The cached dump if it is still valid. Anything else — missing, truncated,
+    hand-mangled, stale — is ``None``, i.e. "just dump again"; never an error."""
+    try:
+        blob = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    if not isinstance(blob, dict) or blob.get("key") != key:
+        return None
+    schemas = blob.get("schemas")
+    if not isinstance(schemas, dict) or not schemas:
+        return None
+    return schemas
+
+
+def _write_schema_cache(
+    path: Path, key: str, schemas: dict[str, dict[str, Any]]
+) -> None:
+    """Best effort: a read-only or full cache dir costs a rebuild, not a start."""
+    tmp = path.with_name(f"{path.name}.{os.getpid()}.tmp")
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        tmp.write_text(json.dumps({"key": key, "schemas": schemas}), encoding="utf-8")
+        tmp.replace(path)
+    except OSError:
+        try:
+            tmp.unlink(missing_ok=True)
+        except OSError:
+            pass
+
+
+def load_schemas(*, cache: bool = True) -> dict[str, dict[str, Any]]:
+    """Every stage's schema, from :func:`schema_cache_path` when it is still
+    valid and from a fresh child interpreter otherwise."""
+    if not cache:
+        return dump_schemas_in_child()
+    try:
+        key, path = schema_cache_key(), schema_cache_path()
+    except (OSError, RuntimeError):
+        # No usable cache location (``Path.home()`` unresolvable, package dir
+        # gone). The cache is an optimisation; never let it be the reason the
+        # GUI has no stage list.
+        return dump_schemas_in_child()
+    cached = _read_schema_cache(path, key)
+    if cached is not None:
+        return cached
+    schemas = dump_schemas_in_child()
+    _write_schema_cache(path, key, schemas)
+    return schemas

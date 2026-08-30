@@ -1,5 +1,6 @@
 import { createMemo, Show } from "solid-js";
 import { StageForm } from "./StageForm";
+import { HelpToggle } from "./HelpToggle";
 import type { DatasetRoots, Stage, Values } from "../types";
 
 /** The stage runner's body: the run bar + the schema-driven form for the stage
@@ -18,6 +19,8 @@ export function StagePanel(props: {
   onCancel: () => void;
   roots?: DatasetRoots;
   onSettings: () => void;
+  help: boolean;
+  onHelp: () => void;
 }) {
   const cur = createMemo(() => props.stages?.find((s) => s.id === props.curId));
 
@@ -27,6 +30,7 @@ export function StagePanel(props: {
         <div class="stagebar">
           <b>{cur()?.title}</b>
           <span class="dim mono">{cur()?.module}</span>
+          <HelpToggle open={props.help} warn={!!cur()?.notes} onToggle={props.onHelp} />
           <span class="sp" />
           <button classList={{ primary: !cur()?.apply }} disabled={props.busy || !cur()?.available} onClick={() => props.onRun(false)}>
             {cur()?.apply ? "Dry run" : "Run"}
@@ -66,6 +70,8 @@ export function StagePanel(props: {
                   reset={props.reset}
                   roots={props.roots}
                   onSettings={props.onSettings}
+                  help={props.help}
+                  onHelp={props.onHelp}
                 />
               </Show>
             )}

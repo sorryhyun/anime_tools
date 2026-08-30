@@ -60,15 +60,61 @@ def _hf_token_present() -> bool:
         return False
 
 
+class Schemas:
+    """The stage form schemas, kept off the startup path.
+
+    Collecting them means a child interpreter (one stage CLI imports torch at
+    module level, and this process must stay torch-free — ``test_boundary``
+    pins that), which costs seconds on a cache miss. Binding the port must not
+    wait for it: the loader runs on a background thread and only the two
+    endpoints that actually need a schema block on it. A failing dump surfaces
+    as a 500 on those endpoints instead of killing the process.
+    """
+
+    TIMEOUT = 60.0
+
+    def __init__(self, value: dict[str, Any] | None = None) -> None:
+        self._value = value
+        self._error: BaseException | None = None
+        self._ready = threading.Event()
+        if value is not None:  # tests / callers that already have them
+            self._ready.set()
+            return
+        threading.Thread(target=self._load, name="gui-schemas", daemon=True).start()
+
+    def _load(self) -> None:
+        try:
+            self._value = S.load_schemas()
+        except Exception as e:  # noqa: BLE001 - reported on /api/stages
+            self._error = e
+        finally:
+            self._ready.set()
+
+    @property
+    def ready(self) -> bool:
+        return self._ready.is_set()
+
+    def get(self, timeout: float | None = None) -> dict[str, Any]:
+        """Block until the dump lands. 503 while it is still running (the
+        frontend resource-loads ``/api/stages``, so that is a spinner), 500 if
+        it failed."""
+        if not self._ready.wait(self.TIMEOUT if timeout is None else timeout):
+            raise HTTPException(503, "stage schemas are still loading")
+        if self._error is not None:
+            raise HTTPException(500, f"stage schema dump failed: {self._error}")
+        return self._value or {}
+
+
 def create_app(
     *, jobs: JobManager | None = None, schemas: dict[str, Any] | None = None
 ) -> FastAPI:
     mgr = jobs or JobManager(
         log_dir=curation_home() / "post_image_dataset" / "gui_logs"
     )
-    # Schemas come from a child interpreter: one stage CLI imports torch at
-    # module level, and this process must stay light (test_boundary pins it).
-    schemas = S.load_schemas() if schemas is None else schemas
+    # Schemas come from a child interpreter (see Schemas): passing them in
+    # short-circuits the thread entirely, otherwise it starts right here and the
+    # app is returned without waiting for it.
+    store = Schemas(schemas)
 
     @asynccontextmanager
     async def lifespan(_app: FastAPI):
@@ -77,7 +123,7 @@ def create_app(
 
     app = FastAPI(title="anime_tools", docs_url=None, redoc_url=None, lifespan=lifespan)
     app.state.jobs = mgr
-    app.state.schemas = schemas
+    app.state.schemas = store
 
     @app.get("/")
     def index() -> FileResponse:
@@ -90,10 +136,12 @@ def create_app(
             "models_dir": str(models_dir()),
             "hf_token": _hf_token_present(),
             "running": mgr.running.id if mgr.running else None,
+            "schemas_ready": store.ready,
         }
 
     @app.get("/api/stages")
     def list_stages() -> list[dict[str, Any]]:
+        schemas = store.get()
         return [schemas[s.id] for s in S.STAGES if s.id in schemas]
 
     @app.get("/api/settings")
@@ -149,7 +197,7 @@ def create_app(
     async def start_job(request: Request) -> dict[str, Any]:
         body = await request.json()
         stage = S.BY_ID.get(body.get("stage", ""))
-        sc = schemas.get(stage.id) if stage else None
+        sc = store.get().get(stage.id) if stage else None
         if stage is None or sc is None:
             raise HTTPException(404, "unknown stage")
         if not sc["available"]:
@@ -160,13 +208,15 @@ def create_app(
             argv = S.build_argv(sc["fields"], values, apply=apply, roots=_root_paths())
         except ValueError as e:
             raise HTTPException(400, str(e)) from e
+        report = S.report_path(stage, sc["fields"], values)
+        _make_output_dirs(stage, report)
         try:
             job = mgr.start(
                 stage.id,
                 stage.module,
                 argv,
                 home=curation_home(),
-                report_path=S.report_path(stage, sc["fields"], values),
+                report_path=report,
                 values=values,
                 apply=apply,
             )
@@ -245,6 +295,26 @@ def create_app(
         them (``S.ROOT_FIELDS``): one setting, no per-stage src/dst to disagree."""
         return {k: v["path"] for k, v in _roots().as_dict().items()}
 
+    def _make_output_dirs(stage: S.Stage, report: str | None) -> None:
+        """Create the directories this run *writes* to, so a fresh home does not
+        need a mkdir tour before the first job.
+
+        Outputs only, and only the ones the GUI itself chose:
+
+        * ``dst`` / ``masks`` when this stage binds them (``S.ROOT_FIELDS``) —
+          they come from Settings, not from the stage form.
+        * the report directory, from ``S.report_path``.
+
+        Never ``src``, and never a free-text path off the stage form: an empty
+        tree conjured behind a mistyped ``--source`` hides the typo, where the
+        stage's own "no images found" does not.
+        """
+        roots = _roots()
+        for name in set(S.ROOT_FIELDS.get(stage.id, {}).values()) & {"dst", "masks"}:
+            D.ensure_output_dir(getattr(roots, name))
+        if report:
+            D.ensure_output_dir(Path(report).parent)
+
     @app.get("/api/dataset/roots")
     def dataset_roots() -> dict[str, Any]:
         return {"roots": _roots().as_dict(), "defaults": D.DEFAULT_ROOTS}
@@ -257,10 +327,21 @@ def create_app(
             roots = D.resolve_roots(picked)
         except D.DatasetError as e:
             raise HTTPException(400, str(e)) from e
+        # Saving Settings is the one explicit "these are my roots" gesture, so
+        # it makes them real. resolve_roots already refused anything outside the
+        # curation home, so no mkdir can land outside it.
+        try:
+            created = D.ensure_roots(roots)
+        except OSError as e:
+            raise HTTPException(500, f"cannot create root: {e}") from e
         data = load_settings()
         data[D.SETTINGS_KEY] = picked
         save_settings(data)
-        return {"roots": roots.as_dict(), "defaults": D.DEFAULT_ROOTS}
+        return {
+            "roots": roots.as_dict(),
+            "defaults": D.DEFAULT_ROOTS,
+            "created": created,
+        }
 
     @app.get("/api/dataset")
     def dataset_list(
@@ -274,6 +355,18 @@ def create_app(
         return D.list_items(
             _roots(src, dst, masks), pattern=pattern or None, query=q, limit=limit
         )
+
+    @app.post("/api/dataset/items")
+    async def dataset_items(request: Request) -> dict[str, Any]:
+        """Refresh named sidebar rows, for reloading exactly what a job touched.
+
+        A finished stage's report names the images it wrote (``written``); the
+        listing then only has to re-stat those, not re-walk the source root.
+        """
+        body = await request.json()
+        rels = [str(r) for r in (body.get("rels") or [])][: D.MAX_ITEMS]
+        roots = _roots(*(str(body.get(k) or "") for k in ("src", "dst", "masks")))
+        return {"items": D.item_rows(roots, rels)}
 
     @app.get("/api/dataset/item")
     def dataset_item(
@@ -371,9 +464,10 @@ def pick_port(host: str, preferred: int, *, tries: int = 50) -> int:
 def _open_when_ready(host: str, port: int, url: str, *, timeout: float = 60.0) -> None:
     """Open ``url`` once the server actually accepts connections.
 
-    A fixed delay races app startup (importing fastapi + collecting the stage
-    schemas takes a while on a cold start), and the browser then lands on a
-    connection error that only a manual refresh clears.
+    A fixed delay races app startup and the browser then lands on a connection
+    error that only a manual refresh clears. Since the stage schemas moved off
+    the startup path (see :class:`Schemas`) this fires within a fraction of a
+    second; the page loads and fills its stage dock when ``/api/stages`` lands.
     """
     import socket
     import time

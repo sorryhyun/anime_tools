@@ -405,6 +405,51 @@ error if the checkpoint is missing.
 Tagging only happens in the make-target driver (CLI) or the ComfyUI node
 (see below).
 
+### Batch auto-tagging (`make caption-autotag`)
+
+`anime_tools/stages/cli/autotag_captions.py` (over `stages/autotag.py`) is the
+dataset-wide counterpart to the Dataset tab's per-image button: it walks the
+resized tree, tags each image, and writes the `.txt` sidecar into the caption
+**master** under `image_dataset/`. `--mode missing` (default) is the only
+non-destructive mode; `merge` appends only novel tags and round-trips position
+clauses verbatim; `overwrite` replaces. Dry run by default, `--apply` writes,
+and any apply must be followed by `make preprocess-te`.
+
+#### `--from_report` — apply a dry run without re-loading the tagger
+
+The dry run's `report.json` already records, per image, the destination
+(`rows[].caption_path`) and the exact text (`rows[].proposed`), so the apply
+pass has nothing left to compute:
+
+```bash
+make caption-autotag                                   # the model pass, once
+make caption-autotag ARGS="--apply --from_report post_image_dataset/captions/autotag/report.json"
+make preprocess-te                                     # still REQUIRED
+```
+
+The second line **loads no model** — it does not even import `torch`
+(`tests/test_stage_replay.py` pins that in a subprocess). The same flag exists
+on `caption-position` and `audit-multiview`; the shared implementation is
+`anime_tools/stages/replay.py`, and
+[`position_captions.md`](position_captions.md) carries the full staleness table.
+In short:
+
+- **Refused** if the report's recorded `src`/`dst` differ from this run's, if it
+  records neither, or if its own `apply` flag is already true (its `existing`
+  text describes the pre-apply world, so every row would read as drifted).
+- **Skipped and counted**, never overwritten, if the caption on disk no longer
+  matches the row's `existing` (`skip:drifted`) — the guard that makes a stale
+  report safe to replay over hand edits. A file that already holds the proposal
+  is `skip:already-applied`, so replays are idempotent.
+- `--path_pattern` still filters, and without `--apply` it is a re-play dry run
+  that prints what would be written.
+
+The replay writes **`apply_report.json`** (never over the `report.json` it read),
+shaped like the stage's own — top-level metadata plus `stats` and `rows` — with
+`from_report`, per-row `{image, caption_path, before, after, status}`, and a
+top-level **`written[]` of the relative image paths actually written**, which is
+what a UI reads to reload exactly the affected dataset items.
+
 ### ComfyUI nodes (`comfyui/anima_tagger/`)
 
 Two nodes share the `ANIMA_TAGGER` socket type:

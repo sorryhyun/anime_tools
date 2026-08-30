@@ -1,13 +1,17 @@
 import { createMemo, createSignal, For, Show, Switch, Match } from "solid-js";
+import { REPLAY_FIELD } from "../types";
 import type { DatasetRoots, Field, Stage, Values } from "../types";
 import { PathPicker } from "./PathPicker";
 
 /** Group fields by argparse group, preserving order. Fields bound to a dataset
-    root are left out: the server fills them from Settings. */
+    root are left out: the server fills them from Settings. So are the two the
+    buttons own -- `--apply` (Dry run / Apply) and `--from_report` (the Apply
+    dialog's reuse box): a stale path left in a form field would quietly turn
+    the next Dry run into a replay of an old one. */
 function grouped(fields: Field[]): [string, Field[]][] {
   const m = new Map<string, Field[]>();
   for (const f of fields) {
-    if (f.dest === "apply" || f.root) continue;
+    if (f.dest === "apply" || f.dest === REPLAY_FIELD || f.root) continue;
     const g = m.get(f.group) ?? [];
     g.push(f);
     m.set(f.group, g);
@@ -25,6 +29,8 @@ export function StageForm(props: {
   reset: () => void;
   roots?: DatasetRoots;
   onSettings: () => void;
+  help: boolean;
+  onHelp: () => void;
 }) {
   const [picking, setPicking] = createSignal<string | null>(null);
   const groups = createMemo(() => grouped(props.stage.fields));
@@ -37,9 +43,29 @@ export function StageForm(props: {
 
   return (
     <>
-      <div class="doc">{props.stage.doc.trim()}</div>
-      <Show when={props.stage.notes}>
-        <div class="notes">⚠ {props.stage.notes}</div>
+      {/* The prose lives behind the stage bar's (?). Collapsed, the notes stay
+          as a one-line chip -- they carry the destructive-mode warnings, so
+          they never disappear entirely; the full text is the tooltip, and
+          clicking the chip opens the doc. */}
+      <Show
+        when={props.help}
+        fallback={
+          <Show when={props.stage.notes}>
+            <button
+              type="button"
+              classList={{ notes: true, chip: true }}
+              title={props.stage.notes}
+              onClick={props.onHelp}
+            >
+              ⚠ {props.stage.notes}
+            </button>
+          </Show>
+        }
+      >
+        <div class="doc">{props.stage.doc.trim()}</div>
+        <Show when={props.stage.notes}>
+          <div class="notes">⚠ {props.stage.notes}</div>
+        </Show>
       </Show>
       <Show when={bound().length}>
         <div class="rootstrip">

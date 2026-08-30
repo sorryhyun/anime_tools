@@ -20,10 +20,21 @@ edits do not invalidate them. Follow with ``make preprocess-te``, which
 regenerates the ``.variants.txt`` sidecars first (those override the CLI dropout
 rate, so a stale sidecar would keep training the pre-tag caption).
 
+``--from_report <report.json>`` replays a dry run instead of re-tagging: the
+report already carries the destination path and the exact proposed text, so the
+apply pass writes them **without loading the tagger**. Rows whose caption
+changed since the dry run are skipped and counted, never overwritten; the replay
+writes ``apply_report.json`` so it can never clobber the report it read.
+
     make caption-autotag                              # dry run, missing-only
     make caption-autotag ARGS="--apply"               # write them
     make caption-autotag ARGS="--mode merge --apply"  # top up existing captions
     make preprocess-te                                # re-encode (required)
+
+    # the same two-step, paying for the tagger once:
+    python -m anime_tools.stages.cli.autotag_captions
+    python -m anime_tools.stages.cli.autotag_captions --apply \
+        --from_report post_image_dataset/captions/autotag/report.json
 """
 
 from __future__ import annotations
@@ -31,6 +42,7 @@ from __future__ import annotations
 import argparse
 import json
 from dataclasses import asdict
+from pathlib import Path
 
 from anime_tools._env import resolve_path
 from anime_tools.stages.autotag import (
@@ -38,6 +50,12 @@ from anime_tools.stages.autotag import (
     AutotagOptions,
     build_tag_fn,
     run_autotag_captions,
+)
+from anime_tools.stages.replay import (
+    ReplaySpec,
+    StaleReportError,
+    print_replay,
+    run_replay,
 )
 
 DEFAULT_REPORT_DIR = "post_image_dataset/captions/autotag"
@@ -77,6 +95,16 @@ def build_parser() -> argparse.ArgumentParser:
         help="Write the proposed captions into the master (default: dry run)",
     )
     p.add_argument(
+        "--from_report",
+        "--from-report",
+        dest="from_report",
+        default=None,
+        help="Replay a previous dry run's report.json instead of re-tagging: "
+        "writes exactly the captions it proposed and loads no model. Skips any "
+        "row whose caption changed since. Emits apply_report.json (never "
+        "clobbers the report it reads)",
+    )
+    p.add_argument(
         "--report_dir",
         "--report-dir",
         dest="report_dir",
@@ -92,6 +120,41 @@ def parse_args() -> argparse.Namespace:
     return build_parser().parse_args()
 
 
+# How ``replay`` reads an autotag report: ``rows``/``stats`` containers, ``ok``
+# is the writable status, and the proposal lands in the caption **master**
+# (``--src``), which is what this stage writes.
+REPLAY_SPEC = ReplaySpec(
+    stage="autotag_captions",
+    rows_key="rows",
+    stats_key="stats",
+    ok_status="ok",
+    before_field="existing",
+    after_field="proposed",
+    target_root="src",
+)
+
+
+def _replay(args, *, src: Path, dst: Path, report_dir: Path) -> None:
+    """Write a previous dry run's proposals — no tagger, no images opened."""
+    try:
+        rows, stats, out_path = run_replay(
+            spec=REPLAY_SPEC,
+            report_path=resolve_path(args.from_report),
+            src=src,
+            dst=dst,
+            report_dir=report_dir,
+            path_pattern=args.path_pattern,
+            apply=args.apply,
+        )
+    except StaleReportError as exc:
+        raise SystemExit(str(exc)) from exc
+    print(f"replaying {args.from_report} (no model loaded)")
+    print_replay(rows, stats, apply=args.apply)
+    print(f"report → {out_path}")
+    if args.apply and stats.written:
+        print("captions changed — run `make preprocess-te` to re-encode.")
+
+
 def main() -> None:
     args = parse_args()
     resized_dir = resolve_path(args.dst)
@@ -100,6 +163,11 @@ def main() -> None:
         raise SystemExit(
             f"resized dir not found: {resized_dir} — run `make preprocess-resize` first"
         )
+
+    report_dir = resolve_path(args.report_dir)
+    if args.from_report:
+        _replay(args, src=source_dir, dst=resized_dir, report_dir=report_dir)
+        return
 
     options = AutotagOptions(mode=args.mode, min_confidence=args.min_confidence)
     print(f"Loading Anima Tagger ({args.device})...", flush=True)
@@ -121,7 +189,6 @@ def main() -> None:
         progress=progress,
     )
 
-    report_dir = resolve_path(args.report_dir)
     report_dir.mkdir(parents=True, exist_ok=True)
     report = {
         "mode": args.mode,

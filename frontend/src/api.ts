@@ -1,6 +1,7 @@
 import type {
   CaptionEntry,
   CaptionKind,
+  DatasetItem,
   DatasetList,
   DatasetRoots,
   Info,
@@ -62,6 +63,9 @@ export const api = {
     return req<DatasetList>(`/api/dataset?${p}`);
   },
   item: (rel: string) => req<ItemDetail>(`/api/dataset/item?rel=${encodeURIComponent(rel)}`),
+  /** Re-stat named sidebar rows -- what a finished job actually touched. */
+  items: (rels: string[]) =>
+    req<{ items: DatasetItem[] }>("/api/dataset/items", json("POST", { rels })),
   /** Parse an unsaved caption server-side; the grammar has one implementation. */
   parse: (text: string) => req<Parsed>("/api/dataset/parse", json("POST", { text })),
   saveCaption: (rel: string, kind: CaptionKind, text: string) =>

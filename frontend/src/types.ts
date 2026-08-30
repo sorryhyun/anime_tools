@@ -18,6 +18,10 @@ export interface Field {
   root: RootName | null;
 }
 
+/** The argparse dest a replay-capable stage exposes. Like `--apply` it is
+    GUI-managed, not typed into the form: the Apply dialog is its only route. */
+export const REPLAY_FIELD = "from_report";
+
 export interface Stage {
   id: string;
   title: string;
@@ -30,6 +34,8 @@ export interface Stage {
   error?: string;
   doc: string;
   apply?: boolean;
+  /** Has `--from_report`: Apply can write a dry run's proposals as-is. */
+  replay?: boolean;
   fields: Field[];
 }
 

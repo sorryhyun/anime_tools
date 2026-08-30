@@ -19,6 +19,7 @@ so out loud.
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
 from functools import lru_cache
 from io import BytesIO
@@ -64,6 +65,12 @@ class Roots:
 def under_home(path: str | Path) -> Path:
     """``resolve_path`` + the same containment rule ``/api/files`` enforces."""
     p = resolve_path(path)
+    # Collapse ".." *before* the test: ``is_relative_to`` is purely textual, so
+    # ``<home>/../elsewhere`` would otherwise sail through it — harmless while
+    # every caller only read, load-bearing now that saving roots mkdirs them.
+    # Lexical (``normpath``), not ``resolve()``: a symlinked dataset root has to
+    # keep working.
+    p = Path(os.path.normpath(p))
     home = curation_home()
     if not p.is_relative_to(home):
         raise DatasetError(f"outside the curation home: {p}")
@@ -85,6 +92,39 @@ def resolve_roots(values: dict[str, Any] | None = None) -> Roots:
         raw = got.get(name)
         paths[name] = under_home(str(raw).strip() if raw else default)
     return Roots(**paths)
+
+
+def ensure_roots(roots: Roots) -> list[str]:
+    """Create the three root directories, returning the names actually made.
+
+    Only ever called from an *explicit write* — saving the Settings dialog —
+    never from :func:`resolve_roots`, which every read request goes through: a
+    listing must keep reporting a missing root as missing (``list_items`` says
+    ``missing: True``) instead of quietly conjuring an empty tree behind a
+    typo. The paths are already :func:`under_home` by construction, so this
+    cannot mkdir outside the curation home.
+    """
+    made = []
+    for name, p in (("src", roots.src), ("dst", roots.dst), ("masks", roots.masks)):
+        if not p.is_dir():
+            p.mkdir(parents=True, exist_ok=True)
+            made.append(name)
+    return made
+
+
+def ensure_output_dir(path: str | Path) -> Path | None:
+    """Best-effort mkdir for a directory a job is about to *write* to.
+
+    Returns the path when it exists afterwards, ``None`` when it is outside the
+    curation home or could not be created — a stage that mkdirs its own output
+    (most do) or fails loudly is a better error than a 500 from here.
+    """
+    try:
+        p = under_home(path)
+        p.mkdir(parents=True, exist_ok=True)
+    except (DatasetError, OSError):
+        return None
+    return p
 
 
 def _rel_key(rel: str) -> Path:
@@ -166,21 +206,7 @@ def list_items(
     for p in sorted(paths, key=lambda p: (p.parent.as_posix().lower(), p.name.lower()))[
         :limit
     ]:
-        rel = p.relative_to(roots.src)
-        caps = caption_paths(roots, rel)
-        parent = rel.parent.as_posix()
-        items.append(
-            {
-                "rel": rel.as_posix(),
-                "dir": "" if parent == "." else parent,
-                "name": p.name,
-                "stem": p.stem,
-                "master": caps["master"].is_file(),
-                "derived": caps["derived"].is_file(),
-                "variants": caps["variants"].is_file(),
-                "mask": mask_path(roots, rel) is not None,
-            }
-        )
+        items.append(_row(roots, p.relative_to(roots.src), p.name))
     return {
         "root": rel_to_home(roots.src),
         "missing": False,
@@ -188,6 +214,42 @@ def list_items(
         "truncated": total > len(items),
         "items": items,
     }
+
+
+def _row(roots: Roots, rel: Path, name: str) -> dict[str, Any]:
+    """One sidebar row: the image plus which of its siblings exist."""
+    caps = caption_paths(roots, rel)
+    parent = rel.parent.as_posix()
+    return {
+        "rel": rel.as_posix(),
+        "dir": "" if parent == "." else parent,
+        "name": name,
+        "stem": rel.stem,
+        "master": caps["master"].is_file(),
+        "derived": caps["derived"].is_file(),
+        "variants": caps["variants"].is_file(),
+        "mask": mask_path(roots, rel) is not None,
+    }
+
+
+def item_rows(roots: Roots, rels: list[str]) -> list[dict[str, Any]]:
+    """:func:`list_items` rows for named images only.
+
+    A stage that just wrote 40 captions changed 40 of the sidebar's rows, not
+    the tree; re-walking the whole source root to learn that is the wrong shape.
+    An unreadable or vanished rel is dropped rather than raising — the caller is
+    patching a listing, and a row it cannot refresh is one it should leave be.
+    """
+    out = []
+    for raw in rels:
+        try:
+            rel = _rel_key(raw)
+        except DatasetError:
+            continue
+        if not (roots.src / rel).is_file():
+            continue
+        out.append(_row(roots, rel, rel.name))
+    return out
 
 
 def _image_info(p: Path | None) -> dict[str, Any] | None:

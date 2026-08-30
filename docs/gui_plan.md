@@ -7,6 +7,29 @@ Status: v1 shipped 2026-08-30 (`anime_tools/gui/`, `install.sh` / `install.ps1`,
   `masking.cli.generate_masks_mit` imports torch at module level, so the server
   process imports no stage module at all. `build_argv` works from the cached
   field list.
+- **Startup does not wait for that child (2026-08-30).** The dump cost ~3–11 s,
+  all of it before the port was bound. Two changes:
+  - It is memoised on disk at `$ANIME_TOOLS_CACHE`, else
+    `$XDG_CACHE_HOME`/`~/.cache` → `anime_tools/gui/schemas.json` — outside the
+    curation home on purpose, so it survives switching datasets and never
+    lands inside a tree `docs/contract.md` describes. The key
+    (`stages.schema_cache_key()`) is the distribution version + `sys.version` +
+    `(path, mtime_ns, size)` of every `.py` under the installed package, plus
+    each `STAGES` module's `find_spec` origin (import-free, so still no torch).
+    Whole-package because parser defaults come from the stage modules behind
+    the CLI shells as often as from the shells themselves. A corrupt or stale
+    cache just means a fresh dump.
+  - `create_app()` returns immediately either way: `server.Schemas` runs the
+    load on a daemon thread, and only `/api/stages` and `POST /api/jobs` block
+    on it (60 s, then 503; a failed dump is a 500 there, never a dead process).
+    `create_app(schemas=…)` still short-circuits the thread, and
+    `/api/info.schemas_ready` reports the state.
+- **Output directories are created, not complained about (2026-08-30).**
+  `PUT /api/dataset/roots` mkdirs all three roots (it is the explicit "these are
+  my roots" gesture) and reports `created`; `POST /api/jobs` mkdirs the report
+  directory and the `dst`/`masks` roots the stage binds. Never `src`, and never
+  a free-text form path — an empty tree conjured behind a mistyped `--source`
+  hides the typo. Read paths (`dataset.resolve_roots`) never mkdir.
 - Frontend (milestone 3, 2026-08-30): Solid + TypeScript in `frontend/`, built
   by **bun itself** — `frontend/build.ts` calls `Bun.build` and folds the
   script, the CSS and the bundled Pretendard woff2 into a single

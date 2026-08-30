@@ -202,11 +202,51 @@ def test_roots_are_settable_and_persisted(client, home):
     r = c.put("/api/dataset/roots", json={"src": "sub", "dst": "", "masks": ""})
     assert r.status_code == 200
     roots = r.json()["roots"]
-    assert roots["src"] == {"path": "sub", "exists": False}
+    assert roots["src"] == {"path": "sub", "exists": True}
     # A blank field means "default", not "the home directory".
     assert roots["dst"]["path"] == "post_image_dataset/resized"
     assert c.get("/api/dataset/roots").json()["roots"]["src"]["path"] == "sub"
     assert c.put("/api/dataset/roots", json={"src": "/etc"}).status_code == 400
+
+
+def test_saving_roots_creates_the_missing_directories(client, home):
+    """Settings is the explicit 'these are my roots' gesture, so it makes them."""
+    c, _ = client
+    assert not (home / "shots").exists()
+    r = c.put(
+        "/api/dataset/roots",
+        json={"src": "shots", "dst": "out/resized", "masks": "out/masks"},
+    )
+    assert r.status_code == 200, r.text
+    assert sorted(r.json()["created"]) == ["dst", "masks", "src"]
+    for rel in ("shots", "out/resized", "out/masks"):
+        assert (home / rel).is_dir()
+    assert all(v["exists"] for v in r.json()["roots"].values())
+    # Second save has nothing left to create.
+    r2 = c.put(
+        "/api/dataset/roots",
+        json={"src": "shots", "dst": "out/resized", "masks": "out/masks"},
+    )
+    assert r2.json()["created"] == []
+
+
+def test_a_rejected_root_is_never_created(client, home):
+    """The containment check runs first: no mkdir outside the curation home."""
+    c, _ = client
+    assert c.put("/api/dataset/roots", json={"src": "../escape"}).status_code == 400
+    assert not (home.parent / "escape").exists()
+
+
+def test_reading_never_creates_a_root(client, home):
+    """resolve_roots is on every read request; a typo must stay reported missing."""
+    c, _ = client
+    body = c.get("/api/dataset", params={"src": "typo"}).json()
+    assert body["missing"] and body["items"] == [] and not (home / "typo").exists()
+    # Roots saved by some other route are reported, not conjured, on a GET.
+    c.put("/api/settings", json={"dataset": {"src": "ghost", "dst": "", "masks": ""}})
+    roots = c.get("/api/dataset/roots").json()["roots"]
+    assert roots["src"] == {"path": "ghost", "exists": False}
+    assert not (home / "ghost").exists()
 
 
 def test_thumbnails_are_webp_and_confined(client):

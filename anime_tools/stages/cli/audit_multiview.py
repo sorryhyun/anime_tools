@@ -13,6 +13,12 @@ every later stage should read down from. Follow it with ``make preprocess-te``.
 GOTCHA: ``image_dataset/`` is gitignored, so an ``--apply`` is not
 git-recoverable. ``report.json`` carries the verbatim before-text of every
 caption it touched; keep it.
+
+``--from_report <report.json>`` replays a dry run's findings instead of
+re-auditing — the report holds the caption path, the before-text and the
+proposal, so the write needs **no SAM3 and no tagger**. The verdict/confidence
+gate is still applied at replay time, so one audit pass can be replayed at
+several tiers; a caption edited since the audit is skipped and counted.
 """
 
 from __future__ import annotations
@@ -20,6 +26,7 @@ from __future__ import annotations
 import argparse
 import json
 from dataclasses import asdict
+from pathlib import Path
 
 import numpy as np
 
@@ -45,6 +52,12 @@ from anime_tools.stages.position_captions import (
     PositionCaptionOptions,
     load_clause_vocabulary,
 )
+from anime_tools.stages.replay import (
+    ReplaySpec,
+    StaleReportError,
+    print_replay,
+    run_replay,
+)
 
 DEFAULT_REPORT_DIR = "post_image_dataset/captions/multiview_audit"
 
@@ -64,6 +77,16 @@ def build_parser() -> argparse.ArgumentParser:
         "--apply",
         action="store_true",
         help="Write the suggested tag into the caption master (default: dry run)",
+    )
+    p.add_argument(
+        "--from_report",
+        "--from-report",
+        dest="from_report",
+        default=None,
+        help="Replay a previous dry run's report.json instead of re-auditing: "
+        "writes exactly the captions it proposed (still gated by "
+        "--apply_verdicts / --apply_confidence) and loads no model. Skips any "
+        "caption that changed since. Emits apply_report.json",
     )
     p.add_argument(
         "--apply_verdicts",
@@ -185,11 +208,73 @@ def parse_args() -> argparse.Namespace:
     return build_parser().parse_args()
 
 
+def _gate(args) -> tuple[tuple[str, ...], tuple[str, ...]]:
+    """The verdict/confidence tiers ``--apply`` is allowed to write."""
+    verdicts = tuple(v.strip() for v in args.apply_verdicts.split(",") if v.strip())
+    confidences = tuple(
+        c.strip() for c in args.apply_confidence.split(",") if c.strip()
+    )
+    return verdicts, confidences
+
+
+def _run_replay(args, src: Path, dst: Path, report_dir: Path) -> None:
+    """Write a previous dry run's findings — no SAM3, no tagger, no pixels.
+
+    Unlike the other two stages, the writable set is not a row ``status`` but
+    the same verdict/confidence gate :func:`apply_findings` applies, so the
+    tiers are still chosen at replay time: replaying a report under
+    ``--apply_verdicts multiple views,extra-character`` writes strictly more of
+    it than the default, off one audit pass.
+    """
+    verdicts, confidences = _gate(args)
+    spec = ReplaySpec(
+        stage="audit_multiview",
+        rows_key="images",
+        stats_key="summary",
+        row_filter=lambda row: (
+            row.get("verdict") in verdicts and row.get("confidence") in confidences
+        ),
+        before_field="caption",
+        after_field="proposed",
+        target_root="src",
+        # ``apply_findings`` writes ``proposed + "\n"``; a replay must be
+        # byte-identical to it.
+        newline=True,
+    )
+    try:
+        rows, stats, out_path = run_replay(
+            spec=spec,
+            report_path=resolve_path(args.from_report),
+            src=src,
+            dst=dst,
+            report_dir=report_dir,
+            path_pattern=args.path_pattern,
+            apply=args.apply,
+        )
+    except StaleReportError as exc:
+        raise SystemExit(str(exc)) from exc
+    print(f"replaying {args.from_report} (no model loaded)")
+    print(f"gate: verdicts={list(verdicts)} confidences={list(confidences)}")
+    print_replay(rows, stats, apply=args.apply)
+    print(f"\nreport: {out_path}")
+    if args.apply and stats.written:
+        print(
+            f"\n{stats.written} caption(s) written to the master ({src}). Run "
+            "`make preprocess-te` now to re-encode. The master is gitignored — "
+            "the replayed report holds the before-text if you need to back "
+            "this out."
+        )
+
+
 def main() -> None:
     args = parse_args()
     src = resolve_path(args.src)
     dst = resolve_path(args.dst)
     report_dir = resolve_path(args.report_dir)
+
+    if args.from_report:
+        _run_replay(args, src, dst, report_dir)
+        return
 
     detect_fn, part_detect_fn, sam_model, sam_processor = build_detect_fn(args)
 
@@ -250,19 +335,18 @@ def main() -> None:
 
     written: list[tuple[str, str, str]] = []
     if args.apply:
+        verdicts, confidences = _gate(args)
         written = apply_findings(
-            rows,
-            source_dir=src,
-            verdicts=tuple(
-                v.strip() for v in args.apply_verdicts.split(",") if v.strip()
-            ),
-            confidences=tuple(
-                c.strip() for c in args.apply_confidence.split(",") if c.strip()
-            ),
+            rows, source_dir=src, verdicts=verdicts, confidences=confidences
         )
 
     summary = {
         "applied": bool(args.apply),
+        # Recorded so ``--from_report`` can refuse to replay this report against
+        # a different pair of trees (the row paths are relative to these).
+        "src": str(src),
+        "dst": str(dst),
+        "path_pattern": args.path_pattern,
         "seen": stats.seen,
         "audited": stats.audited,
         "findings": stats.findings,

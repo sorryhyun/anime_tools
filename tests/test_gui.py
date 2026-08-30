@@ -6,7 +6,9 @@ reported *unavailable*, never as an import error.
 
 from __future__ import annotations
 
+import json
 import sys
+import threading
 import time
 
 import pytest
@@ -123,6 +125,94 @@ def test_report_path_follows_form_value():
     assert S.report_path(st, fs, {"out": "g.json"}) == "g.json"
 
 
+# -- schema cache ---------------------------------------------------------
+
+
+@pytest.fixture
+def cache(tmp_path, monkeypatch):
+    """An empty, private schema cache dir + a counter for the child dumps."""
+    monkeypatch.setenv(S.CACHE_ENV, str(tmp_path / "cache"))
+    calls: list[int] = []
+    real = S.dump_schemas_in_child
+
+    def counted():
+        calls.append(1)
+        return {"fake": {"id": "fake", "available": True, "fields": []}}
+
+    monkeypatch.setattr(S, "dump_schemas_in_child", counted)
+    return calls, tmp_path, real
+
+
+def test_cache_dir_is_outside_the_curation_home(tmp_path, monkeypatch):
+    monkeypatch.setenv("ANIME_TOOLS_HOME", str(tmp_path / "home"))
+    monkeypatch.delenv(S.CACHE_ENV, raising=False)
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "xdg"))
+    assert S.cache_dir() == tmp_path / "xdg" / "anime_tools" / "gui"
+    assert S.schema_cache_path().name == "schemas.json"
+    monkeypatch.setenv(S.CACHE_ENV, str(tmp_path / "c"))
+    assert S.cache_dir() == tmp_path / "c"
+
+
+def test_second_load_hits_the_cache_and_skips_the_child(cache):
+    calls, _, _ = cache
+    first = S.load_schemas()
+    assert calls == [1]
+    assert S.schema_cache_path().is_file()
+    assert S.load_schemas() == first
+    assert calls == [1]  # no second interpreter
+    # ...and opting out still shells out.
+    S.load_schemas(cache=False)
+    assert calls == [1, 1]
+
+
+def test_touching_a_stage_module_invalidates_the_cache(cache, monkeypatch):
+    """The key is keyed on the module files, so an edited parser is never stale."""
+    calls, tmp_path, _ = cache
+    mod = tmp_path / "cachestub_stage.py"
+    mod.write_text("def build_parser():\n    pass\n", encoding="utf-8")
+    monkeypatch.syspath_prepend(str(tmp_path))
+    extra = S.Stage("cachestub", "Stub", "cachestub_stage", "test", "")
+    monkeypatch.setattr(S, "STAGES", (*S.STAGES, extra))
+
+    before = S.schema_cache_key()
+    S.load_schemas()
+    S.load_schemas()
+    assert calls == [1]  # second call came off disk
+
+    mod.write_text("def build_parser():\n    return None  # edited\n", encoding="utf-8")
+    assert S.schema_cache_key() != before
+    S.load_schemas()
+    assert calls == [1, 1]  # rebuilt
+
+
+def test_a_corrupt_cache_is_a_rebuild_not_a_crash(cache):
+    calls, _, _ = cache
+    S.load_schemas()
+    p = S.schema_cache_path()
+    for junk in ("{not json", "[]", '{"key": "x"}', ""):
+        p.write_text(junk, encoding="utf-8")
+        assert S.load_schemas() == {
+            "fake": {"id": "fake", "available": True, "fields": []}
+        }
+    assert len(calls) == 5
+
+
+def test_an_unwritable_cache_dir_still_serves_schemas(cache, monkeypatch):
+    calls, tmp_path, _ = cache
+    monkeypatch.setenv(S.CACHE_ENV, str(tmp_path / "blocked" / "sub"))
+    (tmp_path / "blocked").write_text("not a directory", encoding="utf-8")
+    assert S.load_schemas()["fake"]["id"] == "fake"
+    assert calls == [1]
+
+
+def test_the_real_dump_round_trips_through_the_cache(tmp_path, monkeypatch):
+    """End to end, with the actual child interpreter, once."""
+    monkeypatch.setenv(S.CACHE_ENV, str(tmp_path / "cache"))
+    fresh = S.load_schemas()
+    assert set(fresh) == {s.id for s in S.STAGES}
+    assert S.load_schemas() == fresh
+
+
 # -- server ---------------------------------------------------------------
 
 
@@ -209,6 +299,21 @@ def test_job_runs_streams_and_persists_values(client):
     assert c.post("/api/jobs", json={"stage": "nope"}).status_code == 404
 
 
+def test_job_start_creates_the_report_directory(client):
+    """The stub's own mkdir has no ``parents=True``, so a nested report dir only
+    works because ``POST /api/jobs`` made it first."""
+    c, home = client
+    job = _await_job(
+        c,
+        c.post(
+            "/api/jobs",
+            json={"stage": "stub", "values": {"report_dir": "deep/nested/reports"}},
+        ),
+    )
+    assert job["state"] == "done", job
+    assert (home / "deep/nested/reports/report.json").is_file()
+
+
 def test_second_concurrent_job_is_refused(client):
     c, _home = client
     j = c.post("/api/jobs", json={"stage": "stub", "values": {"sleep": 30}}).json()
@@ -247,6 +352,67 @@ def test_model_catalog_and_download_job(client, monkeypatch):
     assert job["state"] in ("done", "failed")
 
 
+# -- startup: the schema dump is off the critical path ---------------------
+
+
+def _app(tmp_path, monkeypatch, loader):
+    from anime_tools.gui.jobs import JobManager
+    from anime_tools.gui.server import create_app
+
+    monkeypatch.setenv("ANIME_TOOLS_HOME", str(tmp_path))
+    monkeypatch.setattr(S, "load_schemas", loader)
+    return create_app(jobs=JobManager(log_dir=tmp_path / "logs"))
+
+
+def test_startup_does_not_wait_for_the_schema_dump(tmp_path, monkeypatch):
+    from fastapi.testclient import TestClient
+
+    gate = threading.Event()
+
+    def slow():
+        assert gate.wait(30)
+        return {s.id: S.schema(s) for s in S.STAGES}
+
+    t0 = time.perf_counter()
+    app = _app(tmp_path, monkeypatch, slow)
+    assert time.perf_counter() - t0 < 1.0  # bound the port, don't dump schemas
+
+    with TestClient(app) as c:
+        assert c.get("/api/info").json()["schemas_ready"] is False
+        assert c.get("/").status_code == 200  # the page loads meanwhile
+        gate.set()
+        ids = [s["id"] for s in c.get("/api/stages").json()]
+    assert ids == [s.id for s in S.STAGES]
+
+
+def test_stages_time_out_rather_than_hang_forever(tmp_path, monkeypatch):
+    from fastapi.testclient import TestClient
+
+    from anime_tools.gui.server import Schemas
+
+    monkeypatch.setattr(Schemas, "TIMEOUT", 0.05)
+    stuck = threading.Event()
+    app = _app(tmp_path, monkeypatch, lambda: (stuck.wait(30), {})[1])
+    try:
+        with TestClient(app) as c:
+            assert c.get("/api/stages").status_code == 503
+    finally:
+        stuck.set()
+
+
+def test_a_failed_schema_dump_is_reported_not_fatal(tmp_path, monkeypatch):
+    from fastapi.testclient import TestClient
+
+    def boom():
+        raise RuntimeError("stage schema dump failed: boom")
+
+    with TestClient(_app(tmp_path, monkeypatch, boom)) as c:
+        assert c.get("/api/info").status_code == 200  # the process is alive
+        r = c.get("/api/stages")
+        assert r.status_code == 500 and "boom" in r.json()["detail"]
+        assert c.post("/api/jobs", json={"stage": "position"}).status_code == 500
+
+
 def test_pick_port_skips_busy_port():
     import socket
 
@@ -259,3 +425,153 @@ def test_pick_port_skips_busy_port():
         got = pick_port("127.0.0.1", taken)
     assert got != taken and got > taken
     assert pick_port("127.0.0.1", 0) > 0
+
+
+# -- replay: Apply writes the dry run's proposals -------------------------
+
+
+def test_replay_capable_stages_advertise_it():
+    """The GUI's Apply offers a replay off ``schema()["replay"]``, so the two
+    caption stages that grew ``--from_report`` have to carry the flag."""
+    for stage_id in ("autotag", "position"):
+        st, fs = _stage(stage_id)
+        assert S.schema(st)["replay"] is True
+        assert any(f["dest"] == S.REPLAY_FIELD for f in fs)
+    assert S.schema(S.BY_ID["groups"])["replay"] is False
+
+
+def test_replay_report_name_matches_the_stages():
+    """``report_path`` hard-codes the replay's filename to stay torch-free;
+    this is the assertion that keeps the copy honest."""
+    from anime_tools.stages.replay import REPLAY_REPORT_NAME
+
+    assert S.REPLAY_REPORT_NAME == REPLAY_REPORT_NAME
+
+
+def test_a_replay_reports_beside_the_run_it_replays():
+    """``--from_report`` and ``--report_dir`` normally name the same directory:
+    the replay must not clobber the dry run it is reading."""
+    st, fs = _stage("autotag")
+    dry = S.report_path(st, fs, {"report_dir": "r"})
+    assert dry == "r/report.json"
+    replay = S.report_path(st, fs, {"report_dir": "r", S.REPLAY_FIELD: dry})
+    assert replay == f"r/{S.REPLAY_REPORT_NAME}" != dry
+
+
+def test_from_report_reaches_the_argv():
+    _, fs = _stage("autotag")
+    argv = S.build_argv(fs, {S.REPLAY_FIELD: "r/report.json"}, apply=True)
+    assert "--from_report" in argv
+    assert argv[argv.index("--from_report") + 1] == "r/report.json"
+    assert "--apply" in argv
+
+
+def test_dataset_items_refreshes_only_what_it_is_asked_for(client):
+    """The sidebar patch path: a job's ``written`` list in, those rows out."""
+    c, tmp_path = client
+    src = tmp_path / "image_dataset"
+    (src / "sub").mkdir()
+    (src / "sub" / "b.png").write_bytes(b"\x89PNG\r\n\x1a\n")
+    r = c.post("/api/dataset/items", json={"rels": ["sub/b.png", "a.png"]})
+    assert r.status_code == 200
+    rows = r.json()["items"]
+    assert [x["rel"] for x in rows] == ["sub/b.png", "a.png"]
+    assert rows[0]["dir"] == "sub" and rows[0]["derived"] is False
+    # A caption written since the listing shows up on the refreshed row.
+    dst = tmp_path / "post_image_dataset" / "resized" / "sub"
+    dst.mkdir(parents=True)
+    (dst / "b.txt").write_text("1girl.")
+    assert c.post("/api/dataset/items", json={"rels": ["sub/b.png"]}).json()["items"][
+        0
+    ]["derived"]
+
+
+def test_dataset_items_drops_what_it_cannot_refresh(client):
+    """Traversal and vanished rows are dropped, not raised: the caller is
+    patching a listing, and a row it cannot refresh is one to leave alone."""
+    c, _ = client
+    r = c.post(
+        "/api/dataset/items", json={"rels": ["../escape.png", "/abs.png", "gone.png"]}
+    )
+    assert r.status_code == 200 and r.json()["items"] == []
+
+
+def test_apply_replays_a_dry_run_end_to_end(tmp_path, monkeypatch):
+    """The whole Apply path, over the real HTTP API and the real autotag CLI:
+    a dry run's report goes in, captions come out, and no model is loaded."""
+    from fastapi.testclient import TestClient
+
+    from anime_tools.gui.server import create_app
+
+    monkeypatch.setenv("ANIME_TOOLS_HOME", str(tmp_path))
+    c = TestClient(create_app())
+    # Saving Settings makes the roots real (nothing existed a moment ago).
+    assert c.put("/api/dataset/roots", json={}).json()["created"] == [
+        "src",
+        "dst",
+        "masks",
+    ]
+    src, dst = tmp_path / "image_dataset", tmp_path / "post_image_dataset" / "resized"
+    for n in ("a", "b", "c"):
+        (src / f"{n}.png").write_bytes(b"\x89PNG\r\n\x1a\n")
+        (src / f"{n}.txt").write_text("1girl, solo.")
+        (dst / f"{n}.png").write_bytes(b"\x89PNG\r\n\x1a\n")
+
+    # What the tagger pass left behind, which is exactly what Apply now skips.
+    rdir = tmp_path / "post_image_dataset" / "captions" / "autotag"
+    rdir.mkdir(parents=True)
+    (rdir / "report.json").write_text(
+        json.dumps(
+            {
+                "apply": False,
+                "src": str(src),
+                "dst": str(dst),
+                "stats": {"seen": 3, "proposed": 3, "written": 0},
+                "rows": [
+                    {
+                        "image": f"{n}.png",
+                        "caption_path": str(src / f"{n}.txt"),
+                        "existing": "1girl, solo.",
+                        "proposed": f"1girl, solo, {n}_tag.",
+                        "status": "ok",
+                    }
+                    for n in ("a", "b", "c")
+                ],
+            }
+        )
+    )
+    # Hand-edited after the dry run: its proposal is stale, so it is skipped.
+    (src / "c.txt").write_text("1girl, solo, hand edited.")
+
+    job = c.post(
+        "/api/jobs",
+        json={
+            "stage": "autotag",
+            "apply": True,
+            "values": {
+                S.REPLAY_FIELD: "post_image_dataset/captions/autotag/report.json"
+            },
+        },
+    ).json()
+    assert "--from_report" in job["argv"] and "--apply" in job["argv"]
+    deadline = time.monotonic() + 120
+    while (
+        c.get(f"/api/jobs/{job['id']}").json()["state"] == "running"
+        and time.monotonic() < deadline
+    ):
+        time.sleep(0.05)
+    final = c.get(f"/api/jobs/{job['id']}").json()
+    assert final["state"] == "done", final
+    # Beside the report it replayed, never over it.
+    assert final["report_path"].endswith(S.REPLAY_REPORT_NAME)
+    assert (rdir / "report.json").exists()
+
+    report = c.get(f"/api/jobs/{job['id']}/report").json()["report"]
+    assert report["written"] == ["a.png", "b.png"]
+    assert (src / "a.txt").read_text() == "1girl, solo, a_tag."
+    assert (src / "c.txt").read_text() == "1girl, solo, hand edited."
+    # …and that list is all the sidebar has to re-stat.
+    rows = c.post("/api/dataset/items", json={"rels": report["written"]}).json()[
+        "items"
+    ]
+    assert [r["rel"] for r in rows] == ["a.png", "b.png"]

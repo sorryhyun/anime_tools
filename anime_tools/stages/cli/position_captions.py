@@ -19,10 +19,22 @@ Dry-run is the default: nothing is written until ``--apply`` is passed. An
 drops stale ``.variants.txt`` sidecars — follow it with ``make preprocess-te``
 to actually re-encode.
 
+``--from_report <report.json>`` replays a dry run instead of redoing the whole
+detect → crop → tag pass: the report already holds the destination caption and
+the exact proposed text, so the apply writes them **without loading SAM3 or the
+tagger**. A caption edited since the dry run is skipped and counted, never
+overwritten; the replay writes ``apply_report.json`` so it cannot clobber the
+report it read.
+
     make caption-position                      # dry run over the whole dataset
     make caption-position ARGS="--apply"       # write the clauses
     make preprocess-te                         # re-encode (required after apply)
     make caption-position ARGS="--flatten --apply"   # back the rewrite out
+
+    # the same two-step, paying for SAM3 + the tagger once:
+    python -m anime_tools.stages.cli.position_captions
+    python -m anime_tools.stages.cli.position_captions --apply \
+        --from_report post_image_dataset/captions/position/report.json
 """
 
 from __future__ import annotations
@@ -52,6 +64,12 @@ from anime_tools.stages.position_captions import (
     flatten_captions,
     load_clause_vocabulary,
     run_position_captions,
+)
+from anime_tools.stages.replay import (
+    ReplaySpec,
+    StaleReportError,
+    print_replay,
+    run_replay,
 )
 
 DEFAULT_REPORT_DIR = "post_image_dataset/captions/position"
@@ -84,6 +102,16 @@ def build_parser() -> argparse.ArgumentParser:
         "--apply",
         action="store_true",
         help="Write the proposed clauses into the resized captions (default: dry run)",
+    )
+    p.add_argument(
+        "--from_report",
+        "--from-report",
+        dest="from_report",
+        default=None,
+        help="Replay a previous dry run's report.json instead of re-running "
+        "SAM3 + the tagger: writes exactly the captions it proposed and loads "
+        "no model. Skips any caption that changed since. Emits "
+        "apply_report.json (never clobbers the report it reads)",
     )
     p.add_argument(
         "--report_dir",
@@ -560,6 +588,48 @@ def _run_flatten(args, src: Path, dst: Path, report_dir: Path) -> None:
         print("\nDry run — no captions written. Re-run with --apply to write.")
 
 
+# How ``replay`` reads a position report: ``images``/``summary`` containers,
+# ``proposed`` is the writable status, and the rewrite lands on the **derived**
+# caption under ``--dst`` (the master is never written). ``drop_variants``
+# mirrors ``_write_derived_caption``: a stale ``{stem}.variants.txt`` outranks
+# ``{stem}.txt`` at encode time, so the replay must unlink it too.
+REPLAY_SPEC = ReplaySpec(
+    stage="position_captions",
+    rows_key="images",
+    stats_key="summary",
+    ok_status="proposed",
+    before_field="original",
+    after_field="proposed",
+    target_root="dst",
+    drop_variants=True,
+)
+
+
+def _run_replay(args, src: Path, dst: Path, report_dir: Path) -> None:
+    """Write a previous dry run's clauses — no SAM3, no tagger, no pixels."""
+    try:
+        rows, stats, out_path = run_replay(
+            spec=REPLAY_SPEC,
+            report_path=resolve_path(args.from_report),
+            src=src,
+            dst=dst,
+            report_dir=report_dir,
+            path_pattern=args.path_pattern,
+            apply=args.apply,
+        )
+    except StaleReportError as exc:
+        raise SystemExit(str(exc)) from exc
+    print(f"replaying {args.from_report} (no model loaded)")
+    print_replay(rows, stats, apply=args.apply)
+    print(f"\nreport: {out_path}")
+    if args.apply and stats.written:
+        print(
+            "\nWritten to the resized captions (the master is untouched). Run "
+            "`make preprocess-te` now to regenerate the variant sidecars and "
+            "re-encode."
+        )
+
+
 def main() -> None:
     args = parse_args()
     src = resolve_path(args.src)
@@ -567,7 +637,17 @@ def main() -> None:
     report_dir = resolve_path(args.report_dir)
 
     if args.flatten:
+        if args.from_report:
+            raise SystemExit(
+                "--flatten and --from_report are mutually exclusive: the "
+                "flatten pass is already text-only, so there is no model pass "
+                "to skip."
+            )
         _run_flatten(args, src, dst, report_dir)
+        return
+
+    if args.from_report:
+        _run_replay(args, src, dst, report_dir)
         return
 
     # SAM3 first, tagger second: both stay resident since the pipeline is
@@ -625,6 +705,11 @@ def main() -> None:
     summary = {
         "applied": bool(args.apply),
         "rewrite": bool(args.rewrite),
+        # Recorded so ``--from_report`` can refuse to replay this report against
+        # a different pair of trees (the row paths are relative to these).
+        "src": str(src),
+        "dst": str(dst),
+        "path_pattern": args.path_pattern,
         # Which detector produced these boxes — a soft prompt is a file, so
         # two runs are only comparable when the sha matches.
         "prompt": args.prompt,
