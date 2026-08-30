@@ -36,6 +36,9 @@ anime-tools-gui = "anime_tools.gui:main"
 
 [dependency-groups]
 dev = ["pytest>=8", "pytest-xdist", "ruff", "httpx"]  # httpx: fastapi TestClient
+# bench/ scripts (not installed; run from a checkout): scipy for the soft-prompt Hungarian match,
+# cv2 for the MIT text-mask rows, matplotlib for contact sheets. Needs anime-tools[stages,masking].
+bench = ["scipy>=1.12", "opencv-python>=4.11", "matplotlib"]
 
 [tool.uv]
 default-groups = ["dev"]

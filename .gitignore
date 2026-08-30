@@ -12,3 +12,5 @@ build/
 models/
 post_image_dataset/
 image_dataset/
+bench/*/results/
+_archive/
