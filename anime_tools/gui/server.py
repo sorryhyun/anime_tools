@@ -335,6 +335,28 @@ def pick_port(host: str, preferred: int, *, tries: int = 50) -> int:
     raise SystemExit(f"no free port in {preferred}..{preferred + tries - 1} on {host}")
 
 
+def _open_when_ready(host: str, port: int, url: str, *, timeout: float = 60.0) -> None:
+    """Open ``url`` once the server actually accepts connections.
+
+    A fixed delay races app startup (importing fastapi + collecting the stage
+    schemas takes a while on a cold start), and the browser then lands on a
+    connection error that only a manual refresh clears.
+    """
+    import socket
+    import time
+
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        try:
+            with socket.create_connection((host, port), timeout=0.5):
+                break
+        except OSError:
+            time.sleep(0.1)
+    else:
+        return
+    webbrowser.open(url)
+
+
 def main(argv: list[str] | None = None) -> None:
     p = argparse.ArgumentParser(description="anime_tools web GUI")
     p.add_argument("--host", default="127.0.0.1", help="0.0.0.0 to expose on the LAN")
@@ -360,11 +382,15 @@ def main(argv: list[str] | None = None) -> None:
     port = pick_port(args.host, args.port)
     if port != args.port and args.port != 0:
         print(f"port {args.port} is in use; using {port}", flush=True)
-    url = f"http://{args.host if args.host != '0.0.0.0' else '127.0.0.1'}:{port}"
+    connect_host = "127.0.0.1" if args.host == "0.0.0.0" else args.host
+    url = f"http://{connect_host}:{port}"
     print(f"anime_tools GUI → {url}   (home: {curation_home()})", flush=True)
+    app = create_app()
     if args.open:
-        threading.Timer(1.0, webbrowser.open, args=(url,)).start()
-    uvicorn.run(create_app(), host=args.host, port=port, log_level="warning")
+        threading.Thread(
+            target=_open_when_ready, args=(connect_host, port, url), daemon=True
+        ).start()
+    uvicorn.run(app, host=args.host, port=port, log_level="warning")
 
 
 if __name__ == "__main__":
