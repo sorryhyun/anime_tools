@@ -26,7 +26,7 @@ stages = ["anime-tools[tagger,tokenizers]", "sam3 @ git+https://github.com/faceb
 # Dataset grouping / near-twin features on PE-Spatial-B16-512 (vendored tower, weights fetched from the Hub at load).
 grouping = ["torch>=2.4", "einops", "timm>=1.0"]
 # SAM3 subject masks + MIT/ComicTextDetector text masks.
-masking = ["torch>=2.4", "sam3 @ git+https://github.com/facebookresearch/sam3.git", "segmentation-models-pytorch>=0.3.4", "albumentations>=1.4.0", "opencv-python>=4.11", "onnxruntime"]
+masking = ["torch>=2.4", "sam3 @ git+https://github.com/facebookresearch/sam3.git", "segmentation-models-pytorch>=0.3.4", "albumentations>=1.4.0", "opencv-python>=4.11"]  # onnxruntime(-gpu) optional: the CTD gate falls back to cv2.dnn without it; not pinned because onnxruntime vs onnxruntime-gpu conflict
 all = ["anime-tools[stages,grouping,masking]"]
 
 [dependency-groups]
