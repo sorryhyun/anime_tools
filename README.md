@@ -82,9 +82,9 @@ home: `ANIME_TOOLS_HOME` → `ANIMA_HOME` → current directory
 ## Development
 
 ```bash
-uv sync
+make install       # install bun (frontend bundler) + uv sync
 uv run pytest -q
-make gui           # dev server on http://127.0.0.1:8790
+make gui           # dev server on http://127.0.0.1:8790, opens your browser
 make frontend      # rebuild anime_tools/gui/static/index.html from frontend/ (Solid, needs bun)
 make frontend-dev  # bun dev server with hot reload on :5173, proxying /api to `make gui`
 ```

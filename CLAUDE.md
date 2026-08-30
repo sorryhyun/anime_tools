@@ -12,7 +12,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ```bash
 uv sync                       # torch/sam3 are plain dependencies (no extras since 0.3); GPU torch comes from PyPI on Linux, use --index https://download.pytorch.org/whl/cpu for CPU
-make gui                      # anime-tools-gui dev server (GUI_HOST / GUI_PORT / GUI_ARGS)
+make install                  # scripts/ensure_bun.sh (bun for the frontend build) + uv sync
+make gui                      # anime-tools-gui dev server, opens the browser (GUI_HOST / GUI_PORT / GUI_ARGS)
 uv run pytest -q              # tests/ ; CPU-only unless ANIMA_TEST_GPU=1 (conftest blanks CUDA_VISIBLE_DEVICES)
 uv run pytest -q tests/test_position_captions.py -k "layout"   # single file / test
 uv run pytest -q -n auto      # pytest-xdist is in the dev group
