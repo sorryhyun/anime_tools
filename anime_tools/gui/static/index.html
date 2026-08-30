@@ -119,7 +119,7 @@ function renderNav() {
   const groups = {};
   for (const s of stages) (groups[s.group] ??= []).push(s);
   $('#nav').innerHTML = Object.entries(groups).map(([g, ss]) =>
-    `<h4>${g}</h4>` + ss.map(s => `<a data-id="${s.id}" class="${s.available?'':'na'}${cur?.id===s.id?' sel':''}" title="${s.available?s.module:'install anime-tools['+s.extra+']'}">${s.title}</a>`).join('')
+    `<h4>${g}</h4>` + ss.map(s => `<a data-id="${s.id}" class="${s.available?'':'na'}${cur?.id===s.id?' sel':''}" title="${s.available?s.module:'not installed: '+s.error}">${s.title}</a>`).join('')
   ).join('');
   $('#nav').querySelectorAll('a').forEach(a => a.onclick = () => select(a.dataset.id));
 }
@@ -128,7 +128,7 @@ function select(id) {
   cur = stages.find(s => s.id === id); if (!cur) return;
   location.hash = id; renderNav();
   const f = $('#form');
-  if (!cur.available) { f.innerHTML = `<div class="doc">${cur.title} is unavailable: ${esc(cur.error)}\n\nInstall with:  uv tool install "anime-tools[${cur.extra}]"</div>`; return; }
+  if (!cur.available) { f.innerHTML = `<div class="doc">${cur.title} is unavailable: ${esc(cur.error)}\n\nReinstall:  uv tool install --force "anime-tools @ git+https://github.com/sorryhyun/anime_tools"</div>`; return; }
   const saved = settings.values?.[id] || {};
   const groups = {};
   for (const fd of cur.fields) (groups[fd.group] ??= []).push(fd);

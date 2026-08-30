@@ -192,3 +192,17 @@ def test_second_concurrent_job_is_refused(client):
             break
         time.sleep(0.05)
     assert c.get(f"/api/jobs/{j['id']}").json()["state"] == "cancelled"
+
+
+def test_pick_port_skips_busy_port():
+    import socket
+
+    from anime_tools.gui.server import pick_port
+
+    with socket.socket() as busy:
+        busy.bind(("127.0.0.1", 0))
+        busy.listen(1)
+        taken = busy.getsockname()[1]
+        got = pick_port("127.0.0.1", taken)
+    assert got != taken and got > taken
+    assert pick_port("127.0.0.1", 0) > 0

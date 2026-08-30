@@ -220,10 +220,30 @@ def create_app(
     return app
 
 
+def pick_port(host: str, preferred: int, *, tries: int = 50) -> int:
+    """``preferred`` if bindable, else the first free port above it (``0`` = OS-chosen)."""
+    import socket
+
+    candidates = [0] if preferred == 0 else range(preferred, preferred + tries)
+    for port in candidates:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            try:
+                s.bind((host, port))
+                return s.getsockname()[1]
+            except OSError:
+                continue
+    raise SystemExit(f"no free port in {preferred}..{preferred + tries - 1} on {host}")
+
+
 def main(argv: list[str] | None = None) -> None:
     p = argparse.ArgumentParser(description="anime_tools web GUI")
     p.add_argument("--host", default="127.0.0.1", help="0.0.0.0 to expose on the LAN")
-    p.add_argument("--port", type=int, default=8765)
+    p.add_argument(
+        "--port",
+        type=int,
+        default=8790,
+        help="Preferred port; if busy, the next free one above it is used (0 = let the OS pick)",
+    )
     p.add_argument(
         "--home",
         default=None,
@@ -237,11 +257,14 @@ def main(argv: list[str] | None = None) -> None:
 
     import uvicorn
 
-    url = f"http://{args.host if args.host != '0.0.0.0' else '127.0.0.1'}:{args.port}"
+    port = pick_port(args.host, args.port)
+    if port != args.port and args.port != 0:
+        print(f"port {args.port} is in use; using {port}", flush=True)
+    url = f"http://{args.host if args.host != '0.0.0.0' else '127.0.0.1'}:{port}"
     print(f"anime_tools GUI → {url}   (home: {curation_home()})", flush=True)
     if args.open:
         threading.Timer(1.0, webbrowser.open, args=(url,)).start()
-    uvicorn.run(create_app(), host=args.host, port=args.port, log_level="warning")
+    uvicorn.run(create_app(), host=args.host, port=port, log_level="warning")
 
 
 if __name__ == "__main__":

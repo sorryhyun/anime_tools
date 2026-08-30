@@ -8,10 +8,10 @@ caption master and sidecars, split out so it can be used on datasets bound for
 | Sub-package | What | Install |
 |---|---|---|
 | `anime_tools.captions` | The caption **grammar** (`parse_caption` / `compose_caption` — never `split(",")` a caption), tag taxonomy + Danbooru-KB correction, `--caption_drop_groups`, shuffle/dropout **variants sidecars**, `caption_index.json` builder | base (torch-free) |
-| `anime_tools.tagger` | **Anima Tagger** — a vocab/threshold/sidecar head over the external `animetimm/*.dbv4-full` caformer tagger, emitting Anima-format tags (`rating, count, characters, copyrights, @artists, generals`). CLIs: `python -m anime_tools.tagger.cli --mode …`, `…cli.autotag`, `…cli.autotag_server`, `…cli.train_sidecar` | `[tagger]` |
-| `anime_tools.stages` | Caption-master stages: batch **autotag**, **position clauses** (SAM3 crops → tagger → v2 rewrite), correction + variants mirror, **multiview audit** | `[stages]` |
-| `anime_tools.grouping` | Near-twin / same-concept **grouping** on PE-Spatial-B16-512 features (`anime_tools.vision.pe`, weights fetched from the Hub) → `groups.json`; decensor match tools. CLI: `python -m anime_tools.grouping.cli.build_groups --source-dir …` | `[grouping]` |
-| `anime_tools.masking` | Training masks: SAM3 subject masks, MIT / ComicTextDetector text masks, merge. CLIs: `python -m anime_tools.masking.cli.{generate_masks,generate_masks_mit,merge_masks}` | `[masking]` |
+| `anime_tools.tagger` | **Anima Tagger** — a vocab/threshold/sidecar head over the external `animetimm/*.dbv4-full` caformer tagger, emitting Anima-format tags (`rating, count, characters, copyrights, @artists, generals`). CLIs: `python -m anime_tools.tagger.cli --mode …`, `…cli.autotag`, `…cli.autotag_server`, `…cli.train_sidecar` |
+| `anime_tools.stages` | Caption-master stages: batch **autotag**, **position clauses** (SAM3 crops → tagger → v2 rewrite), correction + variants mirror, **multiview audit** |
+| `anime_tools.grouping` | Near-twin / same-concept **grouping** on PE-Spatial-B16-512 features (`anime_tools.vision.pe`, weights fetched from the Hub) → `groups.json`; decensor match tools. CLI: `python -m anime_tools.grouping.cli.build_groups --source-dir …` |
+| `anime_tools.masking` | Training masks: SAM3 subject masks, MIT / ComicTextDetector text masks, merge. CLIs: `python -m anime_tools.masking.cli.{generate_masks,generate_masks_mit,merge_masks}` |
 
 ## Install
 
@@ -25,15 +25,14 @@ curl -fsSL https://github.com/sorryhyun/anime_tools/releases/latest/download/ins
 
 Windows (PowerShell): `irm https://github.com/sorryhyun/anime_tools/releases/latest/download/install.ps1 | iex`
 
-`ANIME_TOOLS_VERSION=v0.2.0` pins a tag, `ANIME_TOOLS_EXTRAS=gui` trims the
-extras, `TORCH_INDEX=https://download.pytorch.org/whl/cu130` picks a torch
+`ANIME_TOOLS_VERSION=v0.2.0` pins a tag, `TORCH_INDEX=https://download.pytorch.org/whl/cu130` picks a torch
 index (PyPI's Linux wheel is already CUDA; Windows defaults to CPU). Update
 with `uv tool upgrade anime-tools`.
 
 As a library dependency (what the trainer does):
 
 ```bash
-uv add "anime-tools[all] @ git+https://github.com/sorryhyun/anime_tools"   # git dependency; no PyPI
+uv add "anime-tools @ git+https://github.com/sorryhyun/anime_tools"   # git dependency; no PyPI
 ```
 
 The repo is the product (kohya-ss/sd-scripts style): pin a tag, or use a
@@ -43,7 +42,7 @@ The repo is the product (kohya-ss/sd-scripts style): pin a tag, or use a
 
 ```bash
 cd <your dataset folder>   # image_dataset/, post_image_dataset/, models/ live here
-anime-tools-gui --open     # http://127.0.0.1:8765
+anime-tools-gui --open     # http://127.0.0.1:8790
 ```
 
 A small standalone panel over the stage CLIs: pick a stage, fill the form
@@ -83,8 +82,9 @@ home: `ANIME_TOOLS_HOME` → `ANIMA_HOME` → current directory
 ## Development
 
 ```bash
-uv sync --all-extras
+uv sync
 uv run pytest -q
+make gui   # dev server on http://127.0.0.1:8790
 ```
 
 `tests/test_boundary.py` pins the one rule of the split: this package never

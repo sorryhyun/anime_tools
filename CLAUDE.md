@@ -11,16 +11,17 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Commands
 
 ```bash
-uv sync --all-extras          # needed for the FULL suite: 7 test modules (tagger/grouping/taxonomy) import torch; the caption tests run on the base install
+uv sync                       # torch/sam3 are plain dependencies (no extras since 0.3); GPU torch comes from PyPI on Linux, use --index https://download.pytorch.org/whl/cpu for CPU
+make gui                      # anime-tools-gui dev server (GUI_HOST / GUI_PORT / GUI_ARGS)
 uv run pytest -q              # tests/ ; CPU-only unless ANIMA_TEST_GPU=1 (conftest blanks CUDA_VISIBLE_DEVICES)
 uv run pytest -q tests/test_position_captions.py -k "layout"   # single file / test
 uv run pytest -q -n auto      # pytest-xdist is in the dev group
 uv run ruff check . && uv run ruff format --check .   # no ruff config in pyproject; rules come from the user-level config. ~37 remaining findings (shebangs, blind-except in best-effort fallbacks, B023 false positives) are deliberate
 ```
 
-Python >= 3.13. Extras: `tagger`, `tokenizers`, `stages`, `grouping`, `masking`, `all`. `[tool.uv] override-dependencies = ["numpy>=2.0"]` deliberately overrides sam3's stale `numpy<2` pin. `onnxruntime` is intentionally not pinned (gpu/cpu wheels conflict; the CTD text-mask gate falls back to `cv2.dnn`).
+Python >= 3.13. No extras — everything (torch, sam3, timm, fastapi) is a plain dependency. `[tool.uv] override-dependencies = ["numpy>=2.0"]` deliberately overrides sam3's stale `numpy<2` pin. `onnxruntime` is intentionally not pinned (gpu/cpu wheels conflict; the CTD text-mask gate falls back to `cv2.dnn`).
 
-CLIs are `python -m` modules, e.g. `python -m anime_tools.tagger.cli --mode …`, `python -m anime_tools.stages.cli.position_captions`, `python -m anime_tools.grouping.cli.build_groups --source-dir …`, `python -m anime_tools.masking.cli.generate_masks`. The `make caption-autotag` / `make caption-position` / `make preprocess-*` targets mentioned in the docs and the `captions` skill live in the **trainer repo**, which wraps these CLIs; there is no Makefile here.
+CLIs are `python -m` modules, e.g. `python -m anime_tools.tagger.cli --mode …`, `python -m anime_tools.stages.cli.position_captions`, `python -m anime_tools.grouping.cli.build_groups --source-dir …`, `python -m anime_tools.masking.cli.generate_masks`. The `make caption-autotag` / `make caption-position` / `make preprocess-*` targets mentioned in the docs and the `captions` skill live in the **trainer repo**, which wraps these CLIs; the Makefile here only has `gui`.
 
 ## Architecture
 

@@ -21,7 +21,7 @@ browser, with an install line as short as `anima_lora`'s:
 
 ```sh
 curl -fsSL https://github.com/sorryhyun/anime_tools/releases/latest/download/install.sh | sh
-anime-tools-gui          # opens http://127.0.0.1:8765
+anime-tools-gui          # opens http://127.0.0.1:8790
 ```
 
 ## Why web, not Qt
@@ -68,7 +68,7 @@ anime-tools-gui = "anime_tools.gui.server:main"
 
 | file | role |
 |---|---|
-| `server.py` | FastAPI app + `main()` (argparse: `--host 127.0.0.1 --port 8765 --home`, `--open`). Localhost only by default; `--host 0.0.0.0` is the opt-in for remote use. |
+| `server.py` | FastAPI app + `main()` (argparse: `--host 127.0.0.1 --port 8790 --home`, `--open`). Localhost only by default; `--host 0.0.0.0` is the opt-in for remote use. |
 | `stages.py` | The **stage registry**: `(id, title, module, build_parser)` for each CLI, plus the parser→JSON schema converter (`store_true` → bool, `type=int/float` → number, `choices` → enum, `help` → tooltip, dest names ending in `_dir`/`_path`/`dir` → path picker hint). |
 | `jobs.py` | `JobManager`: spawn `sys.executable -m <module> <args>` with `ANIME_TOOLS_HOME` set, tail stdout to a ring buffer + on-disk log, one running job at a time (GPU), cancel = kill process tree (psutil, same as trainer's `process.py`). |
 | `static/` | built frontend (see below). |

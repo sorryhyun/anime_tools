@@ -5,7 +5,6 @@ description = "Dataset curation for anime diffusion training: caption grammar + 
 readme = "README.md"
 license = { file = "LICENSE" }
 requires-python = ">=3.13"
-# Base install: the caption grammar / correction / variants / index, torch-free.
 dependencies = [
     "numpy>=2.0",
     "Pillow",
@@ -14,22 +13,26 @@ dependencies = [
     "huggingface-hub>=0.30",
     "tqdm",
     "rich>=13",
+    # Anima Tagger (dbv4 caformer backbone via timm; GPL weights fetched from the gated upstream repo at load)
+    # + PE-Spatial grouping (vendored tower, weights fetched from the Hub at load).
+    "torch>=2.4",
+    "timm>=1.0",
+    "einops",
+    # Tokenizer-length checks in the correction / position stages.
+    "transformers>=4.45",
+    "sentencepiece",
+    # Position clauses, multiview audit, masking: SAM3 subject detection, contact sheets.
+    "sam3 @ git+https://github.com/facebookresearch/sam3.git",
+    "matplotlib",
+    # MIT/ComicTextDetector text masks. onnxruntime(-gpu) stays optional: the CTD gate falls
+    # back to cv2.dnn without it; not pinned because onnxruntime vs onnxruntime-gpu conflict.
+    "segmentation-models-pytorch>=0.3.4",
+    "albumentations>=1.4.0",
+    "opencv-python>=4.11",
+    # Web GUI (`anime-tools-gui`): FastAPI + uvicorn; the server process never imports torch.
+    "fastapi>=0.115",
+    "uvicorn>=0.30",
 ]
-
-[project.optional-dependencies]
-# Anima Tagger (dbv4 caformer backbone via timm; GPL weights fetched from the gated upstream repo at load).
-tagger = ["torch>=2.4", "timm>=1.0", "transformers>=4.45"]
-# Tokenizer-length checks in the correction / position stages.
-tokenizers = ["transformers>=4.45", "sentencepiece"]
-# Position clauses + multiview audit (SAM3 subject detection, contact sheets).
-stages = ["anime-tools[tagger,tokenizers]", "sam3 @ git+https://github.com/facebookresearch/sam3.git", "matplotlib"]
-# Dataset grouping / near-twin features on PE-Spatial-B16-512 (vendored tower, weights fetched from the Hub at load).
-grouping = ["torch>=2.4", "einops", "timm>=1.0"]
-# SAM3 subject masks + MIT/ComicTextDetector text masks.
-masking = ["torch>=2.4", "sam3 @ git+https://github.com/facebookresearch/sam3.git", "segmentation-models-pytorch>=0.3.4", "albumentations>=1.4.0", "opencv-python>=4.11"]  # onnxruntime(-gpu) optional: the CTD gate falls back to cv2.dnn without it; not pinned because onnxruntime vs onnxruntime-gpu conflict
-# Standalone web GUI (`anime-tools-gui`): FastAPI + uvicorn; the server never imports torch.
-gui = ["fastapi>=0.115", "uvicorn>=0.30"]
-all = ["anime-tools[stages,grouping,masking,gui]"]
 
 [project.scripts]
 anime-tools-gui = "anime_tools.gui:main"
@@ -37,8 +40,8 @@ anime-tools-gui = "anime_tools.gui:main"
 [dependency-groups]
 dev = ["pytest>=8", "pytest-xdist", "ruff", "httpx"]  # httpx: fastapi TestClient
 # bench/ scripts (not installed; run from a checkout): scipy for the soft-prompt Hungarian match,
-# cv2 for the MIT text-mask rows, matplotlib for contact sheets. Needs anime-tools[stages,masking].
-bench = ["scipy>=1.12", "opencv-python>=4.11", "matplotlib"]
+# cv2 / matplotlib for the MIT text-mask rows and contact sheets.
+bench = ["scipy>=1.12"]
 
 [tool.uv]
 default-groups = ["dev"]

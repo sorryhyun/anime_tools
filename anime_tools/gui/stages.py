@@ -2,7 +2,7 @@
 argparse parsers become a JSON form schema + back into an argv.
 
 Qt/torch/FastAPI-free on purpose so it is unit-testable and cheap to import.
-Every stage's ``build_parser()`` is imported lazily: a stage whose extra is not
+Every stage's ``build_parser()`` is imported lazily: a stage whose deps are not
 installed (``cv2`` for masking, say) is listed as *unavailable* rather than
 breaking the server.
 """
@@ -43,7 +43,7 @@ class Stage:
     module: str
     group: str
     extra: str
-    """Which ``anime-tools[<extra>]`` the stage needs (shown when unavailable)."""
+    """Historical feature area (``tagger`` / ``stages`` / ...); informational only now that everything is a plain dependency."""
     report: tuple[str, str | None] | None = None
     """``(dest, filename)``: the form field naming the report dir (or file when
     ``filename`` is None) so the GUI can fetch the result after a run."""

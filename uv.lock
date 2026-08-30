@@ -42,65 +42,31 @@ name = "anime-tools"
 version = "0.2.0"
 source = { editable = "." }
 dependencies = [
+    { name = "albumentations" },
+    { name = "einops" },
+    { name = "fastapi" },
     { name = "huggingface-hub" },
+    { name = "matplotlib" },
     { name = "numpy" },
+    { name = "opencv-python" },
     { name = "pillow" },
     { name = "pyyaml" },
     { name = "rich" },
     { name = "safetensors" },
+    { name = "sam3" },
+    { name = "segmentation-models-pytorch" },
+    { name = "sentencepiece" },
+    { name = "timm" },
+    { name = "torch" },
     { name = "tqdm" },
-]
-
-[package.optional-dependencies]
-all = [
-    { name = "albumentations" },
-    { name = "einops" },
-    { name = "fastapi" },
-    { name = "matplotlib" },
-    { name = "opencv-python" },
-    { name = "sam3" },
-    { name = "segmentation-models-pytorch" },
-    { name = "sentencepiece" },
-    { name = "timm" },
-    { name = "torch" },
     { name = "transformers" },
     { name = "uvicorn" },
-]
-grouping = [
-    { name = "einops" },
-    { name = "timm" },
-    { name = "torch" },
-]
-gui = [
-    { name = "fastapi" },
-    { name = "uvicorn" },
-]
-masking = [
-    { name = "albumentations" },
-    { name = "opencv-python" },
-    { name = "sam3" },
-    { name = "segmentation-models-pytorch" },
-    { name = "torch" },
-]
-stages = [
-    { name = "matplotlib" },
-    { name = "sam3" },
-    { name = "sentencepiece" },
-    { name = "timm" },
-    { name = "torch" },
-    { name = "transformers" },
-]
-tagger = [
-    { name = "timm" },
-    { name = "torch" },
-    { name = "transformers" },
-]
-tokenizers = [
-    { name = "sentencepiece" },
-    { name = "transformers" },
 ]
 
 [package.dev-dependencies]
+bench = [
+    { name = "scipy" },
+]
 dev = [
     { name = "httpx" },
     { name = "pytest" },
@@ -110,36 +76,29 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "albumentations", marker = "extra == 'masking'", specifier = ">=1.4.0" },
-    { name = "anime-tools", extras = ["stages", "grouping", "masking", "gui"], marker = "extra == 'all'" },
-    { name = "anime-tools", extras = ["tagger", "tokenizers"], marker = "extra == 'stages'" },
-    { name = "einops", marker = "extra == 'grouping'" },
-    { name = "fastapi", marker = "extra == 'gui'", specifier = ">=0.115" },
+    { name = "albumentations", specifier = ">=1.4.0" },
+    { name = "einops" },
+    { name = "fastapi", specifier = ">=0.115" },
     { name = "huggingface-hub", specifier = ">=0.30" },
-    { name = "matplotlib", marker = "extra == 'stages'" },
+    { name = "matplotlib" },
     { name = "numpy", specifier = ">=2.0" },
-    { name = "opencv-python", marker = "extra == 'masking'", specifier = ">=4.11" },
+    { name = "opencv-python", specifier = ">=4.11" },
     { name = "pillow" },
     { name = "pyyaml" },
     { name = "rich", specifier = ">=13" },
     { name = "safetensors", specifier = ">=0.5" },
-    { name = "sam3", marker = "extra == 'masking'", git = "https://github.com/facebookresearch/sam3.git" },
-    { name = "sam3", marker = "extra == 'stages'", git = "https://github.com/facebookresearch/sam3.git" },
-    { name = "segmentation-models-pytorch", marker = "extra == 'masking'", specifier = ">=0.3.4" },
-    { name = "sentencepiece", marker = "extra == 'tokenizers'" },
-    { name = "timm", marker = "extra == 'grouping'", specifier = ">=1.0" },
-    { name = "timm", marker = "extra == 'tagger'", specifier = ">=1.0" },
-    { name = "torch", marker = "extra == 'grouping'", specifier = ">=2.4" },
-    { name = "torch", marker = "extra == 'masking'", specifier = ">=2.4" },
-    { name = "torch", marker = "extra == 'tagger'", specifier = ">=2.4" },
+    { name = "sam3", git = "https://github.com/facebookresearch/sam3.git" },
+    { name = "segmentation-models-pytorch", specifier = ">=0.3.4" },
+    { name = "sentencepiece" },
+    { name = "timm", specifier = ">=1.0" },
+    { name = "torch", specifier = ">=2.4" },
     { name = "tqdm" },
-    { name = "transformers", marker = "extra == 'tagger'", specifier = ">=4.45" },
-    { name = "transformers", marker = "extra == 'tokenizers'", specifier = ">=4.45" },
-    { name = "uvicorn", marker = "extra == 'gui'", specifier = ">=0.30" },
+    { name = "transformers", specifier = ">=4.45" },
+    { name = "uvicorn", specifier = ">=0.30" },
 ]
-provides-extras = ["tagger", "tokenizers", "stages", "grouping", "masking", "gui", "all"]
 
 [package.metadata.requires-dev]
+bench = [{ name = "scipy", specifier = ">=1.12" }]
 dev = [
     { name = "httpx" },
     { name = "pytest", specifier = ">=8" },
