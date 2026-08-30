@@ -72,7 +72,7 @@ textarea.cap { min-height:78px; font:13px/1.5 var(--font-mono); margin-top:6px }
 table.variants td { font-size:12px; vertical-align:top }
 td.vlabel { width:4ch; color:var(--warn); font-family:var(--font-mono) }
 
-/* ---- bottom dock: stages / log / report / jobs ---- */
+/* ---- bottom dock: the stage runner (log/report/jobs panels: later) ---- */
 .dock { position:relative; grid-column:1/3; grid-row:3; border-top:1px solid var(--line); background:var(--bg); display:grid; grid-template-rows:auto minmax(0,var(--dock-h,320px)) }
 .dockgrip { position:absolute; top:-2px; left:0; right:0; height:5px; cursor:ns-resize; z-index:2 }
 .dockgrip:hover { background:var(--accent) }
@@ -80,7 +80,6 @@ td.vlabel { width:4ch; color:var(--warn); font-family:var(--font-mono) }
 .dockbody { overflow:hidden; display:grid }
 .stagepanel { display:grid; grid-template-rows:auto minmax(0,1fr); overflow:hidden }
 .stagebar { display:flex; align-items:center; gap:8px; padding:8px 12px; border-bottom:1px solid var(--line) }
-.stagebar select { width:auto; min-width:220px }
 .stagebar .mono { font-size:11px; color:var(--dim); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:34ch }
 .stagebar .status { color:var(--dim); font-size:12px; margin-left:10px; max-width:40ch; overflow:hidden; text-overflow:ellipsis; white-space:nowrap }
 .stageform { overflow:auto; padding:12px }
@@ -110,6 +109,14 @@ button.link { background:none; border:none; color:var(--accent); padding:0; font
 .tabs a.na { color:#5a606b; cursor:default }
 .tabs a { padding:6px 12px; cursor:pointer; color:var(--dim); border-radius:6px 6px 0 0 }
 .tabs a.sel { color:var(--fg); background:var(--panel) }
+/* The dock's tab strip *is* the stage picker, so it holds every stage: grouped,
+   and wrapping onto a second row on a narrow window. */
+.stagetabs { flex-wrap:wrap; gap:2px 4px }
+.stagetabs .tabgroup { align-self:center; color:var(--dim); font-size:11px; text-transform:uppercase; letter-spacing:.06em; padding:0 4px 0 10px }
+.stagetabs .tabgroup:first-child { padding-left:0 }
+.stagetabs a { padding:6px 10px; white-space:nowrap }
+.stagetabs a.na { cursor:pointer }
+.stagetabs a:hover { color:var(--fg) }
 .pane { overflow:auto; padding:12px }
 pre.log { margin:0; font:12px/1.4 var(--font-mono); white-space:pre-wrap; word-break:break-all }
 .badge { font-size:11px; padding:1px 7px; border-radius:10px; background:#2a2f3a; color:var(--dim) }

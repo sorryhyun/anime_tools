@@ -27,7 +27,7 @@ Status: v1 shipped 2026-08-30 (`anime_tools/gui/`, `install.sh` / `install.ps1`,
   now the image/caption tree (`gui/dataset.py` + `frontend/src/components/
   DatasetTree.tsx`), the centre is one dataset item (image / resized / mask
   beside its master, derived and variants captions), and the stage runner moved
-  into a resizable bottom dock (Stages / Log / Report / Jobs). New endpoints:
+  into a resizable bottom dock. New endpoints:
   `/api/dataset` (tree), `/api/dataset/item` (GET detail, PUT one caption),
   `/api/dataset/parse`, `/api/dataset/roots`, `/api/thumb`.
   Two rules the new surface keeps:
@@ -38,6 +38,13 @@ Status: v1 shipped 2026-08-30 (`anime_tools/gui/`, `install.sh` / `install.ps1`,
   - **Only `master` and `derived` are writable.** `.variants.txt` is generated,
     so it is served read-only; a derived write reports `variants_stale` so the
     UI can say the sidecar (and the TE cache) now needs regenerating.
+- **The dock strip is the stage picker (2026-08-30).** The dock's four tabs
+  (Stages / Log / Report / Jobs) plus a grouped `<select>` were two levels of
+  picker for one choice. The tab strip now holds one button per stage, and the
+  dock body is always that stage's form; while a job runs its newest stdout line
+  is the stage bar's status. The Log / Report / Jobs panels are gone from the UI
+  for now — `/api/jobs`, `/api/jobs/{id}/log` and `/api/jobs/{id}/report` are
+  untouched, and `frontend/src/components/Report.tsx` is kept for the rework.
   `gui/dataset.py` stays torch-free like the rest of the server
   (`tests/test_boundary.py`); it uses Pillow only for image dimensions and
   thumbnails.

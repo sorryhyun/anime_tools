@@ -16,7 +16,6 @@ import type {
   DatasetRoots,
   Info,
   ItemDetail,
-  Job,
   NodeKind,
   RootName,
   Settings,
@@ -26,19 +25,14 @@ import type {
 import { DatasetTree, type Sel } from "./components/DatasetTree";
 import { ItemView } from "./components/ItemView";
 import { StagePanel } from "./components/StagePanel";
-import { Report } from "./components/Report";
 import { Dialog } from "./components/Dialog";
 
-type DockTab = "stages" | "log" | "report" | "jobs";
-const DOCK_TABS: DockTab[] = ["stages", "log", "report", "jobs"];
 const ROOT_NAMES: RootName[] = ["src", "dst", "masks"];
 const ROOT_HELP: Record<RootName, string> = {
   src: "source images + hand-written master captions",
   dst: "resized images + derived captions + .variants.txt",
   masks: "{stem}_mask.png, mirroring the source subdirs",
 };
-
-const fmtTime = (t: number) => new Date(t * 1000).toLocaleTimeString();
 
 /** `#rel|kind` — the dataset item is what a GUI link should point at now. */
 function parseHash(): Sel | null {
@@ -53,7 +47,6 @@ export default function App() {
   const [info, { refetch: refetchInfo }] = createResource<Info>(api.info);
   const [stages] = createResource<Stage[]>(api.stages);
   const [settings, setSettings] = createStore<Settings>({});
-  const [jobs, { refetch: refetchJobs }] = createResource<Job[]>(api.jobs);
   const [roots, { refetch: refetchRoots }] = createResource<DatasetRoots>(api.datasetRoots);
 
   // ---- dataset ----
@@ -139,19 +132,21 @@ export default function App() {
     setForms(curId(), (prev) => ({ ...(prev ?? {}), [dest]: v }));
   const resetForm = () => setForms(curId(), reconcile({}));
 
-  const [tab, setTab] = createSignal<DockTab>("stages");
+  /** Stages, in registry order, bucketed by their argparse group. */
+  const groups = createMemo(() => {
+    const m = new Map<string, Stage[]>();
+    for (const s of stages() ?? []) m.set(s.group, [...(m.get(s.group) ?? []), s]);
+    return [...m];
+  });
+
   const [dockOpen, setDockOpen] = createSignal(localStorage.getItem("dock") !== "0");
   const [dockH, setDockH] = createSignal(Number(localStorage.getItem("dockh")) || 320);
-  const [log, setLog] = createSignal("");
   const [jobId, setJobId] = createSignal<string | null>(null);
   const [busy, setBusy] = createSignal(false);
   const [status, setStatus] = createSignal<{ text: string; state?: string }>({ text: "" });
-  const [report, setReport] = createSignal<{ path: string; report: unknown } | null>(null);
-  const [reportErr, setReportErr] = createSignal("");
   const [confirmOpen, setConfirmOpen] = createSignal(false);
   const [settingsOpen, setSettingsOpen] = createSignal(false);
   let es: EventSource | null = null;
-  let logPane!: HTMLDivElement;
 
   api.settings().then((s) => {
     setSettings(s);
@@ -189,9 +184,12 @@ export default function App() {
     window.addEventListener("pointerup", up);
   }
 
-  function openDock(t: DockTab) {
+  /** The dock's button strip is the stage picker; the open stage's button is
+      also its close button. */
+  function pickStage(id: string) {
+    if (dockOpen() && curId() === id) return setDockOpen(false);
     batch(() => {
-      setTab(t);
+      setCurId(id);
       setDockOpen(true);
     });
   }
@@ -200,46 +198,29 @@ export default function App() {
     es?.close();
     batch(() => {
       setJobId(id);
-      setLog("");
-      setReport(null);
-      setReportErr("");
       setBusy(true);
       setStatus({ text: `running ${id}`, state: "running" });
     });
-    openDock("log");
+    setDockOpen(true);
     es = followLog(
       id,
-      (line) => {
-        setLog((l) => l + line + "\n");
-        queueMicrotask(() => { logPane.scrollTop = logPane.scrollHeight; });
-      },
+      // No log panel yet: the newest line is the status line.
+      (line) => setStatus({ text: line, state: "running" }),
       (job) => {
         es = null;
         setBusy(false);
         setStatus({ text: `exit ${job.exit_code}`, state: job.state });
-        refetchJobs();
         refetchInfo();
         // A finished stage rewrote captions/masks under our feet.
         refetchList();
         refetchItem();
-        if (job.report_path) loadReport(job.id);
       },
       () => {
         es = null;
         setBusy(false);
         setStatus({ text: "log stream closed" });
-        refetchJobs();
       },
     );
-  }
-
-  async function loadReport(id: string) {
-    try {
-      setReport(await api.report(id));
-      openDock("report");
-    } catch (e) {
-      setReportErr((e as Error).message);
-    }
   }
 
   async function run(apply: boolean) {
@@ -251,7 +232,7 @@ export default function App() {
       attach(job.id);
     } catch (e) {
       setStatus({ text: (e as Error).message, state: "failed" });
-      openDock("stages");
+      setDockOpen(true);
     }
   }
 
@@ -296,26 +277,29 @@ export default function App() {
         <Show when={dockOpen()}>
           <div class="dockgrip" onPointerDown={grip} title="Drag to resize" />
         </Show>
-        <div class="tabs">
-          <For each={DOCK_TABS}>
-            {(t) => (
-              <a
-                classList={{ sel: dockOpen() && tab() === t }}
-                onClick={() => {
-                  if (dockOpen() && tab() === t) setDockOpen(false);
-                  else openDock(t);
-                  if (t === "jobs") refetchJobs();
-                }}
-              >
-                {t[0].toUpperCase() + t.slice(1)}
-                <Show when={t === "log" && busy()}>
-                  {" "}
-                  <span class="badge running">running</span>
-                </Show>
-              </a>
+        <div class="tabs stagetabs">
+          <For each={groups()}>
+            {([g, ss]) => (
+              <>
+                <span class="tabgroup">{g}</span>
+                <For each={ss}>
+                  {(s) => (
+                    <a
+                      classList={{ sel: dockOpen() && curId() === s.id, na: !s.available }}
+                      title={s.available ? s.module : s.error}
+                      onClick={() => pickStage(s.id)}
+                    >
+                      {s.title}
+                    </a>
+                  )}
+                </For>
+              </>
             )}
           </For>
           <span class="sp" />
+          <Show when={busy()}>
+            <span class="badge running">running</span>
+          </Show>
           <button class="link" onClick={() => setDockOpen(!dockOpen())}>
             {dockOpen() ? "▾" : "▴"}
           </button>
@@ -323,62 +307,21 @@ export default function App() {
 
         <Show when={dockOpen()}>
           <div class="dockbody">
-            <Show when={tab() === "stages"}>
-              <StagePanel
-                stages={stages()}
-                error={stages.error}
-                curId={curId()}
-                setCurId={setCurId}
-                values={values()}
-                setValue={setValue}
-                reset={resetForm}
-                busy={busy()}
-                status={status()}
-                onRun={run}
-                onApply={() => setConfirmOpen(true)}
-                onCancel={() => jobId() && api.cancel(jobId()!)}
-                roots={roots()}
-                onSettings={() => setSettingsOpen(true)}
-              />
-            </Show>
-            <div class="pane" ref={logPane} style={{ display: tab() === "log" ? "block" : "none" }}>
-              <pre class="log">{log()}</pre>
-            </div>
-            <Show when={tab() === "report"}>
-              <div class="pane">
-                <Show
-                  when={report()}
-                  fallback={<div class="dim">{reportErr() || "Run a stage; its report.json shows here."}</div>}
-                >
-                  {(r) => <Report path={r().path} report={r().report} />}
-                </Show>
-              </div>
-            </Show>
-            <Show when={tab() === "jobs"}>
-              <div class="pane">
-                <Show when={jobs()?.length} fallback={<span class="dim">No jobs yet.</span>}>
-                  <table>
-                    <thead>
-                      <tr><th>started</th><th>job</th><th>stage</th><th>state</th><th>apply</th><th>argv</th></tr>
-                    </thead>
-                    <tbody>
-                      <For each={[...(jobs() ?? [])].reverse()}>
-                        {(j) => (
-                          <tr>
-                            <td>{fmtTime(j.started)}</td>
-                            <td><button class="link" onClick={() => attach(j.id)}>{j.id}</button></td>
-                            <td>{j.stage}</td>
-                            <td><span class={`badge ${j.state}`}>{j.state}</span></td>
-                            <td>{j.apply ? "yes" : ""}</td>
-                            <td class="mono">{j.argv.slice(2).join(" ")}</td>
-                          </tr>
-                        )}
-                      </For>
-                    </tbody>
-                  </table>
-                </Show>
-              </div>
-            </Show>
+            <StagePanel
+              stages={stages()}
+              error={stages.error}
+              curId={curId()}
+              values={values()}
+              setValue={setValue}
+              reset={resetForm}
+              busy={busy()}
+              status={status()}
+              onRun={run}
+              onApply={() => setConfirmOpen(true)}
+              onCancel={() => jobId() && api.cancel(jobId()!)}
+              roots={roots()}
+              onSettings={() => setSettingsOpen(true)}
+            />
           </div>
         </Show>
       </div>

@@ -1,14 +1,13 @@
-import { createMemo, For, Show } from "solid-js";
+import { createMemo, Show } from "solid-js";
 import { StageForm } from "./StageForm";
 import type { DatasetRoots, Stage, Values } from "../types";
 
-/** The stage runner, now a dock panel: the sidebar belongs to the dataset, so
-    the stage picker is a grouped <select> rather than a nav list. */
+/** The stage runner's body: the run bar + the schema-driven form for the stage
+    picked in the dock's button strip (the picker itself lives in App). */
 export function StagePanel(props: {
   stages?: Stage[];
   error?: unknown;
   curId: string;
-  setCurId: (id: string) => void;
   values: Values;
   setValue: (dest: string, v: unknown) => void;
   reset: () => void;
@@ -20,33 +19,13 @@ export function StagePanel(props: {
   roots?: DatasetRoots;
   onSettings: () => void;
 }) {
-  const groups = createMemo(() => {
-    const m = new Map<string, Stage[]>();
-    for (const s of props.stages ?? []) m.set(s.group, [...(m.get(s.group) ?? []), s]);
-    return [...m];
-  });
   const cur = createMemo(() => props.stages?.find((s) => s.id === props.curId));
 
   return (
     <div class="stagepanel">
       <Show when={!props.error} fallback={<div class="err pad">{String(props.error)}</div>}>
         <div class="stagebar">
-          <select value={props.curId} onChange={(e) => props.setCurId(e.currentTarget.value)}>
-            <For each={groups()}>
-              {([g, ss]) => (
-                <optgroup label={g}>
-                  <For each={ss}>
-                    {(s) => (
-                      <option value={s.id} disabled={!s.available}>
-                        {s.title}
-                        {s.available ? "" : " (unavailable)"}
-                      </option>
-                    )}
-                  </For>
-                </optgroup>
-              )}
-            </For>
-          </select>
+          <b>{cur()?.title}</b>
           <span class="dim mono">{cur()?.module}</span>
           <span class="sp" />
           <button classList={{ primary: !cur()?.apply }} disabled={props.busy || !cur()?.available} onClick={() => props.onRun(false)}>
@@ -60,7 +39,7 @@ export function StagePanel(props: {
           <button disabled={!props.busy} onClick={props.onCancel}>
             Cancel
           </button>
-          <span class="status">
+          <span class="status" title={props.status.text}>
             <Show when={props.status.state}>
               <span class={`badge ${props.status.state}`}>{props.status.state}</span>{" "}
             </Show>

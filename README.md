@@ -65,10 +65,13 @@ trainer's TE re-encode; a derived edit also says so, because it leaves the
 `.variants.txt` sidecar stale. `↑`/`↓` (or `j`/`k`) walk the images, the filter
 box narrows the tree, and `#<rel>|<kind>` in the URL is a link to one caption.
 
-The **stage runner is the bottom dock**: pick a stage, fill the form (generated
-from the CLI's own `--help`), **Dry run**, read the log and `report.json`, then
-**Apply** — the dataset stays on screen throughout, and refreshes when the job
-finishes. Stages run as `python -m …` subprocesses, one at a time; the server
+The **stage runner is the bottom dock**: its button strip *is* the stage list
+(grouped: captions / grouping / masking), so one click picks a stage and a
+second click on the open one folds the dock away. Fill the form (generated from
+the CLI's own `--help`), **Dry run**, then **Apply** — the dataset stays on
+screen throughout, and refreshes when the job finishes. The run's newest output
+line shows in the stage bar; the log / `report.json` / job-history panels are
+being reworked. Stages run as `python -m …` subprocesses, one at a time; the server
 never loads a model. `--host 0.0.0.0` exposes it on the LAN for a headless GPU
 box (no auth — use your own tunnel), `--home` overrides the curation home. ⚙
 Settings holds the three dataset roots and a one-time Hugging Face sign-in (the
