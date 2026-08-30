@@ -36,6 +36,24 @@ _PATH_HINTS = (
 )
 
 
+ROOT_FIELDS: dict[str, dict[str, str]] = {
+    # stage id → {argparse dest: dataset root name}. These fields are filled
+    # from the Settings dialog's dataset roots (the same three trees the
+    # sidebar joins), so no stage form re-asks for them.
+    "autotag": {"src": "src", "dst": "dst"},
+    "position": {"src": "src", "dst": "dst"},
+    "correct": {"src": "src", "dst": "dst"},
+    "audit": {"src": "src", "dst": "dst"},
+    "audit_apply": {"source": "src"},
+    "groups": {"source_dir": "src"},
+    "masks_sam": {"image_dir": "src"},
+    "masks_mit": {"image_dir": "src"},
+    # Only the *merged* output is the masks root; each generator's --mask-dir
+    # is an intermediate that has to differ from it, so it stays on the form.
+    "masks_merge": {"output_dir": "masks"},
+}
+
+
 @dataclass(frozen=True)
 class Stage:
     id: str
@@ -141,6 +159,9 @@ class Field:
     label: str = ""
     """What the form shows: the flag, or the dest for a ``store_false`` flag so
     a ticked box always means *on*."""
+    root: str | None = None
+    """Bound to a dataset root (``src``/``dst``/``masks``): the GUI hides the
+    field and :func:`build_argv` fills it from the Settings roots."""
 
 
 def load_parser(stage: Stage) -> argparse.ArgumentParser:
@@ -227,6 +248,9 @@ def schema(stage: Stage) -> dict[str, Any]:
     except ImportError as e:  # extra not installed
         return {**base, "available": False, "error": str(e), "fields": [], "doc": ""}
     fs = fields_of(parser)
+    bound = ROOT_FIELDS.get(stage.id, {})
+    for f in fs:
+        f.root = bound.get(f.dest)
     return {
         **base,
         "available": True,
@@ -237,7 +261,11 @@ def schema(stage: Stage) -> dict[str, Any]:
 
 
 def build_argv(
-    fields: list[dict[str, Any]], values: dict[str, Any], *, apply: bool = False
+    fields: list[dict[str, Any]],
+    values: dict[str, Any],
+    *,
+    apply: bool = False,
+    roots: dict[str, str] | None = None,
 ) -> list[str]:
     """Turn a ``{dest: value}`` form payload into argv for ``python -m <module>``.
 
@@ -246,6 +274,10 @@ def build_argv(
     omitted, so the CLI's own defaults stay in charge; ``apply`` toggles the
     ``--apply`` flag regardless of what the form sent, so the Dry run / Apply
     buttons are the only route.
+
+    ``roots`` (``{"src": …, "dst": …, "masks": …}``) fills every field bound by
+    :data:`ROOT_FIELDS`, overriding whatever the form sent: the dataset roots
+    are set once in Settings and no stage gets to disagree with them.
     """
     argv: list[str] = []
     positional: list[str] = []
@@ -255,7 +287,8 @@ def build_argv(
             if apply:
                 argv.append(f.flags[0])
             continue
-        v = values.get(f.dest, f.default)
+        bound = (roots or {}).get(f.root or "")
+        v = bound if bound else values.get(f.dest, f.default)
         if f.kind == "bool":
             v = bool(v)
             if v == f.default:

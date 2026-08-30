@@ -14,6 +14,8 @@ export interface Field {
   group: string;
   negate: string | null;
   label: string;
+  /** Bound to a dataset root — filled server-side from Settings, hidden here. */
+  root: RootName | null;
 }
 
 export interface Stage {

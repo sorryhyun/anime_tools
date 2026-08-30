@@ -71,6 +71,21 @@ def test_enum_and_float_kinds():
     ]
 
 
+def test_dataset_roots_fill_the_bound_fields():
+    """--src/--dst come from the Settings roots, not from the stage form."""
+    _, fs = _stage("position")
+    assert {f["dest"]: f["root"] for f in fs if f["root"]} == {
+        "src": "src",
+        "dst": "dst",
+    }
+    argv = S.build_argv(
+        fs, {"src": "ignored", "dst": "ignored"}, roots={"src": "a", "dst": "b"}
+    )
+    assert argv == ["--src", "a", "--dst", "b"]
+    # A root left at its default still drops out of the argv.
+    assert S.build_argv(fs, {}, roots={"src": "image_dataset"}) == []
+
+
 def test_required_field_is_enforced():
     _, fs = _stage("correct")
     with pytest.raises(ValueError, match="--src"):

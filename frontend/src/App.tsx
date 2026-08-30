@@ -337,6 +337,8 @@ export default function App() {
                 onRun={run}
                 onApply={() => setConfirmOpen(true)}
                 onCancel={() => jobId() && api.cancel(jobId()!)}
+                roots={roots()}
+                onSettings={() => setSettingsOpen(true)}
               />
             </Show>
             <div class="pane" ref={logPane} style={{ display: tab() === "log" ? "block" : "none" }}>

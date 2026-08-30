@@ -124,7 +124,7 @@ def create_app(
         values = body.get("values") or {}
         apply = bool(body.get("apply"))
         try:
-            argv = S.build_argv(sc["fields"], values, apply=apply)
+            argv = S.build_argv(sc["fields"], values, apply=apply, roots=_root_paths())
         except ValueError as e:
             raise HTTPException(400, str(e)) from e
         try:
@@ -206,6 +206,11 @@ def create_app(
             return D.resolve_roots(merged)
         except D.DatasetError as e:
             raise HTTPException(400, str(e)) from e
+
+    def _root_paths() -> dict[str, str]:
+        """The saved dataset roots, home-relative, for the stage fields bound to
+        them (``S.ROOT_FIELDS``): one setting, no per-stage src/dst to disagree."""
+        return {k: v["path"] for k, v in _roots().as_dict().items()}
 
     @app.get("/api/dataset/roots")
     def dataset_roots() -> dict[str, Any]:

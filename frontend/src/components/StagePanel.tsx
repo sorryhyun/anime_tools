@@ -1,6 +1,6 @@
 import { createMemo, For, Show } from "solid-js";
 import { StageForm } from "./StageForm";
-import type { Stage, Values } from "../types";
+import type { DatasetRoots, Stage, Values } from "../types";
 
 /** The stage runner, now a dock panel: the sidebar belongs to the dataset, so
     the stage picker is a grouped <select> rather than a nav list. */
@@ -17,6 +17,8 @@ export function StagePanel(props: {
   onRun: (apply: boolean) => void;
   onApply: () => void;
   onCancel: () => void;
+  roots?: DatasetRoots;
+  onSettings: () => void;
 }) {
   const groups = createMemo(() => {
     const m = new Map<string, Stage[]>();
@@ -83,6 +85,8 @@ export function StagePanel(props: {
                   values={props.values}
                   setValue={props.setValue}
                   reset={props.reset}
+                  roots={props.roots}
+                  onSettings={props.onSettings}
                 />
               </Show>
             )}

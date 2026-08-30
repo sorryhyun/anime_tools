@@ -1,12 +1,13 @@
 import { createMemo, createSignal, For, Show, Switch, Match } from "solid-js";
-import type { Field, Stage, Values } from "../types";
+import type { DatasetRoots, Field, Stage, Values } from "../types";
 import { PathPicker } from "./PathPicker";
 
-/** Group fields by argparse group, preserving order. */
+/** Group fields by argparse group, preserving order. Fields bound to a dataset
+    root are left out: the server fills them from Settings. */
 function grouped(fields: Field[]): [string, Field[]][] {
   const m = new Map<string, Field[]>();
   for (const f of fields) {
-    if (f.dest === "apply") continue;
+    if (f.dest === "apply" || f.root) continue;
     const g = m.get(f.group) ?? [];
     g.push(f);
     m.set(f.group, g);
@@ -22,9 +23,12 @@ export function StageForm(props: {
   values: Values;
   setValue: (dest: string, v: unknown) => void;
   reset: () => void;
+  roots?: DatasetRoots;
+  onSettings: () => void;
 }) {
   const [picking, setPicking] = createSignal<string | null>(null);
   const groups = createMemo(() => grouped(props.stage.fields));
+  const bound = createMemo(() => props.stage.fields.filter((f) => f.root));
   const value = (f: Field) => props.values[f.dest] ?? f.default;
   const dirty = (f: Field) => {
     const v = props.values[f.dest];
@@ -36,6 +40,26 @@ export function StageForm(props: {
       <div class="doc">{props.stage.doc.trim()}</div>
       <Show when={props.stage.notes}>
         <div class="notes">⚠ {props.stage.notes}</div>
+      </Show>
+      <Show when={bound().length}>
+        <div class="rootstrip">
+          <For each={bound()}>
+            {(f) => {
+              const info = () => props.roots?.roots[f.root!];
+              return (
+                <span title={f.help}>
+                  <span class="mono">{f.label || f.flags[0] || f.dest}</span>{" "}
+                  <span classList={{ mono: true, err: info() ? !info()!.exists : false }}>
+                    {info()?.path ?? "…"}
+                  </span>
+                </span>
+              );
+            }}
+          </For>
+          <button class="link" type="button" onClick={props.onSettings}>
+            dataset roots ⚙
+          </button>
+        </div>
       </Show>
       <For each={groups()}>
         {([g, fs]) => (
