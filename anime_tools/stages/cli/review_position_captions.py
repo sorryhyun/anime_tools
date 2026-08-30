@@ -36,13 +36,13 @@ import numpy as np
 if not hasattr(np, "bool"):
     np.bool = np.bool_
 
-from PIL import Image, ImageDraw  # noqa: E402
+from PIL import Image, ImageDraw
 
-from anime_tools.captions.position_clauses import parse_caption  # noqa: E402
-from anime_tools._env import resolve_path  # noqa: E402
-from anime_tools._walk import walk_images  # noqa: E402
-from anime_tools.stages.multiview_sheet import _fit, _font  # noqa: E402
-from anime_tools.stages.position_captions import (  # noqa: E402
+from anime_tools._env import resolve_path
+from anime_tools._walk import walk_images
+from anime_tools.captions.position_clauses import parse_caption
+from anime_tools.stages.multiview_sheet import _fit, _font
+from anime_tools.stages.position_captions import (
     is_candidate,
     load_clause_vocabulary,
     propose_for_image,
@@ -244,10 +244,12 @@ figcaption{font-size:12px;color:#b8b8c0;margin-top:4px}
         f"<p class=sum><code>{html.escape(pattern)}</code> · "
         + " · ".join(f"{k} {v}" for k, v in summary.items())
         + "</p>",
-        "<p class='sum legend'>clause tag: "
-        "<span class='t moved'>moved out of the bag (v2)</span>"
-        "<span class='t novel'>novel — crop invention</span>"
-        "<span class='t duplicated'>still flat too (v1 shape)</span></p>",
+        (
+            "<p class='sum legend'>clause tag: "
+            "<span class='t moved'>moved out of the bag (v2)</span>"
+            "<span class='t novel'>novel — crop invention</span>"
+            "<span class='t duplicated'>still flat too (v1 shape)</span></p>"
+        ),
     ]
 
     def crop_card(i: int, c: dict) -> str:

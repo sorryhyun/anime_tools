@@ -27,9 +27,9 @@ import torch
 from PIL import Image
 from safetensors.torch import save_file as st_save
 
-from anime_tools.tagger import tagger as at
-from anime_tools.tagger import dbv4_backend as db
 from anime_tools.captions import tag_rules as tr
+from anime_tools.tagger import dbv4_backend as db
+from anime_tools.tagger import tagger as at
 
 # --------------------------------------------------------------------------- #
 # Fixtures
@@ -345,12 +345,11 @@ def test_backbone_preflight_respects_no_autofetch(tmp_path, monkeypatch):
 
 def test_hf_download_translates_gated_repo_error(monkeypatch):
     """The gated 401/403 is fast (not a hang) but must still name the recovery."""
+    import httpx
     import huggingface_hub
     from huggingface_hub.utils import GatedRepoError
 
     from anime_tools._hf import hf_download
-
-    import httpx
 
     def _boom(**_k):
         resp = httpx.Response(401, request=httpx.Request("GET", "https://hf.co/r"))

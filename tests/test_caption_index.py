@@ -9,7 +9,6 @@ from pathlib import Path
 
 from anime_tools.captions import index as bci
 
-
 # Minimal vocab sets: deliberately omits the newer characters so recovery must
 # carry them. "genshin impact" is a known copyright; "miside" is not (only
 # reachable via the same-caption bare tag). "general" is loaded solely to veto

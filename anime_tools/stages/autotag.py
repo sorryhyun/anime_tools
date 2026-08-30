@@ -31,9 +31,9 @@ applied run must be followed by ``make preprocess-te``.
 from __future__ import annotations
 
 from collections import Counter
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Callable, Mapping
 
 from PIL import Image
 
@@ -215,12 +215,12 @@ def build_tag_fn(
     stub ``tag_fn``. The checkpoint is auto-fetched when absent, matching the
     Dataset tab's one-click autotag.
     """
+    from anime_tools._env import resolve_path
     from anime_tools.tagger.tagger import (
         DEFAULT_TAGGER_DIR,
         AnimaTagger,
         ensure_tagger_checkpoint,
     )
-    from anime_tools._env import resolve_path
 
     resolved = resolve_path(str(ckpt_dir or DEFAULT_TAGGER_DIR))
     ensure_tagger_checkpoint(resolved)

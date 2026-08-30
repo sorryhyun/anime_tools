@@ -38,17 +38,15 @@ import json
 import os
 import re
 from collections import OrderedDict
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
+
+from anime_tools._walk import IMAGE_EXTENSIONS, caption_key, safe_walk
 
 # Shared torch-free tag-shape primitives, kept in sync with the Anima Tagger
 # vocab build (anime_tools/tagger/cli/vocab.py).
 from anime_tools.captions.taxonomy import is_artist_tag, is_count_tag, is_rating_tag
-from anime_tools._walk import IMAGE_EXTENSIONS
 from anime_tools.path_filter import filter_paths_by_glob
-from anime_tools._walk import caption_key
-from anime_tools._walk import safe_walk
-
 
 DEFAULT_VOCAB = "models/captioners/anima-tagger-dbv4/vocab.json"
 DEFAULT_OUT = "post_image_dataset/captions/caption_index.json"
@@ -317,12 +315,12 @@ def build_index(
     vstat = os.stat(vocab_path)
     return {
         "meta": {
-            "generated": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+            "generated": datetime.now(UTC).isoformat(timespec="seconds"),
             "src": str(src),
             "vocab_path": vocab_path,
-            "vocab_mtime": datetime.fromtimestamp(
-                vstat.st_mtime, timezone.utc
-            ).isoformat(timespec="seconds"),
+            "vocab_mtime": datetime.fromtimestamp(vstat.st_mtime, UTC).isoformat(
+                timespec="seconds"
+            ),
             "n_images": n_seen,
             "axes": ["character", "copyright", "artist", "count"],
             "paren_recover": recover_paren,

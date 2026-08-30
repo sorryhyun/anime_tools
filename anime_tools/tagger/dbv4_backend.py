@@ -35,9 +35,9 @@ from __future__ import annotations
 import csv
 import json
 import logging
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Dict, List, Mapping, Optional, Sequence, Tuple
 
 import numpy as np
 import torch
@@ -48,7 +48,7 @@ from torch import nn
 
 logger = logging.getLogger(__name__)
 
-from anime_tools.tagger.dbv4_meta import (  # noqa: E402 — re-exported
+from anime_tools.tagger.dbv4_meta import (
     DEFAULT_DBV4_ARCH,
     DEFAULT_DBV4_IMG_SIZE,
     DEFAULT_DBV4_REPO,
@@ -56,7 +56,7 @@ from anime_tools.tagger.dbv4_meta import (  # noqa: E402 — re-exported
 )
 
 # danbooru rating name (dbv4 card, category 9) -> Anima rating name.
-DBV4_RATING_MAP: Dict[str, str] = {
+DBV4_RATING_MAP: dict[str, str] = {
     "general": "safe",
     "sensitive": "sensitive",
     "questionable": "nsfw",
@@ -80,13 +80,13 @@ SIDECAR_META = "sidecar.json"
 @dataclass
 class Dbv4Card:
     repo: str
-    rows: List[dict]
+    rows: list[dict]
     """``selected_tags.csv`` rows in column order (column j == row j)."""
-    model_args: Dict[str, object]
+    model_args: dict[str, object]
     """``meta.json['model_args']`` — timm ``create_model`` kwargs (``act_layer`` …)."""
-    name_to_col: Dict[str, int] = field(default_factory=dict)
+    name_to_col: dict[str, int] = field(default_factory=dict)
     """space-normalised tag name → column, ratings excluded."""
-    rating_cols: Dict[str, int] = field(default_factory=dict)
+    rating_cols: dict[str, int] = field(default_factory=dict)
     """Anima rating name → column."""
 
     @property
@@ -98,7 +98,7 @@ class Dbv4Card:
 
 
 def load_dbv4_card(
-    repo: str = DEFAULT_DBV4_REPO, revision: Optional[str] = None
+    repo: str = DEFAULT_DBV4_REPO, revision: str | None = None
 ) -> Dbv4Card:
     """Fetch + parse ``selected_tags.csv`` and ``meta.json`` for ``repo``."""
     from anime_tools._hf import hf_download
@@ -139,8 +139,8 @@ class VocabAlignment:
     """LongTensor — our vocab indices that dbv4 can emit."""
     ext_idx: torch.Tensor
     """LongTensor — the matching dbv4 columns, same order as ``ours_idx``."""
-    unmatched_by_category: Dict[str, int]
-    unmatched: List[Tuple[int, str, str]]
+    unmatched_by_category: dict[str, int]
+    unmatched: list[tuple[int, str, str]]
     """``(our_index, name, category)`` for every tag dbv4 cannot emit."""
 
     def supported_mask(self, n_tags: int) -> torch.Tensor:
@@ -152,7 +152,7 @@ class VocabAlignment:
 def align_vocab(
     vocab_tags: Sequence[Mapping[str, object]],
     card: Dbv4Card,
-    rename_recovery: Optional[Mapping[str, str]] = None,
+    rename_recovery: Mapping[str, str] | None = None,
 ) -> VocabAlignment:
     """Join our ``vocab.json['tags']`` onto the dbv4 card by name.
 
@@ -161,10 +161,10 @@ def align_vocab(
     :func:`load_dbv4_card`.
     """
     rename_recovery = rename_recovery or {}
-    ours_idx: List[int] = []
-    ext_idx: List[int] = []
-    unmatched_by_cat: Dict[str, int] = {}
-    unmatched: List[Tuple[int, str, str]] = []
+    ours_idx: list[int] = []
+    ext_idx: list[int] = []
+    unmatched_by_cat: dict[str, int] = {}
+    unmatched: list[tuple[int, str, str]] = []
     for t in vocab_tags:
         name = str(t["name"])
         j = card.name_to_col.get(name)
@@ -185,7 +185,7 @@ def align_vocab(
     )
 
 
-def rename_recovery_from_rules(rules) -> Dict[str, str]:
+def rename_recovery_from_rules(rules) -> dict[str, str]:
     """``rules.yaml`` replacements are ``src → tgt``; alignment needs ``tgt → src``."""
     return {tgt: src for src, tgt in rules.replacements}
 
@@ -239,8 +239,8 @@ class Dbv4Backend:
         img_size: int = DEFAULT_DBV4_IMG_SIZE,
         device: torch.device | str | None = None,
         dtype: torch.dtype = torch.bfloat16,
-        revision: Optional[str] = None,
-        card: Optional[Dbv4Card] = None,
+        revision: str | None = None,
+        card: Dbv4Card | None = None,
     ):
         self.repo = repo
         self.arch = arch
@@ -251,9 +251,9 @@ class Dbv4Backend:
         self.dtype = dtype
         self.revision = revision
         self._card = card
-        self._model: Optional[nn.Module] = None
-        self._mean: Optional[torch.Tensor] = None
-        self._std: Optional[torch.Tensor] = None
+        self._model: nn.Module | None = None
+        self._mean: torch.Tensor | None = None
+        self._std: torch.Tensor | None = None
 
     @property
     def card(self) -> Dbv4Card:
@@ -363,8 +363,8 @@ class SidecarHead(nn.Module):
     ):
         super().__init__()
         self.d_in = int(d_in)
-        self.bce_indices: Tuple[int, ...] = tuple(int(i) for i in bce_indices)
-        self.people_count_labels: Tuple[str, ...] = tuple(people_count_labels)
+        self.bce_indices: tuple[int, ...] = tuple(int(i) for i in bce_indices)
+        self.people_count_labels: tuple[str, ...] = tuple(people_count_labels)
         self.feature = feature
         n_out = len(self.bce_indices) + len(self.people_count_labels)
         self.fc = nn.Linear(self.d_in, n_out)
@@ -373,15 +373,13 @@ class SidecarHead(nn.Module):
     def n_bce(self) -> int:
         return len(self.bce_indices)
 
-    def forward(
-        self, hidden: torch.Tensor
-    ) -> Tuple[torch.Tensor, Optional[torch.Tensor]]:
+    def forward(self, hidden: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor | None]:
         out = self.fc(hidden)
         bce = out[:, : self.n_bce]
         people = out[:, self.n_bce :] if self.people_count_labels else None
         return bce, people
 
-    def meta(self) -> Dict[str, object]:
+    def meta(self) -> dict[str, object]:
         return {
             "d_in": self.d_in,
             "feature": self.feature,
@@ -390,7 +388,7 @@ class SidecarHead(nn.Module):
         }
 
     def save(
-        self, ckpt_dir: str | Path, extra_meta: Optional[Mapping[str, object]] = None
+        self, ckpt_dir: str | Path, extra_meta: Mapping[str, object] | None = None
     ) -> None:
         ckpt_dir = Path(ckpt_dir)
         st_save(
@@ -404,7 +402,7 @@ class SidecarHead(nn.Module):
             json.dump(meta, f, indent=2)
 
     @classmethod
-    def load(cls, ckpt_dir: str | Path) -> Optional["SidecarHead"]:
+    def load(cls, ckpt_dir: str | Path) -> SidecarHead | None:
         ckpt_dir = Path(ckpt_dir)
         w, m = ckpt_dir / SIDECAR_WEIGHTS, ckpt_dir / SIDECAR_META
         if not (w.exists() and m.exists()):

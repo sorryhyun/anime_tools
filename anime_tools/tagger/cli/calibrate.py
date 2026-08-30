@@ -14,8 +14,6 @@ sweep is degenerate, but the floor keeps the head well-formed for inference.
 
 from __future__ import annotations
 
-from typing import Optional, Tuple
-
 import torch
 
 
@@ -24,11 +22,10 @@ def calibrate_thresholds(
     targets: torch.Tensor,  # [N, n_tags] multi-hot
     sweep: torch.Tensor,  # [K] candidate thresholds
     default: float = 0.5,
-    skip_indices: Optional[
-        torch.Tensor
-    ] = None,  # LongTensor of tag indices to leave at default
+    skip_indices: torch.Tensor
+    | None = None,  # LongTensor of tag indices to leave at default
     min_support: int = 1,
-) -> Tuple[torch.Tensor, torch.Tensor]:
+) -> tuple[torch.Tensor, torch.Tensor]:
     """Per-tag F1-optimal threshold sweep.
 
     Returns ``(thresholds[n_tags], best_f1[n_tags])``. Tags with fewer than

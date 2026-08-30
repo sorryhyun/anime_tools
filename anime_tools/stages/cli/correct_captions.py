@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
+from anime_tools._env import curation_home
 from anime_tools.captions.correction import (
     CaptionCorrectionOptions,
     find_tag_csv,
@@ -13,7 +14,6 @@ from anime_tools.captions.correction import (
 )
 from anime_tools.captions.tag_drop_groups import drop_group_names, parse_drop_groups
 from anime_tools.stages.captions import write_corrected_preprocess_captions
-from anime_tools._env import curation_home
 
 
 def main() -> None:

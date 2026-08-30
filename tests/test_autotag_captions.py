@@ -27,7 +27,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from anime_tools.stages.autotag import (  # noqa: E402
+from anime_tools.stages.autotag import (
     AutotagOptions,
     merge_tags,
     run_autotag_captions,

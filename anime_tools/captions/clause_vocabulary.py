@@ -23,15 +23,15 @@ without a model. Per-rule evidence and the knob table live in
 from __future__ import annotations
 
 import logging
+from collections.abc import Mapping
 from dataclasses import dataclass, field
-from functools import lru_cache
+from functools import cache
 from pathlib import Path
-from typing import Mapping
 
 import yaml
 
-from anime_tools.captions.taxonomy import is_artist_tag, is_count_tag, is_rating_tag
 from anime_tools._env import resolve_path
+from anime_tools.captions.taxonomy import is_artist_tag, is_count_tag, is_rating_tag
 
 logger = logging.getLogger(__name__)
 
@@ -125,7 +125,7 @@ def load_clause_groups(path: str | Path = CLAUSE_GROUPS_CONFIG) -> ClauseGroups:
     )
 
 
-@lru_cache(maxsize=None)
+@cache
 def default_clause_groups() -> ClauseGroups:
     """The shipped policy, read once per process."""
     return load_clause_groups()

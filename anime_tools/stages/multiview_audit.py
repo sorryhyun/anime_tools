@@ -37,9 +37,9 @@ Read-only apart from :func:`apply_findings`.
 from __future__ import annotations
 
 from collections import Counter
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Callable, Iterable, Mapping, Sequence
 
 from PIL import Image
 

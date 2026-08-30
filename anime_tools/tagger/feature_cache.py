@@ -14,7 +14,7 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-__all__ = ["feature_cache_root", "cache_dir_for"]
+__all__ = ["cache_dir_for", "feature_cache_root"]
 
 
 def feature_cache_root(args: argparse.Namespace) -> Path:

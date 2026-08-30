@@ -50,7 +50,6 @@ import re
 import shutil
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
 
 import torch
 from PIL import Image
@@ -58,6 +57,7 @@ from safetensors.torch import load_file as st_load
 
 from anime_tools.captions import tag_groups as tg
 from anime_tools.captions import tag_rules as tr
+from anime_tools.captions.taxonomy import classify_people
 from anime_tools.tagger.dbv4_backend import (
     UNSUPPORTED_LOGIT,
     Dbv4Backend,
@@ -66,7 +66,6 @@ from anime_tools.tagger.dbv4_backend import (
     probs_to_logits,
     rename_recovery_from_rules,
 )
-from anime_tools.captions.taxonomy import classify_people
 
 logger = logging.getLogger(__name__)
 
@@ -233,7 +232,7 @@ _EXACT_COUNT_RES = tuple(
 )
 
 
-def dedupe_count_tags(kept: Dict[str, float]) -> None:
+def dedupe_count_tags(kept: dict[str, float]) -> None:
     """Drop all but the highest-scoring exact count per family, in place.
 
     Training captions never carry two exact counts of one family
@@ -249,7 +248,7 @@ def dedupe_count_tags(kept: Dict[str, float]) -> None:
 
 
 # Canonical caption-format slot order (matches Anima training captions).
-SLOT_ORDER: Tuple[str, ...] = (
+SLOT_ORDER: tuple[str, ...] = (
     "rating",
     "count",
     "character",
@@ -260,7 +259,7 @@ SLOT_ORDER: Tuple[str, ...] = (
 
 # Booru tag-type integer → category name. Written into vocab.json and read back
 # at inference, so changes here invalidate existing checkpoints.
-TAG_TYPE_NAMES: Dict[int, str] = {
+TAG_TYPE_NAMES: dict[int, str] = {
     0: "general",
     1: "artist",
     3: "copyright",
@@ -274,12 +273,12 @@ TAG_TYPE_NAMES: Dict[int, str] = {
 # booru aliases). Do not reorder without rebuilding vocab.json/dataset.json —
 # but existing checkpoints are unaffected since AnimaTagger reads ratings/
 # n_ratings from the checkpoint itself, so a 3-class checkpoint still works.
-RATINGS: Tuple[str, ...] = ("safe", "sensitive", "nsfw", "explicit")
+RATINGS: tuple[str, ...] = ("safe", "sensitive", "nsfw", "explicit")
 
 # 8-class people-count bucket from parsed count tags
 # (``anime_tools.tagger.cli.constants.classify_people``); dedicated softmax head.
 # Order is the canonical class index — do not reorder without rebuilding vocab.
-PEOPLE_COUNT_LABELS: Tuple[str, ...] = (
+PEOPLE_COUNT_LABELS: tuple[str, ...] = (
     "no_people",  # 0 — no count tag at all
     "1girl",  # 1 — 1girl, no boy
     "1girl_1boy",  # 2 — exactly one of each
@@ -375,12 +374,12 @@ class AnimaTagger:
                 f"checkpoint (default {DEFAULT_TAGGER_DIR}; `make download-models` "
                 "or `python -m anime_tools.tagger.cli.build_dbv4_ckpt`)."
             )
-        self._dbv4: Optional[Dbv4Backend] = None
-        self._sidecar: Optional[SidecarHead] = None
+        self._dbv4: Dbv4Backend | None = None
+        self._sidecar: SidecarHead | None = None
 
         with open(self.ckpt_dir / "vocab.json", encoding="utf-8") as f:
             vocab = json.load(f)
-        self.tag_entries: List[_TagEntry] = [
+        self.tag_entries: list[_TagEntry] = [
             _TagEntry(
                 name=t["name"],
                 index=int(t["index"]),
@@ -389,14 +388,14 @@ class AnimaTagger:
             )
             for t in vocab["tags"]
         ]
-        self.ratings: List[str] = list(vocab["ratings"])
+        self.ratings: list[str] = list(vocab["ratings"])
         # empty = legacy/disabled checkpoint (no people-count head, n_people_counts == 0)
-        self.people_count_labels: List[str] = list(
+        self.people_count_labels: list[str] = list(
             vocab.get("people_count_labels") or []
         )
         # "original" copyright index; the uncertainty-fallback in predict()
         # when a character misses _character_floor.
-        self._original_idx: Optional[int] = next(
+        self._original_idx: int | None = next(
             (
                 e.index
                 for e in self.tag_entries
@@ -404,7 +403,7 @@ class AnimaTagger:
             ),
             None,
         )
-        self._by_cat: Dict[str, List[Tuple[int, float, str]]] = {}
+        self._by_cat: dict[str, list[tuple[int, float, str]]] = {}
         for e in self.tag_entries:
             cat = e.category if e.category in SLOT_ORDER else "general"
             self._by_cat.setdefault(cat, []).append((e.index, e.median_pos, e.name))
@@ -428,14 +427,14 @@ class AnimaTagger:
         # attached to every ``predict`` output so a downstream consumer can
         # reason about how far a score fell short of the tagger's own decision
         # (the position-clause bag relaxation reads it).
-        self.threshold_map: Dict[str, float] = {
+        self.threshold_map: dict[str, float] = {
             e.name: float(t) for e, t in zip(self.tag_entries, self.thresholds)
         }
 
         # Optional groups snapshot; None when missing (older/flat-vocab).
         groups_path = self.ckpt_dir / "groups.yaml"
-        self._groups: Optional[tg.TagGroups] = None
-        self._group_lookup: Dict[str, Dict] = {}
+        self._groups: tg.TagGroups | None = None
+        self._group_lookup: dict[str, dict] = {}
         # solo/1girl/1boy/1other are single-count; anything else matching the
         # count regex is multi-count (mirrors the trainer's GroupRouter).
         self._single_count_names = {"solo", "1girl", "1boy", "1other"}
@@ -451,7 +450,7 @@ class AnimaTagger:
                     continue
                 # sentinel groups carry a synthetic "<none:group>" slot, appended
                 # so argmax can pick "none of these" and emit nothing.
-                sentinel_local: Optional[int] = None
+                sentinel_local: int | None = None
                 if g.sentinel:
                     s_idx = tag_to_idx.get(tg.sentinel_tag_name(g.name))
                     if s_idx is not None:
@@ -537,7 +536,7 @@ class AnimaTagger:
     @torch.no_grad()
     def _heads_forward(
         self, pil_img: Image.Image
-    ) -> Tuple[torch.Tensor, torch.Tensor, Optional[torch.Tensor]]:
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor | None]:
         """Head pass: dbv4 backend + optional sidecar.
 
         Returns ``(tag_logits[n_tags], rating_probs[n_ratings], people_probs
@@ -549,7 +548,7 @@ class AnimaTagger:
         out = self._dbv4.forward([pil_img])
         probs = torch.zeros(self.n_tags)
         probs[self._align_ours] = out.probs[0, self._align_ext]
-        people: Optional[torch.Tensor] = None
+        people: torch.Tensor | None = None
         if self._sidecar is not None:
             bce, people_logits = self._sidecar(out.hidden.to(self.device))
             probs[self._sidecar_bce_idx] = bce[0].float().sigmoid().cpu()
@@ -573,7 +572,7 @@ class AnimaTagger:
         return self._heads_forward(pil_img)[0].float().cpu()
 
     @torch.no_grad()
-    def predict(self, pil_img: Image.Image) -> Dict[str, object]:
+    def predict(self, pil_img: Image.Image) -> dict[str, object]:
         """Run one image through the head; return raw + thresholded outputs.
 
         Returns a dict with ``rating`` / ``rating_scores``; ``people_count`` /
@@ -598,7 +597,7 @@ class AnimaTagger:
             if kept_mask[i] and not tg.is_sentinel_name(self.tag_entries[i].name)
         }
         rating_idx = int(rating_probs.argmax().item())
-        out: Dict[str, object] = {
+        out: dict[str, object] = {
             "rating": self.ratings[rating_idx],
             "rating_scores": {
                 r: float(rating_probs[i].cpu()) for i, r in enumerate(self.ratings)
@@ -623,7 +622,7 @@ class AnimaTagger:
             is_solo = bool(kept_names & self._single_count_names) and not (
                 kept_names & self._multi_count_names
             )
-            group_preds: Dict[str, Optional[str]] = {}
+            group_preds: dict[str, str | None] = {}
             for name, info in self._group_lookup.items():
                 mode = info["mode"]
                 escape_fired = bool(kept_names & set(info["escape_names"]))
@@ -751,7 +750,7 @@ class AnimaTagger:
             for i, name in enumerate([e.name for e in self.tag_entries])
             if name in kept
         }
-        slotted: Dict[str, List[str]] = {cat: [] for cat in SLOT_ORDER}
+        slotted: dict[str, list[str]] = {cat: [] for cat in SLOT_ORDER}
         slotted["rating"].append(out["rating"])
         for cat, entries in self._by_cat.items():
             for idx, _, name in entries:
@@ -759,7 +758,7 @@ class AnimaTagger:
                     slotted.setdefault(cat, []).append(name)
         # Re-apply tag rules at emit time as a safety net: the model can predict
         # both `bra` and `black bra`; apply_rules drops `bra` in that case.
-        flat: List[str] = []
+        flat: list[str] = []
         for cat in SLOT_ORDER:
             flat.extend(slotted.get(cat, []))
         rating_held = flat[:1]

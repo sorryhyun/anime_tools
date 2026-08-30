@@ -81,7 +81,7 @@ def hf_download(*, what: str, hint: str = "make download-models", **kwargs):
             f"{what}: {repo} is a gated HuggingFace repo and this token cannot "
             f"access it ({type(exc).__name__}). Run `{hint}` and re-run."
         ) from exc
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         if _is_network_error(exc):
             raise FileNotFoundError(
                 f"{what}: download from HuggingFace stalled or failed "

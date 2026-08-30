@@ -24,12 +24,12 @@ import torch
 import torch.nn.functional as F
 
 from anime_tools.captions import tag_groups as tg
-from anime_tools.tagger.cli.eval_metrics import predict_with_inference_rule
 from anime_tools.captions.group_router import (
     GroupRouter,
     compute_grouped_loss,
     maxsup_term,
 )
+from anime_tools.tagger.cli.eval_metrics import predict_with_inference_rule
 
 # --------------------------------------------------------------------------- #
 # Resolution layer

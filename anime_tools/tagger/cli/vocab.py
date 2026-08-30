@@ -24,24 +24,23 @@ import json
 import logging
 import random
 from collections import Counter, defaultdict
+from collections.abc import Iterable, Sequence
 from pathlib import Path
-from typing import Dict, Iterable, List, Optional, Sequence, Tuple
 
 from anime_tools.captions import position_clauses as pc
 from anime_tools.captions import tag_groups as tg
 from anime_tools.captions import tag_rules as tr
-from anime_tools.tagger.tagger import (
-    PEOPLE_COUNT_LABELS,
-    RATINGS,
-    SLOT_ORDER,
-    TAG_TYPE_NAMES,
-)
-
 from anime_tools.captions.taxonomy import (
     canonical_rating,
     is_artist_tag,
     is_rating_tag,
     strip_artist_prefix,
+)
+from anime_tools.tagger.tagger import (
+    PEOPLE_COUNT_LABELS,
+    RATINGS,
+    SLOT_ORDER,
+    TAG_TYPE_NAMES,
 )
 
 from .constants import (
@@ -53,7 +52,7 @@ from .constants import (
 logger = logging.getLogger(__name__)
 
 
-def find_caption_files(roots: Sequence[Path]) -> List[Path]:
+def find_caption_files(roots: Sequence[Path]) -> list[Path]:
     """Discover all ``.txt`` caption files under the given roots.
 
     Skips dotfiles and the ``tag_cache``/``hash_cache`` JSON sidecars.
@@ -61,7 +60,7 @@ def find_caption_files(roots: Sequence[Path]) -> List[Path]:
     a stem appearing under multiple roots is *not* deduped here — that's the
     caller's job (see :func:`build_caption_index`, where earlier wins).
     """
-    out: List[Path] = []
+    out: list[Path] = []
     for root in roots:
         if not root.exists():
             logger.warning("caption root %s does not exist — skipping", root)
@@ -79,7 +78,7 @@ def find_caption_files(roots: Sequence[Path]) -> List[Path]:
 def build_caption_index(
     paths: Iterable[Path],
     rules: tr.TagRules,
-) -> Dict[str, Tuple[Path, Optional[Path], List[str]]]:
+) -> dict[str, tuple[Path, Path | None, list[str]]]:
     """Map ``stem → (caption_path, image_path | None, parsed_tags)``.
 
     When a stem appears in multiple caption sources, the *first* path wins —
@@ -92,7 +91,7 @@ def build_caption_index(
     Position clauses are dropped: only the flat tag bag feeds tag training,
     so clause-bound tags (``On the left, …``) never enter the label space.
     """
-    index: Dict[str, Tuple[Path, Optional[Path], List[str]]] = {}
+    index: dict[str, tuple[Path, Path | None, list[str]]] = {}
     for path in paths:
         stem = path.stem
         if stem in index:
@@ -113,7 +112,7 @@ def build_caption_index(
     return index
 
 
-def load_tag_cache(path: Path) -> Dict[str, str]:
+def load_tag_cache(path: Path) -> dict[str, str]:
     """Load a tag-taxonomy source and map tag → category name.
 
     Two on-disk formats are accepted, dispatched by suffix:
@@ -133,7 +132,7 @@ def load_tag_cache(path: Path) -> Dict[str, str]:
         return _load_tag_cache_csv(path)
     with open(path) as f:
         raw = json.load(f)
-    out: Dict[str, str] = {}
+    out: dict[str, str] = {}
     for tag, type_id in raw.items():
         cat = TAG_TYPE_NAMES.get(int(type_id))
         if cat is not None:
@@ -142,9 +141,9 @@ def load_tag_cache(path: Path) -> Dict[str, str]:
     return out
 
 
-def _load_tag_cache_csv(path: Path) -> Dict[str, str]:
+def _load_tag_cache_csv(path: Path) -> dict[str, str]:
     """Parse ``danbooru_tags_classified.csv`` into a tag → category-name map."""
-    out: Dict[str, str] = {}
+    out: dict[str, str] = {}
     with path.open("r", encoding="utf-8-sig", newline="") as f:
         reader = csv.DictReader(f)
         for row in reader:
@@ -169,8 +168,8 @@ _OVERRIDABLE_CATEGORIES = frozenset(TAG_TYPE_NAMES.values())
 
 def categorize(
     tag: str,
-    cache: Dict[str, str],
-    overrides: Optional[Dict[str, str]] = None,
+    cache: dict[str, str],
+    overrides: dict[str, str] | None = None,
 ) -> str:
     """Return ``rating`` / ``count`` / ``character`` / ``copyright`` /
     ``artist`` / ``general`` / ``metadata`` / ``deprecated`` for ``tag``.
@@ -214,7 +213,7 @@ def categorize(
     return cat
 
 
-def validate_overrides(overrides: Dict[str, str]) -> List[str]:
+def validate_overrides(overrides: dict[str, str]) -> list[str]:
     """Return a list of human-readable validation errors for overrides.
 
     Empty list → all entries are well-formed. Catches typos like
@@ -222,7 +221,7 @@ def validate_overrides(overrides: Dict[str, str]) -> List[str]:
     front so :func:`cmd_build_vocab` can fail loudly rather than silently
     typing tags into a slot the trainer doesn't understand.
     """
-    errors: List[str] = []
+    errors: list[str] = []
     for tag, cat in overrides.items():
         if cat not in _OVERRIDABLE_CATEGORIES:
             errors.append(
@@ -233,26 +232,26 @@ def validate_overrides(overrides: Dict[str, str]) -> List[str]:
 
 
 def build_vocab(
-    caption_index: Dict[str, Tuple[Path, Optional[Path], List[str]]],
-    tag_cache: Dict[str, str],
+    caption_index: dict[str, tuple[Path, Path | None, list[str]]],
+    tag_cache: dict[str, str],
     min_freq: int,
-    category_overrides: Optional[Dict[str, str]] = None,
-) -> Dict:
+    category_overrides: dict[str, str] | None = None,
+) -> dict:
     """Compute frequencies, categories, median emit positions; cut by min_freq."""
     freq: Counter = Counter()
-    sum_pos: Dict[str, int] = defaultdict(int)
-    pos_counts: Dict[str, int] = defaultdict(int)
+    sum_pos: dict[str, int] = defaultdict(int)
+    pos_counts: dict[str, int] = defaultdict(int)
 
     rating_freq: Counter = Counter()
     n_with_rating = 0
     people_freq: Counter = Counter()
 
-    for stem, (_, _, tags) in caption_index.items():
+    for _, _, tags in caption_index.values():
         # Pull rating off the front (Anima puts it first; scan the first few
         # defensively); everything else feeds the multi-label vocab. Legacy
         # booru spellings are folded onto the canonical band so a mixed corpus
         # reports one distribution rather than two.
-        rating_seen: Optional[str] = None
+        rating_seen: str | None = None
         for t in tags[:2]:
             canon = canonical_rating(t)
             if canon is not None:
@@ -284,11 +283,11 @@ def build_vocab(
     for tag in kept:
         cat = categorize(tag, tag_cache, category_overrides)
         cat_buckets[cat] += 1
-        bare = tag[1:] if tag.startswith("@") else tag
+        bare = tag.removeprefix("@")
         if bare in tag_cache:
             cache_hits += 1
 
-    tags_payload: List[Dict] = []
+    tags_payload: list[dict] = []
     for idx, tag in enumerate(kept):
         cat = categorize(tag, tag_cache, category_overrides)
         median_pos = sum_pos[tag] / max(pos_counts[tag], 1)
@@ -324,12 +323,12 @@ def make_split(
     stems: Sequence[str],
     val_frac: float,
     seed: int,
-) -> Dict[str, List[str]]:
+) -> dict[str, list[str]]:
     """Deterministic random split keyed by ``seed``."""
     rng = random.Random(seed)
     shuffled = list(stems)
     rng.shuffle(shuffled)
-    n_val = max(1, int(round(len(shuffled) * val_frac)))
+    n_val = max(1, round(len(shuffled) * val_frac))
     return {
         "val": sorted(shuffled[:n_val]),
         "train": sorted(shuffled[n_val:]),
@@ -339,10 +338,10 @@ def make_split(
 
 
 def build_manifest(
-    caption_index: Dict[str, Tuple[Path, Optional[Path], List[str]]],
-    vocab: Dict,
-    split: Dict,
-) -> Dict:
+    caption_index: dict[str, tuple[Path, Path | None, list[str]]],
+    vocab: dict,
+    split: dict,
+) -> dict:
     """Compact dataset.json: per-stem image path, multi-hot indices, rating, people-count.
 
     Stems lacking a sibling image file are dropped from the manifest (the
@@ -352,14 +351,14 @@ def build_manifest(
     parsed tags via :func:`classify_people` so the bucketing rule is the
     single source of truth (no plumbing through vocab).
     """
-    tag_to_idx: Dict[str, int] = {t["name"]: t["index"] for t in vocab["tags"]}
-    rating_to_idx: Dict[str, int] = {r: i for i, r in enumerate(vocab["ratings"])}
+    tag_to_idx: dict[str, int] = {t["name"]: t["index"] for t in vocab["tags"]}
+    rating_to_idx: dict[str, int] = {r: i for i, r in enumerate(vocab["ratings"])}
 
-    stems: List[str] = []
-    image_paths: List[str] = []
-    tag_indices: List[List[int]] = []
-    rating_indices: List[int] = []
-    people_count_indices: List[int] = []
+    stems: list[str] = []
+    image_paths: list[str] = []
+    tag_indices: list[list[int]] = []
+    rating_indices: list[int] = []
+    people_count_indices: list[int] = []
     n_no_image = 0
     n_no_rating = 0
     n_no_tags = 0
@@ -369,7 +368,7 @@ def build_manifest(
         if image_path is None:
             n_no_image += 1
             continue
-        rating_idx: Optional[int] = None
+        rating_idx: int | None = None
         for t in tags[:2]:
             # Raw literal first so a vocab.json built before the safe/nsfw
             # rename still indexes its own spellings; canonical form second so
@@ -421,11 +420,11 @@ def build_manifest(
 
 
 def scan_cache_coverage(
-    caption_index: Dict[str, Tuple[Path, Optional[Path], List[str]]],
-    tag_cache: Dict[str, str],
-    category_overrides: Optional[Dict[str, str]] = None,
-    coverage_ignore: Optional[Tuple[str, ...]] = None,
-) -> Dict:
+    caption_index: dict[str, tuple[Path, Path | None, list[str]]],
+    tag_cache: dict[str, str],
+    category_overrides: dict[str, str] | None = None,
+    coverage_ignore: tuple[str, ...] | None = None,
+) -> dict:
     """How many caption tags lack a category in gelcrawl's cache?
 
     A high miss rate would mean ``categorize()`` is falling back to
@@ -443,7 +442,7 @@ def scan_cache_coverage(
     ignore_subs = tuple(coverage_ignore or ())
     seen: Counter = Counter()
     missing: Counter = Counter()
-    for _, (_, _, tags) in caption_index.items():
+    for _, _, tags in caption_index.values():
         for tag in tags:
             if is_rating_tag(tag):
                 continue

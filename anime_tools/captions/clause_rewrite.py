@@ -14,8 +14,8 @@ Text and scores only — no pixels, no model. Per-rule evidence lives in
 
 from __future__ import annotations
 
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
-from typing import Mapping, Sequence
 
 from anime_tools.captions.clause_vocabulary import ClauseVocabulary
 

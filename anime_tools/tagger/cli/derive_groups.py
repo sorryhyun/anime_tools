@@ -36,8 +36,8 @@ import argparse
 import json
 import logging
 import re
+from collections.abc import Sequence
 from pathlib import Path
-from typing import Dict, List, Optional, Sequence, Set, Tuple
 
 import yaml
 
@@ -54,7 +54,7 @@ _MULTI_COUNT_RE = re.compile(
 )
 
 
-def _is_solo(names: Set[str]) -> bool:
+def _is_solo(names: set[str]) -> bool:
     """True when the caption is single-subject (one count tag, no multi tag).
 
     The single-count names (``1girl``…) also satisfy ``_MULTI_COUNT_RE``
@@ -85,10 +85,10 @@ def _slug(path: str) -> str:
 # --------------------------------------------------------------------------- #
 
 
-def _solo_sets_from_manifest(vocab: dict, manifest: dict) -> List[Set[str]]:
+def _solo_sets_from_manifest(vocab: dict, manifest: dict) -> list[set[str]]:
     """Per-sample tag-name sets restricted to single-subject samples."""
     idx2name = {int(t["index"]): t["name"] for t in vocab["tags"]}
-    out: List[Set[str]] = []
+    out: list[set[str]] = []
     for idxs in manifest.get("tag_indices", []):
         names = {idx2name[i] for i in idxs if i in idx2name}
         if _is_solo(names):
@@ -96,21 +96,21 @@ def _solo_sets_from_manifest(vocab: dict, manifest: dict) -> List[Set[str]]:
     return out
 
 
-def solo_sets_from_index(index) -> List[Set[str]]:
+def solo_sets_from_index(index) -> list[set[str]]:
     """Solo tag-name sets from a ``build_caption_index`` result.
 
     ``index`` maps ``stem → (caption_path, image_path, parsed_tags)``. Lets
     ``build_vocab`` derive groups from the scan it already did — no second pass.
     """
-    out: List[Set[str]] = []
-    for _stem, (_cap, _img, tags) in index.items():
+    out: list[set[str]] = []
+    for _cap, _img, tags in index.values():
         names = set(tags)
         if _is_solo(names):
             out.append(names)
     return out
 
 
-def _solo_sets_from_captions(caption_roots: Sequence[Path], rules) -> List[Set[str]]:
+def _solo_sets_from_captions(caption_roots: Sequence[Path], rules) -> list[set[str]]:
     """Scan caption ``.txt`` files (rules applied) → solo tag-name sets."""
     from .vocab import build_caption_index, find_caption_files
 
@@ -131,8 +131,8 @@ def build_groups(
     *,
     min_group_size: int,
     min_member_freq: int,
-    rename_recovery: Dict[str, str],
-) -> Tuple[Dict[str, List[str]], List[str]]:
+    rename_recovery: dict[str, str],
+) -> tuple[dict[str, list[str]], list[str]]:
     """Bucket general vocab tags by taxonomy ``소분류``.
 
     Returns ``(path → [member names], unmatched names)``. ``rename_recovery``
@@ -140,8 +140,8 @@ def build_groups(
     tag isn't found in the KB under its current name.
     """
     name2freq = {t["name"]: int(t["freq"]) for t in vocab["tags"]}
-    by_path: Dict[str, List[str]] = {}
-    unmatched: List[str] = []
+    by_path: dict[str, list[str]] = {}
+    unmatched: list[str] = []
     for t in vocab["tags"]:
         if t["category"] != "general":
             continue
@@ -163,8 +163,8 @@ def build_groups(
 
 
 def score_group(
-    members: List[str], solo_sets: List[Set[str]]
-) -> Tuple[int, int, float]:
+    members: list[str], solo_sets: list[set[str]]
+) -> tuple[int, int, float]:
     """Return ``(n_solo_any, n_solo_multi, multi_rate)`` for a group.
 
     ``n_solo_any`` = solo images with ≥1 member; ``n_solo_multi`` = those with
@@ -189,7 +189,7 @@ def decide_mode(
     min_support: int,
     softmax_cooc_max: float,
     borderline_cooc_max: float,
-) -> Tuple[str, str, str]:
+) -> tuple[str, str, str]:
     """Pick ``(yaml_mode, tier, rationale)`` for a group.
 
     Three tiers, because danbooru's hierarchical double-tagging (``long hair`` +
@@ -237,7 +237,7 @@ def decide_mode(
 # --------------------------------------------------------------------------- #
 
 
-def _unique_key(path: str, used: Set[str]) -> str:
+def _unique_key(path: str, used: set[str]) -> str:
     key = _slug(path)
     if key in used:
         # Prefix the 대분류 to disambiguate two leaves sharing a name.
@@ -252,14 +252,14 @@ def _unique_key(path: str, used: Set[str]) -> str:
     return n
 
 
-def emit_yaml(rows: List[dict]) -> str:
+def emit_yaml(rows: list[dict]) -> str:
     """Build a valid ``groups.yaml`` candidate with per-group review comments.
 
     Each group block is dumped via :func:`yaml.safe_dump` (guaranteed-valid,
     unicode-preserving) and preceded by a ``# REVIEW`` comment carrying the
     stats and the rationale for the chosen mode.
     """
-    out: List[str] = [
+    out: list[str] = [
         "# Auto-derived tag-group candidates — REVIEW before use.",
         "# Keys are slugged from the danbooru 소분류 taxonomy; rename to English.",
         "# softmax_when_solo groups: curate an `escape:` list for 'mixed' members",
@@ -267,7 +267,7 @@ def emit_yaml(rows: List[dict]) -> str:
         "version: 1",
         "",
     ]
-    used: Set[str] = set()
+    used: set[str] = set()
     for r in sorted(rows, key=lambda r: -len(r["tags"])):
         key = _unique_key(r["path"], used)
         block = {
@@ -290,7 +290,7 @@ def emit_yaml(rows: List[dict]) -> str:
     return "\n".join(out)
 
 
-def _escape_hints(members: List[str]) -> List[str]:
+def _escape_hints(members: list[str]) -> list[str]:
     """Heuristic 'mixed' member names worth considering as escape tags."""
     pat = re.compile(
         r"\b(multicolored|two-tone|gradient|streaked|hetero|multiple|mixed)\b"
@@ -302,14 +302,14 @@ def derive_rows(
     vocab: dict,
     kb,
     rules,
-    solo_sets: List[Set[str]],
+    solo_sets: list[set[str]],
     *,
     min_group_size: int,
     min_member_freq: int,
     min_group_support: int,
     softmax_cooc_max: float,
     borderline_cooc_max: float,
-) -> Tuple[List[dict], List[str]]:
+) -> tuple[list[dict], list[str]]:
     """Bucket general vocab by taxonomy, score co-occurrence, decide mode.
 
     The shared core of ``--mode derive_groups`` and ``build_vocab
@@ -325,7 +325,7 @@ def derive_rows(
         min_member_freq=min_member_freq,
         rename_recovery=rename_recovery,
     )
-    rows: List[dict] = []
+    rows: list[dict] = []
     for path, members in groups.items():
         n_any, n_multi, rate = score_group(members, solo_sets)
         mode, tier, rationale = decide_mode(
@@ -361,7 +361,7 @@ def derive_rows(
 # attribute families are emitted as derived softmax groups instead.
 # --------------------------------------------------------------------------- #
 
-_EN_KEY: Dict[str, str] = {
+_EN_KEY: dict[str, str] = {
     "얼굴/눈 > 눈 색상": "eye_color",
     "머리카락 > 머리 색상": "hair_color",
     "머리카락 > 머리 길이": "hair_length",
@@ -459,21 +459,21 @@ _PROMOTE_SOFTMAX = {
 
 
 def merge_apply(
-    rows: List[dict],
-    existing_yaml: Optional[Path],
+    rows: list[dict],
+    existing_yaml: Path | None,
     *,
     min_group_size: int,
-) -> Tuple[str, List[str]]:
+) -> tuple[str, list[str]]:
     """Merge derived ``rows`` onto an existing groups.yaml.
 
     Existing groups are preserved verbatim and claim their tags first; derived
     groups then add only their *unclaimed* members (tags are disjoint across
     groups — a loader invariant). Returns ``(yaml_text, notes)``.
     """
-    notes: List[str] = []
-    claimed: Set[str] = set()
-    preserved_blocks: List[str] = []
-    preserved_keys: Set[str] = set()
+    notes: list[str] = []
+    claimed: set[str] = set()
+    preserved_blocks: list[str] = []
+    preserved_keys: set[str] = set()
 
     if existing_yaml and existing_yaml.exists():
         existing = yaml.safe_load(existing_yaml.read_text()) or {}
@@ -489,7 +489,7 @@ def merge_apply(
             )
         notes.append(f"preserved {len(existing)} existing group(s) verbatim")
 
-    new_blocks: List[str] = []
+    new_blocks: list[str] = []
     n_new = n_promoted = 0
     for r in sorted(rows, key=lambda r: -len(r["tags"])):
         path = r["path"]
@@ -625,7 +625,7 @@ def cmd_derive_groups(args: argparse.Namespace) -> None:
         logger.info("no --out_yaml; pass one to write the candidate file")
 
 
-def _print_report(rows: List[dict], unmatched: List[str], n_general: int) -> None:
+def _print_report(rows: list[dict], unmatched: list[str], n_general: int) -> None:
     matched = n_general - len(unmatched)
     print(
         f"\nKB taxonomy coverage: {matched}/{n_general} general tags matched "

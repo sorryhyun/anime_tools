@@ -4,10 +4,8 @@ build and the caption-index builder type tag *shape* identically (no drift)."""
 
 from __future__ import annotations
 
-
-from anime_tools.captions import taxonomy as tx
-
 from anime_tools.captions import index as bci
+from anime_tools.captions import taxonomy as tx
 
 
 def test_taxonomy_is_torch_free():
@@ -21,7 +19,9 @@ def test_taxonomy_is_torch_free():
     code = (
         "import anime_tools.captions.taxonomy, sys; assert 'torch' not in sys.modules"
     )
-    r = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True)
+    r = subprocess.run(
+        [sys.executable, "-c", code], capture_output=True, text=True, check=False
+    )
     assert r.returncode == 0, (
         "importing anime_tools.captions.taxonomy pulled in torch:\n" + r.stderr
     )

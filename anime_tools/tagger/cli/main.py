@@ -30,8 +30,10 @@ import logging
 import os
 from pathlib import Path
 
-from anime_tools._env import load_dotenv  # noqa: E402
-from anime_tools._env import setup_logging  # noqa: E402
+from anime_tools._env import (
+    load_dotenv,
+    setup_logging,
+)
 
 # Pull CAPTION_CORPUS_DIR from anima_lora/.env before argparse builds defaults;
 # CLI flags still win over env values.

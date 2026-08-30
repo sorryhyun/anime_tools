@@ -16,7 +16,6 @@ everywhere.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Tuple
 
 import torch
 import torch.nn.functional as F
@@ -60,7 +59,7 @@ class _SoftmaxGroup:
     # ``tag_indices``, or None for legacy exactly-one groups. With a sentinel,
     # CE fires on every applicable sample (target = sentinel when no member
     # label), instead of only on samples carrying a member label.
-    sentinel_local: Optional[int] = None
+    sentinel_local: int | None = None
 
 
 @dataclass
@@ -89,34 +88,34 @@ class GroupRouter:
 
     n_tags: int
     bce_pos_weight: torch.Tensor  # FloatTensor [n_tags]
-    softmax_groups: List[_SoftmaxGroup] = field(default_factory=list)
-    softmax_member_indices: Optional[torch.Tensor] = None  # LongTensor [Σ K_g]
+    softmax_groups: list[_SoftmaxGroup] = field(default_factory=list)
+    softmax_member_indices: torch.Tensor | None = None  # LongTensor [Σ K_g]
     # All sentinel vocab indices across groups — CE-only slots, masked from
     # BCE unconditionally (their multi_hot column is always 0 by construction).
-    sentinel_indices: Optional[torch.Tensor] = None  # LongTensor [S]
-    solo_indices: Optional[torch.Tensor] = None  # LongTensor [s]
-    multi_indices: Optional[torch.Tensor] = None  # LongTensor [m]
+    sentinel_indices: torch.Tensor | None = None  # LongTensor [S]
+    solo_indices: torch.Tensor | None = None  # LongTensor [s]
+    multi_indices: torch.Tensor | None = None  # LongTensor [m]
     # Per-tag group id over ALL groups (any mode), for group-conditional
     # negative weighting (:func:`compute_grouped_loss` ``inactive_neg_weight``).
     # Value in ``[0, n_group_slots)``; the sentinel ``n_group_slots`` marks an
     # ungrouped tag (never down-weighted). ``None`` when the vocab has no groups.
-    group_of_tag: Optional[torch.Tensor] = None  # LongTensor [n_tags]
+    group_of_tag: torch.Tensor | None = None  # LongTensor [n_tags]
     n_group_slots: int = 0
 
     @classmethod
     def from_vocab(
         cls,
-        vocab_dict: Dict,
+        vocab_dict: dict,
         train_multi_hot: torch.Tensor,
         device: torch.device,
-    ) -> "GroupRouter":
+    ) -> GroupRouter:
         """Build the router from a vocab dict + the train split's multi_hot."""
         n_tags = int(train_multi_hot.shape[1])
-        groups_raw: List[Dict] = list(vocab_dict.get("groups") or [])
+        groups_raw: list[dict] = list(vocab_dict.get("groups") or [])
 
-        softmax_member: List[int] = []
-        softmax_groups: List[_SoftmaxGroup] = []
-        sentinel_idx_list: List[int] = []
+        softmax_member: list[int] = []
+        softmax_groups: list[_SoftmaxGroup] = []
+        sentinel_idx_list: list[int] = []
         for g in groups_raw:
             mode = g["mode"]
             if mode in ("softmax_when_solo", "softmax"):
@@ -125,7 +124,7 @@ class GroupRouter:
                 if not idxs:
                     continue
                 sent = g.get("sentinel_index")
-                sentinel_local: Optional[int] = None
+                sentinel_local: int | None = None
                 if sent is not None:
                     sentinel_local = idxs.index(int(sent))
                     sentinel_idx_list.append(int(sent))
@@ -156,8 +155,8 @@ class GroupRouter:
         # ``solo`` is a non-count membership tag — gelcrawl writes it alongside
         # ``1girl``/``1boy`` when there's exactly one figure.
         single_count_names = {"solo", "1girl", "1boy", "1other"}
-        solo_idx_list: List[int] = []
-        multi_idx_list: List[int] = []
+        solo_idx_list: list[int] = []
+        multi_idx_list: list[int] = []
         for t in vocab_dict.get("tags", []):
             name = t["name"]
             idx = int(t["index"])
@@ -180,7 +179,7 @@ class GroupRouter:
         # group-conditional negative weighting. tag_to_group is ≤1 group/tag so
         # no collision. Ungrouped tags get the sentinel ``n_group_slots``.
         n_group_slots = len(groups_raw)
-        group_of_tag: Optional[torch.Tensor] = None
+        group_of_tag: torch.Tensor | None = None
         if n_group_slots > 0:
             got = [n_group_slots] * n_tags
             for gid, g in enumerate(groups_raw):
@@ -234,7 +233,7 @@ def compute_grouped_loss(
     label_smooth: float = 0.0,
     inactive_neg_weight: float = 1.0,
     ce_maxsup: bool = False,
-) -> Tuple[torch.Tensor, Dict[str, float]]:
+) -> tuple[torch.Tensor, dict[str, float]]:
     """Return ``(total_tag_loss, per_group_metrics_for_logging)``.
 
     BCE applies element-wise across all (sample, tag) positions. For
@@ -286,7 +285,7 @@ def compute_grouped_loss(
     separable in TensorBoard.
     """
     B, n_tags = tag_logits.shape
-    metrics: Dict[str, float] = {}
+    metrics: dict[str, float] = {}
 
     # Label-smoothed BCE targets: 1 → 1−ε/2, 0 → ε/2 (ε=0 leaves multi_hot
     # untouched — bit-identical to the un-smoothed path).

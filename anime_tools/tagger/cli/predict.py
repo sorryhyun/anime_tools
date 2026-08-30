@@ -13,7 +13,6 @@ import json
 import logging
 import random
 from pathlib import Path
-from typing import List, Optional
 
 import torch
 
@@ -28,8 +27,8 @@ def cmd_predict(args: argparse.Namespace) -> None:
     """
     from PIL import Image
 
-    from anime_tools.tagger.tagger import AnimaTagger
     from anime_tools.tagger.data import TaggerManifest
+    from anime_tools.tagger.tagger import AnimaTagger
 
     out_dir = Path(args.out_dir)
     if not (out_dir / "model.safetensors").exists():
@@ -37,9 +36,9 @@ def cmd_predict(args: argparse.Namespace) -> None:
             f"missing {out_dir / 'model.safetensors'} — run --mode train first."
         )
 
-    gt_tags: Optional[List[str]] = None
-    gt_rating: Optional[str] = None
-    gt_people: Optional[str] = None
+    gt_tags: list[str] | None = None
+    gt_rating: str | None = None
+    gt_people: str | None = None
     if args.image:
         image_path = Path(args.image)
         if not image_path.exists():

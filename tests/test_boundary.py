@@ -45,5 +45,7 @@ def test_captions_core_is_torch_free():
         "anime_tools.captions.variants, anime_tools.captions.index, anime_tools.tagger.dbv4_meta; "
         "assert 'torch' not in sys.modules"
     )
-    r = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True)
+    r = subprocess.run(
+        [sys.executable, "-c", code], capture_output=True, text=True, check=False
+    )
     assert r.returncode == 0, r.stderr

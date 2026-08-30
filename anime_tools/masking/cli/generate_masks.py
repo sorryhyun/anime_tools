@@ -16,8 +16,8 @@ import yaml
 from PIL import Image
 from tqdm import tqdm
 
-from anime_tools.path_filter import filter_paths_by_glob
 from anime_tools._walk import walk_images
+from anime_tools.path_filter import filter_paths_by_glob
 
 
 def load_image(path: Path) -> Image.Image:
@@ -147,8 +147,8 @@ def main() -> None:
     path_pattern = args.path_pattern or config.get("path_pattern")
 
     import torch
-    from sam3.model_builder import build_sam3_image_model
     from sam3.model.sam3_image_processor import Sam3Processor
+    from sam3.model_builder import build_sam3_image_model
 
     image_dir = Path(args.image_dir)
     masks_dir = Path(args.mask_dir)

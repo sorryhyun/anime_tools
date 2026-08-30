@@ -12,13 +12,12 @@ these functions only reason about boxes, masks, and pixels.
 
 from __future__ import annotations
 
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterable, Sequence
 
 import numpy as np
 from PIL import Image
-
 
 # Shipped SAM3 soft prompt for the subject pass (textual inversion of
 # ``anime girl``, bench/sam3_soft_prompt/ keeper 20260826-2310, 1024 params):

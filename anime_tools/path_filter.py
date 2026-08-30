@@ -4,14 +4,13 @@
 
 import fnmatch
 import os
-from typing import List, Optional
 
 
 def filter_paths_by_glob(
-    img_paths: List[str],
-    image_dir: Optional[str],
-    pattern: Optional[str],
-) -> List[bool]:
+    img_paths: list[str],
+    image_dir: str | None,
+    pattern: str | None,
+) -> list[bool]:
     """Return a per-path boolean mask: True keeps the file, False drops it.
 
     The pattern is matched against each file's path relative to ``image_dir``
@@ -28,7 +27,7 @@ def filter_paths_by_glob(
     if not alternatives or any(alt == "*" for alt in alternatives):
         return [True] * len(img_paths)
     base = os.path.abspath(image_dir) if image_dir else None
-    keep: List[bool] = []
+    keep: list[bool] = []
     for p in img_paths:
         if base is not None:
             try:

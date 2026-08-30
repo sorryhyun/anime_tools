@@ -56,14 +56,14 @@ Validation
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, FrozenSet, List, Mapping, Optional, Tuple
 
 import yaml
 
 # Allowed values for a group's ``mode`` field — loader rejects typos at parse time.
-GROUP_MODES: FrozenSet[str] = frozenset(
+GROUP_MODES: frozenset[str] = frozenset(
     {
         "softmax_when_solo",
         "softmax",
@@ -102,8 +102,8 @@ class TagGroup:
     name: str
     mode: str
     description: str
-    escape: Tuple[str, ...]
-    tags: Tuple[str, ...]
+    escape: tuple[str, ...]
+    tags: tuple[str, ...]
     sentinel: bool = False
 
 
@@ -117,10 +117,10 @@ class TagGroups:
     """
 
     version: int
-    groups: Tuple[TagGroup, ...]
+    groups: tuple[TagGroup, ...]
     tag_to_group: Mapping[str, str]
 
-    def by_name(self, name: str) -> Optional[TagGroup]:
+    def by_name(self, name: str) -> TagGroup | None:
         for g in self.groups:
             if g.name == name:
                 return g
@@ -153,8 +153,8 @@ def load_groups(path: str | Path) -> TagGroups:
 
     version = int(raw.pop("version", 1))
 
-    groups: List[TagGroup] = []
-    tag_to_group: Dict[str, str] = {}
+    groups: list[TagGroup] = []
+    tag_to_group: dict[str, str] = {}
 
     for name, body in raw.items():
         if not isinstance(body, dict):
@@ -201,8 +201,8 @@ def load_groups(path: str | Path) -> TagGroups:
 def from_dict(d: dict) -> TagGroups:
     """Inverse of :meth:`TagGroups.to_dict` — load a snapshot from JSON/YAML dict."""
     version = int(d.get("version", 1))
-    groups: List[TagGroup] = []
-    tag_to_group: Dict[str, str] = {}
+    groups: list[TagGroup] = []
+    tag_to_group: dict[str, str] = {}
     for name, body in d.items():
         if name == "version":
             continue
@@ -250,23 +250,23 @@ class ResolvedGroup:
     name: str
     mode: str
     description: str
-    tag_indices: Tuple[int, ...]
-    escape_indices: Tuple[int, ...]
+    tag_indices: tuple[int, ...]
+    escape_indices: tuple[int, ...]
     # Names kept for snapshot/debug; dropped names are omitted.
-    tag_names: Tuple[str, ...]
-    escape_names: Tuple[str, ...]
+    tag_names: tuple[str, ...]
+    escape_names: tuple[str, ...]
     # Vocab index of the group's synthetic "none of these" class, when the
     # group declares ``sentinel: true`` AND the vocab carries the slot. It is
     # folded into ``tag_indices`` (always last — the synthetic slot is
     # appended after every real tag, so it sorts highest) and duplicated here
     # so consumers don't index-guess.
-    sentinel_index: Optional[int] = None
+    sentinel_index: int | None = None
 
 
 def resolve_groups(
     groups: TagGroups,
     vocab_tag_to_idx: Mapping[str, int],
-) -> Tuple[Tuple[ResolvedGroup, ...], Dict[str, str]]:
+) -> tuple[tuple[ResolvedGroup, ...], dict[str, str]]:
     """Project ``groups`` onto a built vocab's ``tag_to_idx`` map.
 
     Returns ``(resolved_groups, dropped)`` where ``dropped`` maps each
@@ -275,17 +275,17 @@ def resolve_groups(
     the trainer doesn't care about absent tags, but the build step logs it
     so the YAML curator can spot drift between corpus and vocab.
     """
-    resolved: List[ResolvedGroup] = []
-    dropped: Dict[str, str] = {}
+    resolved: list[ResolvedGroup] = []
+    dropped: dict[str, str] = {}
     for g in groups.groups:
-        kept_tags: List[Tuple[int, str]] = []
+        kept_tags: list[tuple[int, str]] = []
         for t in g.tags:
             idx = vocab_tag_to_idx.get(t)
             if idx is None:
                 dropped[t] = "not_in_vocab"
                 continue
             kept_tags.append((idx, t))
-        kept_escape: List[Tuple[int, str]] = []
+        kept_escape: list[tuple[int, str]] = []
         for t in g.escape:
             idx = vocab_tag_to_idx.get(t)
             if idx is None:
@@ -294,7 +294,7 @@ def resolve_groups(
             kept_escape.append((idx, t))
         kept_tags.sort()
         kept_escape.sort()
-        sentinel_index: Optional[int] = None
+        sentinel_index: int | None = None
         if g.sentinel and g.mode in ("softmax", "softmax_when_solo"):
             s_name = sentinel_tag_name(g.name)
             sentinel_index = vocab_tag_to_idx.get(s_name)
@@ -320,7 +320,7 @@ def resolve_groups(
     return tuple(resolved), dropped
 
 
-def resolved_to_dict(resolved: Tuple[ResolvedGroup, ...]) -> List[dict]:
+def resolved_to_dict(resolved: tuple[ResolvedGroup, ...]) -> list[dict]:
     """Round-trippable list-of-dicts for embedding into ``vocab.json``."""
     return [
         {
@@ -349,10 +349,10 @@ def expand_category_members(
     self-contained (the inference wrapper re-resolves names, never markers).
     Expanded names claimed by another group raise, same as the loader.
     """
-    out_groups: List[TagGroup] = []
-    tag_to_group: Dict[str, str] = {}
+    out_groups: list[TagGroup] = []
+    tag_to_group: dict[str, str] = {}
     for g in groups.groups:
-        expanded: List[str] = []
+        expanded: list[str] = []
         for t in g.tags:
             if t.startswith(_CATEGORY_MEMBER_PREFIX):
                 cat = t[len(_CATEGORY_MEMBER_PREFIX) :]

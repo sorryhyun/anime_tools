@@ -16,13 +16,12 @@ from __future__ import annotations
 import argparse
 import logging
 
+from anime_tools._env import resolve_path, setup_logging
 from anime_tools.tagger.tagger import (
     DEFAULT_TAGGER_DIR,
     AnimaTagger,
     ensure_tagger_checkpoint,
 )
-from anime_tools._env import resolve_path
-from anime_tools._env import setup_logging
 
 # Sentinel prefix the GUI greps for in the job's stdout. Tab-separated so the
 # caption (which contains commas + spaces) survives intact on one line.

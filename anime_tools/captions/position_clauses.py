@@ -19,9 +19,10 @@ here so the three can't drift.
 
 from __future__ import annotations
 
+import itertools
 import re
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
-from typing import Iterable, Sequence
 
 # Clause headers the convention uses, in canonical emission form. ``In the`` is
 # accepted on read (it appears in a handful of hand-written captions for scene
@@ -337,7 +338,7 @@ def _cluster_lanes(intervals: Sequence[tuple[float, float]]) -> list[int]:
     )
     groups = [0] * len(intervals)
     group = 0
-    for prev, cur in zip(order, order[1:]):
+    for prev, cur in itertools.pairwise(order):
         p0, p1 = intervals[prev]
         c0, c1 = intervals[cur]
         gap = (c0 + c1) / 2 - (p0 + p1) / 2

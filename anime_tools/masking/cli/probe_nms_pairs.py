@@ -34,19 +34,19 @@ if not hasattr(np, "bool"):
 
 PREFETCH_DEPTH = 4
 
-from PIL import Image  # noqa: E402
+from PIL import Image
 
-from anime_tools._env import resolve_path  # noqa: E402
-from anime_tools.stages.instance_detection import (  # noqa: E402
+from anime_tools._env import resolve_path
+from anime_tools._walk import walk_images
+from anime_tools.stages.cli.position_captions import build_detect_fn
+from anime_tools.stages.instance_detection import (
     DEFAULT_SUBJECT_PROMPT_EMBED,
 )
-from anime_tools._walk import walk_images  # noqa: E402
-from anime_tools.stages.position_captions import (  # noqa: E402
+from anime_tools.stages.position_captions import (
     box_containment,
     box_iou,
     drop_small_boxes,
 )
-from anime_tools.stages.cli.position_captions import build_detect_fn  # noqa: E402
 
 
 def parse_args() -> argparse.Namespace:

@@ -25,7 +25,8 @@ the CSV is reachable without editing this table. Pure stdlib, torch-free.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Iterable
+from collections.abc import Iterable
+from typing import TYPE_CHECKING
 
 from anime_tools.captions.taxonomy import is_artist_tag, is_count_tag, is_rating_tag
 
@@ -118,7 +119,7 @@ def _path_matches(category_path: str, prefix: str) -> bool:
     return bool(category_path and prefix) and category_path.startswith(prefix)
 
 
-def tag_drop_group(tag: str, kb: "TagKnowledgeBase") -> str | None:
+def tag_drop_group(tag: str, kb: TagKnowledgeBase) -> str | None:
     """The coarse slug ``tag`` belongs to, or ``None`` when unclassifiable.
 
     Only the *coarse* structural/대분류 slug is returned here (``effect``, not
@@ -148,7 +149,7 @@ def tag_drop_group(tag: str, kb: "TagKnowledgeBase") -> str | None:
     return None
 
 
-def should_drop_tag(tag: str, kb: "TagKnowledgeBase", selectors: Iterable[str]) -> bool:
+def should_drop_tag(tag: str, kb: TagKnowledgeBase, selectors: Iterable[str]) -> bool:
     """True when ``tag`` falls under any of ``selectors``.
 
     Structural slugs resolve by shape/kind (so an unknown ``@name`` still

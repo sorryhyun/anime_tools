@@ -32,8 +32,8 @@ import argparse
 import json
 from dataclasses import asdict
 
-from anime_tools._env import resolve_path  # noqa: E402
-from anime_tools.stages.autotag import (  # noqa: E402
+from anime_tools._env import resolve_path
+from anime_tools.stages.autotag import (
     MODES,
     AutotagOptions,
     build_tag_fn,

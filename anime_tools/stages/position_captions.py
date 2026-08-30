@@ -32,9 +32,9 @@ Per-rule evidence and the knob table live in
 
 from __future__ import annotations
 
+from collections.abc import Callable, Iterator, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Callable, Iterator, Mapping
 
 from PIL import Image
 

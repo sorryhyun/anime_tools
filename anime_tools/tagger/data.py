@@ -12,26 +12,25 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, List
 
 
 @dataclass
 class TaggerManifest:
     """Trainable-sample manifest emitted by ``--mode build_vocab``."""
 
-    stems: List[str]
-    image_paths: List[Path]
-    tag_indices: List[List[int]]
-    rating_indices: List[int]
-    people_count_indices: List[int]
-    train_stems: List[str]
-    val_stems: List[str]
+    stems: list[str]
+    image_paths: list[Path]
+    tag_indices: list[list[int]]
+    rating_indices: list[int]
+    people_count_indices: list[int]
+    train_stems: list[str]
+    val_stems: list[str]
     n_tags: int
     n_ratings: int
     n_people_counts: int
 
     @classmethod
-    def from_path(cls, path: Path) -> "TaggerManifest":
+    def from_path(cls, path: Path) -> TaggerManifest:
         with open(path) as f:
             d = json.load(f)
         # ``people_count_indices`` / ``n_people_counts`` were added late; default
@@ -54,5 +53,5 @@ class TaggerManifest:
             n_people_counts=n_people,
         )
 
-    def stem_index(self) -> Dict[str, int]:
+    def stem_index(self) -> dict[str, int]:
         return {s: i for i, s in enumerate(self.stems)}

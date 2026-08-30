@@ -6,6 +6,7 @@ from collections.abc import Callable, Collection
 from dataclasses import dataclass
 from pathlib import Path
 
+from anime_tools._walk import walk_images
 from anime_tools.captions.correction import (
     CaptionCorrectionOptions,
     TagKnowledgeBase,
@@ -16,7 +17,6 @@ from anime_tools.captions.position_clauses import (
     has_clauses,
     parse_caption,
 )
-from anime_tools._walk import walk_images
 from anime_tools.captions.variants import (
     build_erasure_token_pool,
     generate_caption_variants,

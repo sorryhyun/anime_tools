@@ -33,13 +33,12 @@ import argparse
 import logging
 import sys
 
+from anime_tools._env import resolve_path, setup_logging
 from anime_tools.tagger.tagger import (
     DEFAULT_TAGGER_DIR,
     AnimaTagger,
     ensure_tagger_checkpoint,
 )
-from anime_tools._env import resolve_path
-from anime_tools._env import setup_logging
 
 READY = "ANIMA_AUTOTAG_READY"
 RESULT_PREFIX = "ANIMA_AUTOTAG_RESULT\t"
@@ -71,7 +70,7 @@ def main() -> None:
     # real request is fast and READY genuinely means "ready to serve".
     try:
         tagger.predict_caption(Image.new("RGB", (64, 64)))
-    except Exception:  # noqa: BLE001 — warm-up is best-effort
+    except Exception:
         logger.exception("autotag warm-up failed (continuing)")
     _emit(READY)
     logger.info("autotag worker ready (device=%s, ckpt=%s)", device, ckpt_dir)
@@ -107,7 +106,7 @@ def main() -> None:
                 Image.open(image_path), min_confidence=min_confidence
             )
             _emit(RESULT_PREFIX + caption)
-        except Exception as e:  # noqa: BLE001 — report, keep serving
+        except Exception as e:
             logger.exception("autotag failed for %s", path)
             _emit(ERROR_PREFIX + str(e))
 

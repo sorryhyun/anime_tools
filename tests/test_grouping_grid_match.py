@@ -11,8 +11,8 @@ from __future__ import annotations
 import numpy as np
 import torch
 
-from anime_tools.grouping.groups import _grid_match_edges, connected_components
 from anime_tools.grouping.features import Feature
+from anime_tools.grouping.groups import _grid_match_edges, connected_components
 from anime_tools.grouping.matching import match_fracs, match_grids, pool_cells_batch
 
 
@@ -83,14 +83,14 @@ def test_pool_chunk_invariant():
     feats[5] = _feat(feats[0].grid16.copy())  # a twin so an edge exists
     cls = np.stack([f.cls for f in feats]).astype(np.float32)
     cls /= np.linalg.norm(cls, axis=1, keepdims=True) + 1e-8
-    kw = dict(
-        device=torch.device("cpu"),
-        sim_min=0.5,
-        grid=7,
-        cell_match_min=0.9,
-        match_frac_min=0.4,
-        ratio=0.8,
-    )
+    kw = {
+        "device": torch.device("cpu"),
+        "sim_min": 0.5,
+        "grid": 7,
+        "cell_match_min": 0.9,
+        "match_frac_min": 0.4,
+        "ratio": 0.8,
+    }
     a = _grid_match_edges(feats, cls, pool_chunk=256, pair_chunk=4096, **kw)
     b = _grid_match_edges(feats, cls, pool_chunk=3, pair_chunk=7, **kw)
     assert a == b

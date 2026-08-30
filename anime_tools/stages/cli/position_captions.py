@@ -38,14 +38,14 @@ import numpy as np
 if not hasattr(np, "bool"):
     np.bool = np.bool_
 
-from anime_tools._env import resolve_path  # noqa: E402
-from anime_tools.stages.instance_detection import (  # noqa: E402
+from anime_tools._env import resolve_path
+from anime_tools.stages.instance_detection import (
     DEFAULT_SUBJECT_PROMPT_EMBED,
     load_soft_prompt,
     prompt_embed_sha256,
     resolve_prompt_embed,
 )
-from anime_tools.stages.position_captions import (  # noqa: E402
+from anime_tools.stages.position_captions import (
     Detection,
     PositionCaptionOptions,
     flatten_captions,
@@ -448,8 +448,8 @@ def build_detect_fn(args: argparse.Namespace, *, model=None, processor=None):
     the prompt as an argument; ``detect`` is pinned to ``args.prompt``.
     """
     import torch
-    from sam3.model_builder import build_sam3_image_model
     from sam3.model.sam3_image_processor import Sam3Processor
+    from sam3.model_builder import build_sam3_image_model
 
     floor = min(
         args.score_threshold, args.retry_score_threshold, args.part_score_threshold

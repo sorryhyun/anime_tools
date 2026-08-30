@@ -32,10 +32,10 @@ import numpy as np
 if not hasattr(np, "bool"):
     np.bool = np.bool_
 
-from PIL import Image, ImageDraw  # noqa: E402
+from PIL import Image, ImageDraw
 
-from anime_tools._env import resolve_path  # noqa: E402
-from anime_tools._walk import walk_images  # noqa: E402
+from anime_tools._env import resolve_path
+from anime_tools._walk import walk_images
 
 COLORS = [
     (255, 60, 60),

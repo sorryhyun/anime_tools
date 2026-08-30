@@ -210,8 +210,8 @@ def main() -> None:
         w.writeheader()
         w.writerows(rows)
 
-    rel_s = lambda n: str((SINCOS_DIR / n).resolve())  # noqa: E731
-    rel_c = lambda n: str((DECEN_DIR / n).resolve())  # noqa: E731
+    rel_s = lambda n: str((SINCOS_DIR / n).resolve())
+    rel_c = lambda n: str((DECEN_DIR / n).resolve())
     counts = {
         t: sum(1 for r in rows if r["tier"] == t) for t in ("auto", "review", "skip")
     }

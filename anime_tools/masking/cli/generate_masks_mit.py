@@ -21,13 +21,12 @@ import cv2
 import numpy as np
 import segmentation_models_pytorch as smp
 import torch
-import torch.nn as nn
 import torch.nn.functional as F
 from albumentations import Compose, Normalize
 from albumentations.pytorch import ToTensorV2
 from PIL import Image
+from torch import nn
 from tqdm import tqdm
-
 
 from anime_tools._walk import walk_images
 
@@ -179,7 +178,7 @@ def _ctd_text_boxes(
     """
     h0, w0 = img.shape[:2]
     r = min(1024 / h0, 1024 / w0)
-    nw, nh = int(round(w0 * r)), int(round(h0 * r))
+    nw, nh = round(w0 * r), round(h0 * r)
     canvas = np.zeros((1024, 1024, 3), np.uint8)
     canvas[:nh, :nw] = cv2.resize(img, (nw, nh), interpolation=cv2.INTER_LINEAR)
     outs = ctd_forward(canvas)

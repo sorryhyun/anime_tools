@@ -29,7 +29,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from anime_tools.captions.position_clauses import (  # noqa: E402
+from anime_tools.captions.position_clauses import (
     assign_positions,
     compose_caption,
     has_clauses,
@@ -1490,7 +1490,7 @@ def test_part_top_up_stops_at_the_target(pipeline_bits):
     """A fragmenting part prompt must not bind more clauses than the gate needs."""
     from anime_tools.stages.position_captions import detect_subjects
 
-    image, _, Detection, Options = pipeline_bits
+    image, _, _Detection, Options = pipeline_bits
     parts = {
         "thighs": [
             ((0, 0, 300, 240), 0.67),
@@ -1727,7 +1727,7 @@ def test_an_excluded_tag_cannot_ride_the_priority_path_into_a_clause(pipeline_bi
     """
     from anime_tools.stages.position_captions import ClauseVocabulary
 
-    _, _, _, Options = pipeline_bits
+    _, _, _, _Options = pipeline_bits
     vocabulary = ClauseVocabulary(
         excluded=frozenset({"vocaloid", "light brown hair"}),
         exclusive_groups=frozenset({"hair_color"}),
@@ -2144,15 +2144,15 @@ def test_two_panels_of_the_same_kind_still_share_their_framing(pipeline_bits):
 def test_no_framing_restores_the_pre_change_clause(pipeline_bits):
     """`--no_framing` is the A side: same call, framing gone, nothing else moves."""
     _, vocabulary, _, _ = pipeline_bits
-    kwargs = dict(
-        flat_bag=frozenset({"full body", "underwear", "denim"}),
-        attributable=frozenset({"ass focus", "underwear"}),
-        shared=frozenset(),
-        max_tags=8,
-        name_confidence=0.5,
-        allow_unlisted_names=False,
-        max_novel_tags=1,
-    )
+    kwargs = {
+        "flat_bag": frozenset({"full body", "underwear", "denim"}),
+        "attributable": frozenset({"ass focus", "underwear"}),
+        "shared": frozenset(),
+        "max_tags": 8,
+        "name_confidence": 0.5,
+        "allow_unlisted_names": False,
+        "max_novel_tags": 1,
+    }
     args = (
         {"ass focus": 0.77, "underwear": 0.8, "denim": 0.6},
         {"framing": "ass focus"},
@@ -2246,15 +2246,15 @@ def test_the_policy_drives_selection(pipeline_bits):
         subject=cfg.subject - {"framing"},
         priority=tuple(g for g in cfg.priority if g != "framing"),
     )
-    kwargs = dict(
-        flat_bag=frozenset({"maid", "ass focus"}),
-        attributable=frozenset({"ass focus"}),
-        shared=frozenset(),
-        max_tags=8,
-        name_confidence=0.5,
-        allow_unlisted_names=False,
-        max_novel_tags=1,
-    )
+    kwargs = {
+        "flat_bag": frozenset({"maid", "ass focus"}),
+        "attributable": frozenset({"ass focus"}),
+        "shared": frozenset(),
+        "max_tags": 8,
+        "name_confidence": 0.5,
+        "allow_unlisted_names": False,
+        "max_novel_tags": 1,
+    }
     args = ({"ass focus": 0.77, "maid": 0.7}, {"framing": "ass focus"})
     assert "ass focus" in vocabulary.select(*args, **kwargs)
     unbound = dataclasses.replace(vocabulary, clause_groups=no_framing)

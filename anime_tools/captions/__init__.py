@@ -5,7 +5,7 @@ caption by hand (``docs/contract.md`` §3). ``shuffle`` carries the training-
 time shuffle/no-artist grammar the trainer re-exports.
 """
 
-from anime_tools.captions.position_clauses import (  # noqa: F401
+from anime_tools.captions.position_clauses import (
     ParsedCaption,
     compose_caption,
     parse_caption,

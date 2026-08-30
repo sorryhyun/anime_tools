@@ -9,9 +9,9 @@ from __future__ import annotations
 import csv
 import os
 import re
+from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterable
 
 from anime_tools.captions.position_clauses import (
     compose_caption as compose_position_caption,
@@ -26,7 +26,6 @@ from anime_tools.captions.taxonomy import (
     is_count_tag,
     is_rating_tag,
 )
-
 
 _CATEGORY_RE = re.compile(r"^\s*\[([^\]]+)\]")
 _SPACE_RE = re.compile(r"\s+")
@@ -116,7 +115,7 @@ class TagKnowledgeBase:
         return info.kind if info else None
 
     def has_artist(self, tag: str) -> bool:
-        bare = tag[1:] if tag.startswith("@") else tag
+        bare = tag.removeprefix("@")
         return self.classify(bare) == "artist"
 
     def describe(self, tag: str) -> TagInfo | None:
@@ -235,8 +234,7 @@ def tag_key(tag: str) -> str:
 
 def _key_from_normalized(name: str) -> str:
     """Lookup key from an already ``normalize_tag``-ed name (no re-normalize)."""
-    if name.startswith("@"):
-        name = name[1:]
+    name = name.removeprefix("@")
     return name.replace(" ", "_")
 
 

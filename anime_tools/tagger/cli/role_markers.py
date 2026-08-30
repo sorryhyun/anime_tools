@@ -44,8 +44,8 @@ import argparse
 import json
 import logging
 import re
+from collections.abc import Sequence
 from pathlib import Path
-from typing import Dict, List, Sequence, Set, Tuple
 
 logger = logging.getLogger(__name__)
 
@@ -58,10 +58,10 @@ _MULTI_COUNT_RE = re.compile(
 
 def _solo_index_sets(
     vocab_tags: Sequence[dict],
-) -> Tuple[Set[int], Set[int]]:
+) -> tuple[set[int], set[int]]:
     """Return ``(single_count_indices, multi_count_indices)`` from vocab."""
-    single_idx: Set[int] = set()
-    multi_idx: Set[int] = set()
+    single_idx: set[int] = set()
+    multi_idx: set[int] = set()
     for t in vocab_tags:
         name = t["name"]
         idx = int(t["index"])
@@ -102,11 +102,11 @@ def _name_prefix_no_first_token(name: str) -> str:
 
 def classify(
     name: str,
-    partners_full: List[Tuple[str, int]],
+    partners_full: list[tuple[str, int]],
     n_co: int,
     min_role_partners: int,
     pair_dominance: float,
-) -> Tuple[str, str]:
+) -> tuple[str, str]:
     """Bucket a candidate based on its full partner distribution.
 
     Returns ``(bucket, base_or_top_partner)`` where ``bucket`` is one of
@@ -189,7 +189,7 @@ def scan(
     top_partners: int,
     min_role_partners: int = 5,
     pair_dominance: float = 0.6,
-) -> List[dict]:
+) -> list[dict]:
     """Return a list of candidate role markers ranked by co-occurrence ratio.
 
     Each entry is::
@@ -210,13 +210,13 @@ def scan(
     Sorted by descending ratio, then descending ``n_solo``.
     """
     tags = vocab["tags"]
-    idx2name: Dict[int, str] = {int(t["index"]): t["name"] for t in tags}
-    char_idx: Set[int] = {int(t["index"]) for t in tags if t["category"] == "character"}
+    idx2name: dict[int, str] = {int(t["index"]): t["name"] for t in tags}
+    char_idx: set[int] = {int(t["index"]) for t in tags if t["category"] == "character"}
     single_idx, multi_idx = _solo_index_sets(tags)
 
-    n_solo: Dict[int, int] = {i: 0 for i in char_idx}
-    n_co: Dict[int, int] = {i: 0 for i in char_idx}
-    partner: Dict[int, Dict[int, int]] = {i: {} for i in char_idx}
+    n_solo: dict[int, int] = {i: 0 for i in char_idx}
+    n_co: dict[int, int] = {i: 0 for i in char_idx}
+    partner: dict[int, dict[int, int]] = {i: {} for i in char_idx}
 
     for tags_list in manifest["tag_indices"]:
         s = set(tags_list)
@@ -236,7 +236,7 @@ def scan(
                         continue
                     partner[c][p] = partner[c].get(p, 0) + 1
 
-    rows: List[dict] = []
+    rows: list[dict] = []
     name_to_freq = {t["name"]: int(t["freq"]) for t in tags}
     for c in char_idx:
         ns = n_solo[c]
@@ -295,7 +295,7 @@ def _yaml_safe(s: str) -> str:
     return "'" + s.replace("'", "''") + "'"
 
 
-def _format_table(rows: List[dict], limit: int) -> str:
+def _format_table(rows: list[dict], limit: int) -> str:
     """Render the candidate table as fixed-width text."""
     if not rows:
         return "(no candidates above threshold)"
@@ -317,7 +317,7 @@ def _format_table(rows: List[dict], limit: int) -> str:
     return "\n".join(lines)
 
 
-def _emit_yaml_stub(rows: List[dict], min_solo: int, min_ratio: float) -> str:
+def _emit_yaml_stub(rows: list[dict], min_solo: int, min_ratio: float) -> str:
     """Build a single yaml-shaped string with three pasteable sections.
 
     The output is **not** a single valid YAML document — it's a working
@@ -329,11 +329,11 @@ def _emit_yaml_stub(rows: List[dict], min_solo: int, min_ratio: float) -> str:
     * ``# B_review`` / ``# C_pair`` — commented hints; nothing to paste
       verbatim, but useful for triage decisions.
     """
-    by_bucket: Dict[str, List[dict]] = {}
+    by_bucket: dict[str, list[dict]] = {}
     for r in rows:
         by_bucket.setdefault(r["bucket"], []).append(r)
 
-    lines: List[str] = []
+    lines: list[str] = []
     lines.append("# Auto-classified role-marker scan output.")
     lines.append(
         f"# Threshold: n_solo>={min_solo}, ratio>={min_ratio:.2f}. "
@@ -349,7 +349,7 @@ def _emit_yaml_stub(rows: List[dict], min_solo: int, min_ratio: float) -> str:
     lines.append("# ║ tag_rules.yaml (when any variant fires, the base is dropped) ║")
     lines.append("# ╚══════════════════════════════════════════════════════════════╝")
     if a_rows:
-        base_to_variants: Dict[str, List[Tuple[str, dict]]] = {}
+        base_to_variants: dict[str, list[tuple[str, dict]]] = {}
         for r in a_rows:
             base = r["base"]
             base_to_variants.setdefault(base, []).append((r["name"], r))
@@ -443,7 +443,7 @@ def cmd_scan_role_markers(args: argparse.Namespace) -> None:
         min_role_partners=args.min_role_partners,
         pair_dominance=args.pair_dominance,
     )
-    bucket_counts: Dict[str, int] = {}
+    bucket_counts: dict[str, int] = {}
     for r in rows:
         bucket_counts[r["bucket"]] = bucket_counts.get(r["bucket"], 0) + 1
     logger.info(

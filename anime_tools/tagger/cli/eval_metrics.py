@@ -20,12 +20,10 @@ become ``cat:<category>`` slices; general tags absent from the KB fall into
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Dict, List, Optional, Tuple
 
 import torch
 
 from .derive_groups import _EN_KEY, _slug
-
 
 # --------------------------------------------------------------------------- #
 # Per-tag metrics.
@@ -34,7 +32,7 @@ from .derive_groups import _EN_KEY, _slug
 
 def per_tag_prf(
     pred: torch.Tensor, target: torch.Tensor
-) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
     """``(precision, recall, f1, support)`` per tag from boolean/0-1 tensors.
 
     Convention matches the trainer: a tag with no predictions AND no positives
@@ -156,12 +154,12 @@ UNMATCHED_SLICE = "general:unmatched"
 class TagSlices:
     """Per-tag slice keys plus the derived slice → tag-index map."""
 
-    kb_slice: List[str]  # [n_tags] taxonomy / category slice key
-    freq_tier: List[str]  # [n_tags] "head" | "mid" | "tail"
+    kb_slice: list[str]  # [n_tags] taxonomy / category slice key
+    freq_tier: list[str]  # [n_tags] "head" | "mid" | "tail"
 
-    def indices_by(self, which: str) -> Dict[str, List[int]]:
+    def indices_by(self, which: str) -> dict[str, list[int]]:
         keys = self.kb_slice if which == "kb" else self.freq_tier
-        out: Dict[str, List[int]] = {}
+        out: dict[str, list[int]] = {}
         for i, k in enumerate(keys):
             out.setdefault(k, []).append(i)
         return out
@@ -170,8 +168,8 @@ class TagSlices:
 def assign_slices(
     vocab: dict,
     kb,
-    rename_recovery: Optional[Dict[str, str]] = None,
-    freq_cuts: Tuple[int, int] = (1000, 200),
+    rename_recovery: dict[str, str] | None = None,
+    freq_cuts: tuple[int, int] = (1000, 200),
 ) -> TagSlices:
     """Map every vocab tag to a KB-taxonomy slice and a frequency tier.
 
@@ -182,8 +180,8 @@ def assign_slices(
     """
     rename_recovery = rename_recovery or {}
     head_min, mid_min = freq_cuts
-    kb_slice: List[str] = []
-    freq_tier: List[str] = []
+    kb_slice: list[str] = []
+    freq_tier: list[str] = []
     for t in vocab["tags"]:
         name = t["name"]
         cat = str(t.get("category", "general"))
@@ -211,13 +209,13 @@ def assign_slices(
 
 
 def aggregate_slices(
-    slice_indices: Dict[str, List[int]],
+    slice_indices: dict[str, list[int]],
     pred: torch.Tensor,
     target: torch.Tensor,
     f1: torch.Tensor,
     ap: torch.Tensor,
     support: torch.Tensor,
-) -> List[dict]:
+) -> list[dict]:
     """One summary row per slice, sorted by descending tag count.
 
     ``macro_f1`` / ``mean_ap`` average only over *supported* tags (≥1 positive
@@ -225,7 +223,7 @@ def aggregate_slices(
     ``n_supported`` makes thin-support slices visible instead of silently
     diluted.
     """
-    rows: List[dict] = []
+    rows: list[dict] = []
     for key, idxs in slice_indices.items():
         idx_t = torch.tensor(idxs, dtype=torch.long, device=pred.device)
         sup = support[idx_t]

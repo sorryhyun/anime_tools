@@ -7,7 +7,7 @@ from pathlib import Path
 if os.environ.get("ANIMA_TEST_GPU") != "1":
     os.environ["CUDA_VISIBLE_DEVICES"] = ""
 
-import pytest  # noqa: E402
+import pytest
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 

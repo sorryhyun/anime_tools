@@ -12,6 +12,7 @@ import math
 
 import torch
 
+from anime_tools.captions.group_router import GroupRouter, _SoftmaxGroup
 from anime_tools.tagger.cli.eval_metrics import (
     aggregate_slices,
     assign_slices,
@@ -20,7 +21,6 @@ from anime_tools.tagger.cli.eval_metrics import (
     per_tag_prf,
     predict_with_inference_rule,
 )
-from anime_tools.captions.group_router import GroupRouter, _SoftmaxGroup
 
 
 def _logits(p: torch.Tensor) -> torch.Tensor:

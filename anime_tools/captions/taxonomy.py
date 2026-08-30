@@ -19,7 +19,7 @@ and have no model-side counterpart.
 from __future__ import annotations
 
 import re
-from typing import Iterable
+from collections.abc import Iterable
 
 # People-count tags — shared definition that classify_people and the vocab categorizer both key off. The caption-index builder additionally counts "no girls"/"no boys", but those sit after @artist so they never reach the pre-artist span; keeping them out here avoids mistyping them in the model vocab.
 _COUNT_RE = re.compile(
@@ -119,7 +119,7 @@ def is_artist_tag(tag: str) -> bool:
 
 def strip_artist_prefix(tag: str) -> str:
     """Drop a leading ``@`` so the bare name can be looked up in a tag cache."""
-    return tag[1:] if tag.startswith("@") else tag
+    return tag.removeprefix("@")
 
 
 # Anima's 4-class rating vocabulary — the leading safety band of a caption

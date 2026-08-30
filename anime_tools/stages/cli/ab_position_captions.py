@@ -36,16 +36,16 @@ import numpy as np
 if not hasattr(np, "bool"):
     np.bool = np.bool_
 
-from PIL import Image, ImageDraw  # noqa: E402
+from PIL import Image, ImageDraw
 
-from anime_tools.captions.position_clauses import parse_caption  # noqa: E402
-from anime_tools._env import resolve_path  # noqa: E402
-from anime_tools._walk import walk_images  # noqa: E402
+from anime_tools._env import resolve_path
+from anime_tools._walk import walk_images
+from anime_tools.captions.position_clauses import parse_caption
 
 # Only the drawing helpers are borrowed — the palette below is this sheet's own,
 # since an A/B page reads by A-vs-B contrast rather than by verdict.
-from anime_tools.stages.multiview_sheet import _fit, _font, _text  # noqa: E402
-from anime_tools.stages.position_captions import (  # noqa: E402
+from anime_tools.stages.multiview_sheet import _fit, _font, _text
+from anime_tools.stages.position_captions import (
     PositionCaptionOptions,
     is_candidate,
     load_clause_vocabulary,
@@ -201,14 +201,20 @@ def write_index(out_dir: Path, rows: list[dict], labels: tuple[str, str]) -> Pat
     """A scrollable page beats a directory of PNGs for a side-by-side read."""
     parts = [
         "<meta charset='utf-8'><title>position captions A/B</title>",
-        "<style>body{background:#18181c;color:#e8e8ec;font:15px/1.5 system-ui,sans-serif;"
-        "margin:0;padding:24px}h1{font-size:20px}img{width:100%;max-width:1400px;"
-        "display:block;margin:8px 0 28px;border-radius:6px}"
-        ".d{color:#8a8a92;font-size:13px}</style>",
-        f"<h1>position captions A/B — A: <code>{html.escape(labels[0])}</code> "
-        f"vs B: <code>{html.escape(labels[1])}</code></h1>",
-        f"<p class=d>{len(rows)} image(s) where the two sides differ, "
-        "most-changed first.</p>",
+        (
+            "<style>body{background:#18181c;color:#e8e8ec;font:15px/1.5 system-ui,sans-serif;"
+            "margin:0;padding:24px}h1{font-size:20px}img{width:100%;max-width:1400px;"
+            "display:block;margin:8px 0 28px;border-radius:6px}"
+            ".d{color:#8a8a92;font-size:13px}</style>"
+        ),
+        (
+            f"<h1>position captions A/B — A: <code>{html.escape(labels[0])}</code> "
+            f"vs B: <code>{html.escape(labels[1])}</code></h1>"
+        ),
+        (
+            f"<p class=d>{len(rows)} image(s) where the two sides differ, "
+            "most-changed first.</p>"
+        ),
     ]
     for row in rows:
         parts.append(
@@ -288,7 +294,7 @@ def main() -> None:
         stats["candidates"] += 1
 
         image = Image.open(image_path).convert("RGB")
-        shared = dict(tag_fn=tagger.predict, vocabulary=vocabulary)
+        shared = {"tag_fn": tagger.predict, "vocabulary": vocabulary}
         a_prop = propose_for_image(
             image,
             caption,

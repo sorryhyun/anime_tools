@@ -33,8 +33,8 @@ Design constraints inherited from the proposal (``docs/proposal/tag_readback_rew
 from __future__ import annotations
 
 import logging
+from collections.abc import Iterable, Sequence
 from pathlib import Path
-from typing import Iterable, List, Optional, Sequence
 
 import torch
 import torch.nn.functional as F
@@ -67,7 +67,7 @@ class TagReadback:
 
     def __init__(
         self,
-        tagger: Optional[AnimaTagger] = None,
+        tagger: AnimaTagger | None = None,
         ckpt_dir: str | Path = DEFAULT_TAGGER_DIR,
         device: torch.device | str | None = None,
         content_categories: Sequence[str] = CONTENT_CATEGORIES,
@@ -81,8 +81,8 @@ class TagReadback:
         keep = set(self.content_categories)
 
         # Per-index arrays (vocab index == logit index == column in tag_logits).
-        self.name_by_idx: List[str] = [""] * self.n_tags
-        self.category_by_idx: List[str] = ["general"] * self.n_tags
+        self.name_by_idx: list[str] = [""] * self.n_tags
+        self.category_by_idx: list[str] = ["general"] * self.n_tags
         self.name_to_idx: dict[str, int] = {}
         for e in self.tagger.tag_entries:
             if not (0 <= e.index < self.n_tags):
@@ -108,7 +108,7 @@ class TagReadback:
 
     # -- caption → content-tag column mask ------------------------------------
 
-    def caption_indices(self, tags: Iterable[str]) -> List[int]:
+    def caption_indices(self, tags: Iterable[str]) -> list[int]:
         """Map caption tag strings → content-tag logit indices.
 
         Caption tags are emitted space-form (``long hair``); the vocab keys are
@@ -116,7 +116,7 @@ class TagReadback:
         indices that survive the content mask. Unknown / masked tags drop out
         silently — a caption may carry artist / meta tags this score ignores.
         """
-        out: List[int] = []
+        out: list[int] = []
         for t in tags:
             t = t.strip()
             if not t:

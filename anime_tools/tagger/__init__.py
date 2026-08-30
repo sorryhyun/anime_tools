@@ -4,7 +4,7 @@
 torch-free and safe to import from download tooling / GUIs.
 """
 
-__all__ = ["AnimaTagger", "DEFAULT_TAGGER_DIR"]
+__all__ = ["DEFAULT_TAGGER_DIR", "AnimaTagger"]
 
 
 def __getattr__(name: str):

@@ -12,16 +12,17 @@ License: see ``perception_models/LICENSE.PE`` (FAIR Noncommercial Research).
 from __future__ import annotations
 
 from collections import OrderedDict
+from collections.abc import Callable
 from dataclasses import dataclass
 from functools import partial
 from logging import getLogger
-from typing import Callable, Literal, Optional
+from typing import Literal
 
 import torch
-import torch.nn as nn
 import torch.nn.functional as F
 from einops import rearrange, repeat
 from timm.layers import DropPath
+from torch import nn
 from torch.nn.init import constant_, xavier_uniform_
 from torch.nn.parameter import Parameter
 from torch.utils.checkpoint import checkpoint
@@ -161,7 +162,7 @@ class _AttentionPooling(nn.Module):
 class _SelfAttention(nn.Module):
     """SDPA self-attention with RoPE — matches nn.MultiHeadAttention's param shapes."""
 
-    def __init__(self, embed_dim: int, num_heads: int, rope: Optional[Rope2D] = None):
+    def __init__(self, embed_dim: int, num_heads: int, rope: Rope2D | None = None):
         super().__init__()
         self.embed_dim = embed_dim
         self.num_heads = num_heads
@@ -209,7 +210,7 @@ class _ResidualAttentionBlock(nn.Module):
         act_layer: Callable = nn.GELU,
         norm_layer: Callable = nn.LayerNorm,
         drop_path: float = 0.0,
-        rope: Optional[Rope2D] = None,
+        rope: Rope2D | None = None,
     ):
         super().__init__()
         if rope is not None:
@@ -265,7 +266,7 @@ class _Transformer(nn.Module):
         act_layer: Callable = nn.GELU,
         norm_layer: Callable = nn.LayerNorm,
         drop_path: float = 0.0,
-        rope: Optional[Rope2D] = None,
+        rope: Rope2D | None = None,
     ):
         super().__init__()
         self.width = width
@@ -321,7 +322,7 @@ class PEVisionTransformer(nn.Module):
         use_abs_posemb: bool = True,
         use_rope2d: bool = True,
         use_cls_token: bool = False,
-        output_dim: Optional[int] = 1280,
+        output_dim: int | None = 1280,
         attn_pooler_heads: int = 8,
         pool_type: Literal["attn", "tok", "avg", "none"] = "attn",
     ):
@@ -511,7 +512,7 @@ class PEConfig:
     layers: int
     heads: int
     mlp_ratio: float
-    output_dim: Optional[int]
+    output_dim: int | None
     image_size: int = 448
     use_abs_posemb: bool = True
     use_cls_token: bool = False
@@ -610,7 +611,7 @@ def default_pe_spatial_path():
 
 
 def load_pe_spatial(
-    device: "torch.device | str | None" = None,
+    device: torch.device | str | None = None,
     *,
     model_path=None,
     dtype: torch.dtype = torch.bfloat16,

@@ -27,11 +27,12 @@ import numpy as np
 if not hasattr(np, "bool"):
     np.bool = np.bool_
 
-from anime_tools._env import resolve_path  # noqa: E402
-from anime_tools.stages.instance_detection import (  # noqa: E402
+from anime_tools._env import resolve_path
+from anime_tools.stages.cli.position_captions import build_detect_fn
+from anime_tools.stages.instance_detection import (
     DEFAULT_SUBJECT_PROMPT_EMBED,
 )
-from anime_tools.stages.multiview_audit import (  # noqa: E402
+from anime_tools.stages.multiview_audit import (
     DEFAULT_IDENTITY_CONFIDENCE,
     DEFAULT_MULTIVIEW_PROB,
     EXTRA_CHARACTER,
@@ -39,11 +40,10 @@ from anime_tools.stages.multiview_audit import (  # noqa: E402
     apply_findings,
     run_multiview_audit,
 )
-from anime_tools.stages.position_captions import (  # noqa: E402
+from anime_tools.stages.position_captions import (
     PositionCaptionOptions,
     load_clause_vocabulary,
 )
-from anime_tools.stages.cli.position_captions import build_detect_fn  # noqa: E402
 
 DEFAULT_REPORT_DIR = "post_image_dataset/captions/multiview_audit"
 

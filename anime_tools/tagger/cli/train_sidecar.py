@@ -37,29 +37,29 @@ import json
 import logging
 import math
 import time
+from collections.abc import Sequence
 from pathlib import Path
-from typing import Dict, List, Sequence, Tuple
 
-import torch  # noqa: E402
-import torch.nn.functional as F  # noqa: E402
-from PIL import Image  # noqa: E402
-from safetensors.torch import load_file as st_load  # noqa: E402
-from safetensors.torch import save_file as st_save  # noqa: E402
-from torch.utils.data import DataLoader, Dataset  # noqa: E402
+import torch
+import torch.nn.functional as F
+from PIL import Image
+from safetensors.torch import load_file as st_load
+from safetensors.torch import save_file as st_save
+from torch.utils.data import DataLoader, Dataset
 
-from anime_tools.captions import tag_rules as tr  # noqa: E402
-from anime_tools.tagger.dbv4_backend import (  # noqa: E402
+from anime_tools.captions import tag_rules as tr
+from anime_tools.captions.taxonomy import classify_people
+from anime_tools.tagger.cli.calibrate import calibrate_thresholds
+from anime_tools.tagger.cli.eval_metrics import (
+    per_tag_average_precision,
+    per_tag_prf,
+)
+from anime_tools.tagger.dbv4_backend import (
     Dbv4Backend,
     SidecarHead,
     align_vocab,
     preprocess_dbv4,
     rename_recovery_from_rules,
-)
-from anime_tools.captions.taxonomy import classify_people  # noqa: E402
-from anime_tools.tagger.cli.calibrate import calibrate_thresholds  # noqa: E402
-from anime_tools.tagger.cli.eval_metrics import (  # noqa: E402
-    per_tag_average_precision,
-    per_tag_prf,
 )
 
 logging.basicConfig(level=logging.INFO, format="%(message)s")
@@ -180,7 +180,7 @@ def _eval_head(
     y_bce: torch.Tensor,
     y_people: torch.Tensor | None,
     device: torch.device,
-) -> Tuple[torch.Tensor, torch.Tensor | None]:
+) -> tuple[torch.Tensor, torch.Tensor | None]:
     head.eval()
     outs_b, outs_p = [], []
     with torch.no_grad():
@@ -199,10 +199,10 @@ def train_head(
     y_people: torch.Tensor | None,
     train_idx: torch.Tensor,
     val_idx: torch.Tensor,
-    bce_indices: List[int],
+    bce_indices: list[int],
     people_labels: Sequence[str],
     device: torch.device,
-) -> Tuple[SidecarHead, Dict[str, object]]:
+) -> tuple[SidecarHead, dict[str, object]]:
     torch.manual_seed(args.seed)
     head = SidecarHead(
         d_in=hidden.shape[1], bce_indices=bce_indices, people_count_labels=people_labels
@@ -277,11 +277,11 @@ def main() -> None:
     device = torch.device(
         args.device or ("cuda" if torch.cuda.is_available() else "cpu")
     )
-    cfg = json.load(open(ckpt_dir / "config.json", encoding="utf-8"))
+    cfg = json.loads((ckpt_dir / "config.json").read_text(encoding="utf-8"))
     if cfg.get("backend") != "dbv4":
         raise SystemExit(f"{ckpt_dir} is not a dbv4-backed checkpoint")
-    vocab = json.load(open(ckpt_dir / "vocab.json", encoding="utf-8"))
-    dataset = json.load(open(ckpt_dir / "dataset.json", encoding="utf-8"))
+    vocab = json.loads((ckpt_dir / "vocab.json").read_text(encoding="utf-8"))
+    dataset = json.loads((ckpt_dir / "dataset.json").read_text(encoding="utf-8"))
     rules = tr.load_rules(ckpt_dir / "rules.yaml")
     n_tags = len(vocab["tags"])
     d = cfg["dbv4"]
@@ -294,8 +294,8 @@ def main() -> None:
     )
     align = align_vocab(vocab["tags"], backend.card, rename_recovery_from_rules(rules))
 
-    stems: List[str] = list(dataset["stems"])
-    image_paths: List[str] = list(dataset["image_paths"])
+    stems: list[str] = list(dataset["stems"])
+    image_paths: list[str] = list(dataset["image_paths"])
     if args.limit:
         stems, image_paths = stems[: args.limit], image_paths[: args.limit]
     cache_path = Path(
@@ -334,7 +334,7 @@ def main() -> None:
     hidden, probs, ok = cache["hidden"], cache["probs"], cache["ok"]
 
     # ---- labels ----
-    cats = set(c.strip() for c in args.categories.split(",") if c.strip())
+    cats = {c.strip() for c in args.categories.split(",") if c.strip()}
     by_index = {int(t["index"]): t for t in vocab["tags"]}
     bce_indices = sorted(int(i) for i, _n, c in align.unmatched if c in cats)
     log.info(
@@ -394,7 +394,7 @@ def main() -> None:
     pred = s_va >= thr_rows
     _, _, f1, sup = per_tag_prf(pred, yb_va)
     ap = per_tag_average_precision(s_va, yb_va)
-    metrics: Dict[str, object] = {"n_val": int(len(val_idx)), "by_category": {}}
+    metrics: dict[str, object] = {"n_val": len(val_idx), "by_category": {}}
     for c in sorted(cats):
         m = torch.tensor([by_index[i]["category"] == c for i in bce_indices]) & (
             sup > 0

@@ -12,7 +12,6 @@ bucketing) consume those constants.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Optional, Tuple
 
 # Count-tag detection lives in the shared torch-free tag-shape module so the
 # vocab build and caption-index builder can't drift. Re-exported here
@@ -27,19 +26,19 @@ from anime_tools.captions.taxonomy import (
 )
 
 __all__ = [
+    "IMAGE_EXTS",
     "_COUNT_RE",
     "_LEADING_INT_RE",
-    "is_count_tag",
-    "IMAGE_EXTS",
-    "find_image_for_caption",
     "classify_people",
+    "find_image_for_caption",
+    "is_count_tag",
 ]
 
 # Image extensions next to each .txt caption; order is preference, first hit wins.
-IMAGE_EXTS: Tuple[str, ...] = (".webp", ".jpg", ".jpeg", ".png")
+IMAGE_EXTS: tuple[str, ...] = (".webp", ".jpg", ".jpeg", ".png")
 
 
-def find_image_for_caption(caption_path: Path) -> Optional[Path]:
+def find_image_for_caption(caption_path: Path) -> Path | None:
     """Return the sibling image file matching ``{stem}.<ext>``, or None."""
     for ext in IMAGE_EXTS:
         candidate = caption_path.with_suffix(ext)

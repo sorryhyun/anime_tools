@@ -27,9 +27,9 @@ fused into a single ``str.replace`` chain).
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, Iterable, List, Set, Tuple
 
 import yaml
 
@@ -38,13 +38,13 @@ import yaml
 class TagRules:
     """Compiled rule set ready to apply to caption strings or tag lists."""
 
-    replacements: Tuple[Tuple[str, str], ...]
+    replacements: tuple[tuple[str, str], ...]
     remove: frozenset
-    dedup: Dict[str, frozenset]
+    dedup: dict[str, frozenset]
     # Per-tag category override consulted before the booru tag cache in vocab.categorize() (for tags the cache mis-types); only applies to tags the curator lists explicitly.
-    category_overrides: Dict[str, str]
+    category_overrides: dict[str, str]
     # Substring patterns suppressed from the build-time "top-20 uncategorized" coverage log. Logging filter only — does not change categorization. Case-sensitive (booru tags are lowercase).
-    coverage_ignore: Tuple[str, ...]
+    coverage_ignore: tuple[str, ...]
 
     def to_dict(self) -> dict:
         """Round-trippable dict for snapshotting into the checkpoint dir."""
@@ -116,7 +116,7 @@ def apply_replacements(content: str, rules: TagRules) -> str:
     return content
 
 
-def parse_caption(content: str, rules: TagRules) -> List[str]:
+def parse_caption(content: str, rules: TagRules) -> list[str]:
     """Split a raw caption string into a clean tag list under ``rules``.
 
     Equivalent to gelcrawl's ``dedup_tags_in_file`` but pure: no file IO,
@@ -130,11 +130,11 @@ def parse_caption(content: str, rules: TagRules) -> List[str]:
     return apply_rules(tags, rules)
 
 
-def apply_rules(tags: Iterable[str], rules: TagRules) -> List[str]:
+def apply_rules(tags: Iterable[str], rules: TagRules) -> list[str]:
     """Drop ``remove``-listed tags and dedup base tags whose variants fired."""
     tag_list = list(tags)
-    tag_set: Set[str] = set(tag_list)
-    to_remove: Set[str] = set(tag_set & rules.remove)
+    tag_set: set[str] = set(tag_list)
+    to_remove: set[str] = set(tag_set & rules.remove)
     for base, variants in rules.dedup.items():
         if base in tag_set and tag_set & variants:
             to_remove.add(base)

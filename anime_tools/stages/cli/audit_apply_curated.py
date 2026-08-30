@@ -21,8 +21,8 @@ import json
 import sys
 from collections import Counter
 
-from anime_tools._env import resolve_path  # noqa: E402
-from anime_tools.stages.multiview_audit import (  # noqa: E402
+from anime_tools._env import resolve_path
+from anime_tools.stages.multiview_audit import (
     apply_curated,
     revert_curated,
 )
