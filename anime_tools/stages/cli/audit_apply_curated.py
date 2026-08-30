@@ -28,7 +28,7 @@ from anime_tools.stages.multiview_audit import (
 )
 
 
-def parse_args() -> argparse.Namespace:
+def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument(
         "--report",
@@ -54,7 +54,11 @@ def parse_args() -> argparse.Namespace:
         "next to the report)",
     )
     p.add_argument("--apply", action="store_true", help="Write (default: dry run)")
-    return p.parse_args()
+    return p
+
+
+def parse_args() -> argparse.Namespace:
+    return build_parser().parse_args()
 
 
 def main() -> None:

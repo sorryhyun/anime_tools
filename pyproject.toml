@@ -1,6 +1,6 @@
 [project]
 name = "anime-tools"
-version = "0.1.0"
+version = "0.2.0"
 description = "Dataset curation for anime diffusion training: caption grammar + polishing, the Anima Tagger (dbv4), position clauses, multiview audit, PE-Spatial grouping, SAM3/MIT masking."
 readme = "README.md"
 license = { file = "LICENSE" }
@@ -27,10 +27,15 @@ stages = ["anime-tools[tagger,tokenizers]", "sam3 @ git+https://github.com/faceb
 grouping = ["torch>=2.4", "einops", "timm>=1.0"]
 # SAM3 subject masks + MIT/ComicTextDetector text masks.
 masking = ["torch>=2.4", "sam3 @ git+https://github.com/facebookresearch/sam3.git", "segmentation-models-pytorch>=0.3.4", "albumentations>=1.4.0", "opencv-python>=4.11"]  # onnxruntime(-gpu) optional: the CTD gate falls back to cv2.dnn without it; not pinned because onnxruntime vs onnxruntime-gpu conflict
-all = ["anime-tools[stages,grouping,masking]"]
+# Standalone web GUI (`anime-tools-gui`): FastAPI + uvicorn; the server never imports torch.
+gui = ["fastapi>=0.115", "uvicorn>=0.30"]
+all = ["anime-tools[stages,grouping,masking,gui]"]
+
+[project.scripts]
+anime-tools-gui = "anime_tools.gui:main"
 
 [dependency-groups]
-dev = ["pytest>=8", "pytest-xdist", "ruff"]
+dev = ["pytest>=8", "pytest-xdist", "ruff", "httpx"]  # httpx: fastapi TestClient
 
 [tool.uv]
 default-groups = ["dev"]
@@ -51,6 +56,7 @@ include = ["anime_tools*"]
 
 [tool.setuptools.package-data]
 "anime_tools.captions" = ["data/*.yaml"]
+"anime_tools.gui" = ["static/*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

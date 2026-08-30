@@ -15,7 +15,7 @@ from PIL import Image
 from tqdm import tqdm
 
 
-def main() -> None:
+def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("mask_dirs", nargs="+", help="Input mask directories to merge")
     parser.add_argument(
@@ -24,7 +24,11 @@ def main() -> None:
         required=True,
         help="Output directory for merged masks",
     )
-    args = parser.parse_args()
+    return parser
+
+
+def main() -> None:
+    args = build_parser().parse_args()
 
     mask_dirs = [Path(d) for d in args.mask_dirs]
     output_dir = Path(args.output_dir)

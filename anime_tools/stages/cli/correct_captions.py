@@ -16,7 +16,7 @@ from anime_tools.captions.tag_drop_groups import drop_group_names, parse_drop_gr
 from anime_tools.stages.captions import write_corrected_preprocess_captions
 
 
-def main() -> None:
+def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--src", required=True, help="Raw source image directory")
     parser.add_argument("--dst", required=True, help="Resized image directory")
@@ -123,7 +123,11 @@ def main() -> None:
         default=None,
         help="T5 tokenizer directory (spiece.model + tokenizer.json).",
     )
-    args = parser.parse_args()
+    return parser
+
+
+def main() -> None:
+    args = build_parser().parse_args()
 
     csv_path = Path(args.tag_csv) if args.tag_csv else find_tag_csv(curation_home())
     if csv_path is None or not csv_path.exists():

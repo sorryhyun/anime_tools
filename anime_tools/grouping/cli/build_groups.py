@@ -40,7 +40,7 @@ def load_embedder(spec: str | None, *, device: str | None):
     return factory(device=device)
 
 
-def main() -> None:
+def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument(
         "--source-dir", default="image_dataset", help="Native source image tree"
@@ -96,7 +96,11 @@ def main() -> None:
         "--num-workers", type=int, default=4, help="DataLoader image-decode workers"
     )
     p.add_argument("--device", default=None, help="cuda|cpu (default: auto)")
-    args = p.parse_args()
+    return p
+
+
+def main() -> None:
+    args = build_parser().parse_args()
 
     embedder = load_embedder(args.embedder, device=args.device)
     m = build_groups(

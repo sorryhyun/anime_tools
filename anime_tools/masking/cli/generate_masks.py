@@ -87,7 +87,7 @@ def rule_matches(rule: dict, image_path: Path, image_dir: Path) -> bool:
     return filter_paths_by_glob([str(image_path)], str(image_dir), pattern)[0]
 
 
-def main() -> None:
+def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--config", type=str, required=True, help="YAML config with prompts and params"
@@ -136,7 +136,11 @@ def main() -> None:
             "when given; falls back to it otherwise."
         ),
     )
-    args = parser.parse_args()
+    return parser
+
+
+def main() -> None:
+    args = build_parser().parse_args()
 
     with open(args.config) as f:
         config = yaml.safe_load(f)

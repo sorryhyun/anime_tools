@@ -39,7 +39,7 @@ wheels = [
 
 [[package]]
 name = "anime-tools"
-version = "0.1.0"
+version = "0.2.0"
 source = { editable = "." }
 dependencies = [
     { name = "huggingface-hub" },
@@ -55,6 +55,7 @@ dependencies = [
 all = [
     { name = "albumentations" },
     { name = "einops" },
+    { name = "fastapi" },
     { name = "matplotlib" },
     { name = "opencv-python" },
     { name = "sam3" },
@@ -63,11 +64,16 @@ all = [
     { name = "timm" },
     { name = "torch" },
     { name = "transformers" },
+    { name = "uvicorn" },
 ]
 grouping = [
     { name = "einops" },
     { name = "timm" },
     { name = "torch" },
+]
+gui = [
+    { name = "fastapi" },
+    { name = "uvicorn" },
 ]
 masking = [
     { name = "albumentations" },
@@ -96,6 +102,7 @@ tokenizers = [
 
 [package.dev-dependencies]
 dev = [
+    { name = "httpx" },
     { name = "pytest" },
     { name = "pytest-xdist" },
     { name = "ruff" },
@@ -104,9 +111,10 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "albumentations", marker = "extra == 'masking'", specifier = ">=1.4.0" },
-    { name = "anime-tools", extras = ["stages", "grouping", "masking"], marker = "extra == 'all'" },
+    { name = "anime-tools", extras = ["stages", "grouping", "masking", "gui"], marker = "extra == 'all'" },
     { name = "anime-tools", extras = ["tagger", "tokenizers"], marker = "extra == 'stages'" },
     { name = "einops", marker = "extra == 'grouping'" },
+    { name = "fastapi", marker = "extra == 'gui'", specifier = ">=0.115" },
     { name = "huggingface-hub", specifier = ">=0.30" },
     { name = "matplotlib", marker = "extra == 'stages'" },
     { name = "numpy", specifier = ">=2.0" },
@@ -127,11 +135,13 @@ requires-dist = [
     { name = "tqdm" },
     { name = "transformers", marker = "extra == 'tagger'", specifier = ">=4.45" },
     { name = "transformers", marker = "extra == 'tokenizers'", specifier = ">=4.45" },
+    { name = "uvicorn", marker = "extra == 'gui'", specifier = ">=0.30" },
 ]
-provides-extras = ["tagger", "tokenizers", "stages", "grouping", "masking", "all"]
+provides-extras = ["tagger", "tokenizers", "stages", "grouping", "masking", "gui", "all"]
 
 [package.metadata.requires-dev]
 dev = [
+    { name = "httpx" },
     { name = "pytest", specifier = ">=8" },
     { name = "pytest-xdist" },
     { name = "ruff" },
@@ -347,6 +357,22 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/bf/89/780e11f9588d9e7128a3f87788354c7946a9cbb1401ad38a48c4db9a4f07/execnet-2.1.2.tar.gz", hash = "sha256:63d83bfdd9a23e35b9c6a3261412324f964c2ec8dcd8d3c6916ee9373e0befcd", size = 166622, upload-time = "2025-11-12T09:56:37.75Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/ab/84/02fc1827e8cdded4aa65baef11296a9bbe595c474f0d6d758af082d849fd/execnet-2.1.2-py3-none-any.whl", hash = "sha256:67fba928dd5a544b783f6056f449e5e3931a5c378b128bc18501f7ea79e296ec", size = 40708, upload-time = "2025-11-12T09:56:36.333Z" },
+]
+
+[[package]]
+name = "fastapi"
+version = "0.141.1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "annotated-doc" },
+    { name = "pydantic" },
+    { name = "starlette" },
+    { name = "typing-extensions" },
+    { name = "typing-inspection" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/8a/02/91e3416a8fdd715abb903a952a6bec7cdd8d14eed55d415fc8595524c319/fastapi-0.141.1.tar.gz", hash = "sha256:e8822fc40db1e1858054d7a949a888695bc9bdce70139178e33bd2871a453ca1", size = 425799, upload-time = "2026-07-29T17:18:05.568Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/cb/03/10388a42375ee7e4ac9b94eb2c5c569c8b5795e377e701c9ac3ad63de890/fastapi-0.141.1-py3-none-any.whl", hash = "sha256:bfb91aa2d334c61cb35ba9a116fc123b3d3df31640b801cf57a7a78ec3f603b3", size = 131954, upload-time = "2026-07-29T17:18:04.364Z" },
 ]
 
 [[package]]
@@ -1610,6 +1636,18 @@ wheels = [
 ]
 
 [[package]]
+name = "starlette"
+version = "1.6.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "anyio" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/b5/b4/205b0d5241d934e8add0c38aa924c4f9fb7330834ff11e5444db964ec3f9/starlette-1.6.0.tar.gz", hash = "sha256:d4e3ac5e546444960c710297a3c9fc3f7ebae1b7e963f3d36173b49da535be9b", size = 2716969, upload-time = "2026-08-08T18:27:57.512Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/c8/cb/6a6a47d5b464bd08695d254f3da6e7986cc70c9fa5d778eda57538edfe56/starlette-1.6.0-py3-none-any.whl", hash = "sha256:a86dd39d14bb45f85a3d18525215a9ef0cfd1f192ac793220e72598c90335f0c", size = 75969, upload-time = "2026-08-08T18:27:56.196Z" },
+]
+
+[[package]]
 name = "stringzilla"
 version = "5.1.2"
 source = { registry = "https://pypi.org/simple" }
@@ -1853,6 +1891,19 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/a3/26/b09b8010994eccc3c09092e6b34058f36a460eea2d4c3e8b910c695975a0/typing_inspection-0.4.4.tar.gz", hash = "sha256:547274fa6b0a561ccf549cc9524b999a578e737d015d8709d021f9d0d13bea47", size = 76928, upload-time = "2026-08-12T12:37:25.997Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/67/81/4add07e5172b7ac40d8ed5ff580409a7801a4fe26d529bdd915401dabfbe/typing_inspection-0.4.4-py3-none-any.whl", hash = "sha256:65b8397ba37ccbce054456aaccddfc91e6e3083c92824df348d96ca832f3f147", size = 14750, upload-time = "2026-08-12T12:37:24.648Z" },
+]
+
+[[package]]
+name = "uvicorn"
+version = "0.52.4"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "click" },
+    { name = "h11" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/f2/0f/3f86e61397dd33bf2ccf28188c40db6a740658aeebbbf6e7dbc101a1f487/uvicorn-0.52.4.tar.gz", hash = "sha256:73acfee47a0b133c5de13d219492d62d8a31e935f4fe6e41a232451a15379f86", size = 100627, upload-time = "2026-08-19T06:27:41.821Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/f1/79/4a20b54ab0491485ccd8c077db2d39187c7f12b3e15485d38a7be37c81b4/uvicorn-0.52.4-py3-none-any.whl", hash = "sha256:f86e41a149d7d05a9969337e3946a9c171c06a5d42680896daaba624aeac8da1", size = 79871, upload-time = "2026-08-19T06:27:40.36Z" },
 ]
 
 [[package]]

@@ -1,0 +1,22 @@
+name: ci
+on:
+  push:
+    branches: [main]
+  pull_request:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.13"
+      # Base install + gui + tokenizers: the caption / GUI / boundary tests. The
+      # torch extras (tagger, stages, grouping, masking) are too heavy for CI.
+      - run: uv sync --extra gui --extra tokenizers
+      - run: uv run ruff format --check .
+      # Lint rules live in the maintainer's user-level ruff config (see CLAUDE.md);
+      # the default rule set here is advisory only.
+      - run: uv run ruff check .
+        continue-on-error: true
+      - run: uv run pytest -q -n auto

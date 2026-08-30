@@ -49,3 +49,20 @@ def test_captions_core_is_torch_free():
         [sys.executable, "-c", code], capture_output=True, text=True, check=False
     )
     assert r.returncode == 0, r.stderr
+
+
+def test_gui_server_is_torch_free():
+    """The GUI process only spawns stages; model loading stays in the child."""
+    import subprocess
+    import sys
+
+    pytest.importorskip("fastapi")
+    code = (
+        "import sys, anime_tools.gui.stages, anime_tools.gui.jobs, anime_tools.gui.server; "
+        "anime_tools.gui.server.create_app(); "
+        "assert 'torch' not in sys.modules, 'torch imported'"
+    )
+    r = subprocess.run(
+        [sys.executable, "-c", code], capture_output=True, text=True, check=False
+    )
+    assert r.returncode == 0, r.stderr

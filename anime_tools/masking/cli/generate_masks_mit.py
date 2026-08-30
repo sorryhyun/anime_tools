@@ -212,7 +212,7 @@ def _ctd_text_boxes(
     return boxes
 
 
-def main() -> None:
+def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--image-dir", type=str, required=True, help="Image directory")
     parser.add_argument(
@@ -276,7 +276,11 @@ def main() -> None:
             "as the training path_pattern."
         ),
     )
-    args = parser.parse_args()
+    return parser
+
+
+def main() -> None:
+    args = build_parser().parse_args()
 
     dilate_kernel = (
         np.ones((args.dilate, args.dilate), dtype=np.uint8) if args.dilate > 0 else None

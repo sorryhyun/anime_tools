@@ -1,0 +1,259 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>anime_tools</title>
+<style>
+  :root { --bg:#14161a; --panel:#1c1f25; --line:#2a2e36; --fg:#e6e6e6; --dim:#8b919c; --accent:#7aa2f7; --ok:#9ece6a; --warn:#e0af68; --err:#f7768e; }
+  * { box-sizing:border-box }
+  body { margin:0; font:14px/1.45 system-ui,sans-serif; background:var(--bg); color:var(--fg); height:100vh; display:grid; grid-template-columns:230px 1fr; grid-template-rows:44px 1fr; }
+  header { grid-column:1/3; display:flex; align-items:center; gap:14px; padding:0 14px; border-bottom:1px solid var(--line); background:var(--panel) }
+  header b { color:var(--accent) } header .dim { color:var(--dim); font-size:12px }
+  header .sp { flex:1 }
+  nav { border-right:1px solid var(--line); overflow:auto; background:var(--panel) }
+  nav h4 { margin:12px 12px 4px; color:var(--dim); font-size:11px; text-transform:uppercase; letter-spacing:.06em }
+  nav a { display:block; padding:6px 12px; color:var(--fg); text-decoration:none; cursor:pointer }
+  nav a.sel { background:#262b35; border-left:3px solid var(--accent); padding-left:9px }
+  nav a.na { color:var(--dim); font-style:italic }
+  main { display:grid; grid-template-columns:minmax(340px,1fr) minmax(400px,1.3fr); overflow:hidden }
+  #form { overflow:auto; padding:16px; border-right:1px solid var(--line) }
+  #right { display:grid; grid-template-rows:auto 1fr; overflow:hidden }
+  .doc { color:var(--dim); white-space:pre-wrap; font-size:12px; margin-bottom:12px; max-height:180px; overflow:auto; border-left:2px solid var(--line); padding-left:10px }
+  .notes { color:var(--warn); font-size:12px; margin-bottom:10px }
+  fieldset { border:1px solid var(--line); border-radius:6px; margin:0 0 12px; padding:8px 12px }
+  legend { color:var(--dim); font-size:12px; padding:0 4px }
+  .row { display:grid; grid-template-columns:180px 1fr; gap:8px; align-items:center; padding:3px 0 }
+  .row label { font-family:ui-monospace,monospace; font-size:12px; color:#c8cdd6; overflow:hidden; text-overflow:ellipsis; white-space:nowrap }
+  .row label.req::after { content:" *"; color:var(--err) }
+  input[type=text], input[type=number], select, textarea { width:100%; background:#0f1115; color:var(--fg); border:1px solid var(--line); border-radius:4px; padding:5px 7px; font:13px ui-monospace,monospace }
+  textarea { min-height:52px; resize:vertical }
+  .pathrow { display:flex; gap:4px } .pathrow input { flex:1 }
+  button { background:#2a2f3a; color:var(--fg); border:1px solid var(--line); border-radius:5px; padding:6px 12px; cursor:pointer; font-size:13px }
+  button:hover { border-color:var(--accent) } button:disabled { opacity:.45; cursor:default }
+  button.primary { background:var(--accent); color:#0f1115; border-color:transparent; font-weight:600 }
+  button.danger { background:var(--err); color:#0f1115; border-color:transparent; font-weight:600 }
+  .actions { position:sticky; bottom:0; background:var(--bg); padding:10px 0 0; display:flex; gap:8px; align-items:center; border-top:1px solid var(--line) }
+  .actions .status { color:var(--dim); font-size:12px; margin-left:auto }
+  .tabs { display:flex; gap:2px; padding:8px 12px 0; border-bottom:1px solid var(--line) }
+  .tabs a { padding:6px 12px; cursor:pointer; color:var(--dim); border-radius:6px 6px 0 0 }
+  .tabs a.sel { color:var(--fg); background:var(--panel) }
+  .pane { overflow:auto; padding:12px; display:none } .pane.sel { display:block }
+  pre#log { margin:0; font:12px/1.4 ui-monospace,monospace; white-space:pre-wrap; word-break:break-all }
+  .badge { font-size:11px; padding:1px 7px; border-radius:10px; background:#2a2f3a; color:var(--dim) }
+  .badge.running { color:var(--warn) } .badge.done { color:var(--ok) } .badge.failed,.badge.cancelled { color:var(--err) }
+  table { border-collapse:collapse; font-size:12px; width:100% } td,th { border-bottom:1px solid var(--line); padding:4px 6px; text-align:left; vertical-align:top; max-width:360px; overflow:hidden; text-overflow:ellipsis }
+  th { color:var(--dim); position:sticky; top:0; background:var(--bg) }
+  img.thumb { max-height:96px; max-width:160px; display:block; border-radius:3px }
+  pre.json { font:12px ui-monospace,monospace; white-space:pre-wrap; margin:0 }
+  dialog { background:var(--panel); color:var(--fg); border:1px solid var(--line); border-radius:8px; min-width:420px; max-width:80vw }
+  dialog::backdrop { background:#0008 }
+  #picker ul { list-style:none; padding:0; margin:8px 0; max-height:50vh; overflow:auto; font-family:ui-monospace,monospace; font-size:13px }
+  #picker li { padding:3px 6px; cursor:pointer; border-radius:3px } #picker li:hover { background:#262b35 }
+  .hist { font-size:12px } .hist a { color:var(--accent); cursor:pointer }
+  .kv { display:grid; grid-template-columns:140px 1fr; gap:6px 12px; font-size:13px } .kv b { color:var(--dim); font-weight:500 }
+</style>
+</head>
+<body>
+<header>
+  <b>anime_tools</b><span class="dim" id="home"></span>
+  <span class="sp"></span>
+  <span class="dim" id="hf"></span>
+  <button id="settingsBtn">⚙ Settings</button>
+</header>
+<nav id="nav"></nav>
+<main>
+  <div id="form"><div class="doc">Pick a stage on the left.</div></div>
+  <div id="right">
+    <div class="tabs"><a data-t="log" class="sel">Log</a><a data-t="report">Report</a><a data-t="jobs">Jobs</a></div>
+    <div id="log-pane" class="pane sel"><pre id="log"></pre></div>
+    <div id="report-pane" class="pane"><div id="report" class="dim">Run a stage; its report.json shows here.</div></div>
+    <div id="jobs-pane" class="pane"><div id="jobs" class="hist"></div></div>
+  </div>
+</main>
+
+<dialog id="picker"><form method="dialog">
+  <div><b>Choose a path</b> <span class="dim" id="pickerPath"></span></div>
+  <ul id="pickerList"></ul>
+  <div style="display:flex;gap:8px;justify-content:flex-end"><button value="cancel">Cancel</button><button value="ok" class="primary">Use this folder</button></div>
+</form></dialog>
+
+<dialog id="settings"><form method="dialog">
+  <h3 style="margin:0 0 12px">Settings</h3>
+  <div class="kv">
+    <b>Home</b><span id="sHome"></span>
+    <b>Models dir</b><span id="sModels"></span>
+    <b>HF token</b><span><span id="sHf"></span><br><input type="text" id="sToken" placeholder="hf_… (stored by huggingface_hub, never shown again)" style="margin-top:4px"></span>
+  </div>
+  <p class="dim" style="font-size:12px">The tagger backbone and SAM3 weights are gated on the Hub — a token with read access is needed on first run.</p>
+  <div style="display:flex;gap:8px;justify-content:flex-end"><button value="cancel">Close</button><button value="ok" class="primary">Save</button></div>
+</form></dialog>
+
+<dialog id="confirm"><form method="dialog">
+  <h3 style="margin:0 0 8px">Apply for real?</h3>
+  <p id="confirmMsg" style="max-width:520px"></p>
+  <p class="dim" style="font-size:12px">Caption stages write under <code>post_image_dataset/resized/</code> (autotag <code>missing</code> creates masters under <code>image_dataset/</code>). Any caption change must be followed by the trainer's TE re-encode (<code>make preprocess-te</code>).</p>
+  <div style="display:flex;gap:8px;justify-content:flex-end"><button value="cancel">Cancel</button><button value="ok" class="danger">Apply</button></div>
+</form></dialog>
+
+<script>
+const $ = s => document.querySelector(s);
+const api = async (url, opt) => { const r = await fetch(url, opt); if (!r.ok) throw new Error((await r.json().catch(()=>({detail:r.statusText}))).detail); return r.json(); };
+const post = (url, body) => api(url, {method:'POST', headers:{'content-type':'application/json'}, body:JSON.stringify(body)});
+const put  = (url, body) => api(url, {method:'PUT',  headers:{'content-type':'application/json'}, body:JSON.stringify(body)});
+
+let stages = [], cur = null, settings = {}, es = null, curJob = null, info = {};
+
+async function boot() {
+  [info, stages, settings] = await Promise.all([api('/api/info'), api('/api/stages'), api('/api/settings')]);
+  $('#home').textContent = info.home;
+  $('#hf').textContent = info.hf_token ? 'HF token ✓' : 'no HF token';
+  renderNav();
+  const id = location.hash.slice(1) || stages.find(s=>s.available)?.id;
+  if (id) select(id);
+  refreshJobs();
+  if (info.running) attach(info.running);
+}
+
+function renderNav() {
+  const groups = {};
+  for (const s of stages) (groups[s.group] ??= []).push(s);
+  $('#nav').innerHTML = Object.entries(groups).map(([g, ss]) =>
+    `<h4>${g}</h4>` + ss.map(s => `<a data-id="${s.id}" class="${s.available?'':'na'}${cur?.id===s.id?' sel':''}" title="${s.available?s.module:'install anime-tools['+s.extra+']'}">${s.title}</a>`).join('')
+  ).join('');
+  $('#nav').querySelectorAll('a').forEach(a => a.onclick = () => select(a.dataset.id));
+}
+
+function select(id) {
+  cur = stages.find(s => s.id === id); if (!cur) return;
+  location.hash = id; renderNav();
+  const f = $('#form');
+  if (!cur.available) { f.innerHTML = `<div class="doc">${cur.title} is unavailable: ${esc(cur.error)}\n\nInstall with:  uv tool install "anime-tools[${cur.extra}]"</div>`; return; }
+  const saved = settings.values?.[id] || {};
+  const groups = {};
+  for (const fd of cur.fields) (groups[fd.group] ??= []).push(fd);
+  let h = `<div class="doc">${esc(cur.doc.trim())}</div>`;
+  if (cur.notes) h += `<div class="notes">⚠ ${esc(cur.notes)}</div>`;
+  for (const [g, fs] of Object.entries(groups)) {
+    h += `<fieldset><legend>${g || 'options'}</legend>`;
+    for (const fd of fs) {
+      if (fd.dest === 'apply') continue;
+      const v = saved[fd.dest] ?? fd.default ?? '';
+      const name = fd.label || fd.flags[0] || fd.dest;
+      let w;
+      if (fd.kind === 'bool') w = `<input type="checkbox" data-d="${fd.dest}" ${v?'checked':''}>`;
+      else if (fd.kind === 'enum') w = `<select data-d="${fd.dest}">${fd.choices.map(c=>`<option ${String(c)===String(v)?'selected':''}>${esc(String(c))}</option>`).join('')}</select>`;
+      else if (fd.kind === 'list') w = `<textarea data-d="${fd.dest}" placeholder="one per line">${esc(Array.isArray(v)?v.join('\n'):String(v))}</textarea>`;
+      else if (fd.kind === 'int' || fd.kind === 'float') w = `<input type="number" data-d="${fd.dest}" step="${fd.kind==='int'?1:'any'}" value="${esc(String(v))}">`;
+      else if (fd.path) w = `<div class="pathrow"><input type="text" data-d="${fd.dest}" value="${esc(String(v))}"><button type="button" data-pick="${fd.dest}">…</button></div>`;
+      else w = `<input type="text" data-d="${fd.dest}" value="${esc(String(v))}">`;
+      h += `<div class="row"><label class="${fd.required?'req':''}" title="${esc(fd.help)}">${esc(name)}</label>${w}</div>`;
+    }
+    h += `</fieldset>`;
+  }
+  h += `<div class="actions">
+    <button id="run" class="${cur.apply?'':'primary'}">${cur.apply ? 'Dry run' : 'Run'}</button>
+    ${cur.apply ? '<button id="apply" class="primary">Apply…</button>' : ''}
+    <button id="cancel" disabled>Cancel</button>
+    <span class="status" id="status"></span></div>`;
+  f.innerHTML = h;
+  f.querySelectorAll('[data-pick]').forEach(b => b.onclick = () => pick(f.querySelector(`input[data-d="${b.dataset.pick}"]`)));
+  $('#run').onclick = () => run(false);
+  if (cur.apply) $('#apply').onclick = () => { $('#confirmMsg').textContent = `${cur.title} will write its changes.`; $('#confirm').showModal(); };
+  $('#confirm').onclose = () => { if ($('#confirm').returnValue === 'ok') run(true); };
+  $('#cancel').onclick = () => curJob && post(`/api/jobs/${curJob}/cancel`, {});
+  setBusy(!!info.running);
+}
+
+function values() {
+  const out = {};
+  for (const fd of cur.fields) {
+    const el = $(`#form [data-d="${fd.dest}"]`); if (!el) continue;
+    if (fd.kind === 'bool') out[fd.dest] = el.checked;
+    else if (fd.kind === 'list') out[fd.dest] = el.value.split('\n').map(s=>s.trim()).filter(Boolean);
+    else out[fd.dest] = el.value;
+  }
+  return out;
+}
+
+async function run(apply) {
+  try {
+    const job = await post('/api/jobs', {stage: cur.id, values: values(), apply});
+    settings.values = settings.values || {}; settings.values[cur.id] = job.values;
+    attach(job.id);
+  } catch (e) { $('#status').textContent = e.message; }
+}
+
+function setBusy(b) { const r=$('#run'), a=$('#apply'), c=$('#cancel'); if (r) r.disabled=b; if (a) a.disabled=b; if (c) c.disabled=!b; }
+
+function attach(jobId) {
+  curJob = jobId; if (es) es.close();
+  const log = $('#log'); log.textContent = ''; showTab('log'); setBusy(true);
+  $('#status').textContent = `running ${jobId}`;
+  es = new EventSource(`/api/jobs/${jobId}/log`);
+  es.onmessage = e => { log.textContent += JSON.parse(e.data) + '\n'; $('#log-pane').scrollTop = 1e9; };
+  es.addEventListener('done', e => {
+    const j = JSON.parse(e.data); es.close(); es = null; setBusy(false);
+    $('#status').innerHTML = `<span class="badge ${j.state}">${j.state}</span> exit ${j.exit_code}`;
+    refreshJobs(); if (j.report_path) loadReport(jobId);
+  });
+  es.onerror = () => { es.close(); es = null; setBusy(false); refreshJobs(); };
+}
+
+async function loadReport(jobId) {
+  const el = $('#report');
+  try {
+    const {path, report} = await api(`/api/jobs/${jobId}/report`);
+    let h = `<div class="dim" style="margin-bottom:8px">${esc(path)}</div>`;
+    const rows = Array.isArray(report) ? report : (report.rows || report.images || report.groups);
+    const meta = Array.isArray(report) ? null : Object.fromEntries(Object.entries(report).filter(([k,v]) => !Array.isArray(v) || v.length < 20));
+    if (meta) h += `<pre class="json">${esc(JSON.stringify(meta, null, 2))}</pre>`;
+    if (Array.isArray(rows) && rows.length && typeof rows[0] === 'object') {
+      const cols = [...new Set(rows.slice(0,50).flatMap(r=>Object.keys(r)))].slice(0, 12);
+      h += `<p class="dim">${rows.length} rows (showing ${Math.min(rows.length,300)})</p><table><tr>${cols.map(c=>`<th>${esc(c)}</th>`).join('')}</tr>`;
+      for (const r of rows.slice(0,300)) h += `<tr>${cols.map(c=>`<td>${cell(r[c])}</td>`).join('')}</tr>`;
+      h += `</table>`;
+    }
+    el.innerHTML = h; showTab('report');
+  } catch (e) { el.innerHTML = `<span class="dim">${esc(e.message)}</span>`; }
+}
+function cell(v) {
+  if (v == null) return '';
+  if (typeof v === 'string' && /\.(png|jpe?g|webp)$/i.test(v)) return `<a href="/api/files?path=${encodeURIComponent(v)}" target="_blank"><img class="thumb" loading="lazy" src="/api/files?path=${encodeURIComponent(v)}" title="${esc(v)}"></a>`;
+  if (typeof v === 'object') return `<pre class="json">${esc(JSON.stringify(v, null, 1))}</pre>`;
+  return esc(String(v));
+}
+
+async function refreshJobs() {
+  const jobs = await api('/api/jobs');
+  $('#jobs').innerHTML = jobs.length ? `<table><tr><th>job</th><th>stage</th><th>state</th><th>apply</th><th>argv</th></tr>` +
+    jobs.reverse().map(j => `<tr><td><a data-j="${j.id}">${j.id}</a></td><td>${esc(j.stage)}</td><td><span class="badge ${j.state}">${j.state}</span></td><td>${j.apply?'yes':''}</td><td style="font-family:monospace">${esc(j.argv.slice(2).join(' '))}</td></tr>`).join('') + `</table>`
+    : '<span class="dim">No jobs yet.</span>';
+  $('#jobs').querySelectorAll('a[data-j]').forEach(a => a.onclick = () => { attach(a.dataset.j); });
+}
+
+function showTab(t) { document.querySelectorAll('.tabs a').forEach(a=>a.classList.toggle('sel', a.dataset.t===t)); document.querySelectorAll('.pane').forEach(p=>p.classList.toggle('sel', p.id===t+'-pane')); }
+document.querySelectorAll('.tabs a').forEach(a => a.onclick = () => showTab(a.dataset.t));
+
+// -- path picker (home-relative) --
+async function pick(input) {
+  let path = ''; const list = $('#pickerList');
+  async function load(p) {
+    const d = await api('/api/ls?path=' + encodeURIComponent(p)); path = d.path; $('#pickerPath').textContent = '/' + path;
+    list.innerHTML = (path ? `<li data-p="${path.split('/').slice(0,-1).join('/')}">..</li>` : '') +
+      d.entries.map(e => `<li data-p="${esc(path ? path+'/'+e.name : e.name)}" data-dir="${e.dir}">${e.dir?'📁':'·'} ${esc(e.name)}</li>`).join('');
+    list.querySelectorAll('li').forEach(li => li.onclick = () => li.dataset.dir === 'false' ? ($('#picker').close(), input.value = li.dataset.p) : load(li.dataset.p));
+  }
+  await load(''); $('#picker').showModal();
+  $('#picker').onclose = () => { if ($('#picker').returnValue === 'ok') input.value = path; };
+}
+
+// -- settings --
+$('#settingsBtn').onclick = () => { $('#sHome').textContent = info.home; $('#sModels').textContent = info.models_dir; $('#sHf').textContent = info.hf_token ? 'present' : 'missing'; $('#sToken').value=''; $('#settings').showModal(); };
+$('#settings').onclose = async () => { if ($('#settings').returnValue !== 'ok') return; const t = $('#sToken').value.trim(); if (t) { await put('/api/settings', {hf_token: t}); info = await api('/api/info'); $('#hf').textContent = info.hf_token ? 'HF token ✓' : 'no HF token'; } };
+
+const esc = s => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+boot();
+</script>
+</body>
+</html>
