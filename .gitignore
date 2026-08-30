@@ -14,3 +14,6 @@ post_image_dataset/
 image_dataset/
 bench/*/results/
 _archive/
+
+# GUI settings written into the curation home (= the checkout during dev).
+.anime_tools_gui.json

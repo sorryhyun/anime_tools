@@ -31,7 +31,10 @@ let css = "";
 const assets = new Map<string, { type: string; bytes: Uint8Array }>();
 
 for (const out of result.outputs) {
-  const name = out.path.replace(/^\.\//, "");
+  // Bun reports artifact paths with the host separator (`.\font.woff2` on
+  // Windows); the url() it rewrote into the CSS is always POSIX, so normalize
+  // the name before matching one against the other.
+  const name = out.path.replaceAll("\\", "/").replace(/^\.\//, "");
   if (out.kind === "entry-point") js = await out.text();
   else if (name.endsWith(".css")) css += await out.text();
   else assets.set(name, { type: out.type, bytes: new Uint8Array(await out.arrayBuffer()) });

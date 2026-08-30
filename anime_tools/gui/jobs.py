@@ -31,6 +31,7 @@ class Job:
     report_path: str | None = None
     values: dict[str, Any] = field(default_factory=dict)
     apply: bool = False
+    cancelled: bool = False
     _proc: subprocess.Popen | None = field(default=None, repr=False)
     _cond: threading.Condition = field(default_factory=threading.Condition, repr=False)
 
@@ -38,10 +39,13 @@ class Job:
     def state(self) -> str:
         if self.exit_code is None:
             return "running"
+        # `cancelled` is set by JobManager.cancel before it kills: on Windows
+        # taskkill leaves a plain non-zero exit code, indistinguishable from a
+        # stage that failed on its own. A negative code still means a signal.
+        if self.cancelled or self.exit_code < 0:
+            return "cancelled"
         if self.exit_code == 0:
             return "done"
-        if self.exit_code < 0:
-            return "cancelled"
         return "failed"
 
     def to_dict(self) -> dict[str, Any]:
@@ -105,6 +109,10 @@ class JobManager:
             child_env = {
                 **os.environ,
                 "PYTHONUNBUFFERED": "1",
+                # We decode the pipe as UTF-8 below; a child left on the
+                # locale encoding (cp949/cp1252 on Windows) would arrive
+                # mojibake, or die encoding the arrows the stages print.
+                "PYTHONIOENCODING": "utf-8",
                 "ANIME_TOOLS_HOME": str(home),
                 **(env or {}),
             }
@@ -154,6 +162,7 @@ class JobManager:
         proc = job._proc
         if proc is None or job.exit_code is not None:
             return False
+        job.cancelled = True
         try:
             if os.name == "nt":
                 subprocess.run(

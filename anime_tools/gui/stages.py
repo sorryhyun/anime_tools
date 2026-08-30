@@ -353,7 +353,14 @@ def load_schemas() -> dict[str, dict[str, Any]]:
         "import json, anime_tools.gui.stages as S; print(json.dumps(S.dump_schemas()))"
     )
     r = subprocess.run(
-        [sys.executable, "-c", code], capture_output=True, text=True, check=False
+        [sys.executable, "-c", code],
+        capture_output=True,
+        text=True,
+        # json.dumps escapes non-ASCII, but a traceback on stderr does not, and
+        # the locale codec (cp949/cp1252 on Windows) would raise on it.
+        encoding="utf-8",
+        errors="replace",
+        check=False,
     )
     if r.returncode != 0:
         raise RuntimeError(f"stage schema dump failed:\n{r.stderr}")

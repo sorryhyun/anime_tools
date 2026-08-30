@@ -113,6 +113,14 @@ make frontend      # rebuild anime_tools/gui/static/index.html from frontend/ (S
 make frontend-dev  # bun dev server with hot reload on :5173, proxying /api to `make gui`
 ```
 
+Every target runs on Windows too, from cmd, PowerShell or Git Bash: the
+Makefile pins PowerShell as its shell there (GNU Make otherwise falls back to
+`cmd.exe` when Git Bash is absent, where the recipes mean something else) and
+calls the `.ps1` twin of each setup script — `scripts/ensure_bun.ps1`,
+`scripts/build_frontend.ps1`. You still need GNU Make itself
+(`winget install GnuWin32.Make`, or scoop/choco); everything else the targets
+touch — uv, bun, python — is cross-platform.
+
 The GUI frontend lives in `frontend/` (TypeScript / Solid) and builds into one
 self-contained `anime_tools/gui/static/index.html` that is **committed** — git
 installs ship it as-is, and CI fails if it drifts from `frontend/src`. Users

@@ -22,7 +22,7 @@ uv run ruff check . && uv run ruff format --check .   # no ruff config in pyproj
 
 Python >= 3.13. No extras — everything (torch, sam3, timm, fastapi) is a plain dependency. `[tool.uv] override-dependencies = ["numpy>=2.0"]` deliberately overrides sam3's stale `numpy<2` pin. `onnxruntime` is intentionally not pinned (gpu/cpu wheels conflict; the CTD text-mask gate falls back to `cv2.dnn`).
 
-CLIs are `python -m` modules, e.g. `python -m anime_tools.tagger.cli --mode …`, `python -m anime_tools.stages.cli.position_captions`, `python -m anime_tools.grouping.cli.build_groups --source-dir …`, `python -m anime_tools.masking.cli.generate_masks`. The `make caption-autotag` / `make caption-position` / `make preprocess-*` targets mentioned in the docs and the `captions` skill live in the **trainer repo**, which wraps these CLIs; the Makefile here only has `gui`.
+CLIs are `python -m` modules, e.g. `python -m anime_tools.tagger.cli --mode …`, `python -m anime_tools.stages.cli.position_captions`, `python -m anime_tools.grouping.cli.build_groups --source-dir …`, `python -m anime_tools.masking.cli.generate_masks`. The `make caption-autotag` / `make caption-position` / `make preprocess-*` targets mentioned in the docs and the `captions` skill live in the **trainer repo**, which wraps these CLIs; the Makefile here only has the dev targets (`install` / `gui` / `test` / `frontend*`), which run on Windows too — it pins PowerShell as its shell there and calls the `.ps1` twin of each `scripts/` helper.
 
 ## Architecture
 
