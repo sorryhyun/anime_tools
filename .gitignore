@@ -1,0 +1,14 @@
+__pycache__/
+.pytest_cache/
+.ruff_cache/
+*.pyc
+.venv/
+*.egg-info/
+dist/
+build/
+.env
+.claude/*
+!.claude/skills/
+models/
+post_image_dataset/
+image_dataset/

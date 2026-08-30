@@ -1,0 +1,45 @@
+[project]
+name = "anime-tools"
+version = "0.1.0"
+description = "Dataset curation for anime diffusion training: caption grammar + polishing, the Anima Tagger (dbv4), position clauses, multiview audit."
+readme = "README.md"
+license = { file = "LICENSE" }
+requires-python = ">=3.13"
+# Base install: the caption grammar / correction / variants / index, torch-free.
+dependencies = [
+    "numpy>=2.0",
+    "Pillow",
+    "pyyaml",
+    "safetensors>=0.5",
+    "huggingface-hub>=0.30",
+    "tqdm",
+    "rich>=13",
+]
+
+[project.optional-dependencies]
+# Anima Tagger (dbv4 caformer backbone via timm; GPL weights fetched from the gated upstream repo at load).
+tagger = ["torch>=2.4", "timm>=1.0", "transformers>=4.45"]
+# Tokenizer-length checks in the correction / position stages.
+tokenizers = ["transformers>=4.45", "sentencepiece"]
+# Position clauses + multiview audit (SAM3 subject detection, contact sheets).
+stages = ["anime-tools[tagger,tokenizers]", "sam3 @ git+https://github.com/facebookresearch/sam3.git", "matplotlib"]
+all = ["anime-tools[stages]"]
+
+[dependency-groups]
+dev = ["pytest>=8", "pytest-xdist", "ruff"]
+
+[tool.uv]
+default-groups = ["dev"]
+
+[build-system]
+requires = ["setuptools>=68.0"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["anime_tools*"]
+
+[tool.setuptools.package-data]
+"anime_tools.captions" = ["data/*.yaml"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
