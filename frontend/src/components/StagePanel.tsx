@@ -1,7 +1,8 @@
 import { createMemo, For, Show } from "solid-js";
 import { StageForm } from "./StageForm";
 import { HelpToggle } from "./HelpToggle";
-import type { Stage, Values } from "../types";
+import { StatusLine } from "./StatusLine";
+import type { JobStatus, Stage, Values } from "../types";
 
 /** The stage runner's body: the run bar + the schema-driven form for the
     current stage. The dock's button strip (in App) picks a *panel*; when that
@@ -24,13 +25,14 @@ import type { Stage, Values } from "../types";
     A stage with no `--apply` (correct, the mask generators, groups) has no dry
     pass to look at: its Run *is* the write, and there is nothing to undo. */
 export function StagePanel(props: {
-  stages?: Stage[];
+  /** The open stage, already resolved. The panel used to take the whole stage
+      list plus an id and re-find it five times. */
+  cur?: Stage;
   /** Every stage under the open dock button, including the current one: the
       bar picks between them when the panel holds more than one. */
   siblings?: Stage[];
   onPick: (id: string) => void;
   error?: unknown;
-  curId: string;
   values: Values;
   setValue: (dest: string, v: unknown) => void;
   reset: () => void;
@@ -39,7 +41,7 @@ export function StagePanel(props: {
       starting a stage would only 409. Greys the run buttons; Cancel stays on
       `busy`, since it can only cancel *this* panel's job. */
   locked?: boolean;
-  status: { text: string; state?: string };
+  status: JobStatus;
   /** The selected image, or null -- what the per-image Run acts on. */
   rel?: string | null;
   /** Run: `rel` narrows it to one image, null runs the batch. */
@@ -59,7 +61,7 @@ export function StagePanel(props: {
   help: boolean;
   onHelp: () => void;
 }) {
-  const cur = createMemo(() => props.stages?.find((s) => s.id === props.curId));
+  const cur = () => props.cur;
   /** Per-image Run needs a stage that takes a pattern and an image to aim at. */
   const scoped = createMemo(() => !!cur()?.scoped);
   const noImage = createMemo(() => !props.rel);
@@ -76,7 +78,7 @@ export function StagePanel(props: {
               <For each={props.siblings}>
                 {(s) => (
                   <a
-                    classList={{ sel: s.id === props.curId, na: !s.available }}
+                    classList={{ sel: s.id === props.cur?.id, na: !s.available }}
                     title={s.available ? s.title : s.error}
                     onClick={() => props.onPick(s.id)}
                   >
@@ -148,12 +150,7 @@ export function StagePanel(props: {
             <button onClick={props.onCancel}>Cancel</button>
           </Show>
 
-          <span class="status" title={props.status.text}>
-            <Show when={props.status.state}>
-              <span class={`badge ${props.status.state}`}>{props.status.state}</span>{" "}
-            </Show>
-            {props.status.text}
-          </span>
+          <StatusLine status={props.status} />
         </div>
 
         <div class="stageform">

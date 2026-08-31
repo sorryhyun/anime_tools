@@ -1,6 +1,7 @@
 import { createEffect, createResource, createSignal, For, on, Show } from "solid-js";
 import { api } from "../api";
 import { CaptionDiff } from "./CaptionDiff";
+import { ClauseRow } from "./ClauseRow";
 import { Tag } from "./TagLens";
 import type { CaptionEntry, CaptionKind, Parsed, Proposal } from "../types";
 
@@ -160,20 +161,14 @@ export function CaptionCard(props: {
               {count(pp().flat_tags.length, "tag")} · {count(pp().clauses.length, "clause")}
               <Show when={dirty()}> · unsaved preview</Show>
             </div>
-            <div class="clause">
-              <span class="ck">bag</span>
-              <span class="tags">
-                <For each={pp().flat_tags}>{(t) => <Tag tag={t} />}</For>
-              </span>
-            </div>
+            <ClauseRow label="bag">
+              <For each={pp().flat_tags}>{(t) => <Tag tag={t} />}</For>
+            </ClauseRow>
             <For each={pp().clauses}>
               {(c) => (
-                <div class="clause">
-                  <span class="ck pos">{c.header}</span>
-                  <span class="tags">
-                    <For each={c.tags}>{(t) => <Tag tag={t} />}</For>
-                  </span>
-                </div>
+                <ClauseRow label={c.header} pos>
+                  <For each={c.tags}>{(t) => <Tag tag={t} />}</For>
+                </ClauseRow>
               )}
             </For>
           </div>

@@ -270,3 +270,11 @@ export interface TagInfo {
   /** False when the KB answered under another spelling than the one clicked. */
   exact?: boolean;
 }
+
+/** What the run bar (and the Settings download row) is saying right now.
+    `state` is a job state — `running` / `done` / `failed` — and doubles as the
+    badge's class; absent means "just this text, no badge". */
+export interface JobStatus {
+  text: string;
+  state?: string;
+}

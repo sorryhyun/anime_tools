@@ -9,8 +9,8 @@ import {
   onCleanup,
   Show,
 } from "solid-js";
-import { createStore, reconcile, unwrap } from "solid-js/store";
-import { api, followLog } from "./api";
+import { createStore, reconcile } from "solid-js/store";
+import { api, toStatus } from "./api";
 import type {
   CaptionEntry,
   CaptionKind,
@@ -18,10 +18,8 @@ import type {
   Field,
   Info,
   ItemDetail,
-  ModelAsset,
   ModelCatalog,
   NodeKind,
-  RootName,
   Settings,
   Job,
   Stage,
@@ -31,21 +29,16 @@ import { REPLAY_FIELD } from "./types";
 import { DatasetTree, type Sel } from "./components/DatasetTree";
 import { ItemView } from "./components/ItemView";
 import { StagePanel } from "./components/StagePanel";
-import { FieldRow, grouped } from "./components/StageForm";
 import { Dialog } from "./components/Dialog";
 import { HelpToggle } from "./components/HelpToggle";
 import { TagLens } from "./components/TagLens";
+import { asFlag, createJobFollower, fromFlag, persisted } from "./state";
+import { SettingsDialog, type SettingsTab } from "./components/SettingsDialog";
 
-const ROOT_NAMES: RootName[] = ["src", "dst", "masks"];
 /** `/api/models/download` names its job `download:<ids>`; that prefix is the
     only thing that tells an *adopted* job (one already running when the page
     loaded) apart from a stage run, and the two go to different places. */
 const DOWNLOAD_STAGE = "download:";
-const ROOT_HELP: Record<RootName, string> = {
-  src: "source images + hand-written master captions",
-  dst: "resized images + derived captions + .variants.txt",
-  masks: "{stem}_mask.png, mirroring the source subdirs",
-};
 
 /** A finished **Run**: the report it wrote, the form and scope it ran at, and
     the images it wants to change. Apply replays exactly this, so what Apply
@@ -149,7 +142,7 @@ export default function App() {
   };
 
   // ---- stages ----
-  const [curId, setCurId] = createSignal(localStorage.getItem("stage") ?? "");
+  const [curId, setCurId] = persisted("stage", "", String);
   const cur = createMemo(() => stages()?.find((s) => s.id === curId()));
   const [forms, setForms] = createStore<Record<string, Values>>({});
   const values = () => forms[curId()] ?? {};
@@ -175,25 +168,45 @@ export default function App() {
   /** The dataset sidebar. The stage forms and the caption panel both want the
       width, and which one wins changes by the minute -- so it folds away and
       the header's toggle brings it back. */
-  const [sidebar, setSidebar] = createSignal(localStorage.getItem("sidebar") !== "0");
-  const [dockOpen, setDockOpen] = createSignal(localStorage.getItem("dock") !== "0");
+  const [sidebar, setSidebar] = persisted("sidebar", true, asFlag, fromFlag);
+  const [dockOpen, setDockOpen] = persisted("dock", true, asFlag, fromFlag);
+  // Not `persisted`: this moves on every pointermove of a drag, so it is saved
+  // once on pointerup (see `grip`) rather than at frame rate.
   const [dockH, setDockH] = createSignal(Number(localStorage.getItem("dockh")) || 320);
   /** One global "show the prose" preference, off by default: the stage doc and
       the Settings blurbs are behind the (?) buttons until it is on. */
-  const [help, setHelp] = createSignal(localStorage.getItem("help") === "1");
-  const [jobId, setJobId] = createSignal<string | null>(null);
-  const [busy, setBusy] = createSignal(false);
-  const [status, setStatus] = createSignal<{ text: string; state?: string }>({ text: "" });
+  const [help, setHelp] = persisted("help", false, asFlag, fromFlag);
+  /** The stage runner: the dock's job, its "running" badge and its status line.
+      No log panel yet, so the newest line *is* the status. */
+  const run$ = createJobFollower({
+    done: (job) => onStageDone(job),
+  });
+  const jobId = run$.id;
+  const busy = run$.running;
+  const status = run$.status;
+  const setStatus = run$.setStatus;
   /** A weights download is a job like any other to the server -- it takes the
       same single slot -- but it belongs to the Settings dialog, not the dock:
       its own id/status keep the modal open over it and keep the run bar from
       saying "running" for a fetch no stage form started. */
-  const [dlJob, setDlJob] = createSignal<string | null>(null);
+  const dl$ = createJobFollower({
+    // The downloader prints a blank line between models (and hub progress bars
+    // arrive as \r-terminated lines): the newest *non-empty* one is the status.
+    line: (line) => (line.trim() ? { text: line.trim(), state: "running" } : null),
+    done: (job) => {
+      dl$.setStatus({
+        text: job.state === "done" ? "download finished" : `exit ${job.exit_code}`,
+        state: job.state,
+      });
+      refetchInfo();
+      // The rows say installed/missing; a finished pull just changed that.
+      refetchModels();
+    },
+  });
+  const dlBusy = dl$.running;
   /** The ids this download asked for; `[]` = every missing model. Only used to
       mark the rows in flight. */
   const [dlIds, setDlIds] = createSignal<string[]>([]);
-  const [dlStatus, setDlStatus] = createSignal<{ text: string; state?: string }>({ text: "" });
-  const dlBusy = () => dlJob() !== null;
   const [confirmOpen, setConfirmOpen] = createSignal(false);
   const [settingsOpen, setSettingsOpen] = createSignal(false);
   /** Which Settings panel to open on: a hint about weights or the token
@@ -248,14 +261,19 @@ export default function App() {
     const { [REPLAY_FIELD]: _managed, ...rest } = v ?? {};
     return JSON.stringify(rest);
   };
+  /** The open stage's last Run, and whether the form still says what it said.
+      Both halves matter and they were derived three times with the polarity
+      flipped: Apply wants the fresh one, its refusal message wants "there is a
+      run but it is stale", and the caption card wants to explain the diff that
+      staleness took away. */
+  const lastRun = createMemo(() => {
+    const s = cur();
+    const run = s?.replay ? dry[s.id] : undefined;
+    return { run, fresh: !!run && run.values === formKey(values()) };
+  });
   /** The Run whose proposals are still on the table for the open stage, or
       null: no such run, the stage cannot replay, or the form moved on since. */
-  const pending = createMemo(() => {
-    const s = cur();
-    const d = s && dry[s.id];
-    if (!s?.replay || !d || d.values !== formKey(values())) return null;
-    return d;
-  });
+  const pending = createMemo(() => (lastRun().fresh ? lastRun().run! : null));
   const pendingSet = createMemo(() => new Set(pending()?.rels ?? []));
   /** The selected image's before/after, fetched one at a time: a batch's index
       is thousands of rels, and only the one on screen needs its text. */
@@ -282,10 +300,10 @@ export default function App() {
     const s = cur();
     if (!s?.apply) return "this stage has no dry pass — Run writes";
     if (!s.replay) return "";
-    if (!dry[s.id]) return "Run first — Apply writes what the run proposed";
-    const d = pending();
-    if (!d) return "the form changed since the run — Run again";
-    if (!d.rels.length) return "that run proposed no changes — nothing to write";
+    const { run, fresh } = lastRun();
+    if (!run) return "Run first — Apply writes what the run proposed";
+    if (!fresh) return "the form changed since the run — Run again";
+    if (!run.rels.length) return "that run proposed no changes — nothing to write";
     return "";
   });
   const undoBlocked = createMemo(() => {
@@ -301,15 +319,11 @@ export default function App() {
   /** The caption kind whose card should explain a vanished diff: the last Run
       still exists, but the form moved on, so its proposals were dropped. */
   const droppedKind = createMemo(() => {
-    const s = cur();
-    const d = s?.replay ? dry[s.id] : undefined;
+    const { run, fresh } = lastRun();
     const rel = sel()?.rel;
-    if (!d || !rel || d.values === formKey(values())) return undefined;
-    return d.rels.includes(rel) ? d.kind : undefined;
+    if (!run || fresh || !rel) return undefined;
+    return run.rels.includes(rel) ? run.kind : undefined;
   });
-  let es: EventSource | null = null;
-  let dlEs: EventSource | null = null;
-
   api.settings().then((s) => {
     setSettings(s);
     setForms(reconcile(structuredClone(s.values ?? {})));
@@ -347,21 +361,15 @@ export default function App() {
     }),
   );
 
-  createEffect(on(curId, (id) => id && localStorage.setItem("stage", id)));
-  createEffect(on(dockOpen, (o) => localStorage.setItem("dock", o ? "1" : "0")));
   // A class on <body>, not a <Show>: the tree keeps its expanded folders and
   // its scroll position while it is folded away.
-  createEffect(
-    on(sidebar, (v) => {
-      localStorage.setItem("sidebar", v ? "1" : "0");
-      document.body.classList.toggle("nosidebar", !v);
-    }),
-  );
-  createEffect(on(help, (h) => localStorage.setItem("help", h ? "1" : "0")));
+  createEffect(on(sidebar, (v) => document.body.classList.toggle("nosidebar", !v)));
   createEffect(
     on(info, (i) => {
       const id = i?.running;
-      if (!id || jobId() || dlJob()) return;
+      // `running`, not the ids: an id is kept after its job ends, and a
+      // second externally-started job deserves adopting too.
+      if (!id || busy() || dlBusy()) return;
       // Only the id comes back on /api/info, so ask what it is before deciding
       // which follower gets it -- a download must not land in the dock.
       void api
@@ -381,8 +389,8 @@ export default function App() {
     }),
   );
   onCleanup(() => {
-    es?.close();
-    dlEs?.close();
+    run$.close();
+    dl$.close();
     window.removeEventListener("hashchange", onHash);
     window.removeEventListener("keydown", onKey);
   });
@@ -424,36 +432,21 @@ export default function App() {
   }
 
   function attach(id: string) {
-    es?.close();
-    batch(() => {
-      setJobId(id);
-      setBusy(true);
-      setStatus({ text: `running ${id}`, state: "running" });
-    });
+    run$.follow(id, { text: `running ${id}`, state: "running" });
     setDockOpen(true);
-    es = followLog(
-      id,
-      // No log panel yet: the newest line is the status line.
-      (line) => setStatus({ text: line, state: "running" }),
-      (job) => {
-        es = null;
-        setBusy(false);
-        setStatus({ text: `exit ${job.exit_code}`, state: job.state });
-        refetchInfo();
-        // A finished download job changed what the Settings rows should say.
-        refetchModels();
-        if (job.state === "done") void finished(job);
-        // A finished stage rewrote captions/masks under our feet -- but a Run
-        // of a stage that has an --apply wrote nothing, so nothing to do.
-        const dryRun = stages()?.find((s) => s.id === job.stage)?.apply && !job.apply;
-        if (!dryRun) void reloadTouched(job);
-      },
-      () => {
-        es = null;
-        setBusy(false);
-        setStatus({ text: "log stream closed" });
-      },
-    );
+  }
+
+  /** A stage job that reached the end of its stream. */
+  function onStageDone(job: Job) {
+    setStatus({ text: `exit ${job.exit_code}`, state: job.state });
+    refetchInfo();
+    // A finished download job changed what the Settings rows should say.
+    refetchModels();
+    if (job.state === "done") void finished(job);
+    // A finished stage rewrote captions/masks under our feet -- but a Run of a
+    // stage that has an --apply wrote nothing, so nothing to do.
+    const dryRun = stages()?.find((s) => s.id === job.stage)?.apply && !job.apply;
+    if (!dryRun) void reloadTouched(job);
   }
 
   /** What a job was started with, so a clean finish can be filed against the
@@ -536,19 +529,28 @@ export default function App() {
       the Settings `path_pattern` names. A stage with no `--apply` has no dry
       pass, so for those this *is* the write. */
   async function run(rel: string | null) {
-    const s = cur();
-    if (!s) return;
     // `--from_report` is rebuilt per start and never carried over from the
     // saved form: a leftover path would quietly turn a Run into a replay.
     const { [REPLAY_FIELD]: _stale, ...v } = values() ?? {};
+    const job = await startStage(v, false, rel);
+    if (job) sent.set(job.id, { form: formKey(values()), rel });
+  }
+
+  /** Start the open stage and follow it. The one place a start can fail — a
+      rejected form, or the single job slot already taken — and it says so on
+      the run bar, with the dock open so the message is visible. */
+  async function startStage(v: Values, apply: boolean, rel: string | null) {
+    const s = cur();
+    if (!s) return null;
     try {
-      const job = await api.start(s.id, v, false, rel);
-      sent.set(job.id, { form: formKey(values()), rel });
+      const job = await api.start(s.id, v, apply, rel);
       setSettings("values", (prev) => ({ ...(prev ?? {}), [s.id]: job.values }));
       attach(job.id);
+      return job;
     } catch (e) {
-      setStatus({ text: (e as Error).message, state: "failed" });
+      setStatus(toStatus(e));
       setDockOpen(true);
+      return null;
     }
   }
 
@@ -557,19 +559,10 @@ export default function App() {
       be written that the diff did not show. A stage that cannot replay
       (`audit_apply`) has no report to stand on, so Apply re-runs it for real. */
   async function apply() {
-    const s = cur();
-    if (!s) return;
     const d = pending();
     const { [REPLAY_FIELD]: _stale, ...rest } = values() ?? {};
     const v = d ? { ...rest, [REPLAY_FIELD]: d.report } : rest;
-    try {
-      const job = await api.start(s.id, v, true, d?.rel ?? null);
-      setSettings("values", (prev) => ({ ...(prev ?? {}), [s.id]: job.values }));
-      attach(job.id);
-    } catch (e) {
-      setStatus({ text: (e as Error).message, state: "failed" });
-      setDockOpen(true);
-    }
+    await startStage(v, true, d?.rel ?? null);
   }
 
   /** **Undo**: put back the captions the last Apply wrote, from the very report
@@ -595,43 +588,18 @@ export default function App() {
       });
       await reloadRels(out.written);
     } catch (e) {
-      setStatus({ text: (e as Error).message, state: "failed" });
+      setStatus(toStatus(e));
     }
   }
 
-  /** Follow a weights job inside the Settings dialog. Deliberately none of
-      what `attach` does: no dock, no `busy`, no stage status line -- the modal
-      stays open and reports the pull itself. */
+  /** Follow a weights job inside the Settings dialog. Deliberately none of what
+      `attach` does: no dock, no dock status line -- the modal stays open and
+      reports the pull itself. */
   function attachDownload(id: string, ids: string[]) {
-    dlEs?.close();
     batch(() => {
-      setDlJob(id);
       setDlIds(ids);
-      setDlStatus({ text: "starting…", state: "running" });
+      dl$.follow(id, { text: "starting…", state: "running" });
     });
-    dlEs = followLog(
-      id,
-      // The downloader prints a blank line between models (and hub progress
-      // bars arrive as \r-terminated lines): the newest *non-empty* one is the
-      // status line.
-      (line) => line.trim() && setDlStatus({ text: line.trim(), state: "running" }),
-      (job) => {
-        dlEs = null;
-        setDlJob(null);
-        setDlStatus({
-          text: job.state === "done" ? "download finished" : `exit ${job.exit_code}`,
-          state: job.state,
-        });
-        refetchInfo();
-        // The rows say installed/missing; a finished pull just changed that.
-        refetchModels();
-      },
-      () => {
-        dlEs = null;
-        setDlJob(null);
-        setDlStatus({ text: "log stream closed" });
-      },
-    );
   }
 
   /** Re-attach to a download that was already running when the page loaded.
@@ -652,7 +620,7 @@ export default function App() {
     } catch (e) {
       // A stage holding the one job slot lands here (409) -- say so in the
       // dialog, where the button that failed is.
-      setDlStatus({ text: (e as Error).message, state: "failed" });
+      dl$.setStatus(toStatus(e));
     }
   }
 
@@ -756,14 +724,13 @@ export default function App() {
         <Show when={dockOpen()}>
           <div class="dockbody">
             <StagePanel
-              stages={stages()}
+              cur={cur()}
               siblings={panels().find(([p]) => p === curPanel())?.[1] ?? []}
               onPick={(id) => {
                 setLastInPanel(curPanel(), id);
                 setCurId(id);
               }}
               error={stages.error}
-              curId={curId()}
               values={values()}
               setValue={setValue}
               reset={resetForm}
@@ -866,11 +833,11 @@ export default function App() {
         busy={busy() || dlBusy()}
         downloading={dlBusy()}
         downloadIds={dlIds()}
-        progress={dlStatus()}
+        progress={dl$.status()}
         help={help()}
         onHelp={() => setHelp(!help())}
         onDownload={download}
-        onCancelDownload={() => dlJob() && api.cancel(dlJob()!)}
+        onCancelDownload={() => dl$.id() && api.cancel(dl$.id()!)}
         onClose={async (out) => {
           setSettingsOpen(false);
           if (!out) return;
@@ -887,350 +854,5 @@ export default function App() {
         }}
       />
     </>
-  );
-}
-
-/** The Settings dialog's panels. One flat form was getting long enough that the
-    roots you edit once a year sat above the download buttons you press weekly. */
-const SETTINGS_TABS = [
-  ["general", "General"],
-  ["advanced", "Advanced"],
-  ["models", "Models"],
-] as const;
-type SettingsTab = (typeof SETTINGS_TABS)[number][0];
-
-interface SettingsOut {
-  token: string | null;
-  roots: Record<string, string> | null;
-  /** The stage defaults (`path_pattern` / `tagger_dir`), or null if untouched. */
-  defaults: Record<string, string> | null;
-  /** The preflight stage's form values, or null if untouched. */
-  preprocess: Record<string, unknown> | null;
-}
-
-function SettingsDialog(props: {
-  open: boolean;
-  /** Which panel to land on; the entry point picks it (the header's token
-      warning and an adopted download both mean Models). */
-  initialTab?: SettingsTab;
-  info?: Info;
-  roots?: DatasetRoots;
-  /** One argparse Field per Settings-bound stage flag. */
-  fields: Field[];
-  defaults: Record<string, string>;
-  /** The hidden preflight stage, rendered as its own Settings block. */
-  preprocess?: Stage;
-  preprocessValues: Record<string, unknown>;
-  models?: ModelCatalog;
-  /** Any job holds the one slot -- a stage run disables the buttons too. */
-  busy: boolean;
-  /** …but only a weights job is *ours*, and only it is reported in here. */
-  downloading: boolean;
-  /** What that job asked for; `[]` = every missing model. */
-  downloadIds: string[];
-  progress: { text: string; state?: string };
-  help: boolean;
-  onHelp: () => void;
-  onDownload: (ids: string[]) => void;
-  onCancelDownload: () => void;
-  onClose: (out: SettingsOut | null) => void;
-}) {
-  let tokenEl!: HTMLInputElement;
-  const rootEls: Partial<Record<RootName, HTMLInputElement>> = {};
-  const defEls: Record<string, HTMLInputElement> = {};
-  /** The preflight form's edits, keyed by dest. Seeded from the saved values on
-      open and diffed on OK, so an untouched block sends nothing. */
-  const [pre, setPre] = createStore<Record<string, unknown>>({});
-  const [tab, setTab] = createSignal<SettingsTab>("general");
-  createEffect(
-    on(
-      () => props.open,
-      (open) => {
-        if (!open) return;
-        setPre(reconcile(structuredClone(props.preprocessValues)));
-        setTab(props.initialTab ?? "general");
-      },
-    ),
-  );
-  /** Fields the preflight block shows: the same filter the stage forms use, so
-      the roots and `path_pattern` stay bound server-side and out of here. */
-  const preFields = createMemo(() =>
-    props.preprocess ? grouped(props.preprocess.fields).flatMap(([, fs]) => fs) : [],
-  );
-  const current = (n: RootName) => props.roots?.roots[n];
-  const missing = () => (props.models?.models ?? []).filter((m) => !m.installed);
-  /** Is this row part of the running pull? An id-less job is "every missing". */
-  const inFlight = (m: ModelAsset) =>
-    props.downloading &&
-    (props.downloadIds.length ? props.downloadIds.includes(m.id) : !m.installed);
-
-  return (
-    <Dialog
-      open={props.open}
-      class="settings"
-      onClose={(v) => {
-        const t = tokenEl.value.trim();
-        tokenEl.value = "";
-        if (v !== "ok") return props.onClose(null);
-        const picked = Object.fromEntries(
-          ROOT_NAMES.map((n) => [n, rootEls[n]?.value.trim() ?? ""]),
-        );
-        const changed = ROOT_NAMES.some((n) => picked[n] !== (current(n)?.path ?? ""));
-        const defaults = Object.fromEntries(
-          props.fields.map((f) => [f.setting!, defEls[f.setting!]?.value.trim() ?? ""]),
-        );
-        const defChanged = props.fields.some(
-          (f) => defaults[f.setting!] !== (props.defaults[f.setting!] ?? ""),
-        );
-        const preChanged = JSON.stringify(unwrap(pre)) !== JSON.stringify(props.preprocessValues);
-        props.onClose({
-          token: t || null,
-          roots: changed ? picked : null,
-          defaults: defChanged ? defaults : null,
-          preprocess: preChanged ? { ...unwrap(pre) } : null,
-        });
-      }}
-    >
-      {/* `type=button`, like the model rows: every other button in here submits
-          the <form method="dialog"> and closes it. */}
-      <h3 class="dlgh">
-        Settings
-        <span class="sp" />
-        <HelpToggle open={props.help} onToggle={props.onHelp} />
-      </h3>
-
-      {/* Every panel stays mounted -- the inputs are uncontrolled and read off
-          their refs on Save, so a hidden panel still has to be there to read. */}
-      <nav class="dlg-tabs">
-        <For each={SETTINGS_TABS}>
-          {([id, label]) => (
-            <button type="button" classList={{ on: tab() === id }} onClick={() => setTab(id)}>
-              {label}
-              <Show when={id === "models" && missing().length}>
-                <span class="badge miss">{missing().length}</span>
-              </Show>
-            </button>
-          )}
-        </For>
-      </nav>
-
-      <div classList={{ spane: true, hide: tab() !== "general" }}>
-        <div class="kv">
-          <b>Home</b>
-          <span class="mono">{props.info?.home}</span>
-          <b>Models dir</b>
-          <span class="mono">{props.info?.models_dir}</span>
-        </div>
-
-        <h4>Dataset roots</h4>
-        <Show when={props.help}>
-          <p class="dim" style="margin:0 0 8px">
-            Relative to the curation home; the three trees are joined by the same relative path.
-          </p>
-        </Show>
-        <div class="kv">
-          <For each={ROOT_NAMES}>
-            {(n) => (
-              <>
-                <b>{n}</b>
-                <span>
-                  <input
-                    type="text"
-                    ref={(el) => (rootEls[n] = el)}
-                    value={current(n)?.path ?? props.roots?.defaults[n] ?? ""}
-                    placeholder={props.roots?.defaults[n]}
-                  />
-                  <span classList={{ dim: true, err: current(n) ? !current(n)!.exists : false }}>
-                    {current(n) && !current(n)!.exists ? "missing — " : ""}
-                    {ROOT_HELP[n]}
-                  </span>
-                </span>
-              </>
-            )}
-          </For>
-        </div>
-      </div>
-
-      <div classList={{ spane: true, hide: tab() !== "advanced" }}>
-        <h4>Stage defaults</h4>
-        <Show when={props.help}>
-          <p class="dim" style="margin:0 0 8px">
-            Filled into every stage that takes them, so no stage form re-asks. Leave one blank for
-            the CLI's own default. <code>--device</code> is not here on purpose: each stage
-            auto-detects it.
-          </p>
-        </Show>
-        <div class="kv">
-          <For each={props.fields}>
-            {(f) => (
-              <>
-                <b>{f.setting}</b>
-                <span>
-                  <input
-                    type="text"
-                    ref={(el) => (defEls[f.setting!] = el)}
-                    value={props.defaults[f.setting!] ?? ""}
-                    placeholder={f.default == null ? "(none)" : String(f.default)}
-                  />
-                  <span class="dim">{f.help}</span>
-                </span>
-              </>
-            )}
-          </For>
-        </div>
-
-        <Show when={props.preprocess}>
-          {(pre_) => (
-            <>
-              <h4>{pre_().title}</h4>
-              <Show when={props.help}>
-                <p class="dim" style="margin:0 0 8px">
-                  {pre_().notes} Runs over the same images the stage does, so a per-image Apply
-                  resizes just that image. Already-current images are skipped, so a re-run is
-                  near-free. Tiers must match the trainer's <code>target_res</code>.
-                </p>
-              </Show>
-              <div class="sfields">
-                <For each={preFields()}>
-                  {(f) => (
-                    <FieldRow
-                      field={f}
-                      value={pre[f.dest] ?? f.default}
-                      dirty={pre[f.dest] !== undefined && String(pre[f.dest]) !== String(f.default)}
-                      setValue={(v) => setPre(f.dest, v)}
-                    />
-                  )}
-                </For>
-              </div>
-            </>
-          )}
-        </Show>
-      </div>
-
-      <div classList={{ spane: true, hide: tab() !== "models" }}>
-        <h4>Hugging Face</h4>
-        <div class="kv">
-          <b>Token</b>
-          <span>
-            {props.info?.hf_token ? "present" : "missing"}
-            <input
-              ref={tokenEl}
-              type="password"
-              placeholder="hf_… (stored by huggingface_hub, never shown again)"
-              style="margin-top:4px"
-            />
-            <Show when={props.help}>
-              <span class="dim">
-                The tagger backbone and SAM3 weights are gated on the Hub — a token with read access
-                is needed on first run.
-              </span>
-            </Show>
-          </span>
-        </div>
-
-        <h4>Models</h4>
-        <Show when={props.help}>
-          <p class="dim" style="margin:0 0 8px">
-            Every stage fetches what it needs on first use — these buttons only move the wait, and
-            any gated-repo refusal, to a moment you picked. A download runs as a job: one at a time,
-            and it reports here, not in the stage bar, so this dialog can stay open over it.
-          </p>
-        </Show>
-        <div class="models">
-          <For each={props.models?.models}>
-            {(m) => (
-              <ModelRow
-                m={m}
-                busy={props.busy}
-                active={inFlight(m)}
-                onDownload={props.onDownload}
-              />
-            )}
-          </For>
-        </div>
-        <div class="dlbar">
-          <button
-            type="button"
-            disabled={props.busy || !missing().length}
-            onClick={() => props.onDownload([])}
-          >
-            {missing().length
-              ? `Download all ${missing().length} missing`
-              : "Every model is installed"}
-          </button>
-          <Show when={props.downloading}>
-            <button type="button" onClick={props.onCancelDownload}>
-              Cancel
-            </button>
-          </Show>
-          <Show when={props.progress.text}>
-            <span class="status" title={props.progress.text}>
-              <Show when={props.progress.state}>
-                <span class={`badge ${props.progress.state}`}>{props.progress.state}</span>{" "}
-              </Show>
-              {props.progress.text}
-            </span>
-          </Show>
-        </div>
-      </div>
-
-      <div class="dlg-actions">
-        <button value="cancel">Close</button>
-        <button value="ok" class="primary">
-          Save
-        </button>
-      </div>
-    </Dialog>
-  );
-}
-
-/** One catalog row. The button is `type=button` on purpose: every other button
-    in the dialog submits the <form method="dialog"> and closes it. */
-function ModelRow(props: {
-  m: ModelAsset;
-  busy: boolean;
-  /** This row is part of the running pull. */
-  active: boolean;
-  onDownload: (ids: string[]) => void;
-}) {
-  return (
-    <div class="modelrow">
-      <div class="mi">
-        <span class="mh">
-          <b>{props.m.title}</b>
-          <span
-            classList={{
-              badge: true,
-              running: props.active,
-              done: !props.active && props.m.installed,
-              miss: !props.active && !props.m.installed,
-            }}
-          >
-            {props.active ? "downloading" : props.m.installed ? "installed" : "missing"}
-          </span>
-        </span>
-        <span class="dim mono" title={props.m.location}>
-          {props.m.repo} → {props.m.location}
-        </span>
-        {/* Two-up rows are half the old width: what a model is *for* gets its
-            own wrapping line rather than a clipped tail of the title's. */}
-        <span class="dim wrap">{props.m.used_by}</span>
-        <Show when={props.m.notes}>
-          <span class="dim wrap">{props.m.notes}</span>
-        </Show>
-        <Show when={props.m.gated}>
-          <span class="dim wrap">
-            Gated —{" "}
-            <a href={props.m.gated} target="_blank" rel="noreferrer">
-              accept the terms
-            </a>{" "}
-            with the same account as the token above.
-          </span>
-        </Show>
-      </div>
-      <button type="button" disabled={props.busy} onClick={() => props.onDownload([props.m.id])}>
-        {props.active ? "downloading…" : props.m.installed ? "Re-download" : "Download"}
-      </button>
-    </div>
   );
 }

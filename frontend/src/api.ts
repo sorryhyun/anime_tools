@@ -7,6 +7,7 @@ import type {
   Info,
   ItemDetail,
   Job,
+  JobStatus,
   Listing,
   ModelCatalog,
   Parsed,
@@ -84,6 +85,13 @@ export const api = {
   saveCaption: (rel: string, kind: CaptionKind, text: string) =>
     req<CaptionEntry>("/api/dataset/item", json("PUT", { rel, kind, text })),
 };
+
+/** Any thrown error as a failed status line — the four call sites that start
+    or undo a job all did this by hand. */
+export const toStatus = (e: unknown): JobStatus => ({
+  text: e instanceof Error ? e.message : String(e),
+  state: "failed",
+});
 
 /** Follow a job's stdout. Resolves with the final job dict; `onLine` per line. */
 export function followLog(
