@@ -70,10 +70,13 @@ def test_listing_joins_the_three_trees(client):
         "master": True,
         "derived": False,
         "variants": False,
+        "resized": False,  # resize has not run over this one
         "mask": True,  # flat masks/{stem}_mask.png is the legacy fallback
     }
     b = by_rel["sub/b.jpg"]
     assert b["dir"] == "sub" and b["derived"] and b["variants"] and not b["mask"]
+    # …and `resized` is matched on stem, so the jpg -> png re-encode still counts.
+    assert b["resized"]
 
 
 def test_listing_filters(client):

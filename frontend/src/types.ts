@@ -153,6 +153,10 @@ export interface DatasetItem {
   master: boolean;
   derived: boolean;
   variants: boolean;
+  /** The resized image exists under the dst root — matched on stem, since
+      resize may have re-encoded. Everything downstream of resize walks that
+      tree, so a row without it is invisible to every stage but autotag. */
+  resized: boolean;
   mask: boolean;
 }
 

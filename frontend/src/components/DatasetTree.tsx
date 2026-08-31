@@ -223,15 +223,24 @@ export function DatasetTree(props: {
           </Show>
           {p.it.name}
         </span>
+        {/* Row flags are about the *image*, not its captions -- the caption
+            files are the dot strip below. Both of these say a stage has been
+            here: `r` that resize has produced the copy every stage downstream
+            of it walks, so a row without one is invisible to them. */}
         <span class="flags">
           <Show when={props.pending?.has(p.it.rel)}>
             <span class="flag prop" title="the last run proposes a change here">
               ●
             </span>
           </Show>
+          <Show when={p.it.resized}>
+            <span class="flag rz" title="resized — post_image_dataset/resized has this image">
+              r
+            </span>
+          </Show>
           <Show when={p.it.mask}>
             <span class="flag mask" title="has a mask">
-              ◑
+              😷
             </span>
           </Show>
         </span>

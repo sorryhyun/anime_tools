@@ -290,7 +290,15 @@ def list_items(
 
 
 def _row(roots: Roots, rel: Path, name: str) -> dict[str, Any]:
-    """One sidebar row: the image plus which of its siblings exist."""
+    """One sidebar row: the image plus which of its siblings exist.
+
+    ``resized`` is matched on *stem* through :func:`_sibling_image`, like every
+    other read of the derived tree — resize may re-encode a ``.jpg`` master to a
+    ``.png``, so the rel that names the row is not the name of its own output.
+    It is a row flag rather than a caption dot because it is an image, not a
+    caption: nothing selects it, it only says whether the stages downstream of
+    resize can see this image at all.
+    """
     caps = caption_paths(roots, rel)
     parent = rel.parent.as_posix()
     return {
@@ -301,6 +309,7 @@ def _row(roots: Roots, rel: Path, name: str) -> dict[str, Any]:
         "master": caps["master"].is_file(),
         "derived": caps["derived"].is_file(),
         "variants": caps["variants"].is_file(),
+        "resized": _sibling_image(roots.dst / rel.parent, rel.stem) is not None,
         "mask": mask_path(roots, rel) is not None,
     }
 
