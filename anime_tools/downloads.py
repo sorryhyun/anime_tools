@@ -322,8 +322,8 @@ def catalog() -> tuple[Asset, ...]:
             dest=tagger_dir,
             used_by="Autotag captions · Position captions · Multiview audit",
             stages=("autotag", "position", "audit"),
-            notes="Our half of the tagger — vocab, rules, groups, thresholds, "
-            "sidecar. Small; the weights are the backbone below.",
+            notes="Vocab, rules, groups, thresholds, sidecar. Small — the "
+            "weights are the backbone below.",
         ),
         Asset(
             id="tagger_backbone",
@@ -333,8 +333,7 @@ def catalog() -> tuple[Asset, ...]:
             used_by="the Anima Tagger checkpoint above",
             stages=("autotag", "position", "audit"),
             gated=f"https://huggingface.co/{backbone}",
-            notes="GPL-3.0 and gated, never vendored: sign in with a Hugging "
-            "Face token, then accept the terms on the repo page (auto-approve).",
+            notes="GPL-3.0 and never vendored; the terms auto-approve.",
         ),
         Asset(
             id="sam3",
@@ -345,7 +344,7 @@ def catalog() -> tuple[Asset, ...]:
             used_by="Position captions · Multiview audit · SAM3 subject masks",
             stages=("position", "audit", "masks_sam"),
             gated=f"https://huggingface.co/{SAM3_REPO}",
-            notes=f"Gated. Lands on the --checkpoint default, {DEFAULT_SAM3_CHECKPOINT}.",
+            notes="Lands on the --checkpoint default of every SAM3 stage.",
         ),
         Asset(
             id="pe_spatial",
@@ -365,10 +364,8 @@ def catalog() -> tuple[Asset, ...]:
             dest=resolve_path(SOFT_PROMPT_DIR),
             used_by="Position captions · Multiview audit (subject detection)",
             stages=("position", "audit"),
-            notes="A textual inversion of `anime girl`, 161 KB, from the "
-            "trainer repo over plain HTTPS rather than the Hub. It is the "
-            "default --prompt_embed; without it both stages fall back to the "
-            "text prompt `girl`, which finds fewer subjects.",
+            notes="The default --prompt_embed (161 KB); without it both "
+            "stages fall back to the prompt `girl` and find fewer subjects.",
         ),
         Asset(
             id="danbooru_tags",
@@ -379,12 +376,8 @@ def catalog() -> tuple[Asset, ...]:
             dest=models_dir(),
             used_by="Correct + mirror captions · the caption panel's tag descriptions",
             stages=("correct",),
-            notes="~114k Danbooru tags with category, post count and a wiki "
-            "blurb, over plain HTTPS rather than the Hub. Correction needs it "
-            "to type a tag; clicking a tag in the caption panel reads its "
-            f"entry out of it. Descriptions are Korean — `{TAG_CSV_EN_NAME}` "
-            "next to it wins when present, built by `python -m "
-            "anime_tools.tagger.cli.build_english_tag_csv`.",
+            notes="~114k tags with category, post count and a wiki blurb. "
+            "Blurbs are Korean; the row below rewrites them in English.",
         ),
         Asset(
             id="danbooru_tags_en",
@@ -397,11 +390,9 @@ def catalog() -> tuple[Asset, ...]:
             dest=models_dir(),
             used_by="the caption panel's tag descriptions",
             stages=(),
-            notes="Optional, and needs the row above: joins the Danbooru wiki "
-            f"mirror (45 MB, stays in the hub cache) onto {TAG_CSV_NAME} and "
-            f"writes {TAG_CSV_EN_NAME} beside it. Tag names, categories and "
-            "counts are unchanged — only the blurb is, from Korean to English. "
-            "The caption panel prefers this file when it exists.",
+            notes="Optional; needs the row above. Rewrites its blurbs in "
+            "English, which the caption panel prefers. The 45 MB mirror it "
+            "joins stays in the hub cache.",
         ),
         Asset(
             id="mit_text",

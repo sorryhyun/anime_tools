@@ -135,16 +135,13 @@ button.help.warn:hover { border-color:var(--accent) }
 .reuse { display:flex; gap:8px; align-items:flex-start; max-width:520px; margin:0 0 10px; font-size:12px; color:var(--dim) }
 .reuse input { margin-top:2px; flex:none }
 .reuse code { color:var(--fg) }
-.rootstrip { display:flex; flex-wrap:wrap; align-items:center; gap:4px 14px; margin-bottom:12px; padding:6px 10px; border:1px dashed var(--line); border-radius:6px; font-size:11px; color:var(--dim) }
-.rootstrip .mono { font-size:11px }
-.rootstrip span .mono:first-child { color:#c8cdd6 }
-.rootstrip button.link { font-size:11px }
 fieldset { border:1px solid var(--line); border-radius:6px; margin:0 0 12px; padding:8px 12px }
 legend { color:var(--dim); font-size:12px; padding:0 4px }
 .row { display:grid; grid-template-columns:180px 1fr; gap:8px; align-items:center; padding:3px 0 }
-/* The Settings-only two-up wrapper for .row groups (the preflight's knobs). */
-.sfields { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:0 16px }
-.sfields .row { grid-template-columns:150px minmax(0,1fr) }
+/* The two-up wrapper for .row groups -- every stage fieldset and the Settings
+   preflight block, so a knob sits in the same widget wherever it is typed. */
+.twoup { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:0 16px }
+.twoup .row { grid-template-columns:150px minmax(0,1fr) }
 .row label { font-family:var(--font-mono); font-size:12px; color:#c8cdd6; overflow:hidden; text-overflow:ellipsis; white-space:nowrap }
 .row label.req::after { content:" *"; color:var(--err) }
 input[type=text], input[type=number], input[type=password], select, textarea { width:100%; background:var(--input); color:var(--fg); border:1px solid var(--line); border-radius:4px; padding:5px 7px; font:13px var(--font-mono) }
@@ -189,7 +186,7 @@ dialog.settings { width:920px }
 /* One column again once two would be narrower than a path. */
 @media (max-width:820px) {
   .kv { grid-template-columns:110px minmax(0,1fr) }
-  .models, .sfields { grid-template-columns:minmax(0,1fr) }
+  .models, .twoup { grid-template-columns:minmax(0,1fr) }
 }
 dialog h4 { margin:16px 0 4px; color:var(--dim); font-size:11px; text-transform:uppercase; letter-spacing:.06em }
 dialog::backdrop { background:#0008 }

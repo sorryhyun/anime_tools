@@ -172,7 +172,6 @@ export function StagePanel(props: {
                   values={props.values}
                   setValue={props.setValue}
                   reset={props.reset}
-                  onSettings={props.onSettings}
                   help={props.help}
                   onHelp={props.onHelp}
                 />

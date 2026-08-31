@@ -116,17 +116,11 @@ export function StageForm(props: {
   values: Values;
   setValue: (dest: string, v: unknown) => void;
   reset: () => void;
-  onSettings: () => void;
   help: boolean;
   onHelp: () => void;
 }) {
   const [picking, setPicking] = createSignal<string | null>(null);
   const groups = createMemo(() => grouped(props.stage.fields));
-  /** Does this stage have anything Settings fills in for it? The strip is the
-      link to where those live -- the values themselves are not echoed here:
-      they are the same on every form, and a read-only copy of them was mostly
-      a wide row of text nobody could act on. */
-  const bound = createMemo(() => props.stage.fields.some((f) => f.root || f.setting));
   const value = (f: Field) => props.values[f.dest] ?? f.default;
   const dirty = (f: Field) => {
     const v = props.values[f.dest];
@@ -147,28 +141,26 @@ export function StageForm(props: {
           <div class="notes">⚠ {props.stage.notes}</div>
         </Show>
       </Show>
-      <Show when={bound()}>
-        <div class="rootstrip">
-          <button class="link" type="button" onClick={props.onSettings}>
-            set in Settings ⚙
-          </button>
-        </div>
-      </Show>
       <For each={groups()}>
         {([g, fs]) => (
           <fieldset>
             <legend>{g || "options"}</legend>
-            <For each={fs}>
-              {(f) => (
-                <FieldRow
-                  field={f}
-                  value={value(f)}
-                  dirty={dirty(f)}
-                  setValue={(v) => props.setValue(f.dest, v)}
-                  onPick={() => setPicking(f.dest)}
-                />
-              )}
-            </For>
+            {/* Two-up: the dock is wide and short, so a single column of knobs
+                scrolled far more than it had to. Same wrapper the Settings
+                preflight block uses. */}
+            <div class="twoup">
+              <For each={fs}>
+                {(f) => (
+                  <FieldRow
+                    field={f}
+                    value={value(f)}
+                    dirty={dirty(f)}
+                    setValue={(v) => props.setValue(f.dest, v)}
+                    onPick={() => setPicking(f.dest)}
+                  />
+                )}
+              </For>
+            </div>
           </fieldset>
         )}
       </For>

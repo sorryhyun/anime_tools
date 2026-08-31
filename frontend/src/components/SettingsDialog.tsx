@@ -242,7 +242,7 @@ export function SettingsDialog(props: {
                   near-free. Tiers must match the trainer's <code>target_res</code>.
                 </p>
               </Show>
-              <div class="sfields">
+              <div class="twoup">
                 <For each={preFields()}>
                   {(f) => (
                     <FieldRow
