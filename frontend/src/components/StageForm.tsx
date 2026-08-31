@@ -137,42 +137,18 @@ export function StageForm(props: {
 
   return (
     <>
-      {/* The prose lives behind the stage bar's (?). Collapsed, the notes stay
-          as a one-line chip -- they carry the destructive-mode warnings, so
-          they never disappear entirely; the full text is the tooltip, and
-          clicking the chip opens the doc. */}
-      <Show
-        when={props.help}
-        fallback={
-          <Show when={props.stage.notes}>
-            <button
-              type="button"
-              classList={{ notes: true, chip: true }}
-              title={props.stage.notes}
-              onClick={props.onHelp}
-            >
-              ⚠ {props.stage.notes}
-            </button>
-          </Show>
-        }
-      >
+      {/* The prose lives behind the stage bar's (?), and the notes go with it.
+          Nothing is lost by collapsing them: the (?) is warn-tinted while it
+          hides a stage's notes, which is the signal. Echoing them on the form
+          as well spent a row above every field of every stage. */}
+      <Show when={props.help}>
         <div class="doc">{props.stage.doc.trim()}</div>
         <Show when={props.stage.notes}>
           <div class="notes">⚠ {props.stage.notes}</div>
         </Show>
       </Show>
-      <Show when={bound() || props.stage.preprocess}>
+      <Show when={bound()}>
         <div class="rootstrip">
-          <Show when={props.stage.preprocess}>
-            {(pre) => (
-              <span
-                class="chip"
-                title={`${pre()} runs first, over the same images — this stage reads the resized tree, so an image that is only in the caption master would be invisible to it. Its knobs are in Settings.`}
-              >
-                ⤳ {pre()} first
-              </span>
-            )}
-          </Show>
           <button class="link" type="button" onClick={props.onSettings}>
             set in Settings ⚙
           </button>

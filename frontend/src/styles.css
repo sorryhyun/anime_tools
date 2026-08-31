@@ -116,15 +116,12 @@ td.vlabel { width:4ch; color:var(--warn); font-family:var(--font-mono) }
 .stageform { overflow:auto; padding:12px }
 .doc { color:var(--dim); white-space:pre-wrap; font-size:12px; margin-bottom:12px; max-height:140px; overflow:auto; border-left:2px solid var(--line); padding-left:10px }
 .notes { color:var(--warn); font-size:12px; margin-bottom:10px }
-/* The prose is on demand: a round (?) in the stage bar / Settings header, warn-
-   tinted while it hides a stage's notes, and the collapsed notes themselves as
-   a one-line chip (clicking it expands the doc). */
+/* The prose is on demand: a round (?) in the stage bar / Settings header,
+   warn-tinted while it hides a stage's notes. */
 button.help { width:22px; height:22px; flex:none; padding:0; border-radius:50%; color:var(--dim); font-size:12px; line-height:1 }
 button.help.on { color:var(--fg); border-color:var(--accent) }
 button.help.warn { color:var(--warn); border-color:var(--warn) }
 button.help.warn:hover { border-color:var(--accent) }
-.notes.chip { display:block; width:100%; text-align:left; background:none; border:none; padding:0; cursor:pointer; white-space:nowrap; overflow:hidden; text-overflow:ellipsis }
-.notes.chip:hover { text-decoration:underline }
 .dlgh { display:flex; align-items:center; gap:8px }
 .reuse { display:flex; gap:8px; align-items:flex-start; max-width:520px; margin:0 0 10px; font-size:12px; color:var(--dim) }
 .reuse input { margin-top:2px; flex:none }
@@ -132,10 +129,7 @@ button.help.warn:hover { border-color:var(--accent) }
 .rootstrip { display:flex; flex-wrap:wrap; align-items:center; gap:4px 14px; margin-bottom:12px; padding:6px 10px; border:1px dashed var(--line); border-radius:6px; font-size:11px; color:var(--dim) }
 .rootstrip .mono { font-size:11px }
 .rootstrip span .mono:first-child { color:#c8cdd6 }
-.rootstrip button.link { margin-left:auto; font-size:11px }
-/* The preflight marker: this stage is preceded by another (resize), which
-   is configured in Settings rather than run by hand. */
-.rootstrip .chip { border:1px solid var(--line); border-radius:10px; padding:0 7px; font-size:10px; color:var(--dim); cursor:help }
+.rootstrip button.link { font-size:11px }
 fieldset { border:1px solid var(--line); border-radius:6px; margin:0 0 12px; padding:8px 12px }
 legend { color:var(--dim); font-size:12px; padding:0 4px }
 .row { display:grid; grid-template-columns:180px 1fr; gap:8px; align-items:center; padding:3px 0 }
