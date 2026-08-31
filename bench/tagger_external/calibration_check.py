@@ -46,6 +46,7 @@ from safetensors import safe_open
 from safetensors.torch import load_file as st_load
 
 from anime_tools.tagger.cli.calibrate import calibrate_thresholds
+from anime_tools.tagger.data import TaggerCheckpoint
 from anime_tools.tagger.dbv4_backend import SidecarHead
 from bench._common import make_run_dir, write_result
 
@@ -95,12 +96,11 @@ def ece_curve(
 def main() -> None:
     args = parse_args()
     model_dir = Path(args.model_dir)
-    cfg = json.loads(Path(model_dir / "config.json").read_text(encoding="utf-8"))
-    if cfg.get("backend") != "dbv4":
-        raise SystemExit("calibration_check is for dbv4-backed checkpoints")
-    vocab = json.loads(Path(model_dir / "vocab.json").read_text(encoding="utf-8"))
-    dataset = json.loads(Path(model_dir / "dataset.json").read_text(encoding="utf-8"))
-    n_tags = len(vocab["tags"])
+    ckpt = TaggerCheckpoint.from_dir(
+        model_dir, require=("vocab", "dataset"), backend="dbv4"
+    )
+    cfg, vocab, dataset = ckpt.config, ckpt.vocab, ckpt.dataset
+    n_tags = ckpt.n_tags
     arch = cfg["dbv4"]["arch"]
     cache_path = Path(
         args.feature_cache

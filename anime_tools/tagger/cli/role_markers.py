@@ -41,11 +41,11 @@ fires.
 from __future__ import annotations
 
 import argparse
-import json
 import logging
 from pathlib import Path
 
 from anime_tools.captions.taxonomy import solo_multi_indices as _solo_index_sets
+from anime_tools.tagger.data import TaggerCheckpoint
 
 logger = logging.getLogger(__name__)
 
@@ -401,16 +401,8 @@ def _emit_yaml_stub(rows: list[dict], min_solo: int, min_ratio: float) -> str:
 
 def cmd_scan_role_markers(args: argparse.Namespace) -> None:
     out_dir = Path(args.out_dir)
-    vocab_path = out_dir / "vocab.json"
-    manifest_path = out_dir / "dataset.json"
-    if not vocab_path.exists() or not manifest_path.exists():
-        raise SystemExit(
-            f"need both {vocab_path} and {manifest_path} — run --mode build_vocab first"
-        )
-    with open(vocab_path) as f:
-        vocab = json.load(f)
-    with open(manifest_path) as f:
-        manifest = json.load(f)
+    ckpt = TaggerCheckpoint.from_dir(out_dir, require=("vocab", "dataset"))
+    vocab, manifest = ckpt.vocab, ckpt.dataset
 
     rows = scan(
         vocab,

@@ -53,6 +53,7 @@ from anime_tools.tagger.cli.eval_metrics import (
     per_tag_average_precision,
     per_tag_prf,
 )
+from anime_tools.tagger.data import TaggerCheckpoint
 from anime_tools.tagger.dbv4_backend import (
     Dbv4Backend,
     SidecarHead,
@@ -276,13 +277,12 @@ def main() -> None:
     device = torch.device(
         args.device or ("cuda" if torch.cuda.is_available() else "cpu")
     )
-    cfg = json.loads((ckpt_dir / "config.json").read_text(encoding="utf-8"))
-    if cfg.get("backend") != "dbv4":
-        raise SystemExit(f"{ckpt_dir} is not a dbv4-backed checkpoint")
-    vocab = json.loads((ckpt_dir / "vocab.json").read_text(encoding="utf-8"))
-    dataset = json.loads((ckpt_dir / "dataset.json").read_text(encoding="utf-8"))
+    ckpt = TaggerCheckpoint.from_dir(
+        ckpt_dir, require=("vocab", "dataset"), backend="dbv4"
+    )
+    cfg, vocab, dataset = ckpt.config, ckpt.vocab, ckpt.dataset
     rules = tr.load_rules(ckpt_dir / "rules.yaml")
-    n_tags = len(vocab["tags"])
+    n_tags = ckpt.n_tags
     d = cfg["dbv4"]
     backend = Dbv4Backend(
         repo=d["repo"],

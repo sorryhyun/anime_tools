@@ -9,7 +9,6 @@ against ground-truth tags from ``dataset.json``.
 from __future__ import annotations
 
 import argparse
-import json
 import logging
 import random
 from pathlib import Path
@@ -27,7 +26,7 @@ def cmd_predict(args: argparse.Namespace) -> None:
     """
     from PIL import Image
 
-    from anime_tools.tagger.data import TaggerManifest
+    from anime_tools.tagger.data import TaggerCheckpoint
     from anime_tools.tagger.tagger import AnimaTagger
 
     out_dir = Path(args.out_dir)
@@ -44,22 +43,23 @@ def cmd_predict(args: argparse.Namespace) -> None:
         if not image_path.exists():
             raise SystemExit(f"image not found: {image_path}")
     else:
-        manifest_path = out_dir / "dataset.json"
-        if not manifest_path.exists():
+        ckpt = TaggerCheckpoint.from_dir(out_dir, require=("vocab",))
+        if ckpt.dataset is None:
+            # More specific than the shared "run build_vocab first" exit: here
+            # the manifest is only one of two ways to name an image.
             raise SystemExit(
-                f"--image not given and no manifest at {manifest_path} to sample "
-                f"from. Pass --image <path> or run --mode build_vocab first."
+                f"--image not given and no manifest at {out_dir / 'dataset.json'} "
+                "to sample from. Pass --image <path> or run --mode build_vocab first."
             )
-        manifest = TaggerManifest.from_path(manifest_path)
+        manifest = ckpt.manifest()
         stem_to_idx = manifest.stem_index()
         pool = manifest.val_stems or manifest.stems
         stem = random.choice(pool)
         i = stem_to_idx[stem]
         image_path = manifest.image_paths[i]
         # Resolve ground-truth labels for the side-by-side comparison.
-        with open(out_dir / "vocab.json") as f:
-            vocab = json.load(f)
-        idx_to_name = {t["index"]: t["name"] for t in vocab["tags"]}
+        vocab = ckpt.vocab
+        idx_to_name = ckpt.idx_to_name()
         gt_tags = [idx_to_name[k] for k in manifest.tag_indices[i] if k in idx_to_name]
         gt_rating = vocab["ratings"][manifest.rating_indices[i]]
         if manifest.people_count_indices and "people_count_labels" in vocab:

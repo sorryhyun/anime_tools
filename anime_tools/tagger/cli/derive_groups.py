@@ -33,7 +33,6 @@ Read-only. Usage::
 from __future__ import annotations
 
 import argparse
-import json
 import logging
 import re
 from collections.abc import Sequence
@@ -47,6 +46,7 @@ from anime_tools.captions.correction import load_tag_knowledge_base
 # indices). ``role_markers`` and the trainer's ``GroupRouter`` gate on the same
 # rule over indices — see ``taxonomy.solo_multi_indices``.
 from anime_tools.captions.taxonomy import is_solo_names as _is_solo
+from anime_tools.tagger.data import TaggerCheckpoint
 
 logger = logging.getLogger(__name__)
 
@@ -68,11 +68,11 @@ def _slug(path: str) -> str:
 # --------------------------------------------------------------------------- #
 
 
-def _solo_sets_from_manifest(vocab: dict, manifest: dict) -> list[set[str]]:
+def _solo_sets_from_manifest(ckpt: TaggerCheckpoint) -> list[set[str]]:
     """Per-sample tag-name sets restricted to single-subject samples."""
-    idx2name = {int(t["index"]): t["name"] for t in vocab["tags"]}
+    idx2name = ckpt.idx_to_name()
     out: list[set[str]] = []
-    for idxs in manifest.get("tag_indices", []):
+    for idxs in (ckpt.dataset or {}).get("tag_indices", []):
         names = {idx2name[i] for i in idxs if i in idx2name}
         if _is_solo(names):
             out.append(names)
@@ -524,10 +524,8 @@ def merge_apply(
 
 def cmd_derive_groups(args: argparse.Namespace) -> None:
     out_dir = Path(args.out_dir)
-    vocab_path = out_dir / "vocab.json"
-    if not vocab_path.exists():
-        raise SystemExit(f"need {vocab_path} — run --mode build_vocab first")
-    vocab = json.loads(vocab_path.read_text())
+    ckpt = TaggerCheckpoint.from_dir(out_dir, require=("vocab",))
+    vocab = ckpt.vocab
 
     kb = load_tag_knowledge_base(args.tag_cache)
 
@@ -541,11 +539,9 @@ def cmd_derive_groups(args: argparse.Namespace) -> None:
     )
     # Co-occurrence source: prefer the manifest (trainer's exact view), else
     # scan captions through the same rules.
-    manifest_path = out_dir / "dataset.json"
-    if manifest_path.exists():
-        manifest = json.loads(manifest_path.read_text())
-        solo_sets = _solo_sets_from_manifest(vocab, manifest)
-        source = f"manifest ({manifest_path.name})"
+    if ckpt.dataset is not None:
+        solo_sets = _solo_sets_from_manifest(ckpt)
+        source = "manifest (dataset.json)"
     else:
         solo_sets = _solo_sets_from_captions(args.caption_roots, rules)
         source = "caption scan"
