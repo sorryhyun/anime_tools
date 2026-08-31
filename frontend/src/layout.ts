@@ -42,7 +42,6 @@ export function createLayout() {
   return {
     sidebar,
     setSidebar,
-    toggleSidebar: () => setSidebar(!sidebar()),
     dockOpen,
     setDockOpen,
     toggleDock: () => setDockOpen(!dockOpen()),

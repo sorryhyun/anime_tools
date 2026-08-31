@@ -117,7 +117,7 @@ export function DatasetTree(props: {
   /** Rels the last Run wants to change. Marked here so a batch's diff is
       something you can walk, instead of clicking around looking for it. */
   pending?: Set<string>;
-  /** Collapse the tree to a rail; the header's ☰ flips it. */
+  /** Collapse the tree; the rail's ⟩ on the left edge brings it back. */
   onCollapse: () => void;
 }) {
   const tree = createMemo(() => build(props.list?.items ?? []));

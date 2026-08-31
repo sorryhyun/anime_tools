@@ -1,4 +1,4 @@
-import { batch, createEffect, createSignal, on } from "solid-js";
+import { batch, createEffect, createSignal, on, Show } from "solid-js";
 import { api } from "./api";
 import { createConfig } from "./config";
 import { createDataset } from "./dataset";
@@ -81,11 +81,23 @@ export default function App() {
       <Header
         info={config.info()}
         list={dataset.list()}
-        sidebar={layout.sidebar()}
-        onToggleSidebar={layout.toggleSidebar}
+        help={layout.help()}
+        onHelp={layout.toggleHelp}
         downloading={downloads.busy()}
         onSettings={config.openSettings}
       />
+
+      {/* The tree folds from its own bar and comes back on the rail it leaves
+          behind, so both halves of the fold sit on the edge that moves. */}
+      <Show when={!layout.sidebar()}>
+        <button
+          class="unfold"
+          title="Show the dataset sidebar"
+          onClick={() => layout.setSidebar(true)}
+        >
+          ⟩
+        </button>
+      </Show>
 
       <DatasetTree
         list={dataset.list()}
