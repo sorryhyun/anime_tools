@@ -114,17 +114,14 @@ export default function App() {
   const onKey = (e: KeyboardEvent) => {
     const t = e.target as HTMLElement | null;
     if (t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))) return;
-    const step = e.key === "ArrowDown" || e.key === "j" ? 1 : e.key === "ArrowUp" || e.key === "k" ? -1 : 0;
+    const step =
+      e.key === "ArrowDown" || e.key === "j" ? 1 : e.key === "ArrowUp" || e.key === "k" ? -1 : 0;
     if (!step) return;
     const items = list()?.items ?? [];
     if (!items.length) return;
     const i = items.findIndex((x) => x.rel === sel()?.rel);
     const at =
-      i < 0
-        ? step > 0
-          ? 0
-          : items.length - 1
-        : Math.min(items.length - 1, Math.max(0, i + step));
+      i < 0 ? (step > 0 ? 0 : items.length - 1) : Math.min(items.length - 1, Math.max(0, i + step));
     e.preventDefault();
     // Keep the caption kind, so arrowing down a column compares the same file.
     setSel({ rel: items[at].rel, kind: sel()?.kind ?? "image" });
@@ -144,9 +141,7 @@ export default function App() {
       prev
         ? {
             ...prev,
-            items: prev.items.map((x) =>
-              x.rel === rel ? { ...x, [entry.kind]: true } : x,
-            ),
+            items: prev.items.map((x) => (x.rel === rel ? { ...x, [entry.kind]: true } : x)),
           }
         : prev,
     );
@@ -662,7 +657,9 @@ export default function App() {
           ☰
         </button>
         <b>anime_tools</b>
-        <span class="dim mono" title={info()?.home}>{info()?.home}</span>
+        <span class="dim mono" title={info()?.home}>
+          {info()?.home}
+        </span>
         <Show when={list()}>
           {(l) => (
             <span class="dim">
@@ -677,7 +674,10 @@ export default function App() {
             <button
               class="link warn"
               title="The tagger backbone and SAM3 are gated on the Hub — set a token in Settings"
-              onClick={() => { setSettingsOpen(true); refetchModels(); }}
+              onClick={() => {
+                setSettingsOpen(true);
+                refetchModels();
+              }}
             >
               ⚠ no HF token
             </button>
@@ -690,7 +690,14 @@ export default function App() {
               while the dialog it belongs to is closed. */}
           <span class="badge running">downloading</span>
         </Show>
-        <button onClick={() => { setSettingsOpen(true); refetchModels(); }}>⚙ Settings</button>
+        <button
+          onClick={() => {
+            setSettingsOpen(true);
+            refetchModels();
+          }}
+        >
+          ⚙ Settings
+        </button>
       </header>
 
       <DatasetTree
@@ -726,7 +733,10 @@ export default function App() {
           <For each={panels()}>
             {([p, ss]) => (
               <a
-                classList={{ sel: dockOpen() && curPanel() === p, na: !ss.some((s) => s.available) }}
+                classList={{
+                  sel: dockOpen() && curPanel() === p,
+                  na: !ss.some((s) => s.available),
+                }}
                 title={ss.map((s) => s.title).join(" · ")}
                 onClick={() => pickPanel(p, ss)}
               >
@@ -768,7 +778,10 @@ export default function App() {
               undoBlocked={undoBlocked()}
               onCancel={() => jobId() && api.cancel(jobId()!)}
               missingModels={missingModels().map((m) => m.title)}
-              onSettings={() => { setSettingsOpen(true); refetchModels(); }}
+              onSettings={() => {
+                setSettingsOpen(true);
+                refetchModels();
+              }}
               help={help()}
               onHelp={() => setHelp(!help())}
             />
@@ -776,18 +789,33 @@ export default function App() {
         </Show>
       </div>
 
-      <Dialog open={confirmOpen()} onClose={(v) => { setConfirmOpen(false); if (v === "ok") apply(); }}>
+      <Dialog
+        open={confirmOpen()}
+        onClose={(v) => {
+          setConfirmOpen(false);
+          if (v === "ok") apply();
+        }}
+      >
         <h3>Apply for real?</h3>
         <p style="max-width:520px">
           {cur()?.title} will write to{" "}
           <Show
             when={pending()?.rel}
-            fallback={<>every image <code>{stageDefaults().path_pattern || "*"}</code> names</>}
+            fallback={
+              <>
+                every image <code>{stageDefaults().path_pattern || "*"}</code> names
+              </>
+            }
           >
             {(rel) => <code>{rel()}</code>}
           </Show>
           <Show when={pending()}>
-            {(d) => <> — <b>{d().rels.length}</b> caption{d().rels.length === 1 ? "" : "s"} change</>}
+            {(d) => (
+              <>
+                {" "}
+                — <b>{d().rels.length}</b> caption{d().rels.length === 1 ? "" : "s"} change
+              </>
+            )}
           </Show>
           .
         </p>
@@ -798,8 +826,8 @@ export default function App() {
           when={pending()}
           fallback={
             <p class="dim" style="max-width:520px">
-              This stage keeps no replayable report — Apply runs it again with{" "}
-              <code>--apply</code>, so it writes what <em>this</em> pass computes.
+              This stage keeps no replayable report — Apply runs it again with <code>--apply</code>,
+              so it writes what <em>this</em> pass computes.
             </p>
           }
         >
@@ -811,14 +839,16 @@ export default function App() {
           )}
         </Show>
         <p class="dim">
-          Caption stages write under <code>post_image_dataset/resized/</code> (autotag <code>missing</code> creates
-          masters under <code>image_dataset/</code>). Any caption change must be followed by the trainer's TE
-          re-encode (<code>make preprocess-te</code>). <b>Undo</b> puts these captions back, from the
-          same report.
+          Caption stages write under <code>post_image_dataset/resized/</code> (autotag{" "}
+          <code>missing</code> creates masters under <code>image_dataset/</code>). Any caption
+          change must be followed by the trainer's TE re-encode (<code>make preprocess-te</code>).{" "}
+          <b>Undo</b> puts these captions back, from the same report.
         </p>
         <div class="dlg-actions">
           <button value="cancel">Cancel</button>
-          <button value="ok" class="danger">Apply</button>
+          <button value="ok" class="danger">
+            Apply
+          </button>
         </div>
       </Dialog>
 
@@ -912,7 +942,8 @@ function SettingsDialog(props: {
   const missing = () => (props.models?.models ?? []).filter((m) => !m.installed);
   /** Is this row part of the running pull? An id-less job is "every missing". */
   const inFlight = (m: ModelAsset) =>
-    props.downloading && (props.downloadIds.length ? props.downloadIds.includes(m.id) : !m.installed);
+    props.downloading &&
+    (props.downloadIds.length ? props.downloadIds.includes(m.id) : !m.installed);
 
   return (
     <Dialog
@@ -931,8 +962,7 @@ function SettingsDialog(props: {
         const defChanged = props.fields.some(
           (f) => defaults[f.setting!] !== (props.defaults[f.setting!] ?? ""),
         );
-        const preChanged =
-          JSON.stringify(unwrap(pre)) !== JSON.stringify(props.preprocessValues);
+        const preChanged = JSON.stringify(unwrap(pre)) !== JSON.stringify(props.preprocessValues);
         props.onClose({
           token: t || null,
           roots: changed ? picked : null,
@@ -949,8 +979,10 @@ function SettingsDialog(props: {
         <HelpToggle open={props.help} onToggle={props.onHelp} />
       </h3>
       <div class="kv">
-        <b>Home</b><span class="mono">{props.info?.home}</span>
-        <b>Models dir</b><span class="mono">{props.info?.models_dir}</span>
+        <b>Home</b>
+        <span class="mono">{props.info?.home}</span>
+        <b>Models dir</b>
+        <span class="mono">{props.info?.models_dir}</span>
       </div>
 
       <h4>Dataset roots</h4>
@@ -985,7 +1017,8 @@ function SettingsDialog(props: {
       <Show when={props.help}>
         <p class="dim" style="margin:0 0 8px">
           Filled into every stage that takes them, so no stage form re-asks. Leave one blank for the
-          CLI's own default. <code>--device</code> is not here on purpose: each stage auto-detects it.
+          CLI's own default. <code>--device</code> is not here on purpose: each stage auto-detects
+          it.
         </p>
       </Show>
       <div class="kv">
@@ -1045,8 +1078,8 @@ function SettingsDialog(props: {
           />
           <Show when={props.help}>
             <span class="dim">
-              The tagger backbone and SAM3 weights are gated on the Hub — a token with read access is
-              needed on first run.
+              The tagger backbone and SAM3 weights are gated on the Hub — a token with read access
+              is needed on first run.
             </span>
           </Show>
         </span>
@@ -1056,8 +1089,8 @@ function SettingsDialog(props: {
       <Show when={props.help}>
         <p class="dim" style="margin:0 0 8px">
           Every stage fetches what it needs on first use — these buttons only move the wait, and any
-          gated-repo refusal, to a moment you picked. A download runs as a job: one at a time, and it
-          reports here, not in the stage bar, so this dialog can stay open over it.
+          gated-repo refusal, to a moment you picked. A download runs as a job: one at a time, and
+          it reports here, not in the stage bar, so this dialog can stay open over it.
         </p>
       </Show>
       <div class="models">
@@ -1073,7 +1106,9 @@ function SettingsDialog(props: {
           disabled={props.busy || !missing().length}
           onClick={() => props.onDownload([])}
         >
-          {missing().length ? `Download all ${missing().length} missing` : "Every model is installed"}
+          {missing().length
+            ? `Download all ${missing().length} missing`
+            : "Every model is installed"}
         </button>
         <Show when={props.downloading}>
           <button type="button" onClick={props.onCancelDownload}>
@@ -1092,7 +1127,9 @@ function SettingsDialog(props: {
 
       <div class="dlg-actions">
         <button value="cancel">Close</button>
-        <button value="ok" class="primary">Save</button>
+        <button value="ok" class="primary">
+          Save
+        </button>
       </div>
     </Dialog>
   );

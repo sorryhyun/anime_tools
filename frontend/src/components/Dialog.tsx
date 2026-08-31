@@ -15,7 +15,13 @@ export function Dialog(props: {
   const handler = () => props.onClose(el.returnValue);
   onCleanup(() => el?.removeEventListener("close", handler));
   return (
-    <dialog ref={(d) => { el = d; d.addEventListener("close", handler); }} class={props.class}>
+    <dialog
+      ref={(d) => {
+        el = d;
+        d.addEventListener("close", handler);
+      }}
+      class={props.class}
+    >
       <form method="dialog">{props.children}</form>
     </dialog>
   );

@@ -5,7 +5,10 @@ import { Dialog } from "./Dialog";
 /** Home-relative folder/file browser over /api/ls. */
 export function PathPicker(props: { open: boolean; onClose: (path: string | null) => void }) {
   const [path, setPath] = createSignal("");
-  const [listing] = createResource(() => (props.open ? path() : null), (p) => api.ls(p));
+  const [listing] = createResource(
+    () => (props.open ? path() : null),
+    (p) => api.ls(p),
+  );
   const parent = () => path().split("/").slice(0, -1).join("/");
   const join = (name: string) => (path() ? `${path()}/${name}` : name);
 
@@ -46,7 +49,9 @@ export function PathPicker(props: { open: boolean; onClose: (path: string | null
       </ul>
       <div class="dlg-actions">
         <button value="cancel">Cancel</button>
-        <button value="ok" class="primary">Use this folder</button>
+        <button value="ok" class="primary">
+          Use this folder
+        </button>
       </div>
     </Dialog>
   );

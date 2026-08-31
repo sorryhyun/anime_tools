@@ -45,10 +45,21 @@ export function CaptionCard(props: {
 
   // Re-sync the buffer whenever the tree moves to another image or the file
   // itself changed (our own save, or a stage that rewrote it)...
-  createEffect(on(() => [props.rel, props.entry.text] as const, ([, t]) => setText(t)));
+  createEffect(
+    on(
+      () => [props.rel, props.entry.text] as const,
+      ([, t]) => setText(t),
+    ),
+  );
   // ...but only drop the status line when the selection actually moves, or the
   // "saved" note would be wiped by the entry it just produced.
-  createEffect(on(() => props.rel, () => setMsg(null), { defer: true }));
+  createEffect(
+    on(
+      () => props.rel,
+      () => setMsg(null),
+      { defer: true },
+    ),
+  );
   createEffect(() => {
     if (props.selected) card.scrollIntoView({ block: "nearest", behavior: "smooth" });
   });

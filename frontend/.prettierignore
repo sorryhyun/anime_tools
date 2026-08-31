@@ -1,0 +1,12 @@
+node_modules/
+
+# Copied into anime_tools/gui/static/index.html verbatim by build.ts (only the
+# <script src> tag is rewritten), so reformatting it churns the committed bundle.
+index.html
+
+# Hand-compacted on purpose: one rule per line, so the whole theme reads as a
+# table and design/boards can quote line-for-line. Prettier expands it 5x.
+src/styles.css
+
+# Hand-wrapped prose; prettier normalises emphasis markers (*x* -> _x_) for no gain.
+*.md

@@ -64,8 +64,7 @@ export function StagePanel(props: {
   const scoped = createMemo(() => !!cur()?.scoped);
   const noImage = createMemo(() => !props.rel);
   const off = createMemo(() => props.busy || !!props.locked || !cur()?.available);
-  const aim = () =>
-    props.rel ? `just ${props.rel}` : "select an image in the sidebar first";
+  const aim = () => (props.rel ? `just ${props.rel}` : "select an image in the sidebar first");
   const batchTitle = () => "every image the Settings path_pattern names";
 
   return (
@@ -97,7 +96,8 @@ export function StagePanel(props: {
               }
               onClick={props.onSettings}
             >
-              ↓ {props.missingModels!.length} model{props.missingModels!.length === 1 ? "" : "s"} missing
+              ↓ {props.missingModels!.length} model{props.missingModels!.length === 1 ? "" : "s"}{" "}
+              missing
             </button>
           </Show>
           <HelpToggle open={props.help} warn={!!cur()?.notes} onToggle={props.onHelp} />
@@ -165,7 +165,9 @@ export function StagePanel(props: {
                 fallback={
                   <div class="doc">
                     {s().title} is unavailable: {s().error}
-                    {"\n\nReinstall:  uv tool install --force \"anime-tools @ git+https://github.com/sorryhyun/anime_tools\""}
+                    {
+                      '\n\nReinstall:  uv tool install --force "anime-tools @ git+https://github.com/sorryhyun/anime_tools"'
+                    }
                   </div>
                 }
               >

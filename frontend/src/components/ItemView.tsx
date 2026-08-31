@@ -1,7 +1,14 @@
 import { createEffect, createMemo, createSignal, For, Index, on, Show } from "solid-js";
 import { api } from "../api";
 import { CaptionCard } from "./CaptionCard";
-import type { CaptionEntry, CaptionKind, ImageInfo, ItemDetail, NodeKind, Proposal } from "../types";
+import type {
+  CaptionEntry,
+  CaptionKind,
+  ImageInfo,
+  ItemDetail,
+  NodeKind,
+  Proposal,
+} from "../types";
 
 /** The three files a preview can show, plus `overlay`: the mask drawn over the
     image at 40%, which is how a mask is actually audited — flipping tabs and
@@ -69,7 +76,10 @@ export function ItemView(props: {
         fallback={
           <div class="empty">
             <div>
-              <Show when={props.error} fallback={props.loading ? "loading…" : "Pick an image on the left."}>
+              <Show
+                when={props.error}
+                fallback={props.loading ? "loading…" : "Pick an image on the left."}
+              >
                 <span class="err">{props.error}</span>
               </Show>
               <Show when={!props.error && !props.loading}>
@@ -162,9 +172,7 @@ export function ItemView(props: {
                       rel={it().rel}
                       entry={c()}
                       selected={props.kind === c().kind}
-                      proposal={
-                        props.proposal?.kind === c().kind ? props.proposal : undefined
-                      }
+                      proposal={props.proposal?.kind === c().kind ? props.proposal : undefined}
                       proposalStage={props.proposalStage}
                       dropped={props.droppedKind === c().kind}
                       onSaved={props.onSaved}

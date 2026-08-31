@@ -115,8 +115,7 @@ export function DatasetTree(props: {
   const select = (rel: string, kind: NodeKind) => props.onSelect({ rel, kind });
 
   const limitOf = (f: Folder) => shown().get(f.path) ?? PAGE;
-  const more = (f: Folder) =>
-    setShown((m) => new Map(m).set(f.path, limitOf(f) + PAGE * 4));
+  const more = (f: Folder) => setShown((m) => new Map(m).set(f.path, limitOf(f) + PAGE * 4));
 
   const FolderNode = (p: { f: Folder; depth: number }) => (
     <>
@@ -186,7 +185,12 @@ export function DatasetTree(props: {
           >
             {open() ? "▾" : "▸"}
           </span>
-          <img class="tt" loading="lazy" src={api.thumbUrl(`${props.list?.root}/${p.it.rel}`, 48)} alt="" />
+          <img
+            class="tt"
+            loading="lazy"
+            src={api.thumbUrl(`${props.list?.root}/${p.it.rel}`, 48)}
+            alt=""
+          />
           <span class="tl">{p.it.name}</span>
           <span class="flags">
             <Show when={props.pending?.has(p.it.rel)}>
@@ -203,7 +207,12 @@ export function DatasetTree(props: {
         </div>
         <Show when={open()}>
           {child("master", "master", p.it.master, "image_dataset — the hand-written caption")}
-          {child("derived", "derived", p.it.derived, "post_image_dataset/resized — the stage output")}
+          {child(
+            "derived",
+            "derived",
+            p.it.derived,
+            "post_image_dataset/resized — the stage output",
+          )}
           {child("variants", "variants", p.it.variants, ".variants.txt — generated, read-only")}
         </Show>
       </>
@@ -228,7 +237,10 @@ export function DatasetTree(props: {
       </div>
       <div class="tree">
         <Show when={!props.error} fallback={<div class="err pad">{props.error}</div>}>
-          <Show when={props.list} fallback={<div class="dim pad">{props.loading ? "scanning…" : ""}</div>}>
+          <Show
+            when={props.list}
+            fallback={<div class="dim pad">{props.loading ? "scanning…" : ""}</div>}
+          >
             {(l) => (
               <Show
                 when={!l().missing}

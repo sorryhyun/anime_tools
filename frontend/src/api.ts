@@ -40,8 +40,7 @@ export const api = {
   info: () => req<Info>("/api/info"),
   stages: () => req<Stage[]>("/api/stages"),
   settings: () => req<Settings>("/api/settings"),
-  putSettings: (body: Record<string, unknown>) =>
-    req<Settings>("/api/settings", json("PUT", body)),
+  putSettings: (body: Record<string, unknown>) => req<Settings>("/api/settings", json("PUT", body)),
   models: () => req<ModelCatalog>("/api/models"),
   /** Fetch weights as a job; `[]` means every missing model. */
   downloadModels: (ids: string[]) => req<Job>("/api/models/download", json("POST", { ids })),
@@ -62,8 +61,7 @@ export const api = {
   undo: (id: string) => req<UndoResult>(`/api/jobs/${id}/undo`, { method: "POST" }),
   ls: (path: string) => req<Listing>(`/api/ls?path=${encodeURIComponent(path)}`),
   fileUrl: (path: string) => `/api/files?path=${encodeURIComponent(path)}`,
-  thumbUrl: (path: string, size = 96) =>
-    `/api/thumb?path=${encodeURIComponent(path)}&size=${size}`,
+  thumbUrl: (path: string, size = 96) => `/api/thumb?path=${encodeURIComponent(path)}&size=${size}`,
 
   // ---- dataset ----
   datasetRoots: () => req<DatasetRoots>("/api/dataset/roots"),

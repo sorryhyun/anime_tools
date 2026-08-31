@@ -25,7 +25,10 @@ async function proxy(req: Request): Promise<Response> {
     });
     return new Response(res.body, { status: res.status, headers: res.headers });
   } catch {
-    return Response.json({ detail: `no anime_tools GUI at ${API} -- run \`make gui\`` }, { status: 502 });
+    return Response.json(
+      { detail: `no anime_tools GUI at ${API} -- run \`make gui\`` },
+      { status: 502 },
+    );
   }
 }
 

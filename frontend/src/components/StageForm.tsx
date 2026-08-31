@@ -50,8 +50,14 @@ export function FieldRow(props: {
           />
         </Match>
         <Match when={f().kind === "enum"}>
-          <select classList={cls()} value={str(props.value)} onChange={(e) => props.setValue(e.currentTarget.value)}>
-            <For each={f().choices ?? []}>{(c) => <option value={String(c)}>{String(c)}</option>}</For>
+          <select
+            classList={cls()}
+            value={str(props.value)}
+            onChange={(e) => props.setValue(e.currentTarget.value)}
+          >
+            <For each={f().choices ?? []}>
+              {(c) => <option value={String(c)}>{String(c)}</option>}
+            </For>
           </select>
         </Match>
         <Match when={f().kind === "list"}>
@@ -60,7 +66,12 @@ export function FieldRow(props: {
             placeholder="one per line"
             value={str(props.value)}
             onInput={(e) =>
-              props.setValue(e.currentTarget.value.split("\n").map((s) => s.trim()).filter(Boolean))
+              props.setValue(
+                e.currentTarget.value
+                  .split("\n")
+                  .map((s) => s.trim())
+                  .filter(Boolean),
+              )
             }
           />
         </Match>
@@ -119,7 +130,9 @@ export function StageForm(props: {
   const value = (f: Field) => props.values[f.dest] ?? f.default;
   const dirty = (f: Field) => {
     const v = props.values[f.dest];
-    return v !== undefined && str(v) !== str(f.default) && !(f.kind === "bool" && !!v === !!f.default);
+    return (
+      v !== undefined && str(v) !== str(f.default) && !(f.kind === "bool" && !!v === !!f.default)
+    );
   };
 
   return (

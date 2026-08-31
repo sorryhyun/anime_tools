@@ -16,8 +16,7 @@ export function Report(props: { path: string; report: unknown }) {
         .map((k) => o[k])
         .find(Array.isArray) ??
         Object.values(o).find((v) => Array.isArray(v) && v.length && typeof v[0] === "object")) as
-        | Row[]
-        | undefined;
+        Row[] | undefined;
       const meta = Object.fromEntries(
         Object.entries(o).filter(([, v]) => !Array.isArray(v) || v.length < 20),
       );
@@ -33,7 +32,9 @@ export function Report(props: { path: string; report: unknown }) {
 
   return (
     <>
-      <div class="dim" style="margin-bottom:8px">{props.path}</div>
+      <div class="dim" style="margin-bottom:8px">
+        {props.path}
+      </div>
       <Show when={view().meta && Object.keys(view().meta as object).length}>
         <pre class="json">{JSON.stringify(view().meta, null, 2)}</pre>
       </Show>
@@ -52,7 +53,13 @@ export function Report(props: { path: string; report: unknown }) {
               <For each={view().rows.slice(0, MAX_ROWS)}>
                 {(r) => (
                   <tr>
-                    <For each={cols()}>{(c) => <td><Cell v={r[c]} /></td>}</For>
+                    <For each={cols()}>
+                      {(c) => (
+                        <td>
+                          <Cell v={r[c]} />
+                        </td>
+                      )}
+                    </For>
                   </tr>
                 )}
               </For>
@@ -77,7 +84,12 @@ function Cell(props: { v: unknown }) {
         }
       >
         <a href={api.fileUrl(v() as string)} target="_blank">
-          <img class="thumb" loading="lazy" src={api.fileUrl(v() as string)} title={v() as string} />
+          <img
+            class="thumb"
+            loading="lazy"
+            src={api.fileUrl(v() as string)}
+            title={v() as string}
+          />
         </a>
       </Show>
     </Show>
