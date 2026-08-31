@@ -88,11 +88,13 @@ aside { grid-column:1; grid-row:2/4; border-right:1px solid var(--line); backgro
 .caps .dot.master.on { color:var(--accent) } .caps .dot.derived.on { color:var(--ok) } .caps .dot.variants.on { color:var(--warn) }
 .caps .dot.off.on { box-shadow:inset 0 0 0 1px var(--line), 0 0 0 2px var(--bg), 0 0 0 3px var(--dim) }
 .flags { margin-left:auto; display:flex; gap:4px; align-items:center }
-/* The mask flag draws its own colour, so it gets a size and nothing else. */
-.flag.mask { font-size:10px; line-height:1 }
+/* The mask flag draws its own colour, so it gets a size and nothing else. An
+   emoji draws well inside its em box, so it is set a notch over the 13px row
+   text to land at the same visual weight as the `r` beside it. */
+.flag.mask { font-size:14px; line-height:1 }
 /* `r` = the resized copy exists, in --ok because it lives in the dst tree, the
    same root the derived caption's dot is green for. */
-.flag.rz { color:var(--ok); font:600 10px var(--font-mono); line-height:1 }
+.flag.rz { color:var(--ok); font:600 13px var(--font-mono); line-height:1 }
 /* This image is one the last Run wants to change -- so a batch's diff is a
    thing you can walk down, not a thing you go looking for. */
 .flag.prop { color:var(--accent); font-size:9px }

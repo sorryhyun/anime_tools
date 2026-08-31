@@ -63,10 +63,11 @@ export default function App() {
     }),
   );
 
-  /** A dock button: open the panel on the stage it was last left on, or close
-      the dock when it is already the open one. */
+  /** A dock button: open the panel on the stage it was last left on. Pressing
+      the open panel's own button is a no-op rather than a fold -- the dock is
+      folded by the ▾ in the strip's corner, so a mis-aimed second click on a
+      panel cannot take the form out from under a run. */
   function pickPanel(panel: string, ss: Stage[]) {
-    if (layout.dockOpen() && stages.curPanel() === panel) return layout.setDockOpen(false);
     const want = stages.curPanel() === panel ? stages.curId() : stages.lastInPanel[panel];
     const s = ss.find((x) => x.id === want) ?? ss.find((x) => x.available) ?? ss[0];
     if (!s) return;
