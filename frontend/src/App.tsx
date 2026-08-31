@@ -34,6 +34,10 @@ import { Dialog } from "./components/Dialog";
 import { HelpToggle } from "./components/HelpToggle";
 
 const ROOT_NAMES: RootName[] = ["src", "dst", "masks"];
+/** `/api/models/download` names its job `download:<ids>`; that prefix is the
+    only thing that tells an *adopted* job (one already running when the page
+    loaded) apart from a stage run, and the two go to different places. */
+const DOWNLOAD_STAGE = "download:";
 const ROOT_HELP: Record<RootName, string> = {
   src: "source images + hand-written master captions",
   dst: "resized images + derived captions + .variants.txt",
@@ -159,6 +163,16 @@ export default function App() {
   const [jobId, setJobId] = createSignal<string | null>(null);
   const [busy, setBusy] = createSignal(false);
   const [status, setStatus] = createSignal<{ text: string; state?: string }>({ text: "" });
+  /** A weights download is a job like any other to the server -- it takes the
+      same single slot -- but it belongs to the Settings dialog, not the dock:
+      its own id/status keep the modal open over it and keep the run bar from
+      saying "running" for a fetch no stage form started. */
+  const [dlJob, setDlJob] = createSignal<string | null>(null);
+  /** The ids this download asked for; `[]` = every missing model. Only used to
+      mark the rows in flight. */
+  const [dlIds, setDlIds] = createSignal<string[]>([]);
+  const [dlStatus, setDlStatus] = createSignal<{ text: string; state?: string }>({ text: "" });
+  const dlBusy = () => dlJob() !== null;
   const [confirmOpen, setConfirmOpen] = createSignal(false);
   /** What the pending Apply is aimed at: one image's `rel`, or null = the
       batch the Settings `path_pattern` names. Rebuilt per click so the dialog
@@ -199,6 +213,7 @@ export default function App() {
     return d.report;
   });
   let es: EventSource | null = null;
+  let dlEs: EventSource | null = null;
 
   api.settings().then((s) => {
     setSettings(s);
@@ -213,9 +228,21 @@ export default function App() {
   createEffect(on(curId, (id) => id && localStorage.setItem("stage", id)));
   createEffect(on(dockOpen, (o) => localStorage.setItem("dock", o ? "1" : "0")));
   createEffect(on(help, (h) => localStorage.setItem("help", h ? "1" : "0")));
-  createEffect(on(info, (i) => { if (i?.running && !jobId()) attach(i.running); }));
+  createEffect(
+    on(info, (i) => {
+      const id = i?.running;
+      if (!id || jobId() || dlJob()) return;
+      // Only the id comes back on /api/info, so ask what it is before deciding
+      // which follower gets it -- a download must not land in the dock.
+      void api
+        .job(id)
+        .then((j) => (j.stage.startsWith(DOWNLOAD_STAGE) ? adoptDownload(j) : attach(id)))
+        .catch(() => attach(id));
+    }),
+  );
   onCleanup(() => {
     es?.close();
+    dlEs?.close();
     window.removeEventListener("hashchange", onHash);
     window.removeEventListener("keydown", onKey);
   });
@@ -354,16 +381,59 @@ export default function App() {
     }
   }
 
-  /** Weights download: a job like any other, so it streams into the stage bar.
-      The dialog gets out of the way -- the progress is in the dock. */
+  /** Follow a weights job inside the Settings dialog. Deliberately none of
+      what `attach` does: no dock, no `busy`, no stage status line -- the modal
+      stays open and reports the pull itself. */
+  function attachDownload(id: string, ids: string[]) {
+    dlEs?.close();
+    batch(() => {
+      setDlJob(id);
+      setDlIds(ids);
+      setDlStatus({ text: "starting…", state: "running" });
+    });
+    dlEs = followLog(
+      id,
+      // The downloader prints a blank line between models (and hub progress
+      // bars arrive as \r-terminated lines): the newest *non-empty* one is the
+      // status line.
+      (line) => line.trim() && setDlStatus({ text: line.trim(), state: "running" }),
+      (job) => {
+        dlEs = null;
+        setDlJob(null);
+        setDlStatus({
+          text: job.state === "done" ? "download finished" : `exit ${job.exit_code}`,
+          state: job.state,
+        });
+        refetchInfo();
+        // The rows say installed/missing; a finished pull just changed that.
+        refetchModels();
+      },
+      () => {
+        dlEs = null;
+        setDlJob(null);
+        setDlStatus({ text: "log stream closed" });
+      },
+    );
+  }
+
+  /** Re-attach to a download that was already running when the page loaded.
+      `download:<ids>` is the only record of what it asked for. */
+  function adoptDownload(job: Job) {
+    const rest = job.stage.slice(DOWNLOAD_STAGE.length);
+    attachDownload(job.id, rest === "missing" ? [] : rest.split(",").filter(Boolean));
+    setSettingsOpen(true);
+  }
+
+  /** Weights download: a job like any other on the server, but it reports into
+      the Settings dialog that started it, which stays open over it. */
   async function download(ids: string[]) {
     try {
       const job = await api.downloadModels(ids);
-      setSettingsOpen(false);
-      attach(job.id);
+      attachDownload(job.id, ids);
     } catch (e) {
-      setStatus({ text: (e as Error).message, state: "failed" });
-      setDockOpen(true);
+      // A stage holding the one job slot lands here (409) -- say so in the
+      // dialog, where the button that failed is.
+      setDlStatus({ text: (e as Error).message, state: "failed" });
     }
   }
 
@@ -381,6 +451,11 @@ export default function App() {
         </Show>
         <span class="sp" />
         <span class="dim">{info()?.hf_token ? "HF token ✓" : "no HF token"}</span>
+        <Show when={dlBusy()}>
+          {/* The dock never shows a download, so this is the only sign of one
+              while the dialog it belongs to is closed. */}
+          <span class="badge running">downloading</span>
+        </Show>
         <button onClick={() => { setSettingsOpen(true); refetchModels(); }}>⚙ Settings</button>
       </header>
 
@@ -444,6 +519,7 @@ export default function App() {
               setValue={setValue}
               reset={resetForm}
               busy={busy()}
+              locked={dlBusy()}
               status={status()}
               rel={sel()?.rel ?? null}
               onRun={run}
@@ -510,10 +586,14 @@ export default function App() {
         fields={settingFields()}
         defaults={stageDefaults()}
         models={models()}
-        busy={busy()}
+        busy={busy() || dlBusy()}
+        downloading={dlBusy()}
+        downloadIds={dlIds()}
+        progress={dlStatus()}
         help={help()}
         onHelp={() => setHelp(!help())}
         onDownload={download}
+        onCancelDownload={() => dlJob() && api.cancel(dlJob()!)}
         onClose={async (out) => {
           setSettingsOpen(false);
           if (!out) return;
@@ -547,10 +627,17 @@ function SettingsDialog(props: {
   fields: Field[];
   defaults: Record<string, string>;
   models?: ModelCatalog;
+  /** Any job holds the one slot -- a stage run disables the buttons too. */
   busy: boolean;
+  /** …but only a weights job is *ours*, and only it is reported in here. */
+  downloading: boolean;
+  /** What that job asked for; `[]` = every missing model. */
+  downloadIds: string[];
+  progress: { text: string; state?: string };
   help: boolean;
   onHelp: () => void;
   onDownload: (ids: string[]) => void;
+  onCancelDownload: () => void;
   onClose: (out: SettingsOut | null) => void;
 }) {
   let tokenEl!: HTMLInputElement;
@@ -558,6 +645,9 @@ function SettingsDialog(props: {
   const defEls: Record<string, HTMLInputElement> = {};
   const current = (n: RootName) => props.roots?.roots[n];
   const missing = () => (props.models?.models ?? []).filter((m) => !m.installed);
+  /** Is this row part of the running pull? An id-less job is "every missing". */
+  const inFlight = (m: ModelAsset) =>
+    props.downloading && (props.downloadIds.length ? props.downloadIds.includes(m.id) : !m.installed);
 
   return (
     <Dialog
@@ -673,23 +763,39 @@ function SettingsDialog(props: {
       <Show when={props.help}>
         <p class="dim" style="margin:0 0 8px">
           Every stage fetches what it needs on first use — these buttons only move the wait, and any
-          gated-repo refusal, to a moment you picked. A download runs as a job: one at a time, streaming
-          into the stage bar below.
+          gated-repo refusal, to a moment you picked. A download runs as a job: one at a time, and it
+          reports here, not in the stage bar, so this dialog can stay open over it.
         </p>
       </Show>
       <div class="models">
         <For each={props.models?.models}>
-          {(m) => <ModelRow m={m} busy={props.busy} onDownload={props.onDownload} />}
+          {(m) => (
+            <ModelRow m={m} busy={props.busy} active={inFlight(m)} onDownload={props.onDownload} />
+          )}
         </For>
       </div>
-      <button
-        type="button"
-        style="margin-top:8px"
-        disabled={props.busy || !missing().length}
-        onClick={() => props.onDownload([])}
-      >
-        {missing().length ? `Download all ${missing().length} missing` : "Every model is installed"}
-      </button>
+      <div class="dlbar">
+        <button
+          type="button"
+          disabled={props.busy || !missing().length}
+          onClick={() => props.onDownload([])}
+        >
+          {missing().length ? `Download all ${missing().length} missing` : "Every model is installed"}
+        </button>
+        <Show when={props.downloading}>
+          <button type="button" onClick={props.onCancelDownload}>
+            Cancel
+          </button>
+        </Show>
+        <Show when={props.progress.text}>
+          <span class="status" title={props.progress.text}>
+            <Show when={props.progress.state}>
+              <span class={`badge ${props.progress.state}`}>{props.progress.state}</span>{" "}
+            </Show>
+            {props.progress.text}
+          </span>
+        </Show>
+      </div>
 
       <div class="dlg-actions">
         <button value="cancel">Close</button>
@@ -701,14 +807,27 @@ function SettingsDialog(props: {
 
 /** One catalog row. The button is `type=button` on purpose: every other button
     in the dialog submits the <form method="dialog"> and closes it. */
-function ModelRow(props: { m: ModelAsset; busy: boolean; onDownload: (ids: string[]) => void }) {
+function ModelRow(props: {
+  m: ModelAsset;
+  busy: boolean;
+  /** This row is part of the running pull. */
+  active: boolean;
+  onDownload: (ids: string[]) => void;
+}) {
   return (
     <div class="modelrow">
       <div class="mi">
         <span class="mh">
           <b>{props.m.title}</b>
-          <span classList={{ badge: true, done: props.m.installed, miss: !props.m.installed }}>
-            {props.m.installed ? "installed" : "missing"}
+          <span
+            classList={{
+              badge: true,
+              running: props.active,
+              done: !props.active && props.m.installed,
+              miss: !props.active && !props.m.installed,
+            }}
+          >
+            {props.active ? "downloading" : props.m.installed ? "installed" : "missing"}
           </span>
           <span class="dim">{props.m.used_by}</span>
         </span>
@@ -729,7 +848,7 @@ function ModelRow(props: { m: ModelAsset; busy: boolean; onDownload: (ids: strin
         </Show>
       </div>
       <button type="button" disabled={props.busy} onClick={() => props.onDownload([props.m.id])}>
-        {props.m.installed ? "Re-download" : "Download"}
+        {props.active ? "downloading…" : props.m.installed ? "Re-download" : "Download"}
       </button>
     </div>
   );

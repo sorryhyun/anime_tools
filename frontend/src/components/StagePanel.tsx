@@ -32,6 +32,10 @@ export function StagePanel(props: {
   setValue: (dest: string, v: unknown) => void;
   reset: () => void;
   busy: boolean;
+  /** Another job -- a Settings weights download -- holds the one job slot, so
+      starting a stage would only 409. Greys the run buttons; Cancel stays on
+      `busy`, since it can only cancel *this* panel's job. */
+  locked?: boolean;
   status: { text: string; state?: string };
   /** The selected image, or null -- what the per-image buttons act on. */
   rel?: string | null;
@@ -48,7 +52,7 @@ export function StagePanel(props: {
   /** Per-image buttons need a stage that takes a pattern and an image to aim at. */
   const scoped = createMemo(() => !!cur()?.scoped);
   const noImage = createMemo(() => !props.rel);
-  const off = createMemo(() => props.busy || !cur()?.available);
+  const off = createMemo(() => props.busy || !!props.locked || !cur()?.available);
   const aim = () =>
     props.rel ? `just ${props.rel}` : "select an image in the sidebar first";
   const batchTitle = () => `every image the Settings path_pattern names`;
