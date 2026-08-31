@@ -85,6 +85,9 @@ export interface Info {
   models_dir: string;
   hf_token: boolean;
   running: string | null;
+  /** False while the background stage-schema dump is still running, during
+      which `/api/stages` answers 503 — poll info and refetch stages then. */
+  schemas_ready: boolean;
 }
 
 export interface Settings {
@@ -106,6 +109,8 @@ export interface ModelAsset {
   files: string[];
   /** Which stages stop working without it. */
   used_by: string;
+  /** The same, as stage ids — what the stage bar's missing-models hint keys on. */
+  stages: string[];
   /** The directory it lands in, or "Hugging Face cache". */
   location: string;
   installed: boolean;

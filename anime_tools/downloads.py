@@ -89,6 +89,9 @@ class Asset:
     """Required files; all of them present means installed."""
     used_by: str
     """Which stages stop working without it — the reason a row exists."""
+    stages: tuple[str, ...] = ()
+    """The same, as GUI stage ids, so the stage bar can warn before a run
+    stalls on a multi-GB first-use fetch. Prose above, data here."""
     dest: Path | None = None
     """Directory the files are flattened into; ``None`` = the HF hub cache."""
     subfolder: str = ""
@@ -123,6 +126,7 @@ class Asset:
             "repo": self.repo,
             "files": list(self.files),
             "used_by": self.used_by,
+            "stages": list(self.stages),
             "location": self.location,
             "installed": not missing,
             "missing": missing,
@@ -201,6 +205,7 @@ def catalog() -> tuple[Asset, ...]:
             optional=DBV4_OPTIONAL_FILES,
             dest=tagger_dir,
             used_by="Autotag captions · Position captions · Multiview audit",
+            stages=("autotag", "position", "audit"),
             notes="Our half of the tagger — vocab, rules, groups, thresholds, "
             "sidecar. Small; the weights are the backbone below.",
         ),
@@ -210,6 +215,7 @@ def catalog() -> tuple[Asset, ...]:
             repo=backbone,
             files=DBV4_BACKBONE_FILES,
             used_by="the Anima Tagger checkpoint above",
+            stages=("autotag", "position", "audit"),
             gated=f"https://huggingface.co/{backbone}",
             notes="GPL-3.0 and gated, never vendored: sign in with a Hugging "
             "Face token, then accept the terms on the repo page (auto-approve).",
@@ -221,6 +227,7 @@ def catalog() -> tuple[Asset, ...]:
             files=(SAM3_FILENAME,),
             dest=resolve_path(SAM3_DIR),
             used_by="Position captions · Multiview audit · SAM3 subject masks",
+            stages=("position", "audit", "masks_sam"),
             gated=f"https://huggingface.co/{SAM3_REPO}",
             notes=f"Gated. Lands on the --checkpoint default, {DEFAULT_SAM3_CHECKPOINT}.",
         ),
@@ -231,6 +238,7 @@ def catalog() -> tuple[Asset, ...]:
             files=(PE_SPATIAL_FILENAME,),
             dest=default_pe_spatial_path().parent,
             used_by="Build groups (near-twin / same-concept grouping)",
+            stages=("groups",),
         ),
         Asset(
             id="mit_text",
@@ -238,6 +246,7 @@ def catalog() -> tuple[Asset, ...]:
             repo=MIT_TEXT_REPO,
             files=(MIT_TEXT_FILENAME,),
             used_by="MIT text masks",
+            stages=("masks_mit",),
         ),
     )
 

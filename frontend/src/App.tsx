@@ -73,7 +73,7 @@ function parseHash(): Sel | null {
 
 export default function App() {
   const [info, { refetch: refetchInfo }] = createResource<Info>(api.info);
-  const [stages] = createResource<Stage[]>(api.stages);
+  const [stages, { refetch: refetchStages }] = createResource<Stage[]>(api.stages);
   const [settings, setSettings] = createStore<Settings>({});
   const [roots, { refetch: refetchRoots }] = createResource<DatasetRoots>(api.datasetRoots);
   const [models, { refetch: refetchModels }] = createResource<ModelCatalog>(api.models);
@@ -206,8 +206,20 @@ export default function App() {
       form still says what it said. */
   const [dry, setDry] = createStore<Record<string, RunResult | undefined>>({});
   /** Per stage, the last Apply, so Undo has a report to read the before-text
-      out of. Session-local: the jobs themselves live in the server. */
+      out of. Seeded from the server's job list on load (the jobs outlive this
+      page), so a reload does not silently take Undo away. */
   const [applied, setApplied] = createStore<Record<string, string | undefined>>({});
+  /** Apply jobs already undone, so a reload does not re-offer an Undo that
+      would only skip every row. Local, like the undo decision itself. */
+  const undone = (): string[] => {
+    try {
+      return JSON.parse(localStorage.getItem("undone") ?? "[]") as string[];
+    } catch {
+      return [];
+    }
+  };
+  const markUndone = (id: string) =>
+    localStorage.setItem("undone", JSON.stringify([...undone(), id].slice(-100)));
   /** `path_pattern` / `tagger_dir`: one value each, from Settings, for every
       stage that takes them. The server fills the flags; this is only the copy
       the run bar and the Settings dialog show. */
@@ -277,6 +289,20 @@ export default function App() {
     if (!s) return "nothing to undo";
     return applied[s.id] ? "" : "nothing applied yet — Undo puts back an Apply";
   });
+  /** Catalog rows the open stage needs that are not downloaded yet — surfaced
+      in the stage bar, so a Run does not stall on a surprise multi-GB fetch. */
+  const missingModels = createMemo(() =>
+    (models()?.models ?? []).filter((m) => !m.installed && m.stages.includes(curId())),
+  );
+  /** The caption kind whose card should explain a vanished diff: the last Run
+      still exists, but the form moved on, so its proposals were dropped. */
+  const droppedKind = createMemo(() => {
+    const s = cur();
+    const d = s?.replay ? dry[s.id] : undefined;
+    const rel = sel()?.rel;
+    if (!d || !rel || d.values === formKey(values())) return undefined;
+    return d.rels.includes(rel) ? d.kind : undefined;
+  });
   let es: EventSource | null = null;
   let dlEs: EventSource | null = null;
 
@@ -293,6 +319,30 @@ export default function App() {
         setCurId(shown().find((s) => s.available)?.id ?? "");
     }),
   );
+  // Re-adopt the newest finished Apply per stage: the server still holds the
+  // job and its report, so Undo survives a reload instead of evaporating.
+  // Session state is never overwritten -- this only fills gaps on load.
+  createEffect(
+    on(stages, (ss) => {
+      if (!ss) return;
+      void api
+        .jobs()
+        .then((jobs) => {
+          const done = new Set(undone());
+          const latest = new Map<string, Job>();
+          for (const j of jobs) {
+            const st = ss.find((s) => s.id === j.stage);
+            if (!j.apply || j.state !== "done" || !j.report_path) continue;
+            if (!st?.replay || done.has(j.id)) continue;
+            const prev = latest.get(j.stage);
+            if (!prev || j.started > prev.started) latest.set(j.stage, j);
+          }
+          for (const [stage, j] of latest) if (!applied[stage]) setApplied(stage, j.id);
+        })
+        .catch(() => {});
+    }),
+  );
+
   createEffect(on(curId, (id) => id && localStorage.setItem("stage", id)));
   createEffect(on(dockOpen, (o) => localStorage.setItem("dock", o ? "1" : "0")));
   // A class on <body>, not a <Show>: the tree keeps its expanded folders and
@@ -314,6 +364,16 @@ export default function App() {
         .job(id)
         .then((j) => (j.stage.startsWith(DOWNLOAD_STAGE) ? adoptDownload(j) : attach(id)))
         .catch(() => attach(id));
+    }),
+  );
+  // Cold start: /api/stages answers 503 while the server's background schema
+  // dump is still running, and a resource error is otherwise permanent. Poll
+  // info until `schemas_ready` flips, then refetch stages out of its error.
+  createEffect(
+    on(info, (i) => {
+      if (!i) return;
+      if (!i.schemas_ready) setTimeout(() => void refetchInfo(), 1000);
+      else if (stages.error) void refetchStages();
     }),
   );
   onCleanup(() => {
@@ -518,6 +578,7 @@ export default function App() {
     setStatus({ text: "undoing…", state: "running" });
     try {
       const out = await api.undo(jobId);
+      markUndone(jobId);
       setApplied(s.id, undefined);
       const skipped = Object.entries(out.skipped)
         .map(([k, n]) => `${k} ${n}`)
@@ -610,7 +671,20 @@ export default function App() {
           )}
         </Show>
         <span class="sp" />
-        <span class="dim">{info()?.hf_token ? "HF token ✓" : "no HF token"}</span>
+        <Show
+          when={info()?.hf_token}
+          fallback={
+            <button
+              class="link warn"
+              title="The tagger backbone and SAM3 are gated on the Hub — set a token in Settings"
+              onClick={() => { setSettingsOpen(true); refetchModels(); }}
+            >
+              ⚠ no HF token
+            </button>
+          }
+        >
+          <span class="dim">HF token ✓</span>
+        </Show>
         <Show when={dlBusy()}>
           {/* The dock never shows a download, so this is the only sign of one
               while the dialog it belongs to is closed. */}
@@ -640,6 +714,7 @@ export default function App() {
         kind={sel()?.kind ?? "image"}
         proposal={shownProposal()}
         proposalStage={cur()?.title}
+        droppedKind={droppedKind()}
         onSaved={onSaved}
       />
 
@@ -692,7 +767,8 @@ export default function App() {
               onUndo={undo}
               undoBlocked={undoBlocked()}
               onCancel={() => jobId() && api.cancel(jobId()!)}
-              onSettings={() => setSettingsOpen(true)}
+              missingModels={missingModels().map((m) => m.title)}
+              onSettings={() => { setSettingsOpen(true); refetchModels(); }}
               help={help()}
               onHelp={() => setHelp(!help())}
             />

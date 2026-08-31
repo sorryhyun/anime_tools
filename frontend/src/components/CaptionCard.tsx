@@ -33,6 +33,9 @@ export function CaptionCard(props: {
   proposal?: Proposal;
   /** The stage that proposed it, for the diff's header. */
   proposalStage?: string;
+  /** The run's diff for this caption was dropped (the form changed since); say
+      so where it stood instead of letting it vanish silently. */
+  dropped?: boolean;
   onSaved: (entry: CaptionEntry) => void;
 }) {
   const [text, setText] = createSignal(props.entry.text);
@@ -101,7 +104,7 @@ export function CaptionCard(props: {
         <button disabled={!dirty() || busy()} onClick={() => setText(props.entry.text)}>
           Revert
         </button>
-        <button class="primary" disabled={!dirty() || busy()} onClick={save}>
+        <button class="primary" disabled={!dirty() || busy()} title="⌘/Ctrl+Enter" onClick={save}>
           Save
         </button>
       </div>
@@ -112,6 +115,14 @@ export function CaptionCard(props: {
         value={text()}
         placeholder={props.entry.exists ? "" : "no caption file yet — type one and save"}
         onInput={(e) => setText(e.currentTarget.value)}
+        onKeyDown={(e) => {
+          // The core loop is typing in here; saving must not need the mouse.
+          // Cmd/Ctrl+S is caught too, or the browser offers to save the page.
+          if ((e.metaKey || e.ctrlKey) && (e.key === "Enter" || e.key.toLowerCase() === "s")) {
+            e.preventDefault();
+            if (dirty() && !busy()) void save();
+          }
+        }}
       />
       <Show when={msg()}>
         {(m) => <div classList={{ hint: true, err: !!m().bad, ok: !m().bad }}>{m().text}</div>}
@@ -124,6 +135,11 @@ export function CaptionCard(props: {
             stale={props.entry.text.trim() !== p().before.trim()}
           />
         )}
+      </Show>
+      <Show when={!props.proposal && props.dropped}>
+        <div class="dim hint">
+          diff dropped — the form changed since the run; Run again to recompute
+        </div>
       </Show>
       <Show when={parsed()} fallback={<div class="dim hint">no caption</div>}>
         {(pp) => (

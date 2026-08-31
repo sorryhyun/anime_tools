@@ -52,6 +52,9 @@ export function StagePanel(props: {
   /** Why Undo is off, or "" when it is on. */
   undoBlocked: string;
   onCancel: () => void;
+  /** Titles of the catalog models this stage needs that are not installed --
+      the bar warns before a Run stalls on a surprise first-use fetch. */
+  missingModels?: string[];
   onSettings: () => void;
   help: boolean;
   onHelp: () => void;
@@ -85,6 +88,18 @@ export function StagePanel(props: {
             </span>
           </Show>
           <span class="dim mono">{cur()?.module}</span>
+          <Show when={props.missingModels?.length}>
+            <button
+              class="link warn"
+              title={
+                `Not downloaded yet: ${props.missingModels!.join(", ")}. ` +
+                "The first Run fetches them itself — this only moves the wait to a moment you pick."
+              }
+              onClick={props.onSettings}
+            >
+              ↓ {props.missingModels!.length} model{props.missingModels!.length === 1 ? "" : "s"} missing
+            </button>
+          </Show>
           <HelpToggle open={props.help} warn={!!cur()?.notes} onToggle={props.onHelp} />
           <span class="sp" />
 

@@ -1,0 +1,64 @@
+{
+  "artboards": [
+    {
+      "file": "Main.dc.html",
+      "title": "At a glance",
+      "x": 0,
+      "y": 0,
+      "w": 1120,
+      "h": 960
+    },
+    {
+      "file": "Foundations.dc.html",
+      "title": "Foundations",
+      "x": 0,
+      "y": 1080,
+      "w": 960,
+      "h": 1000
+    },
+    {
+      "file": "Controls.dc.html",
+      "title": "Controls",
+      "x": 1040,
+      "y": 1080,
+      "w": 760,
+      "h": 880
+    },
+    {
+      "file": "Tree.dc.html",
+      "title": "Dataset tree",
+      "x": 0,
+      "y": 2200,
+      "w": 520,
+      "h": 800
+    },
+    {
+      "file": "Captions.dc.html",
+      "title": "Caption card",
+      "x": 600,
+      "y": 2200,
+      "w": 720,
+      "h": 940
+    },
+    {
+      "file": "RunLoop.dc.html",
+      "title": "Run bar",
+      "x": 1400,
+      "y": 2200,
+      "w": 880,
+      "h": 680
+    }
+  ],
+  "annotations": [
+    {
+      "id": "deck-intro",
+      "x": 0,
+      "y": -150,
+      "w": 640,
+      "text": "anime_tools GUI — design system\n\nStart at 'At a glance': the whole GUI in one picture, with the boards below zooming into its parts. Every value here is lifted from frontend/src/styles.css, not invented — 193 lines of CSS, no framework, no component library."
+    }
+  ],
+  "launch": {
+    "view": "canvas"
+  }
+}
