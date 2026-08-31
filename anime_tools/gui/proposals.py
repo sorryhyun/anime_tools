@@ -209,8 +209,47 @@ def _cached(path: str, mtime: float, roots: D.Roots, stage: str) -> dict[str, Pr
     return out
 
 
+EXPORT_STAGE = "export"
+"""The one stage whose report is not a caption diff.
+
+Its rows are file copies, so it is read back by
+:mod:`anime_tools.stages.export_workspace` rather than by the drift ladder — but
+it reaches the server through the same route and answers in the same shape, so
+the branch lives at the top of :func:`undo` instead of the route growing a
+second entry point.
+"""
+
+
+def _undo_export(report_path: Path, roots: D.Roots) -> dict[str, Any]:
+    """Unpublish an export: delete what it created, put back what it overwrote.
+
+    Imported here rather than at module scope only to keep this module's own
+    story ("a stage report read as caption proposals") from opening with an
+    exception to it; the stage module is torch-free either way.
+    """
+    from anime_tools.stages.export_workspace import revert_export, rows_from_report
+
+    rows, stats = revert_export(rows_from_report(load(report_path)), apply=True)
+    # The rel an export row carries is relative to the *resized* tree, where a
+    # jpg master may have become a png — so it goes back through the same
+    # sibling lookup a report's ``image`` does before the sidebar sees it.
+    touched = [
+        D.rel_for_image(roots, r.rel)
+        for r in rows
+        if r.status in ("removed", "restored") and r.kind != "index"
+    ]
+    return {
+        "stage": EXPORT_STAGE,
+        "report": D.rel_to_home(report_path),
+        "restored": stats.restored,
+        "removed": stats.removed,
+        "skipped": dict(stats.skipped.most_common()),
+        "written": [r for r in touched if r],
+    }
+
+
 def undo(report_path: Path, roots: D.Roots, stage: str) -> dict[str, Any]:
-    """Put back the captions the ``--apply`` run in ``report_path`` wrote.
+    """Put back what the ``--apply`` run in ``report_path`` wrote.
 
     Only rows the file still agrees with are touched: a caption edited since the
     apply reads as ``drifted`` and is left alone, one already back at its
@@ -218,9 +257,15 @@ def undo(report_path: Path, roots: D.Roots, stage: str) -> dict[str, Any]:
     file the run created (autotag ``missing`` mode), so its inverse is a delete,
     not a write of nothing.
 
+    An **export** report is not a caption diff at all — its rows are file
+    copies — so it is handed to :func:`_undo_export`, which answers in this
+    same shape.
+
     Returns the images restored — which is what the caller reloads — plus a
     count per skip reason, so the run bar can say what it could not put back.
     """
+    if stage == EXPORT_STAGE:
+        return _undo_export(report_path, roots)
     shape = SHAPES.get(stage)
     if shape is None:
         raise ProposalError(f"{stage} writes no captions to undo")

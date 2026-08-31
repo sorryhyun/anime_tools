@@ -1,6 +1,6 @@
 # Workspace + Export
 
-Status: **Phase 1 done**, 2026-08-31. Phases 3, 4, 2 pending, in that order. Reframes the curation side around a
+Status: **Phases 1 and 3 done**, 2026-08-31. Phases 4 and 2 pending, in that order. Reframes the curation side around a
 **workspace** the tools own, and an explicit **Export** that publishes from it.
 
 ## The idea
@@ -129,7 +129,28 @@ curation-private in the same sense as the near-twin feature cache.
 
 ---
 
-## Phase 3 — Export as a stage, not a special case
+## Phase 3 — Export as a stage, not a special case ✅
+
+> **Landed 2026-08-31.** Three decisions differ from the sketch below, all found
+> by reading what the run bar actually does:
+>
+> - **No `--from_report`.** The replay flag exists so Apply cannot re-run a
+>   model; Export loads none, so Apply just runs the pass again for real and
+>   re-decides every row at write time. That also sidesteps the run bar fetching
+>   caption proposals for a report whose rows are file copies —
+>   `schema()["replay"]` is false, so it never asks. (`audit_apply` already
+>   works this way.)
+> - **`NO_PREFLIGHT`.** Export binds `dst`, which would have earned it the
+>   resize preflight. It publishes the resized tree rather than consuming it, so
+>   quietly resizing first would make a publish do work nobody asked for; an
+>   empty tree is a refusal instead.
+> - **`proposals.undo` branches at the top** to `revert_export`, rather than the
+>   `/api/jobs/{id}/undo` route growing a second entry point. Same answer shape,
+>   so the frontend needed no change.
+>
+> The caption index binds through `REPORT_INPUTS["export"] = "index"` — the
+> mechanism `audit_apply` already used for a report it *reads* — so it follows
+> `report_root` like everything else and stays off the form.
 
 Built as `anime_tools/stages/export_workspace.py` +
 `anime_tools/stages/cli/export_workspace.py` on the existing `cli/_args.py`
@@ -190,22 +211,24 @@ idempotent, so there is nothing a snapshot would buy.
 **Refusals.** An empty workspace is an error with the "run Resize first" shape,
 not a silent zero-row success.
 
-### Touchpoints
+### What it touched
 
-- `anime_tools/stages/export_workspace.py` — `plan_export`, `export_one`, the layout constants
-- `anime_tools/stages/cli/export_workspace.py` — new CLI
-- `anime_tools/gui/stages.py` — `STAGES`, `ROOT_FIELDS`
-- `tests/test_export.py` — plan / apply / idempotence / scope
-- `tests/test_stage_cli_args.py` — the new stage's shared flags
+- `anime_tools/stages/export_workspace.py` — **new**: `ExportPaths`, `plan_export`,
+  `export_one`, `run_export`, `revert_export`, `rows_from_report`
+- `anime_tools/stages/cli/export_workspace.py` — **new**: `--apply`, `--undo`
+- `anime_tools/gui/stages.py` — `STAGES`, `ROOT_FIELDS`, `REPORT_INPUTS`, `NO_PREFLIGHT`
+- `anime_tools/gui/proposals.py` — `EXPORT_STAGE`, `_undo_export`, the branch in `undo`
+- `docs/contract.md`, `CLAUDE.md`
+- `tests/test_export.py` — **new**, 17 tests — plus `test_gui.py`, `test_gui_proposals.py`
 
 ---
 
 ## Phase 4 — GUI
 
-The run bar becomes **Run → diff → Apply → Export**, where Apply lands in the
-workspace and Export is the same three-transition job follower
-(`state.ts::createJobFollower`) pointed at the export stage. Two additions are
-worth having beyond the button:
+Most of this arrived with Phase 3: registering Export as a stage gave it a dock
+panel, a form, the job runner, the SSE log, per-image scope, and a working
+Run → Apply → Undo, with no frontend change at all. What is left is the part the
+registry cannot infer — telling the user what is *pending*:
 
 - **A fourth per-row dot** for export state — in workspace / exported / stale —
   computed from the export report plus the mtime stamp above, so the sidebar
@@ -215,9 +238,9 @@ worth having beyond the button:
 
 ### Touchpoints
 
-- `frontend/src/runner.ts` — the Export transition beside `apply` / `undo`
-- `frontend/src/components/{Dock,StatusLine,DatasetTree}.tsx`
+- `anime_tools/gui/dataset.py` — the export state on each row (`_row`)
 - `anime_tools/gui/server.py` — the pending-export count on `/api/dataset`
+- `frontend/src/components/{DatasetTree,StatusLine}.tsx` — the dot and the count
 
 ---
 

@@ -156,6 +156,8 @@ def test_scoped_stages_are_the_ones_taking_a_pattern():
         "audit",
         "masks_sam",
         "masks_mit",
+        # Export narrows the same way: publishing just the image on screen.
+        "export",
     }
 
 
@@ -513,8 +515,10 @@ def test_resize_is_not_a_dock_panel():
 
 def test_only_resized_tree_stages_get_the_preflight():
     """A stage bound to ``dst`` reads the resized tree, so it needs resize in
-    front of it; the ``src``-only ones (masks, groups) read the originals."""
+    front of it; the ``src``-only ones (masks, groups) read the originals, and
+    ``export`` is bound to ``dst`` but publishes it rather than consuming it."""
     got = {s.id: S.preprocess_for(s.id) for s in S.STAGES}
+    assert got["export"] is None and "dst" in S.ROOT_FIELDS["export"].values()
     assert {k for k, v in got.items() if v == "resize"} == {
         "autotag",
         "position",

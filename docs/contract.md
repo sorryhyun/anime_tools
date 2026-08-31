@@ -26,11 +26,12 @@ same producers — only *when* they appear, which is the point of the change.
 feature cache: nothing in the trainer reads it, and its layout
 (`anime_tools/workspace/__init__.py`) is not part of this contract.
 
-> **In flight.** The workspace landed first; Export (`plan.md` Phase 3) has not.
-> Until it does, point ⚙ Settings › Dataset roots at the pre-workspace paths, or
-> run the stages with an explicit `--dst post_image_dataset/resized`, to keep
-> feeding the trainer. `python -m anime_tools.workspace.migrate` moves an
-> existing tree the other way when you are ready.
+Export is `python -m anime_tools.stages.cli.export_workspace` (dry-run by
+default, `--apply` to publish, `--undo <report>` to take it back) and the GUI's
+**Export** stage. It always copies, skipping anything already identical at the
+destination, so re-exporting an unchanged dataset is a walk and a stat apiece.
+`python -m anime_tools.workspace.migrate` moves a pre-workspace tree into
+`workspace/` in the first place.
 
 | Artifact | Producer (curation) | Consumer (trainer) | Format |
 |---|---|---|---|

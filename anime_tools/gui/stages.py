@@ -91,8 +91,11 @@ REPORT_INPUTS: dict[str, str] = {
     # root, same per-stage tail off the CLI default — but kept out of
     # :attr:`Stage.report`, which means "the report this run produces" and is
     # what the run bar fetches back, offers as a diff and lets Undo replay.
-    # ``audit_apply`` produces none: it reads the multiview audit's.
+    # ``audit_apply`` produces none: it reads the multiview audit's; ``export``
+    # writes its own, and *reads* the caption index, which lives under the same
+    # root by the same tail and so binds here rather than on the form.
     "audit_apply": "report",
+    "export": "index",
 }
 
 SCOPE_FIELD = "path_pattern"
@@ -141,6 +144,16 @@ ROOT_FIELDS: dict[str, dict[str, str]] = {
     # Only the *merged* output is the masks root; each generator's --mask-dir
     # is an intermediate that has to differ from it, so it stays on the form.
     "masks_merge": {"output_dir": "masks"},
+    # The one stage that runs the pipeline backwards: it reads the three
+    # workspace trees and writes ``src`` (a revised master, back where the
+    # contract says the master lives) and ``out`` (everything else).
+    "export": {
+        "src": "src",
+        "dst": "dst",
+        "masks": "masks",
+        "master": "master",
+        "out": "out",
+    },
 }
 
 
@@ -258,6 +271,18 @@ STAGES: tuple[Stage, ...] = (
         "masking",
         short="Merge",
     ),
+    Stage(
+        "export",
+        "Export workspace",
+        "anime_tools.stages.cli.export_workspace",
+        "Export",
+        "stages",
+        report=("report_dir", "report.json"),
+        notes=(
+            "The only stage that writes outside the workspace. Run shows what "
+            "would publish; Apply copies it to the tree the trainer reads."
+        ),
+    ),
 )
 
 
@@ -265,14 +290,26 @@ PANELS: tuple[str, ...] = tuple(dict.fromkeys(s.panel for s in STAGES if not s.h
 """The dock's buttons, in registry order. Hidden stages contribute none."""
 
 
+NO_PREFLIGHT: frozenset[str] = frozenset({PREPROCESS_STAGE, "export"})
+"""Stages the resize preflight never runs in front of.
+
+``resize`` for the obvious reason. ``export`` because it is bound to ``dst`` but
+does not *consume* the resized tree the way the caption stages do — it publishes
+whatever is in it, and quietly computing more first would make a publish do
+work the user did not ask for. An empty resized tree is a refusal there ("Run
+the Resize stage first"), which is the honest answer rather than a hidden step.
+"""
+
+
 def preprocess_for(stage_id: str) -> str | None:
     """The stage that must run before ``stage_id``, or ``None``.
 
     A stage bound to the ``dst`` root reads the resized tree, so it needs
     :data:`PREPROCESS_STAGE` in front of it. The ones bound only to ``src``
-    (masks, groups, the audit apply) read the originals and need nothing.
+    (masks, groups, the audit apply) read the originals and need nothing, and
+    :data:`NO_PREFLIGHT` names the two that are bound to ``dst`` anyway.
     """
-    if stage_id == PREPROCESS_STAGE:
+    if stage_id in NO_PREFLIGHT:
         return None
     if "dst" in ROOT_FIELDS.get(stage_id, {}).values():
         return PREPROCESS_STAGE

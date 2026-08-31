@@ -364,3 +364,45 @@ def test_undo_over_http_restores_and_names_what_to_reload(client):
     assert (home / "image_dataset" / "a.txt").read_text(
         encoding="utf-8"
     ) == "1girl, solo"
+
+
+# ---- export: the one report that is not a caption diff ------------------
+
+
+def test_undo_dispatches_an_export_report_to_the_reverter(home, roots, tmp_path):
+    """`P.undo` takes the stage id, and `export`'s rows are file copies rather
+    than before/after captions — so it branches instead of trying to read them
+    through a `ReplaySpec` it has no shape for."""
+    from anime_tools._json import write_json
+    from anime_tools.gui import proposals as P
+    from anime_tools.stages.export_workspace import ExportPaths, run_export
+
+    out = home / "post_image_dataset"
+    paths = ExportPaths(
+        resized=home / "workspace" / "resized",
+        masks=home / "workspace" / "masks",
+        master=home / "workspace" / "master",
+        index=home / "workspace" / "captions" / "caption_index.json",
+        src=home / "image_dataset",
+        out=out,
+    )
+    rows, _ = run_export(paths, apply=True)
+    assert (out / "resized" / "a.png").is_file()
+
+    report = home / "export_apply.json"
+    write_json(report, {"rows": [r.to_dict() for r in rows]})
+
+    got = P.undo(report, roots, "export")
+    assert got["stage"] == "export"
+    assert got["removed"] == len(rows) and got["restored"] == 0
+    assert not (out / "resized" / "a.png").exists()
+    # The rels it reports back are dataset rels the sidebar can re-stat: the
+    # resized tree calls the second image `sub/b.png`, the master `sub/b.jpg`.
+    assert set(got["written"]) == {"a.png", "sub/b.jpg"}
+
+
+def test_an_unknown_stage_is_still_refused(home, roots):
+    from anime_tools.gui import proposals as P
+
+    with pytest.raises(P.ProposalError):
+        P.read(home / "nope.json", roots, "masks_merge")
