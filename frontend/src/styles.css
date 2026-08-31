@@ -102,6 +102,9 @@ button.help.warn:hover { border-color:var(--accent) }
 .rootstrip .mono { font-size:11px }
 .rootstrip span .mono:first-child { color:#c8cdd6 }
 .rootstrip button.link { margin-left:auto; font-size:11px }
+/* The preflight marker: this stage is preceded by another (resize), which
+   is configured in Settings rather than run by hand. */
+.rootstrip .chip { border:1px solid var(--line); border-radius:10px; padding:0 7px; font-size:10px; color:var(--dim); cursor:help }
 fieldset { border:1px solid var(--line); border-radius:6px; margin:0 0 12px; padding:8px 12px }
 legend { color:var(--dim); font-size:12px; padding:0 4px }
 .row { display:grid; grid-template-columns:180px 1fr; gap:8px; align-items:center; padding:3px 0 }

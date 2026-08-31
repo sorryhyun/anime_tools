@@ -2,6 +2,11 @@
 
 One job at a time — the stages share the GPU. The server process never imports
 torch; all model loading happens in the child.
+
+A job is a *sequence* of steps sharing one slot, one log and one SSE stream,
+because a stage that reads the resized tree has to be preceded by the resize
+preflight (:data:`anime_tools.gui.stages.PREPROCESS_STAGE`). A failing step
+stops the chain — there is no point tagging images that were never resized.
 """
 
 from __future__ import annotations
@@ -13,16 +18,30 @@ import sys
 import threading
 import time
 import uuid
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
+
+
+@dataclass(frozen=True)
+class Step:
+    """One ``python -m <module> <argv>`` invocation inside a job."""
+
+    module: str
+    argv: list[str]
+    label: str = ""
+    """Shown in the step header the log stream prints; defaults to ``module``."""
+
+    def command(self) -> list[str]:
+        return [sys.executable, "-m", self.module, *self.argv]
 
 
 @dataclass
 class Job:
     id: str
     stage: str
-    argv: list[str]
+    steps: list[Step]
     home: Path
     started: float = field(default_factory=time.time)
     finished: float | None = None
@@ -34,6 +53,12 @@ class Job:
     cancelled: bool = False
     _proc: subprocess.Popen | None = field(default=None, repr=False)
     _cond: threading.Condition = field(default_factory=threading.Condition, repr=False)
+
+    @property
+    def argv(self) -> list[str]:
+        """The stage's own command — the last step; the earlier ones are
+        preflight. This is what the UI labels the job with."""
+        return self.steps[-1].command() if self.steps else []
 
     @property
     def state(self) -> str:
@@ -53,6 +78,10 @@ class Job:
             "id": self.id,
             "stage": self.stage,
             "argv": self.argv,
+            "steps": [
+                {"module": st.module, "label": st.label or st.module, "argv": st.argv}
+                for st in self.steps
+            ],
             "state": self.state,
             "started": self.started,
             "finished": self.finished,
@@ -85,8 +114,7 @@ class JobManager:
     def start(
         self,
         stage: str,
-        module: str,
-        argv: list[str],
+        steps: Sequence[Step],
         *,
         home: Path,
         report_path: str | None = None,
@@ -94,75 +122,118 @@ class JobManager:
         apply: bool = False,
         env: dict[str, str] | None = None,
     ) -> Job:
+        """Queue a job's steps into the single slot and start pumping them.
+
+        ``steps`` runs in order, the stage itself last; a non-zero step ends the
+        job with that code and the rest never start.
+        """
+        if not steps:
+            raise ValueError("a job needs at least one step")
         with self._lock:
             if self.running is not None:
                 raise RuntimeError(f"job {self.running.id} is still running")
             job = Job(
                 id=uuid.uuid4().hex[:12],
                 stage=stage,
-                argv=[sys.executable, "-m", module, *argv],
+                steps=list(steps),
                 home=home,
                 report_path=report_path,
                 values=values or {},
                 apply=apply,
             )
-            child_env = {
-                **os.environ,
-                "PYTHONUNBUFFERED": "1",
-                # We decode the pipe as UTF-8 below; a child left on the
-                # locale encoding (cp949/cp1252 on Windows) would arrive
-                # mojibake, or die encoding the arrows the stages print.
-                "PYTHONIOENCODING": "utf-8",
-                "ANIME_TOOLS_HOME": str(home),
-                **(env or {}),
-            }
-            job._proc = subprocess.Popen(
-                job.argv,
-                cwd=str(home),
-                env=child_env,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT,
-                text=True,
-                encoding="utf-8",
-                errors="replace",
-                start_new_session=(os.name != "nt"),
-            )
             self.jobs[job.id] = job
-        threading.Thread(target=self._pump, args=(job,), daemon=True).start()
+        child_env = {
+            **os.environ,
+            "PYTHONUNBUFFERED": "1",
+            # We decode the pipe as UTF-8 below; a child left on the
+            # locale encoding (cp949/cp1252 on Windows) would arrive
+            # mojibake, or die encoding the arrows the stages print.
+            "PYTHONIOENCODING": "utf-8",
+            "ANIME_TOOLS_HOME": str(home),
+            **(env or {}),
+        }
+        threading.Thread(target=self._run, args=(job, child_env), daemon=True).start()
         return job
 
-    def _pump(self, job: Job) -> None:
-        proc = job._proc
-        assert proc is not None and proc.stdout is not None
+    def _run(self, job: Job, child_env: dict[str, str]) -> None:
+        """Run every step in turn, appending all of their output to one log."""
         log = None
         if self.log_dir is not None:
             self.log_dir.mkdir(parents=True, exist_ok=True)
             log = (self.log_dir / f"{job.id}.log").open("w", encoding="utf-8")
+        code = 0
         try:
-            for raw in proc.stdout:
-                line = raw.rstrip("\n")
-                if log is not None:
-                    log.write(line + "\n")
-                with job._cond:
-                    job.lines.append(line)
-                    if len(job.lines) > self.max_lines:
-                        del job.lines[: len(job.lines) - self.max_lines]
-                    job._cond.notify_all()
+            for index, step in enumerate(job.steps, 1):
+                if job.cancelled:
+                    break
+                if len(job.steps) > 1:
+                    self._emit(
+                        job,
+                        log,
+                        f"── step {index}/{len(job.steps)}: "
+                        f"{step.label or step.module} ──",
+                    )
+                code = self._run_step(job, step, child_env, log)
+                if code != 0:
+                    break
         finally:
-            code = proc.wait()
             if log is not None:
                 log.close()
             with job._cond:
                 job.exit_code = code
                 job.finished = time.time()
+                job._proc = None
                 job._cond.notify_all()
 
+    def _run_step(self, job: Job, step: Step, child_env, log) -> int:
+        proc = subprocess.Popen(
+            step.command(),
+            cwd=str(job.home),
+            env=child_env,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            start_new_session=(os.name != "nt"),
+        )
+        # Published before the first read so ``cancel`` can reach this step; a
+        # cancel that landed while we were spawning is honoured right after.
+        job._proc = proc
+        if job.cancelled:
+            self._terminate(proc)
+        assert proc.stdout is not None
+        for raw in proc.stdout:
+            self._emit(job, log, raw.rstrip("\n"))
+        return proc.wait()
+
+    def _emit(self, job: Job, log, line: str) -> None:
+        if log is not None:
+            log.write(line + "\n")
+        with job._cond:
+            job.lines.append(line)
+            if len(job.lines) > self.max_lines:
+                del job.lines[: len(job.lines) - self.max_lines]
+            job._cond.notify_all()
+
     def cancel(self, job_id: str) -> bool:
+        """Stop a running job: kill the current step and skip the rest.
+
+        The flag is set before the kill and read by :meth:`_run` between steps,
+        so a cancel that lands in the gap between two steps still stops the
+        chain instead of letting the next one start.
+        """
         job = self.jobs[job_id]
-        proc = job._proc
-        if proc is None or job.exit_code is not None:
+        if job.exit_code is not None:
             return False
         job.cancelled = True
+        proc = job._proc
+        if proc is not None:
+            self._terminate(proc)
+        return True
+
+    @staticmethod
+    def _terminate(proc: subprocess.Popen) -> None:
         try:
             if os.name == "nt":
                 subprocess.run(
@@ -178,7 +249,6 @@ class JobManager:
                     os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
         except ProcessLookupError:
             pass
-        return True
 
     def shutdown(self) -> None:
         for job in list(self.jobs.values()):

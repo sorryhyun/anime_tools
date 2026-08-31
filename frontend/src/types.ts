@@ -46,15 +46,30 @@ export interface Stage {
   replay?: boolean;
   /** Has `--path_pattern`: a run can be narrowed to the selected image. */
   scoped?: boolean;
+  /** Kept out of the dock: not something you run by hand. `resize` is the one
+      -- it runs as a preflight, and its knobs live in the Settings dialog. */
+  hidden?: boolean;
+  /** The stage id that runs automatically before this one, or null. */
+  preprocess?: string | null;
   fields: Field[];
 }
 
 export type JobState = "running" | "done" | "failed" | "cancelled";
 
+/** One `python -m <module>` invocation inside a job. A job is a sequence:
+    the stage itself, preceded by its preflight when it has one. */
+export interface JobStep {
+  module: string;
+  label: string;
+  argv: string[];
+}
+
 export interface Job {
   id: string;
   stage: string;
+  /** The *stage's* command (the last step) -- what the UI labels the job by. */
   argv: string[];
+  steps?: JobStep[];
   state: JobState;
   started: number;
   finished: number | null;
@@ -76,6 +91,9 @@ export interface Settings {
   values?: Record<string, Record<string, unknown>>;
   /** `path_pattern` / `tagger_dir`: set once here, not on every stage form. */
   stage_defaults?: Record<string, string>;
+  /** The resize preflight's form values. It has no dock panel to carry a form,
+      so its knobs are set here and apply to every stage it runs in front of. */
+  preprocess?: Record<string, unknown>;
   [k: string]: unknown;
 }
 

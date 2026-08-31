@@ -142,6 +142,7 @@ def test_scoped_stages_are_the_ones_taking_a_pattern():
     ``--path_pattern`` to narrow."""
     scoped = {s.id for s in S.STAGES if S.schema(s).get("scoped")}
     assert scoped == {
+        "resize",
         "autotag",
         "position",
         "correct",
@@ -390,6 +391,139 @@ def test_settings_pattern_and_rel_pick_the_run_scope(client):
 
     # --device is auto-detected in the child and never sent.
     assert "--device" not in batch["argv"] + one["argv"]
+
+
+# -- the resize preflight: an implicit first step, not a panel -------------
+
+
+def test_resize_is_not_a_dock_panel():
+    """It has a schema and an argv, but nothing to click: it runs itself."""
+    assert S.BY_ID["resize"].hidden is True
+    assert "Resize" not in S.PANELS
+    assert [s.id for s in S.STAGES if s.hidden] == ["resize"]
+
+
+def test_only_resized_tree_stages_get_the_preflight():
+    """A stage bound to ``dst`` reads the resized tree, so it needs resize in
+    front of it; the ``src``-only ones (masks, groups) read the originals."""
+    got = {s.id: S.preprocess_for(s.id) for s in S.STAGES}
+    assert {k for k, v in got.items() if v == "resize"} == {
+        "autotag",
+        "position",
+        "correct",
+        "audit",
+    }
+    assert got["resize"] is None  # never its own preflight
+    assert got["masks_sam"] is None and got["groups"] is None
+
+
+def test_a_dst_bound_stage_runs_resize_first(client, monkeypatch):
+    c, _home = client
+    monkeypatch.setitem(S.ROOT_FIELDS, "stub", {"src": "src", "dst": "dst"})
+
+    job = _await_job(c, c.post("/api/jobs", json={"stage": "stub", "values": {"n": 1}}))
+
+    assert [st["label"] for st in job["steps"]] == ["resize", "stub"]
+    assert job["steps"][0]["module"] == "anime_tools.stages.cli.resize_images"
+    # `argv` stays the *stage's* command, so the UI still labels the job by it.
+    assert job["argv"][:3] == [sys.executable, "-m", "stub_stage"]
+    assert job["state"] == "done", job
+    # Both steps' output lands in the one stream, under a step header.
+    body = "".join(c.get(f"/api/jobs/{job['id']}/log").iter_text())
+    assert "step 1/2" in body and "step 2/2" in body
+
+
+def test_a_stage_without_a_preflight_is_a_single_step(client):
+    c, _home = client
+    job = _await_job(c, c.post("/api/jobs", json={"stage": "stub", "values": {"n": 1}}))
+    assert [st["label"] for st in job["steps"]] == ["stub"]
+    # A lone step prints no header -- the chain is invisible when there is none.
+    body = "".join(c.get(f"/api/jobs/{job['id']}/log").iter_text())
+    assert "step 1/1" not in body
+
+
+def test_the_preflight_is_scoped_exactly_like_the_job(client, monkeypatch):
+    """Per-image Apply must resize that one image, not the whole dataset."""
+    c, _home = client
+    monkeypatch.setitem(S.ROOT_FIELDS, "stub", {"src": "src", "dst": "dst"})
+    c.put("/api/settings", json={"stage_defaults": {"path_pattern": "sub/*"}})
+
+    one = c.post("/api/jobs", json={"stage": "stub", "rel": "a.png"}).json()
+    assert one["steps"][0]["argv"][-2:] == ["--path_pattern", "a.*"]
+    assert one["steps"][1]["argv"][-2:] == ["--path_pattern", "a.*"]
+    _await_job(c, c.get(f"/api/jobs/{one['id']}"))
+
+    batch = c.post("/api/jobs", json={"stage": "stub"}).json()
+    assert batch["steps"][0]["argv"][-2:] == ["--path_pattern", "sub/*"]
+    _await_job(c, c.get(f"/api/jobs/{batch['id']}"))
+
+
+def test_settings_preprocess_block_configures_the_preflight(client, monkeypatch):
+    """Resize has no form of its own, so its knobs come from Settings."""
+    c, _home = client
+    monkeypatch.setitem(S.ROOT_FIELDS, "stub", {"src": "src", "dst": "dst"})
+    c.put(
+        "/api/settings",
+        json={"preprocess": {"min_pixels": 0, "target_res": [1024, 1536]}},
+    )
+
+    job = _await_job(c, c.post("/api/jobs", json={"stage": "stub"}))
+    argv = job["steps"][0]["argv"]
+
+    assert argv[argv.index("--min_pixels") + 1] == "0"
+    assert argv[argv.index("--target_res") + 1 : argv.index("--target_res") + 3] == [
+        "1024",
+        "1536",
+    ]
+    # Untouched knobs stay off the argv so the CLI's own defaults hold.
+    assert "--freefit_max_ratio" not in argv
+
+
+def test_a_failing_step_stops_the_chain(tmp_path):
+    """No point tagging images the resize step never produced."""
+    from anime_tools.gui.jobs import JobManager, Step
+
+    (tmp_path / "boom_step.py").write_text("import sys; print('first'); sys.exit(3)")
+    (tmp_path / "ok_step.py").write_text("print('second')")
+    mgr = JobManager(log_dir=tmp_path / "logs")
+
+    job = mgr.start(
+        "chain",
+        [Step("boom_step", [], "pre"), Step("ok_step", [], "stage")],
+        home=tmp_path,
+        env={"PYTHONPATH": str(tmp_path)},
+    )
+    for _ in range(200):
+        if job.exit_code is not None:
+            break
+        time.sleep(0.05)
+
+    assert job.exit_code == 3 and job.state == "failed"
+    assert "first" in job.lines and "second" not in job.lines
+
+
+def test_steps_run_in_order_in_one_stream(tmp_path):
+    from anime_tools.gui.jobs import JobManager, Step
+
+    (tmp_path / "one_step.py").write_text("print('first')")
+    (tmp_path / "two_step.py").write_text("print('second')")
+    mgr = JobManager(log_dir=tmp_path / "logs")
+
+    job = mgr.start(
+        "chain",
+        [Step("one_step", [], "pre"), Step("two_step", [], "stage")],
+        home=tmp_path,
+        env={"PYTHONPATH": str(tmp_path)},
+    )
+    for _ in range(200):
+        if job.exit_code is not None:
+            break
+        time.sleep(0.05)
+
+    assert job.exit_code == 0
+    assert [ln for ln in job.lines if not ln.startswith("──")] == ["first", "second"]
+    # One log file for the whole chain, not one per step.
+    assert (tmp_path / "logs" / f"{job.id}.log").read_text().count("second") == 1
 
 
 def test_scoping_an_unscopable_stage_is_refused(client):

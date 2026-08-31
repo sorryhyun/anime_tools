@@ -9,7 +9,7 @@ import {
   onCleanup,
   Show,
 } from "solid-js";
-import { createStore, reconcile } from "solid-js/store";
+import { createStore, reconcile, unwrap } from "solid-js/store";
 import { api, followLog } from "./api";
 import type {
   CaptionEntry,
@@ -30,6 +30,7 @@ import { REPLAY_FIELD } from "./types";
 import { DatasetTree, type Sel } from "./components/DatasetTree";
 import { ItemView } from "./components/ItemView";
 import { StagePanel } from "./components/StagePanel";
+import { FieldRow, grouped } from "./components/StageForm";
 import { Dialog } from "./components/Dialog";
 import { HelpToggle } from "./components/HelpToggle";
 
@@ -143,11 +144,14 @@ export default function App() {
     setForms(curId(), (prev) => ({ ...(prev ?? {}), [dest]: v }));
   const resetForm = () => setForms(curId(), reconcile({}));
 
+  /** The stages the dock offers: everything but the hidden ones, which are not
+      run by hand (`resize` runs itself, in front of the stages that need it). */
+  const shown = createMemo(() => (stages() ?? []).filter((s) => !s.hidden));
   /** Stages, in registry order, bucketed into the dock's panels. One button
       per panel; which of its stages runs is picked inside the panel. */
   const panels = createMemo(() => {
     const m = new Map<string, Stage[]>();
-    for (const s of stages() ?? []) m.set(s.panel, [...(m.get(s.panel) ?? []), s]);
+    for (const s of shown()) m.set(s.panel, [...(m.get(s.panel) ?? []), s]);
     return [...m];
   });
   const curPanel = createMemo(() => cur()?.panel ?? "");
@@ -193,10 +197,15 @@ export default function App() {
       argparse action, so Settings never re-describes a flag. */
   const settingFields = createMemo(() => {
     const m = new Map<string, Field>();
-    for (const st of stages() ?? [])
+    for (const st of shown())
       for (const f of st.fields) if (f.setting && !m.has(f.setting)) m.set(f.setting, f);
     return [...m.values()];
   });
+  /** The hidden preflight stage, so Settings can render its form: it has no
+      dock panel of its own, and its knobs apply to every stage it precedes. */
+  const preprocessStage = createMemo(() =>
+    (stages() ?? []).find((s) => s.hidden && s.id === "resize"),
+  );
   const [reuse, setReuse] = createSignal(true);
   /** The form as it matters to a replay: everything the stage actually reads,
       minus the managed field itself. */
@@ -222,7 +231,10 @@ export default function App() {
 
   createEffect(
     on(stages, (ss) => {
-      if (ss && !ss.some((s) => s.id === curId())) setCurId(ss.find((s) => s.available)?.id ?? "");
+      // A hidden stage is never the landing stage: it has no dock button to
+      // show it, so selecting one would open the dock on nothing.
+      if (ss && !shown().some((s) => s.id === curId()))
+        setCurId(shown().find((s) => s.available)?.id ?? "");
     }),
   );
   createEffect(on(curId, (id) => id && localStorage.setItem("stage", id)));
@@ -585,6 +597,8 @@ export default function App() {
         roots={roots()}
         fields={settingFields()}
         defaults={stageDefaults()}
+        preprocess={preprocessStage()}
+        preprocessValues={settings.preprocess ?? {}}
         models={models()}
         busy={busy() || dlBusy()}
         downloading={dlBusy()}
@@ -606,6 +620,7 @@ export default function App() {
             refetchRoots();
           }
           if (out.defaults) setSettings(await api.putSettings({ stage_defaults: out.defaults }));
+          if (out.preprocess) setSettings(await api.putSettings({ preprocess: out.preprocess }));
         }}
       />
     </>
@@ -617,6 +632,8 @@ interface SettingsOut {
   roots: Record<string, string> | null;
   /** The stage defaults (`path_pattern` / `tagger_dir`), or null if untouched. */
   defaults: Record<string, string> | null;
+  /** The preflight stage's form values, or null if untouched. */
+  preprocess: Record<string, unknown> | null;
 }
 
 function SettingsDialog(props: {
@@ -626,6 +643,9 @@ function SettingsDialog(props: {
   /** One argparse Field per Settings-bound stage flag. */
   fields: Field[];
   defaults: Record<string, string>;
+  /** The hidden preflight stage, rendered as its own Settings block. */
+  preprocess?: Stage;
+  preprocessValues: Record<string, unknown>;
   models?: ModelCatalog;
   /** Any job holds the one slot -- a stage run disables the buttons too. */
   busy: boolean;
@@ -643,6 +663,20 @@ function SettingsDialog(props: {
   let tokenEl!: HTMLInputElement;
   const rootEls: Partial<Record<RootName, HTMLInputElement>> = {};
   const defEls: Record<string, HTMLInputElement> = {};
+  /** The preflight form's edits, keyed by dest. Seeded from the saved values on
+      open and diffed on OK, so an untouched block sends nothing. */
+  const [pre, setPre] = createStore<Record<string, unknown>>({});
+  createEffect(
+    on(
+      () => props.open,
+      (open) => open && setPre(reconcile(structuredClone(props.preprocessValues))),
+    ),
+  );
+  /** Fields the preflight block shows: the same filter the stage forms use, so
+      the roots and `path_pattern` stay bound server-side and out of here. */
+  const preFields = createMemo(() =>
+    props.preprocess ? grouped(props.preprocess.fields).flatMap(([, fs]) => fs) : [],
+  );
   const current = (n: RootName) => props.roots?.roots[n];
   const missing = () => (props.models?.models ?? []).filter((m) => !m.installed);
   /** Is this row part of the running pull? An id-less job is "every missing". */
@@ -666,10 +700,13 @@ function SettingsDialog(props: {
         const defChanged = props.fields.some(
           (f) => defaults[f.setting!] !== (props.defaults[f.setting!] ?? ""),
         );
+        const preChanged =
+          JSON.stringify(unwrap(pre)) !== JSON.stringify(props.preprocessValues);
         props.onClose({
           token: t || null,
           roots: changed ? picked : null,
           defaults: defChanged ? defaults : null,
+          preprocess: preChanged ? { ...unwrap(pre) } : null,
         });
       }}
     >
@@ -738,6 +775,31 @@ function SettingsDialog(props: {
           )}
         </For>
       </div>
+
+      <Show when={props.preprocess}>
+        {(pre_) => (
+          <>
+            <h4>{pre_().title}</h4>
+            <Show when={props.help}>
+              <p class="dim" style="margin:0 0 8px">
+                {pre_().notes} Runs over the same images the stage does, so a per-image Apply
+                resizes just that image. Already-current images are skipped, so a re-run is
+                near-free. Tiers must match the trainer's <code>target_res</code>.
+              </p>
+            </Show>
+            <For each={preFields()}>
+              {(f) => (
+                <FieldRow
+                  field={f}
+                  value={pre[f.dest] ?? f.default}
+                  dirty={pre[f.dest] !== undefined && String(pre[f.dest]) !== String(f.default)}
+                  setValue={(v) => setPre(f.dest, v)}
+                />
+              )}
+            </For>
+          </>
+        )}
+      </Show>
 
       <h4>Hugging Face</h4>
       <div class="kv">

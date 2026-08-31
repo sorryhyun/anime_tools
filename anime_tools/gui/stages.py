@@ -66,6 +66,23 @@ SETTING_FIELDS: dict[str, str] = {
 SCOPE_FIELD = "path_pattern"
 """The :data:`SETTING_FIELDS` key the GUI narrows to run a stage on one image."""
 
+PREPROCESS_STAGE = "resize"
+"""The stage that populates the resized tree, run as a preflight rather than a
+dock panel.
+
+Every stage bound to the ``dst`` root walks ``post_image_dataset/resized/`` and
+tags the pixels training sees, so an image that exists only in the caption
+master is invisible to it — the run reports zero rows and writes nothing, which
+reads like a bug. Rather than making that a step the user has to remember,
+:func:`preprocess_for` puts it in front of each such job, narrowed to the same
+images. It is idempotent: on an up-to-date tree it is one image-header read
+apiece and prints ``skip``."""
+
+PREPROCESS_SETTINGS_KEY = "preprocess"
+"""Where the resize form's values live in the settings file. It has no panel, so
+its knobs (tiers, min pixels, crop anchor) are set once in ⚙ Settings — the same
+treatment :data:`SETTING_FIELDS` gives ``path_pattern``."""
+
 AUTO_FIELDS: frozenset[str] = frozenset({"device"})
 """Dests the GUI neither shows nor sends: the stage auto-detects them.
 
@@ -80,6 +97,7 @@ ROOT_FIELDS: dict[str, dict[str, str]] = {
     # stage id → {argparse dest: dataset root name}. These fields are filled
     # from the Settings dialog's dataset roots (the same three trees the
     # sidebar joins), so no stage form re-asks for them.
+    "resize": {"src": "src", "dst": "dst"},
     "autotag": {"src": "src", "dst": "dst"},
     "position": {"src": "src", "dst": "dst"},
     "correct": {"src": "src", "dst": "dst"},
@@ -112,9 +130,26 @@ class Stage:
     short: str = ""
     """Label for the in-panel picker, where the panel already gives the
     context the title spells out. Defaults to :attr:`title`."""
+    hidden: bool = False
+    """Keep this stage out of the dock: it is not something the user runs by
+    hand. It still has a schema and an argv, so it can run as a preflight and be
+    configured from Settings."""
 
 
 STAGES: tuple[Stage, ...] = (
+    Stage(
+        "resize",
+        "Resize to buckets",
+        "anime_tools.stages.cli.resize_images",
+        "Resize",
+        "stages",
+        report=("report_dir", "report.json"),
+        hidden=True,
+        notes=(
+            "Runs automatically before every stage that reads the resized "
+            "tree. These defaults apply to all of them."
+        ),
+    ),
     Stage(
         "autotag",
         "Autotag captions",
@@ -194,8 +229,22 @@ STAGES: tuple[Stage, ...] = (
 )
 
 
-PANELS: tuple[str, ...] = tuple(dict.fromkeys(s.panel for s in STAGES))
-"""The dock's buttons, in registry order."""
+PANELS: tuple[str, ...] = tuple(dict.fromkeys(s.panel for s in STAGES if not s.hidden))
+"""The dock's buttons, in registry order. Hidden stages contribute none."""
+
+
+def preprocess_for(stage_id: str) -> str | None:
+    """The stage that must run before ``stage_id``, or ``None``.
+
+    A stage bound to the ``dst`` root reads the resized tree, so it needs
+    :data:`PREPROCESS_STAGE` in front of it. The ones bound only to ``src``
+    (masks, groups, the audit apply) read the originals and need nothing.
+    """
+    if stage_id == PREPROCESS_STAGE:
+        return None
+    if "dst" in ROOT_FIELDS.get(stage_id, {}).values():
+        return PREPROCESS_STAGE
+    return None
 
 
 BY_ID: dict[str, Stage] = {s.id: s for s in STAGES}
@@ -306,6 +355,10 @@ def schema(stage: Stage) -> dict[str, Any]:
         "extra": stage.extra,
         "notes": stage.notes,
         "report": bool(stage.report),
+        "hidden": stage.hidden,
+        # The preflight this stage gets, so the run bar can say so before the
+        # log does ("Resize → Autotag").
+        "preprocess": preprocess_for(stage.id),
     }
     try:
         parser = load_parser(stage)

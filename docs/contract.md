@@ -30,9 +30,20 @@ to the trainer originals.
 | grouping feature cache `$NEAR_TWIN_CACHE/<dirhash>/{stem}.npz` (default `~/.cache/near_twin/`) | `anime_tools/grouping/features.py::embed_members` | grouping + near-twin miner only | **curation-private**; `cls` `[D]` f32 L2-normed + `grid16` `[16,16,D]` f16. Not the trainer's `{stem}_anima_pe.safetensors`. Switch embedders ⇒ new cache root. |
 | decensor match tables (`anime_tools/grouping/cli/{match,apply}_decensored.py`) | curation | curation | internal to the curation side; not read by the trainer. |
 
+Resized PNGs under `post_image_dataset/resized/` are produced by **both** sides:
+`anime_tools/stages/resize.py` (`python -m anime_tools.stages.cli.resize_images`,
+the GUI's Resize stage) and the trainer's `make preprocess-resize`. They are
+interchangeable by construction — same tier (`choose_edge`), same free-fit band
+and solver, same `anima_resize_{crop_anchor,bucket_resos,crop_margins}` PNG text
+keys — so whichever side runs first, the other finds every image already at its
+target bucket and skips it. `anime_tools/buckets.py` is a copy of the trainer's
+free-fit geometry, not an import; the two must move together, and the tiers
+(`--target_res`) must match on both sides or each pass re-resizes the other's
+output.
+
 Not in the contract (trainer-owned caches, never produced by curation): VAE
 latents `{stem}_{WxH}_anima.npz`, TE `{stem}_anima_te.safetensors`, PE
-`{stem}_anima_pe.safetensors`, σ-demote siblings, resized PNGs.
+`{stem}_anima_pe.safetensors`, σ-demote siblings.
 
 ## 3. Caption grammar (the one shared parser)
 

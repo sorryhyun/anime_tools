@@ -25,7 +25,7 @@ from anime_tools import downloads as DL
 from anime_tools._env import curation_home, models_dir, resolve_path
 from anime_tools.gui import dataset as D
 from anime_tools.gui import stages as S
-from anime_tools.gui.jobs import JobManager
+from anime_tools.gui.jobs import JobManager, Step
 
 STATIC = Path(__file__).parent / "static"
 SETTINGS_NAME = ".anime_tools_gui.json"
@@ -185,8 +185,7 @@ def create_app(
         try:
             job = mgr.start(
                 f"download:{','.join(ids) or 'missing'}",
-                DL.__name__,
-                ids,
+                [Step(DL.__name__, ids, label="download")],
                 home=curation_home(),
             )
         except RuntimeError as e:
@@ -235,11 +234,14 @@ def create_app(
             raise HTTPException(400, str(e)) from e
         report = S.report_path(stage, sc["fields"], values)
         _make_output_dirs(stage, report)
+        steps = [
+            *_preprocess_steps(stage, defaults),
+            Step(stage.module, argv, stage.id),
+        ]
         try:
             job = mgr.start(
                 stage.id,
-                stage.module,
-                argv,
+                steps,
                 home=curation_home(),
                 report_path=report,
                 values=values,
@@ -329,6 +331,29 @@ def create_app(
             for k in S.SETTING_FIELDS.values()
             if str(got.get(k) or "").strip()
         }
+
+    def _preprocess_steps(stage: S.Stage, defaults: dict[str, str]) -> list[Step]:
+        """The resize preflight for ``stage``, or nothing.
+
+        It runs with the *same* ``defaults`` the stage got, so a per-image Apply
+        resizes exactly that image and a batch resizes the batch. Its own knobs
+        come from the Settings ``preprocess`` block, since it has no panel to
+        carry a form. A stage whose preflight is unavailable (a schema that
+        failed to load) runs alone rather than failing — resize is a
+        convenience, not a gate.
+        """
+        pre_id = S.preprocess_for(stage.id)
+        pre = S.BY_ID.get(pre_id or "")
+        sc = store.get().get(pre_id or "")
+        if pre is None or sc is None or not sc["available"]:
+            return []
+        saved = load_settings().get(S.PREPROCESS_SETTINGS_KEY) or {}
+        values = S.form_values(sc["fields"], saved)
+        argv = S.build_argv(
+            sc["fields"], values, roots=_root_paths(), settings=defaults
+        )
+        _make_output_dirs(pre, S.report_path(pre, sc["fields"], values))
+        return [Step(pre.module, argv, pre.id)]
 
     def _root_paths() -> dict[str, str]:
         """The saved dataset roots, home-relative, for the stage fields bound to

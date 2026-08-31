@@ -10,7 +10,7 @@ import { PathPicker } from "./PathPicker";
     buttons own -- `--apply` (Dry run / Apply) and `--from_report` (the Apply
     dialog's reuse box): a stale path left in a form field would quietly turn
     the next Dry run into a replay of an old one. */
-function grouped(fields: Field[]): [string, Field[]][] {
+export function grouped(fields: Field[]): [string, Field[]][] {
   const m = new Map<string, Field[]>();
   for (const f of fields) {
     if (f.dest === "apply" || f.dest === REPLAY_FIELD || f.root || f.setting || f.auto) continue;
@@ -22,6 +22,82 @@ function grouped(fields: Field[]): [string, Field[]][] {
 }
 
 const str = (v: unknown) => (v == null ? "" : Array.isArray(v) ? v.join("\n") : String(v));
+
+/** One labelled input for one argparse action. Shared by the stage forms and
+    the Settings dialog's Preprocess block, so a hidden stage's knobs are typed
+    into exactly the same widgets as a visible one's. */
+export function FieldRow(props: {
+  field: Field;
+  value: unknown;
+  dirty?: boolean;
+  setValue: (v: unknown) => void;
+  /** Show the browse button on a path field; omit to render it as plain text. */
+  onPick?: () => void;
+}) {
+  const f = () => props.field;
+  const cls = () => ({ dirty: !!props.dirty });
+  return (
+    <div class="row">
+      <label classList={{ req: f().required }} title={f().help}>
+        {f().label || f().flags[0] || f().dest}
+      </label>
+      <Switch>
+        <Match when={f().kind === "bool"}>
+          <input
+            type="checkbox"
+            checked={!!props.value}
+            onChange={(e) => props.setValue(e.currentTarget.checked)}
+          />
+        </Match>
+        <Match when={f().kind === "enum"}>
+          <select classList={cls()} value={str(props.value)} onChange={(e) => props.setValue(e.currentTarget.value)}>
+            <For each={f().choices ?? []}>{(c) => <option value={String(c)}>{String(c)}</option>}</For>
+          </select>
+        </Match>
+        <Match when={f().kind === "list"}>
+          <textarea
+            classList={cls()}
+            placeholder="one per line"
+            value={str(props.value)}
+            onInput={(e) =>
+              props.setValue(e.currentTarget.value.split("\n").map((s) => s.trim()).filter(Boolean))
+            }
+          />
+        </Match>
+        <Match when={f().kind === "int" || f().kind === "float"}>
+          <input
+            type="number"
+            classList={cls()}
+            step={f().kind === "int" ? 1 : "any"}
+            value={str(props.value)}
+            onInput={(e) => props.setValue(e.currentTarget.value)}
+          />
+        </Match>
+        <Match when={f().path && !!props.onPick}>
+          <div class="pathrow">
+            <input
+              type="text"
+              classList={cls()}
+              value={str(props.value)}
+              onInput={(e) => props.setValue(e.currentTarget.value)}
+            />
+            <button type="button" title="Browse (home-relative)" onClick={props.onPick}>
+              …
+            </button>
+          </div>
+        </Match>
+        <Match when={true}>
+          <input
+            type="text"
+            classList={cls()}
+            value={str(props.value)}
+            onInput={(e) => props.setValue(e.currentTarget.value)}
+          />
+        </Match>
+      </Switch>
+    </div>
+  );
+}
 
 /** Schema-driven form; `values` is the controlled state ({dest: value}). */
 export function StageForm(props: {
@@ -90,6 +166,16 @@ export function StageForm(props: {
               );
             }}
           </For>
+          <Show when={props.stage.preprocess}>
+            {(pre) => (
+              <span
+                class="chip"
+                title={`${pre()} runs first, over the same images — this stage reads the resized tree, so an image that is only in the caption master would be invisible to it. Its knobs are in Settings.`}
+              >
+                ⤳ {pre()} first
+              </span>
+            )}
+          </Show>
           <button class="link" type="button" onClick={props.onSettings}>
             set in Settings ⚙
           </button>
@@ -101,72 +187,13 @@ export function StageForm(props: {
             <legend>{g || "options"}</legend>
             <For each={fs}>
               {(f) => (
-                <div class="row">
-                  <label classList={{ req: f.required }} title={f.help}>
-                    {f.label || f.flags[0] || f.dest}
-                  </label>
-                  <Switch>
-                    <Match when={f.kind === "bool"}>
-                      <input
-                        type="checkbox"
-                        checked={!!value(f)}
-                        onChange={(e) => props.setValue(f.dest, e.currentTarget.checked)}
-                      />
-                    </Match>
-                    <Match when={f.kind === "enum"}>
-                      <select
-                        classList={{ dirty: dirty(f) }}
-                        value={str(value(f))}
-                        onChange={(e) => props.setValue(f.dest, e.currentTarget.value)}
-                      >
-                        <For each={f.choices ?? []}>{(c) => <option value={String(c)}>{String(c)}</option>}</For>
-                      </select>
-                    </Match>
-                    <Match when={f.kind === "list"}>
-                      <textarea
-                        classList={{ dirty: dirty(f) }}
-                        placeholder="one per line"
-                        value={str(value(f))}
-                        onInput={(e) =>
-                          props.setValue(
-                            f.dest,
-                            e.currentTarget.value.split("\n").map((s) => s.trim()).filter(Boolean),
-                          )
-                        }
-                      />
-                    </Match>
-                    <Match when={f.kind === "int" || f.kind === "float"}>
-                      <input
-                        type="number"
-                        classList={{ dirty: dirty(f) }}
-                        step={f.kind === "int" ? 1 : "any"}
-                        value={str(value(f))}
-                        onInput={(e) => props.setValue(f.dest, e.currentTarget.value)}
-                      />
-                    </Match>
-                    <Match when={f.path}>
-                      <div class="pathrow">
-                        <input
-                          type="text"
-                          classList={{ dirty: dirty(f) }}
-                          value={str(value(f))}
-                          onInput={(e) => props.setValue(f.dest, e.currentTarget.value)}
-                        />
-                        <button type="button" title="Browse (home-relative)" onClick={() => setPicking(f.dest)}>
-                          …
-                        </button>
-                      </div>
-                    </Match>
-                    <Match when={true}>
-                      <input
-                        type="text"
-                        classList={{ dirty: dirty(f) }}
-                        value={str(value(f))}
-                        onInput={(e) => props.setValue(f.dest, e.currentTarget.value)}
-                      />
-                    </Match>
-                  </Switch>
-                </div>
+                <FieldRow
+                  field={f}
+                  value={value(f)}
+                  dirty={dirty(f)}
+                  setValue={(v) => props.setValue(f.dest, v)}
+                  onPick={() => setPicking(f.dest)}
+                />
               )}
             </For>
           </fieldset>
