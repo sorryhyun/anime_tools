@@ -168,6 +168,18 @@ def build_parser() -> argparse.ArgumentParser:
     g.add_argument("--iou_threshold", type=float, default=0.65)
     g.add_argument("--containment_threshold", type=float, default=1.01)
     g.add_argument(
+        "--mask_containment_threshold",
+        "--mask-containment-threshold",
+        dest="mask_containment_threshold",
+        type=float,
+        default=0.8,
+        help="Suppress a detection whose MASK is this nested inside a kept "
+        "one. On by default, unlike its box counterpart: a second girl in "
+        "front of the first nests identically by box but her mask is disjoint. "
+        ">1.0 disables (the pre-2026-08-19 behaviour). Same default as the "
+        "position stage so the audit dedupes detections the same way",
+    )
+    g.add_argument(
         "--dedupe_fill_ratio",
         type=float,
         default=2.0,
@@ -308,6 +320,7 @@ def main() -> None:
         part_containment_threshold=args.part_containment_threshold,
         iou_threshold=args.iou_threshold,
         containment_threshold=args.containment_threshold,
+        mask_containment_threshold=args.mask_containment_threshold,
         dedupe_fill_ratio=args.dedupe_fill_ratio,
         min_area_frac=args.min_area_frac,
         pad=args.pad,

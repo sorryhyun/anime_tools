@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """Build a method-agnostic typed-tag index from caption sidecars.
 
-Walks caption ``.txt`` sidecars under a source dir, classifies each
-comma-separated tag into character / copyright / artist / count via the Anima
+Walks caption ``.txt`` sidecars under a source dir, classifies each tag
+(parsed through the caption grammar — position-clause tags included) into
+character / copyright / artist / count via the Anima
 Tagger vocab (artist additionally by the ``@`` prefix, which is exact and not
 limited by the vocab's frequency cutoff), and writes a single JSON index to
 ``post_image_dataset/captions/caption_index.json``::
@@ -42,6 +43,10 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from anime_tools._walk import IMAGE_EXTENSIONS, caption_key, safe_walk
+
+# The single caption grammar — never hand-split a caption (a raw split(",")
+# glues the clause header onto the previous tag: "white socks. On the left").
+from anime_tools.captions.position_clauses import parse_caption
 
 # Shared torch-free tag-shape primitives, kept in sync with the Anima Tagger
 # vocab build (anime_tools/tagger/cli/vocab.py).
@@ -200,7 +205,18 @@ def _classify(
     recover_paren: bool = True,
     recover_positional: bool = True,
 ) -> dict[str, list[str]]:
-    tags = [t.strip().lower() for t in text.split(",")]
+    # Parse through the caption grammar, never split(","): a position clause
+    # would otherwise yield a glued pseudo-tag ("white socks. on the left").
+    # Flat bag first (order preserved — the positional recovery below reads the
+    # danbooru pre-`@artist` band off it), then each clause's tags in order: a
+    # character/copyright asserted only inside a clause still belongs in the
+    # index ("which images contain X"), and appending after the bag keeps the
+    # clause tags out of the pre-artist band.
+    parsed = parse_caption(text)
+    tags = [
+        t.strip().lower()
+        for t in (*parsed.flat_tags, *(t for c in parsed.clauses for t in c.tags))
+    ]
     tags = [t for t in tags if t]
     bare = set(tags)
     out: dict[str, list[str]] = {axis: [] for axis in (*VOCAB_AXES, "artist")}

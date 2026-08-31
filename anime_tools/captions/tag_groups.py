@@ -141,6 +141,46 @@ class TagGroups:
         return out
 
 
+def _group_from_body(name: str, body: object, tag_to_group: dict[str, str]) -> TagGroup:
+    """Validate one ``name: body`` group entry and register its tags.
+
+    Shared by :func:`load_groups` (YAML) and :func:`from_dict` (snapshot) so
+    the validations — known mode, mapping body, sentinel×mode, cross-group tag
+    uniqueness — can't drift between the two paths. Mutates ``tag_to_group``.
+    """
+    if not isinstance(body, dict):
+        raise ValueError(
+            f"group {name!r}: expected a mapping with 'mode' / 'tags', "
+            f"got {type(body).__name__}"
+        )
+    mode = str(body.get("mode", "")).strip()
+    if mode not in GROUP_MODES:
+        raise ValueError(f"group {name!r}: mode={mode!r} not in {sorted(GROUP_MODES)}")
+    description = str(body.get("description", "") or "")
+    escape = tuple(str(t) for t in (body.get("escape") or []))
+    tags = tuple(str(t) for t in (body.get("tags") or []))
+    sentinel = bool(body.get("sentinel", False))
+    if sentinel and mode == "multilabel":
+        raise ValueError(
+            f"group {name!r}: sentinel=true only makes sense on softmax modes"
+        )
+
+    for t in tags:
+        existing = tag_to_group.get(t)
+        if existing is not None:
+            raise ValueError(f"tag {t!r} listed under both {existing!r} and {name!r}")
+        tag_to_group[t] = name
+
+    return TagGroup(
+        name=name,
+        mode=mode,
+        description=description,
+        escape=escape,
+        tags=tags,
+        sentinel=sentinel,
+    )
+
+
 def load_groups(path: str | Path) -> TagGroups:
     """Load a ``tag_groups.yaml`` into a :class:`TagGroups`.
 
@@ -157,83 +197,24 @@ def load_groups(path: str | Path) -> TagGroups:
     tag_to_group: dict[str, str] = {}
 
     for name, body in raw.items():
-        if not isinstance(body, dict):
-            raise ValueError(
-                f"group {name!r}: expected a mapping with 'mode' / 'tags', "
-                f"got {type(body).__name__}"
-            )
-        mode = str(body.get("mode", "")).strip()
-        if mode not in GROUP_MODES:
-            raise ValueError(
-                f"group {name!r}: mode={mode!r} not in {sorted(GROUP_MODES)}"
-            )
-        description = str(body.get("description", "") or "")
-        escape = tuple(str(t) for t in (body.get("escape") or []))
-        tags = tuple(str(t) for t in (body.get("tags") or []))
-        sentinel = bool(body.get("sentinel", False))
-        if sentinel and mode == "multilabel":
-            raise ValueError(
-                f"group {name!r}: sentinel=true only makes sense on softmax modes"
-            )
-
-        for t in tags:
-            existing = tag_to_group.get(t)
-            if existing is not None:
-                raise ValueError(
-                    f"tag {t!r} listed under both {existing!r} and {name!r}"
-                )
-            tag_to_group[t] = name
-
-        groups.append(
-            TagGroup(
-                name=name,
-                mode=mode,
-                description=description,
-                escape=escape,
-                tags=tags,
-                sentinel=sentinel,
-            )
-        )
+        groups.append(_group_from_body(name, body, tag_to_group))
 
     return TagGroups(version=version, groups=tuple(groups), tag_to_group=tag_to_group)
 
 
 def from_dict(d: dict) -> TagGroups:
-    """Inverse of :meth:`TagGroups.to_dict` — load a snapshot from JSON/YAML dict."""
+    """Inverse of :meth:`TagGroups.to_dict` — load a snapshot from JSON/YAML dict.
+
+    Applies the same per-group validations as :func:`load_groups`
+    (via :func:`_group_from_body`).
+    """
     version = int(d.get("version", 1))
     groups: list[TagGroup] = []
     tag_to_group: dict[str, str] = {}
     for name, body in d.items():
         if name == "version":
             continue
-        if not isinstance(body, dict):
-            continue
-        mode = str(body.get("mode", "")).strip()
-        if mode not in GROUP_MODES:
-            raise ValueError(
-                f"group {name!r}: mode={mode!r} not in {sorted(GROUP_MODES)}"
-            )
-        description = str(body.get("description", "") or "")
-        escape = tuple(str(t) for t in (body.get("escape") or []))
-        tags = tuple(str(t) for t in (body.get("tags") or []))
-        sentinel = bool(body.get("sentinel", False))
-        for t in tags:
-            existing = tag_to_group.get(t)
-            if existing is not None:
-                raise ValueError(
-                    f"tag {t!r} listed under both {existing!r} and {name!r}"
-                )
-            tag_to_group[t] = name
-        groups.append(
-            TagGroup(
-                name=name,
-                mode=mode,
-                description=description,
-                escape=escape,
-                tags=tags,
-                sentinel=sentinel,
-            )
-        )
+        groups.append(_group_from_body(name, body, tag_to_group))
     return TagGroups(version=version, groups=tuple(groups), tag_to_group=tag_to_group)
 
 

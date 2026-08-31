@@ -33,6 +33,8 @@ import numpy as np
 import torch
 from PIL import Image
 
+from anime_tools.captions.position_clauses import parse_caption
+
 CACHE_ROOT = Path(
     os.environ.get("NEAR_TWIN_CACHE", Path.home() / ".cache" / "near_twin")
 )
@@ -52,11 +54,18 @@ def normalize_tag(tag: str) -> str:
 
 
 def read_tags(txt_path: Path) -> set[str]:
-    """Read a ``.txt`` caption sidecar → set of normalized tags ("" → empty)."""
+    """Read a ``.txt`` caption sidecar → set of normalized flat tags ("" → empty).
+
+    Parsed through the caption grammar (``position_clauses.parse_caption``), not
+    a hand ``split(",")`` — the period is the clause delimiter, so a naive split
+    would glue a clause header onto the previous tag (``"white socks. On the
+    left"``) and leak it into the tag set. Position-clause tags are excluded:
+    this is the *flat bag* as a normalized set.
+    """
     if not txt_path.is_file():
         return set()
     raw = txt_path.read_text(encoding="utf-8", errors="ignore")
-    return {normalize_tag(t) for t in raw.split(",") if t.strip()}
+    return {normalize_tag(t) for t in parse_caption(raw).flat_tags if t.strip()}
 
 
 def caption_text(txt_path: Path) -> str:
@@ -220,7 +229,12 @@ def _save_feature(cache_path: Path, f: Feature) -> None:
 
 
 def embed_members(
-    embedder: Embedder, members: list[Member], batch_size: int, num_workers: int = 4
+    embedder: Embedder,
+    members: list[Member],
+    batch_size: int,
+    num_workers: int = 4,
+    *,
+    root: Path | None = None,
 ) -> dict[str, Feature]:
     """Load cached features; embed + cache any misses once via ``embedder``.
 
@@ -230,16 +244,28 @@ def embed_members(
     writes are handed to a thread pool — so CPU I/O, the host→device copy, and
     the GPU forward overlap instead of running serially.
 
-    Returned dict is keyed by member ``stem`` (the pipeline enforces unique
-    stems across the tree); a member whose image fails to decode is omitted.
+    With ``root`` given, the returned dict is keyed by each member's image path
+    relative to it (POSIX string) — pass the tree's source dir whenever members
+    can span subfolders, since nothing enforces unique stems tree-wide and two
+    subfolders' ``1.webp`` would otherwise silently share one entry. Without
+    ``root`` the key is the bare ``stem`` (legacy — only safe when the caller's
+    member scope guarantees unique stems, e.g. one flat artist dir). A member
+    whose image fails to decode is omitted. The on-disk cache is unaffected:
+    it is already keyed by parent-dir hash + stem.
     """
+
+    def _key(m: Member) -> str:
+        if root is None:
+            return m.stem
+        return m.image_path.relative_to(root).as_posix()
+
     feats: dict[str, Feature] = {}
     todo: list[Member] = []
     for m in members:
         cp = _cache_path(m)
         if cp.is_file():
             with np.load(cp) as z:
-                feats[m.stem] = Feature(
+                feats[_key(m)] = Feature(
                     cls=z["cls"].astype(np.float32), grid16=z["grid16"]
                 )
         else:
@@ -273,7 +299,7 @@ def embed_members(
                     )
                     continue
                 f = Feature(cls=cls_b[k], grid16=grid_b[k])
-                feats[todo[i].stem] = f
+                feats[_key(todo[i])] = f
                 saver.submit(_save_feature, _cache_path(todo[i]), f)
             pbar.update(len(idxs))
     pbar.close()

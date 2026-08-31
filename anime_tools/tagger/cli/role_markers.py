@@ -52,7 +52,7 @@ logger = logging.getLogger(__name__)
 
 _SINGLE_COUNT_NAMES = {"solo", "1girl", "1boy", "1other"}
 _MULTI_COUNT_RE = re.compile(
-    r"^(?:\d+(?:girl|boy|other)s?|multiple[_ ](?:girls|boys|others))$"
+    r"^(?:\d+\+?(?:girl|boy|other)s?|multiple[_ ](?:girls|boys|others))$"
 )
 
 

@@ -332,6 +332,32 @@ def test_files_and_ls_are_confined_to_home(client):
     assert c.get("/api/ls", params={"path": "/"}).status_code == 404
 
 
+def test_files_and_ls_reject_dotdot_traversal(client):
+    """`..` must not escape the home: `is_relative_to` is purely textual, so
+    `<home>/image_dataset/../../x` would sail through without the normpath
+    collapse `under_home` does."""
+    c, home = client
+    outside = home.parent / "gui_traversal_target.txt"
+    outside.write_text("secret")
+    try:
+        traversal = f"image_dataset/../../{outside.name}"
+        assert outside.is_file()  # the target really exists — 404 is the guard
+        assert c.get("/api/files", params={"path": traversal}).status_code == 404
+        assert (
+            c.get("/api/ls", params={"path": "image_dataset/../.."}).status_code == 404
+        )
+        # `..` that stays inside the home keeps working, as do plain paths.
+        assert (
+            c.get(
+                "/api/files", params={"path": "image_dataset/../image_dataset/a.png"}
+            ).status_code
+            == 200
+        )
+        assert c.get("/api/ls", params={"path": "image_dataset"}).status_code == 200
+    finally:
+        outside.unlink()
+
+
 def test_job_runs_streams_and_persists_values(client):
     c, _home = client
     r = c.post("/api/jobs", json={"stage": "stub", "values": {"n": 3}, "apply": True})

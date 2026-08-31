@@ -153,6 +153,28 @@ def test_positional_can_be_disabled():
     assert typed["character"] == []
 
 
+# ── position clauses parse through the grammar (never split(",")) ────────────
+
+
+def test_claused_caption_parses_through_the_grammar():
+    # A raw split(",") used to glue the clause header onto the previous tag
+    # ("white socks. on the left") and leave the clause's last tag carrying the
+    # terminating period ("kasane teto."), so both missed the vocab. Parsed
+    # through the grammar, the flat bag classifies exactly as before and a
+    # character asserted inside a clause still lands in the index.
+    typed = bci._classify(
+        "safe, 1girl, hatsune miku, vocaloid, @sincos, white socks. "
+        "On the left, hatsune miku, twintails. On the right, kasane teto.",
+        {**VSETS, "character": {"hatsune miku", "kasane teto"}},
+    )
+    assert typed["character"] == ["hatsune miku", "kasane teto"]
+    assert typed["copyright"] == ["vocaloid"]
+    assert typed["artist"] == ["@sincos"]
+    assert typed["count"] == ["1girl"]
+    # No glued pseudo-tag reached any axis.
+    assert all("." not in t and "on the" not in t for ts in typed.values() for t in ts)
+
+
 # ── `original` sole-copyright clears characters (OC images) ─────────────────
 
 

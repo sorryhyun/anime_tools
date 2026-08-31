@@ -45,6 +45,18 @@ class RemovalPlan:
     blocked: Mapping[str, str] = field(default_factory=dict)
 
 
+def _cmp_key(tag: str) -> str:
+    """Comparison key for matching a bag tag against a clause/tagger tag.
+
+    Underscores fold to spaces because the two sides can disagree on form: the
+    tagger (and thus every clause it proposes, plus ``kept``/``scores`` keys and
+    the vocabulary's group map) emits the canonical space form, while a caption
+    may hold the underscore form (``speech_bubble``). Keys only — what gets
+    written back into the caption is always the original tag text.
+    """
+    return tag.strip().lower().replace("_", " ")
+
+
 def _score_of(
     scores: Mapping[str, float], kept: Mapping[str, float], tag: str
 ) -> float:
@@ -88,12 +100,12 @@ def plan_bag_removals(
     cfg = vocabulary.clause_groups
     bag: dict[str, str] = {}
     for tag in flat_tags:
-        bag.setdefault(tag.strip().lower(), tag)
+        bag.setdefault(_cmp_key(tag), tag)
 
     where: dict[str, list[int]] = {}
     for i, tags in enumerate(clause_tags):
         for tag in tags:
-            where.setdefault(tag.strip().lower(), []).append(i)
+            where.setdefault(_cmp_key(tag), []).append(i)
 
     # Census of the bag: which tags are characters (rule 1) and how many values
     # of each invariant group it names (rule 3).

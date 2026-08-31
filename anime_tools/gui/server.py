@@ -545,9 +545,13 @@ def create_app(
 
     @app.get("/api/files")
     def files(path: str) -> FileResponse:
-        p = resolve_path(path)
-        home = curation_home()
-        if not p.is_relative_to(home) or not p.is_file():
+        # under_home collapses ".." before the containment test — resolve_path +
+        # is_relative_to alone is purely textual and lets traversal through.
+        try:
+            p = D.under_home(path)
+        except D.DatasetError as e:
+            raise HTTPException(404, "not found") from e
+        if not p.is_file():
             raise HTTPException(404, "not found")
         mime = mimetypes.guess_type(p.name)[0] or "application/octet-stream"
         return FileResponse(p, media_type=mime)
@@ -556,8 +560,11 @@ def create_app(
     def ls(path: str = "") -> dict[str, Any]:
         """Directory listing for the path picker, restricted to the home tree."""
         home = curation_home()
-        p = resolve_path(path) if path else home
-        if not p.is_relative_to(home) or not p.is_dir():
+        try:
+            p = D.under_home(path) if path else home
+        except D.DatasetError as e:
+            raise HTTPException(404, "not found") from e
+        if not p.is_dir():
             raise HTTPException(404, "not found")
         entries = sorted(p.iterdir(), key=lambda e: (not e.is_dir(), e.name.lower()))
         return {

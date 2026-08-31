@@ -56,6 +56,30 @@ def test_is_count_tag():
         assert not tx.is_count_tag(t), t
 
 
+def test_multi_count_regex_copies_match_taxonomy():
+    """The re-typed ``_MULTI_COUNT_RE`` copies must stay byte-identical to the
+    canonical taxonomy pattern — a copy that drops ``\\+?`` silently stops
+    matching real tags like ``6+girls``. (Folding them into one shared import
+    is a planned refactor; until then this pins the strings.)"""
+    from pathlib import Path
+
+    from anime_tools.tagger.cli import derive_groups as dg
+    from anime_tools.tagger.cli import role_markers as rm
+
+    canonical = tx._COUNT_RE.pattern
+    assert dg._MULTI_COUNT_RE.pattern == canonical
+    assert rm._MULTI_COUNT_RE.pattern == canonical
+    # The inline copy in tagger.py (built lazily inside a method) — pinned by
+    # source text, since compiling it requires a loaded checkpoint.
+    tagger_src = (Path(tx.__file__).parents[1] / "tagger" / "tagger.py").read_text(
+        encoding="utf-8"
+    )
+    assert canonical in tagger_src
+    for pat in (dg._MULTI_COUNT_RE, rm._MULTI_COUNT_RE, tx._COUNT_RE):
+        assert pat.match("6+girls")
+        assert pat.match("multiple_girls") and pat.match("multiple girls")
+
+
 def test_caption_ratings_are_the_anima_band():
     # The one rating vocabulary: Anima's 4-class band. The tagger's ordered
     # RATINGS (class index for the rating head) must carry exactly the same

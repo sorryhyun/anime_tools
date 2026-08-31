@@ -712,6 +712,34 @@ def test_a_tag_bound_to_two_subjects_stays_in_the_bag(pipeline_bits):
     assert plan == RemovalPlan(moved=(), blocked={"maid": "multi-clause"})
 
 
+def test_underscore_bag_tag_matches_space_form_clause_tag(pipeline_bits):
+    """Form mismatch must not defeat a move: the caption may hold the
+    underscore form (``speech_bubble``) while the tagger — and thus the clause,
+    the kept/score maps and the group map — uses the space form. Comparison
+    keys fold ``_`` to `` ``; the moved tag keeps the bag's own spelling and
+    the clause text is untouched.
+    """
+    from anime_tools.stages.position_captions import (
+        ClauseVocabulary,
+        plan_bag_removals,
+    )
+
+    vocabulary = ClauseVocabulary(tag_to_group={"speech bubble": "effect"})
+    plan = plan_bag_removals(
+        ("2girls", "speech_bubble"),
+        [["speech bubble"], []],
+        ["left", "right"],
+        [{"speech bubble": 0.9}, {}],
+        [{"speech bubble": 0.9}, {"speech bubble": 0.1}],
+        vocabulary=vocabulary,
+        margin=0.25,
+    )
+    assert plan.blocked == {}
+    assert len(plan.moved) == 1
+    assert plan.moved[0].tag == "speech_bubble"  # verbatim bag spelling
+    assert plan.moved[0].position == "left"
+
+
 def test_flatten_undoes_the_rewrite(pipeline_bits):
     from anime_tools.captions.position_clauses import flatten_caption
 

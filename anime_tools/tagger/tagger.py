@@ -467,7 +467,7 @@ class AnimaTagger:
             from re import compile as _re_compile
 
             count_re = _re_compile(
-                r"^(?:\d+(?:girl|boy|other)s?|multiple[_ ](?:girls|boys|others))$"
+                r"^(?:\d+\+?(?:girl|boy|other)s?|multiple[_ ](?:girls|boys|others))$"
             )
             for e in self.tag_entries:
                 if e.name in self._single_count_names:

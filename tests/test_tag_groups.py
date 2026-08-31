@@ -119,6 +119,25 @@ def test_round_trip(tmp_path):
     assert eye1.description == eye2.description
 
 
+def test_from_dict_rejects_sentinel_on_multilabel():
+    # from_dict must apply the same validations as load_groups (shared
+    # _group_from_body): sentinel only makes sense on softmax modes.
+    with pytest.raises(ValueError, match="sentinel=true only makes sense"):
+        tg.from_dict(
+            {
+                "version": 1,
+                "a": {"mode": "multilabel", "tags": ["x"], "sentinel": True},
+            }
+        )
+
+
+def test_from_dict_rejects_non_mapping_body():
+    # A non-mapping group body used to be silently skipped by from_dict while
+    # load_groups raised; both now reject it identically.
+    with pytest.raises(ValueError, match="expected a mapping"):
+        tg.from_dict({"version": 1, "a": ["blue eyes"]})
+
+
 def test_empty_tags_allowed(tmp_path):
     """Group with no listed tags still parses — useful for committing the
     YAML schema before the corpus catches up."""

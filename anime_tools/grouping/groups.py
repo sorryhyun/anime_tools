@@ -220,7 +220,12 @@ def build_groups(
         for p in paths
     ]
     dev = embedder.device
-    feats = embed_members(embedder, members, batch_size, num_workers)
+    # Keyed by rel-posix path (not stem): two subfolders' ``1.webp`` are
+    # distinct images and must not share one embedding.
+    feats = embed_members(embedder, members, batch_size, num_workers, root=source_dir)
+
+    def _rel_key(p: Path) -> str:
+        return p.relative_to(source_dir).as_posix()
 
     groups: list[dict] = []
     gid = 0
@@ -230,10 +235,10 @@ def build_groups(
     for artist in tqdm(
         sorted(by_artist), desc="grouping", unit="artist", file=sys.stderr
     ):
-        bucket = [p for p in by_artist[artist] if p.stem in feats]
+        bucket = [p for p in by_artist[artist] if _rel_key(p) in feats]
         if len(bucket) < 2:
             continue
-        bucket_feats = [feats[p.stem] for p in bucket]
+        bucket_feats = [feats[_rel_key(p)] for p in bucket]
         cls = np.stack([f.cls for f in bucket_feats]).astype(np.float32)
         cls /= np.linalg.norm(cls, axis=1, keepdims=True) + 1e-8
         edges = _grid_match_edges(
