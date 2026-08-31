@@ -109,9 +109,20 @@ def report_root(settings: Mapping[str, Any], roots: D.Roots) -> str:
     """Where every stage's report lands, home-relative — the root only; each
     stage appends its own tail (``S.Field.report``), so no two share a
     ``--report_dir``. Blank means *beside the* ``dst`` *root*, so reports follow
-    the resized tree they describe wherever the dataset moves."""
+    the resized tree they describe wherever the dataset moves.
+
+    *Beside* stops at the curation home. A ``dst`` of one component — a bare
+    ``resized``, or the pre-workspace ``post_image_dataset`` a settings file
+    written before the workspace still pins — has the home itself for a parent,
+    and the rule would then strew ``captions/`` and ``groups/`` across the
+    project root. The workspace is where the tools write
+    (:mod:`anime_tools.workspace`), so that is the answer instead.
+    """
     got = str((settings.get(S.SETTINGS_KEY) or {}).get(S.REPORT_SETTING) or "").strip()
-    return got or PurePosixPath(D.rel_to_home(roots.dst)).parent.as_posix()
+    if got:
+        return got
+    beside = PurePosixPath(D.rel_to_home(roots.dst)).parent.as_posix()
+    return D.WS.WORKSPACE if beside in (".", "", "/") else beside
 
 
 def root_paths(roots: D.Roots) -> dict[str, str]:

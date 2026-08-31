@@ -30,6 +30,39 @@ MAX_TITLE = 80
 """The window title is client text (the panel's own translated string), so it
 is trimmed to something a title bar can hold before it reaches a script."""
 
+OWNER_VAR = "$owner"
+"""The PowerShell variable holding the dialog's owner window.
+
+Windows will not let a process that does not already own the foreground take
+it, and this one was spawned by a server behind the browser — so an *unowned*
+``ShowDialog()`` really does open, and really is invisible: a visible ``#32770``
+sitting behind Chrome, with the request blocked on it until :data:`TIMEOUT_S`.
+Giving it a topmost owner is what fixes that, and it fixes it without any
+foreground right: ``WS_EX_TOPMOST`` is a Z-order band, set through
+``SetWindowPos``, and an owned window is drawn above its owner — so the chooser
+lands on top of the browser whether or not the focus follows it.
+"""
+
+WIN_TOPMOST_OWNER = (
+    f"{OWNER_VAR} = New-Object System.Windows.Forms.Form;"
+    f"{OWNER_VAR}.TopMost = $true;"
+    f"{OWNER_VAR}.ShowInTaskbar = $false;"
+    f"{OWNER_VAR}.FormBorderStyle = 'None';"
+    f"{OWNER_VAR}.Opacity = 0;"
+    f"{OWNER_VAR}.Width = 1; {OWNER_VAR}.Height = 1;"
+    f"{OWNER_VAR}.StartPosition = 'CenterScreen';"
+    f"{OWNER_VAR}.Show(); {OWNER_VAR}.Activate();"
+)
+"""The owner :data:`OWNER_VAR` is: a one-pixel, borderless, fully transparent,
+taskbar-less window whose only job is to carry the topmost band for the real
+dialog. ``Activate`` is the *nudge* for the focus and is allowed to do nothing —
+the visibility does not depend on it. Nothing pumps messages for this form, and
+nothing needs to: ``ShowDialog`` runs its own modal loop on the same thread."""
+
+WIN_OWNER_CLOSE = f";{OWNER_VAR}.Close()"
+"""The owner outlives the dialog by one statement, so a cancel disposes of it
+too — a leaked transparent topmost window would sit over the desktop forever."""
+
 
 @dataclass(frozen=True)
 class Pick:
@@ -79,21 +112,26 @@ def _argv(kind: str, start: Path | None, title: str) -> list[str] | None:
                 "$d = New-Object System.Windows.Forms.FolderBrowserDialog;"
                 f"$d.Description = {_quote_as('powershell', title)};"
                 f"$d.SelectedPath = {q};"
-                "if ($d.ShowDialog() -eq 'OK') { [Console]::Out.Write($d.SelectedPath) }"
+                f"if ($d.ShowDialog({OWNER_VAR}) -eq 'OK')"
+                " { [Console]::Out.Write($d.SelectedPath) }"
             )
         else:
             body = (
                 "$d = New-Object System.Windows.Forms.OpenFileDialog;"
                 f"$d.Title = {_quote_as('powershell', title)};"
                 f"$d.InitialDirectory = {q};"
-                "if ($d.ShowDialog() -eq 'OK') { [Console]::Out.Write($d.FileName) }"
+                f"if ($d.ShowDialog({OWNER_VAR}) -eq 'OK')"
+                " { [Console]::Out.Write($d.FileName) }"
             )
         return [
             powershell,
             "-NoProfile",
             "-STA",
             "-Command",
-            "Add-Type -AssemblyName System.Windows.Forms;" + body,
+            "Add-Type -AssemblyName System.Windows.Forms;"
+            + WIN_TOPMOST_OWNER
+            + body
+            + WIN_OWNER_CLOSE,
         ]
 
     # X11/Wayland: a chooser without a display is a process that never returns,

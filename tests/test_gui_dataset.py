@@ -439,6 +439,20 @@ def test_groups_follow_the_report_root_setting(client, home):
     assert body["path"] == "elsewhere/groups/groups.json" and not body["missing"]
 
 
+def test_a_one_component_dst_puts_the_reports_in_the_workspace(client):
+    """Beside ``dst`` stops at the home: a ``dst`` with no parent inside it —
+    a settings file written before the workspace still pins the pre-workspace
+    ``post_image_dataset`` — would otherwise strew ``captions/`` and ``groups/``
+    across the project root."""
+    c, _ = client
+    c.put(
+        "/api/dataset/roots",
+        json={"src": "image_dataset", "dst": "post_image_dataset"},
+    )
+    assert c.get("/api/dataset/roots").json()["report_root"] == "workspace"
+    assert c.get("/api/dataset/groups").json()["path"] == "workspace/groups/groups.json"
+
+
 def test_a_missing_manifest_is_not_an_error(client):
     """The Groups stage may simply never have run — the panel says so."""
     c, _ = client

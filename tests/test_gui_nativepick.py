@@ -57,6 +57,34 @@ def test_no_chooser_and_no_display_are_both_nothing(linux, monkeypatch):
     assert NP._argv("dir", None, "t") is None
 
 
+@pytest.fixture
+def windows(monkeypatch):
+    monkeypatch.setattr(NP.sys, "platform", "win32")
+    monkeypatch.setattr(NP.shutil, "which", lambda n: rf"C:\ps\{n}.exe")
+
+
+def test_the_windows_dialog_is_owned_so_it_lands_on_top(windows):
+    """A server behind the browser has no claim on the foreground, so an
+    *unowned* dialog opens invisibly — behind Chrome, with the request blocked
+    on it. The topmost owner is what puts it in front, and it must own both
+    kinds and be closed on the way out of either."""
+    for kind, dialog in (("dir", "FolderBrowserDialog"), ("file", "OpenFileDialog")):
+        script = NP._argv(kind, None, "t")[-1]
+        assert dialog in script
+        assert f"{NP.OWNER_VAR}.TopMost = $true" in script
+        assert f"ShowDialog({NP.OWNER_VAR})" in script
+        # The owner is raised before the dialog and disposed of after it, so a
+        # cancel cannot leak a transparent topmost window over the desktop.
+        assert script.index(f"{NP.OWNER_VAR}.Show()") < script.index("ShowDialog(")
+        assert script.endswith(f"{NP.OWNER_VAR}.Close()")
+
+
+def test_windows_needs_a_powershell_to_run_the_dialog(monkeypatch):
+    monkeypatch.setattr(NP.sys, "platform", "win32")
+    monkeypatch.setattr(NP.shutil, "which", lambda n: None)
+    assert NP._argv("dir", None, "t") is None
+
+
 def test_scripted_backends_quote_their_arguments():
     # A path is data, and both of these reach a script rather than an argv.
     assert NP._quote_as("applescript", 'a"b\\c') == '"a\\"b\\\\c"'
