@@ -17,3 +17,4 @@ _archive/
 
 # GUI settings written into the curation home (= the checkout during dev).
 .anime_tools_gui.json
+.DS_Store
