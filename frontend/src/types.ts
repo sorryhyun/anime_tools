@@ -219,6 +219,17 @@ export type CaptionKind = "master" | "derived";
 /** What a tree row can select: the image itself, or one caption under it. */
 export type NodeKind = "image" | CaptionKind | "variants";
 
+/** The selection: one dataset image, and which of its files is on screen. It
+    is mirrored into the URL hash (`#rel|kind`), so a GUI link points at it. */
+export interface Sel {
+  rel: string;
+  kind: NodeKind;
+}
+
+/** The sidebar's two orderings of the same rows: the folder tree the dataset
+    is stored in, and the near-twin components the Groups stage found in it. */
+export type TreeMode = "tree" | "groups";
+
 export interface CaptionEntry {
   kind: CaptionKind;
   path: string;

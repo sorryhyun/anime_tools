@@ -1,15 +1,6 @@
 import { createEffect, createMemo, createSignal, For, on, Show } from "solid-js";
 import { api } from "../api";
-import type { DatasetGroups, DatasetItem, DatasetList, NodeKind } from "../types";
-
-export interface Sel {
-  rel: string;
-  kind: NodeKind;
-}
-
-/** The sidebar's two orderings of the same rows: the folder tree the dataset
-    is stored in, and the near-twin components the Groups stage found in it. */
-export type TreeMode = "tree" | "groups";
+import type { DatasetGroups, DatasetItem, DatasetList, NodeKind, Sel, TreeMode } from "../types";
 
 /** Folders render lazily, but one flat folder can still hold thousands of
     images; rows past this need an explicit click. */
