@@ -256,29 +256,16 @@ def test_undoing_the_clause_rewrite_drops_the_stale_sidecar(home, roots):
 
 
 def test_the_report_shapes_match_the_stages_own_replay_specs():
-    """:data:`P.SHAPES` is a copy of each CLI's ``ReplaySpec``, kept out of the
-    server process because those modules import torch. This is the assertion
-    that keeps the copy honest — the whole diff is wrong if a field name drifts.
+    """:data:`P.SHAPES` holds a copy of each CLI's ``REPLAY_SPEC``, kept out of
+    the server process because those modules import torch. The ``ReplaySpec``
+    *class* is imported, so this is now a whole-object comparison — the whole
+    diff is wrong if any field drifts, including one added later.
     """
     from anime_tools.stages.cli.audit_multiview import REPLAY_SPEC as audit
     from anime_tools.stages.cli.autotag_captions import REPLAY_SPEC as autotag
     from anime_tools.stages.cli.position_captions import REPLAY_SPEC as position
 
-    for stage_id, spec in (
-        ("autotag", autotag),
-        ("position", position),
-        ("audit", audit),
-    ):
-        shape = P.SHAPES[stage_id]
-        assert (shape.rows_key, shape.before, shape.after) == (
-            spec.rows_key,
-            spec.before_field,
-            spec.after_field,
-        )
-        assert shape.root == spec.target_root
-        assert shape.ok_status == spec.ok_status
-        assert shape.newline == spec.newline
-        assert shape.drop_variants == spec.drop_variants
+    assert P.SHAPES == {"autotag": autotag, "position": position, "audit": audit}
 
 
 def test_the_audit_gate_is_the_only_thing_its_replay_closes_over():

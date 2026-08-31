@@ -13,10 +13,14 @@ directory — only the guard that the file still holds what the run put there.
 
 Torch-free, like the rest of :mod:`anime_tools.gui`.
 
-The report shapes below are a copy of each stage CLI's ``ReplaySpec`` rather
+The report *shapes* below are a copy of each stage CLI's ``REPLAY_SPEC`` rather
 than an import: those live next to ``build_tag_fn`` / the SAM3 loaders, and
 importing one would pull torch into the server process (``test_boundary`` pins
-that it stays out). ``tests/test_gui_proposals.py`` compares the two copies.
+that it stays out). Only the three instances are copied — the
+:class:`~anime_tools.stages.replay.ReplaySpec` class itself, the report reader
+and the drift ladder come from :mod:`anime_tools.stages.replay`, which is
+torch-free by construction. ``tests/test_gui_proposals.py`` compares the copies
+against the originals field for field.
 """
 
 from __future__ import annotations
@@ -28,50 +32,66 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
-from anime_tools._json import read_json
 from anime_tools.gui import dataset as D
+from anime_tools.stages._caption_io import read_caption
+from anime_tools.stages.replay import (
+    ReplaySpec,
+    StaleReportError,
+    apply_one,
+    load_report,
+    report_rows,
+)
 
 # Statuses a replayed row carries (``stages.replay.ReplayRow``), as opposed to
 # the source stage's own vocabulary. Both mean "this row is a real proposal".
 _REPLAY_OK = ("written", "would-write")
 
 
-@dataclass(frozen=True)
-class Shape:
-    """How to read one stage's report, and which caption it writes.
-
-    Mirrors ``anime_tools.stages.replay.ReplaySpec`` for the same stage.
-    ``root`` is the tree ``caption_path`` is relative to — ``src`` for the
-    stages that write the caption master, ``dst`` for the clause rewrite, which
-    only ever touches the derived caption.
-    """
-
-    rows_key: str
-    before: str
-    after: str
-    root: str
-    ok_status: str | None = None
-    newline: bool = False
-    drop_variants: bool = False
-
-
-SHAPES: dict[str, Shape] = {
-    "autotag": Shape("rows", "existing", "proposed", "src", ok_status="ok"),
-    "position": Shape(
-        "images",
-        "original",
-        "proposed",
-        "dst",
+SHAPES: dict[str, ReplaySpec] = {
+    "autotag": ReplaySpec(
+        stage="autotag_captions",
+        rows_key="rows",
+        stats_key="stats",
+        ok_status="ok",
+        before_field="existing",
+        after_field="proposed",
+        target_root="src",
+    ),
+    "position": ReplaySpec(
+        stage="position_captions",
+        rows_key="images",
+        stats_key="summary",
         ok_status="proposed",
+        before_field="original",
+        after_field="proposed",
+        target_root="dst",
         drop_variants=True,
     ),
     # The audit gates on verdict/confidence rather than a row status, so there
     # is no ``ok_status`` to match: a row is a proposal when it proposes text.
-    "audit": Shape("images", "caption", "proposed", "src", newline=True),
+    "audit": ReplaySpec(
+        stage="audit_multiview",
+        rows_key="images",
+        stats_key="summary",
+        before_field="caption",
+        after_field="proposed",
+        target_root="src",
+        newline=True,
+    ),
 }
+"""GUI stage id → the report shape its CLI declares. Copied, not imported."""
 
 CAPTION_KIND: dict[str, str] = {"src": "master", "dst": "derived"}
-"""Which of the two editable captions a stage's ``root`` names."""
+"""Which of the two editable captions a stage's ``target_root`` names."""
+
+# ``apply_one``'s ladder, said from the undo side: putting a caption back is an
+# apply with the two texts swapped, so its statuses need only be renamed.
+_UNDO_STATUS = {
+    "already-applied": "already-undone",
+    "missing-caption": "missing",
+    "drifted": "drifted",
+    "no-proposal": "nothing-to-restore",
+}
 
 
 class ProposalError(ValueError):
@@ -102,38 +122,34 @@ class Proposal:
 
 
 def load(path: Path) -> dict[str, Any]:
-    if not path.is_file():
-        raise ProposalError(f"report not found: {path}")
+    """The stage's own reader, with its refusal re-typed for the HTTP layer."""
     try:
-        report = read_json(path)
-    except (OSError, ValueError) as exc:
-        raise ProposalError(f"report is not readable JSON: {path} ({exc})") from exc
-    if not isinstance(report, dict):
-        raise ProposalError(f"report is not a stage report object: {path}")
-    return report
+        return load_report(path)
+    except StaleReportError as exc:
+        raise ProposalError(str(exc)) from exc
 
 
-def _rows(report: Mapping[str, Any], shape: Shape) -> list[Mapping[str, Any]]:
-    rows = report.get(shape.rows_key)
-    if not isinstance(rows, list):
-        raise ProposalError(f"report has no {shape.rows_key!r} list")
-    return [r for r in rows if isinstance(r, Mapping)]
+def _rows(report: Mapping[str, Any], shape: ReplaySpec) -> list[Mapping[str, Any]]:
+    try:
+        return report_rows(report, shape)
+    except StaleReportError as exc:
+        raise ProposalError(str(exc)) from exc
 
 
-def _texts(row: Mapping[str, Any], shape: Shape) -> tuple[str, str]:
+def _texts(row: Mapping[str, Any], shape: ReplaySpec) -> tuple[str, str]:
     """``(before, after)``, from either report dialect.
 
-    A stage's own report names them per :class:`Shape`; the report a *replay*
+    A stage's own report names them per its ``ReplaySpec``; the report a *replay*
     writes (``stages.replay.ReplayRow``) always calls them ``before``/``after``,
     and Apply is a replay, so both shapes reach here.
     """
-    before, after = row.get(shape.before), row.get(shape.after)
+    before, after = row.get(shape.before_field), row.get(shape.after_field)
     if before is None and after is None:
         before, after = row.get("before"), row.get("after")
     return str(before or "").strip(), str(after or "").strip()
 
 
-def _proposes(row: Mapping[str, Any], shape: Shape) -> bool:
+def _proposes(row: Mapping[str, Any], shape: ReplaySpec) -> bool:
     status = row.get("status")
     if status is None:
         return True
@@ -143,7 +159,7 @@ def _proposes(row: Mapping[str, Any], shape: Shape) -> bool:
 
 
 def _walk(
-    report: Mapping[str, Any], shape: Shape
+    report: Mapping[str, Any], shape: ReplaySpec
 ) -> Iterator[tuple[Mapping[str, Any], str, str]]:
     """Every row that carries a real change, with its texts."""
     for row in _rows(report, shape):
@@ -173,7 +189,7 @@ def _cached(path: str, mtime: float, roots: D.Roots, stage: str) -> dict[str, Pr
     # `mtime` is unused on purpose: it is part of the cache key, so a re-run's
     # report misses the cache instead of serving the previous run's proposals.
     shape = SHAPES[stage]
-    root = roots.src if shape.root == "src" else roots.dst
+    root = roots.src if shape.target_root == "src" else roots.dst
     out: dict[str, Proposal] = {}
     for row, before, after in _walk(load(Path(path)), shape):
         image = str(row.get("image") or "")
@@ -184,7 +200,7 @@ def _cached(path: str, mtime: float, roots: D.Roots, stage: str) -> dict[str, Pr
         out[rel] = Proposal(
             rel=rel,
             image=image,
-            kind=CAPTION_KIND[shape.root],
+            kind=CAPTION_KIND[shape.target_root],
             path=D.rel_to_home(root / caption_path) if caption_path else "",
             before=before,
             after=after,
@@ -208,7 +224,7 @@ def undo(report_path: Path, roots: D.Roots, stage: str) -> dict[str, Any]:
     shape = SHAPES.get(stage)
     if shape is None:
         raise ProposalError(f"{stage} writes no captions to undo")
-    root = roots.src if shape.root == "src" else roots.dst
+    root = roots.src if shape.target_root == "src" else roots.dst
     report = load(report_path)
     restored: list[str] = []
     removed: list[str] = []
@@ -227,35 +243,43 @@ def undo(report_path: Path, roots: D.Roots, stage: str) -> dict[str, Any]:
         except D.DatasetError:
             skipped["outside-home"] += 1
             continue
-        if not target.is_file():
-            # Absent is the undone state for a row that created its file.
-            skipped["already-undone" if not before else "missing"] += 1
-            continue
-        current = target.read_text(encoding="utf-8").strip()
-        if current == before:
-            skipped["already-undone"] += 1
-            continue
-        if current != after:
-            skipped["drifted"] += 1
-            continue
         image = str(row.get("image") or "")
         if before:
-            target.write_text(
-                before + ("\n" if shape.newline else ""), encoding="utf-8"
+            # An undo is an apply with the two texts swapped, so it is the same
+            # drift ladder (``already-applied`` now means "already back") and
+            # the same write — including dropping the variants sidecar, which
+            # wins over the caption at encode time and is just as stale against
+            # the text we are putting back.
+            status = apply_one(
+                target,
+                after,
+                before,
+                apply=True,
+                newline=shape.newline,
+                drop_variants=shape.drop_variants,
             )
+            if status != "written":
+                skipped[_UNDO_STATUS.get(status, status)] += 1
+                continue
             restored.append(image)
         else:
+            # An empty before-text was a file the run *created* (autotag's
+            # ``missing`` mode), so the inverse is a delete, not a write of
+            # nothing — but it is gated on the same two questions.
+            if not target.is_file():
+                skipped["already-undone"] += 1
+                continue
+            if read_caption(target) != after:
+                skipped["drifted"] += 1
+                continue
             target.unlink()
             removed.append(image)
-        if shape.drop_variants:
-            # The apply dropped ``{stem}.variants.txt`` because the sidecar wins
-            # over the caption at encode time; a regenerated one is just as
-            # stale against the caption we just put back.
-            from anime_tools.captions.variants import variants_sidecar_path
+            if shape.drop_variants:
+                from anime_tools.captions.variants import variants_sidecar_path
 
-            sidecar = variants_sidecar_path(target)
-            if sidecar.is_file():
-                sidecar.unlink()
+                sidecar = variants_sidecar_path(target)
+                if sidecar.is_file():
+                    sidecar.unlink()
 
     images = [*restored, *removed]
     return {

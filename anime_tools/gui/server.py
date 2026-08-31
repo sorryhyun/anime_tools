@@ -326,7 +326,7 @@ def create_app(
         return {
             "stage": job.stage,
             "apply": job.apply,
-            "kind": P.CAPTION_KIND[P.SHAPES[job.stage].root],
+            "kind": P.CAPTION_KIND[P.SHAPES[job.stage].target_root],
             "total": len(found),
             "rels": sorted(found),
         }
