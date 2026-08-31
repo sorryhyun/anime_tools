@@ -68,6 +68,18 @@ interface Artist {
   count: number;
 }
 
+/** `<dir>/<stem>` -- the manifest's rels are keyed to the *resized* tree, whose
+    files resize may have re-encoded (a `.webp` master lands as `.png`), so the
+    extension is the one part of a rel the two trees need not agree on. Same
+    stem-match `_row`'s `resized`/`mask` flags and `_sibling_image` use. */
+const stemKey = (dir: string, stem: string) => (dir ? `${dir}/${stem}` : stem);
+/** The same key off a bare rel: drop the extension, keep the directory. */
+function relStemKey(rel: string) {
+  const cut = rel.lastIndexOf("/");
+  const dot = rel.lastIndexOf(".");
+  return dot > cut + 1 ? rel.slice(0, dot) : rel;
+}
+
 /** The manifest's rels joined onto the rows the listing already has.
  *
  * The join is what keeps the two modes honest: a member the filter dropped (or
@@ -76,12 +88,18 @@ interface Artist {
  * left over is the `ungrouped` bucket, so switching modes cannot lose an image.
  */
 function regroup(items: DatasetItem[], groups?: DatasetGroups) {
-  const byRel = new Map(items.map((it) => [it.rel, it]));
+  const byRel = new Map<string, DatasetItem>();
+  for (const it of items) {
+    const k = stemKey(it.dir, it.stem);
+    if (!byRel.has(k)) byRel.set(k, it); // same-stem collision: the listing's first
+  }
   const artists: Artist[] = [];
   const seen = new Set<string>();
   const byArtist = new Map<string, Artist>();
   for (const g of groups?.groups ?? []) {
-    const rows = g.members.map((r) => byRel.get(r)).filter((x): x is DatasetItem => !!x);
+    const rows = g.members
+      .map((r) => byRel.get(relStemKey(r)))
+      .filter((x): x is DatasetItem => !!x);
     if (rows.length < 2) continue; // a component the listing cut down to nothing
     for (const r of rows) seen.add(r.rel);
     let a = byArtist.get(g.artist);
