@@ -36,7 +36,7 @@ install:  ## one-shot dev setup: bun (frontend bundler) + uv sync + git hooks
 	@echo "ready -- run 'make gui' to open the web GUI"
 sync:
 	uv sync
-gui:  ## run the web GUI from this checkout and open it in a browser
+gui:  ## run the web GUI from this checkout and open it in a chromeless app window
 	uv run anime-tools-gui --host $(GUI_HOST) --port $(GUI_PORT) --open $(GUI_ARGS)
 test:
 	uv run pytest -q $(PYTEST_ARGS)

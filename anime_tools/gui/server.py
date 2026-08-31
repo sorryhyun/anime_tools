@@ -594,6 +594,74 @@ def pick_port(host: str, preferred: int, *, tries: int = 50) -> int:
     raise SystemExit(f"no free port in {preferred}..{preferred + tries - 1} on {host}")
 
 
+_CHROMIUM_BINARIES = {
+    "darwin": (
+        "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+        "/Applications/Chromium.app/Contents/MacOS/Chromium",
+        "/Applications/Brave Browser.app/Contents/MacOS/Brave Browser",
+        "/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge",
+        "/Applications/Vivaldi.app/Contents/MacOS/Vivaldi",
+    ),
+    "win32": (
+        "chrome.exe",
+        r"C:\Program Files\Google\Chrome\Application\chrome.exe",
+        r"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe",
+        "msedge.exe",
+        r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe",
+    ),
+    "linux": (
+        "google-chrome",
+        "google-chrome-stable",
+        "chromium",
+        "chromium-browser",
+        "brave-browser",
+        "microsoft-edge",
+    ),
+}
+
+
+def _chromium_binary() -> str | None:
+    """First Chromium-family browser on this machine, or ``None``.
+
+    Only Chromium understands ``--app=URL``; anything else gets a plain tab.
+    """
+    import shutil
+    import sys
+
+    for cand in _CHROMIUM_BINARIES.get(sys.platform, _CHROMIUM_BINARIES["linux"]):
+        if os.path.isabs(cand):
+            if os.path.exists(cand):
+                return cand
+        elif (found := shutil.which(cand)) is not None:
+            return found
+    return None
+
+
+def _open_app_window(url: str) -> None:
+    """Open ``url`` as a chromeless app window, falling back to a browser tab.
+
+    ``--app=`` drops the tab strip and the omnibox, so the GUI reads as its own
+    window rather than one tab among thirty. It reuses the running browser and
+    its default profile (the process just hands the URL to the existing one and
+    exits), so there is no second session and no extra login. If no Chromium is
+    installed -- or launching one fails -- this is a normal ``webbrowser.open``.
+    """
+    import subprocess
+
+    binary = _chromium_binary()
+    if binary is not None:
+        try:
+            subprocess.Popen(
+                [binary, f"--app={url}"],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            return
+        except OSError:
+            pass
+    webbrowser.open(url)
+
+
 def _open_when_ready(host: str, port: int, url: str, *, timeout: float = 60.0) -> None:
     """Open ``url`` once the server actually accepts connections.
 
@@ -614,7 +682,7 @@ def _open_when_ready(host: str, port: int, url: str, *, timeout: float = 60.0) -
             time.sleep(0.1)
     else:
         return
-    webbrowser.open(url)
+    _open_app_window(url)
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -632,7 +700,11 @@ def main(argv: list[str] | None = None) -> None:
         help="Curation home (image_dataset/, post_image_dataset/, models/ live "
         "here). Default: $ANIME_TOOLS_HOME, $ANIMA_HOME, or the CWD",
     )
-    p.add_argument("--open", action="store_true", help="Open the browser on start")
+    p.add_argument(
+        "--open",
+        action="store_true",
+        help="Open the GUI on start, in a chromeless Chromium app window if there is one",
+    )
     args = p.parse_args(argv)
     if args.home:
         os.environ["ANIME_TOOLS_HOME"] = str(Path(args.home).expanduser().resolve())
