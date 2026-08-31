@@ -21,7 +21,7 @@ import re
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 
-from anime_tools.captions.taxonomy import normalize_tag
+from anime_tools.captions.taxonomy import is_artist_tag, normalize_tag
 
 # Clause headers the convention uses, in canonical emission form. ``In the`` is
 # accepted on read (it appears in a handful of hand-written captions for scene
@@ -102,6 +102,30 @@ class ParsedCaption:
         return compose_caption(self.flat_tags, self.clauses)
 
 
+@dataclass(frozen=True)
+class TagSpan:
+    """One tag's half-open ``[start, end)`` slice of the raw caption string.
+
+    The offsets are what a tag list cannot give and an editor needs: the GUI
+    draws a box around every tag *inside* the textarea the caption is typed in,
+    and a box is a pair of offsets into the string being typed. Leading and
+    trailing whitespace, the comma and the caption-terminating period all fall
+    outside the span, so the box hugs exactly the characters the parse reads as
+    the tag.
+
+    ``kind`` is ``"header"`` for a clause header (``On the left``), ``"artist"``
+    for an Anima artist handle and ``"tag"`` otherwise; ``clause`` is ``-1`` in
+    the flat bag and otherwise the index of the owning
+    :class:`PositionClause` — a header carries the index of the clause it opens.
+    """
+
+    start: int
+    end: int
+    text: str
+    kind: str
+    clause: int
+
+
 def _strip_trailing_period(tag: str) -> str:
     """Drop the caption-terminating ``.`` from the final tag of a segment.
 
@@ -135,6 +159,76 @@ def has_clauses(caption: str) -> bool:
     )
 
 
+def tag_spans(caption: str) -> tuple[TagSpan, ...]:
+    """Every tag in ``caption``, in reading order, with where it sits.
+
+    The one walk of the caption string: :func:`parse_caption` is written on top
+    of this, so a span can never disagree with the parse about where a tag ends
+    or which clause owns it.
+    """
+    spans: list[TagSpan] = []
+    clause = -1
+
+    def comma_parts(lo: int, hi: int) -> list[tuple[int, int]]:
+        """``caption[lo:hi].split(",")`` as offsets — the pieces, not the text."""
+        out: list[tuple[int, int]] = []
+        at = lo
+        while True:
+            comma = caption.find(",", at, hi)
+            out.append((at, hi if comma < 0 else comma))
+            if comma < 0:
+                return out
+            at = comma + 1
+
+    # ``_CLAUSE_SPLIT_RE.split`` drops the delimiter it matched, so the segments
+    # are the slices between the matches; walking the matches keeps each one's
+    # offset, which the split cannot give back.
+    bounds: list[tuple[int, int]] = []
+    pos = 0
+    for m in _CLAUSE_SPLIT_RE.finditer(caption):
+        bounds.append((pos, m.start()))
+        pos = m.end()
+    bounds.append((pos, len(caption)))
+
+    for i, (seg_start, seg_end) in enumerate(bounds):
+        j = 0  # index among the segment's *non-empty* tags, as ``_split_tags``
+        for lo, hi in comma_parts(seg_start, seg_end):
+            start, end = lo, hi
+            while start < end and caption[start].isspace():
+                start += 1
+            while end > start and caption[end - 1].isspace():
+                end -= 1
+            if end == start:
+                continue
+            # ``_strip_trailing_period`` only ever trims from the right, so the
+            # start holds and the shortened text re-fixes the end.
+            text = _strip_trailing_period(caption[start:end])
+            end = start + len(text)
+            # GOTCHA: trust segment position, not ``is_clause_header``, for
+            # whether a segment starts a clause — that check is case-sensitive,
+            # and a hand-written ``safe. on the left, red hair.`` must not drop
+            # its clause into the flat bag. Within a segment only the comma form
+            # introduces a header, and that stays strict.
+            header = (i > 0 and j == 0) or (
+                is_clause_header(text) and (j == 0 or i == 0)
+            )
+            j += 1
+            if header:
+                clause += 1
+            spans.append(
+                TagSpan(
+                    start=start,
+                    end=end,
+                    text=text,
+                    kind="header"
+                    if header
+                    else ("artist" if is_artist_tag(text) else "tag"),
+                    clause=clause,
+                )
+            )
+    return tuple(spans)
+
+
 def parse_caption(caption: str) -> ParsedCaption:
     """Split ``caption`` into its flat tag bag and its position clauses.
 
@@ -143,34 +237,18 @@ def parse_caption(caption: str) -> ParsedCaption:
     with no clauses round-trips to ``flat_tags`` alone, so callers can parse
     unconditionally.
     """
-    tokens: list[tuple[str, bool]] = []  # (text, is_header)
-    for i, segment in enumerate(_CLAUSE_SPLIT_RE.split(caption)):
-        parts = _split_tags(segment)
-        if not parts:
-            continue
-        # GOTCHA: trust segment position, not ``is_clause_header``, for whether
-        # a segment starts a clause — that check is case-sensitive, and a
-        # hand-written ``safe. on the left, red hair.`` must not drop its clause
-        # into the flat bag. Within a segment only the comma form introduces a
-        # header, and that stays strict.
-        for j, part in enumerate(parts):
-            header = (i > 0 and j == 0) or (
-                is_clause_header(part) and (j == 0 or i == 0)
-            )
-            tokens.append((_strip_trailing_period(part), header))
-
     flat: list[str] = []
     clauses: list[list] = []
-    for text, header in tokens:
-        if header:
-            m = _CLAUSE_HEADER_RE.match(text)
+    for span in tag_spans(caption):
+        if span.kind == "header":
+            m = _CLAUSE_HEADER_RE.match(span.text)
             prefix = f"{m.group(1).capitalize()} the " if m else "On the "
-            position = m.group(2).strip() if m else text
+            position = m.group(2).strip() if m else span.text
             clauses.append([prefix, position, []])
         elif clauses:
-            clauses[-1][2].append(text)
+            clauses[-1][2].append(span.text)
         else:
-            flat.append(text)
+            flat.append(span.text)
 
     return ParsedCaption(
         flat_tags=tuple(flat),

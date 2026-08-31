@@ -124,6 +124,14 @@ def test_item_detail_parses_the_caption_grammar(client):
     # Clauses come parsed: the browser never splits a caption on commas.
     assert master["parsed"] == {
         "flat_tags": ["1girl", "solo"],
+        # Offsets too: the boxed caption editor draws them, and they must be
+        # slices of the very text this entry carries.
+        "spans": [
+            {"start": 0, "end": 5, "kind": "tag", "clause": -1},
+            {"start": 7, "end": 11, "kind": "tag", "clause": -1},
+            {"start": 13, "end": 24, "kind": "header", "clause": 0},
+            {"start": 26, "end": 29, "kind": "tag", "clause": 0},
+        ],
         "clauses": [
             {
                 "header": "On the left",

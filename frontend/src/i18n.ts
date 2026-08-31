@@ -126,6 +126,7 @@ const en = {
     tags: (n: number) => `${n} tag${n === 1 ? "" : "s"}`,
     clauses: (n: number) => `${n} clause${n === 1 ? "" : "s"}`,
     unsaved: "unsaved preview",
+    lookUpHint: "double-click a tag to look it up",
     bag: "bag",
   },
   diff: {
@@ -370,6 +371,7 @@ const ko: Dict = {
     tags: (n) => `태그 ${n}개`,
     clauses: (n) => `절 ${n}개`,
     unsaved: "저장하지 않은 미리보기",
+    lookUpHint: "태그를 더블클릭하면 뜻을 찾아봅니다",
     bag: "태그 묶음",
   },
   diff: {
@@ -605,6 +607,7 @@ const ja: Dict = {
     tags: (n) => `タグ ${n} 個`,
     clauses: (n) => `節 ${n} 個`,
     unsaved: "未保存のプレビュー",
+    lookUpHint: "タグをダブルクリックすると意味を引きます",
     bag: "タグ袋",
   },
   diff: {
@@ -836,6 +839,7 @@ const zh: Dict = {
     tags: (n) => `${n} 个标签`,
     clauses: (n) => `${n} 个从句`,
     unsaved: "未保存的预览",
+    lookUpHint: "双击标签可查询词条",
     bag: "标签集合",
   },
   diff: {

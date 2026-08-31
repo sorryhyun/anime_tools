@@ -146,7 +146,29 @@ main { grid-column:2; grid-row:2; display:grid; grid-template-rows:auto minmax(0
    would otherwise break onto a second line one character at a time. */
 .card-h .badge, .card-h button { flex:none; white-space:nowrap }
 .hint { font-size:12px; margin:4px 0 }
-textarea.cap { min-height:78px; font:13px/1.5 var(--font-mono); margin-top:6px }
+/* The caption editor. Tags are not chips -- a caption is one string and is
+   edited as one -- so the boxes are painted on a backdrop *behind* a real
+   textarea: same font, same width, same padding, glyphs transparent, while the
+   textarea on top keeps the caret, the selection and the IME. box-shadow, not
+   border: a shadow costs no layout, so the backdrop's lines break exactly where
+   the textarea's do, and (box-decoration-break defaulting to slice) a tag split
+   across a wrap draws as one box flowing off the right margin and back in. The
+   field grows to fit instead of scrolling -- a scrollbar would narrow the
+   textarea's text column but not the backdrop's, and the two must wrap alike. */
+.capwrap { position:relative; margin-top:6px }
+.caphl { position:absolute; inset:0; z-index:0; overflow:hidden; border:1px solid transparent; border-radius:4px; padding:5px 7px; background:var(--input); color:transparent; font:13px/1.5 var(--font-mono); white-space:pre-wrap; overflow-wrap:break-word }
+textarea.cap { display:block; position:relative; z-index:1; min-height:78px; overflow:hidden; resize:none; background:transparent; font:13px/1.5 var(--font-mono); white-space:pre-wrap; overflow-wrap:break-word }
+/* One box per tag, tinted by what the grammar made of it: a clause header wears
+   the accent its clause key does and the tags it owns a fainter one, an artist
+   handle the warn tint (the same three the trainer's Qt editor paints), and the
+   box the caret is inside brightens -- the boxed editor's hovered chip. The
+   plain box is a step brighter than --line: a box sits on the input ground,
+   which is darker than the panel a chip's border is drawn against. */
+.tb { box-shadow:0 0 0 1px #565e6e; border-radius:3px; background:#ffffff0d }
+.tb.cl { box-shadow:0 0 0 1px #7aa2f759 }
+.tb.hdr { box-shadow:0 0 0 1px #7aa2f7a6; background:#7aa2f714 }
+.tb.art { box-shadow:0 0 0 1px #e0af68a6; background:#e0af6814 }
+.tb.on { box-shadow:0 0 0 1px var(--accent) }
 .parsed { margin-top:6px }
 .clause { display:flex; gap:8px; padding:3px 0; align-items:baseline }
 .ck { flex:none; min-width:12ch; color:var(--dim); font:11px var(--font-mono); text-transform:uppercase; letter-spacing:.04em }

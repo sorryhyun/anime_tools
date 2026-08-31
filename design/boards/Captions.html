@@ -2,7 +2,7 @@
 
   <div style="display: flex; flex-direction: column; gap: 5px; padding-bottom: 14px; border-bottom: 1px solid #2a2e36">
     <span style="font-size: 19px; font-weight: 600; letter-spacing: -0.01em">The caption card</span>
-    <span style="font-size: 12px; color: #8b919c; text-wrap: pretty">The one place the grammar is visible. Clause structure comes from <span style="font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; color: #c8cdd6">parse_caption</span> over the API — the browser never splits a caption itself.</span>
+    <span style="font-size: 12px; color: #8b919c; text-wrap: pretty">The one place the grammar is visible, and it is visible <em style="font-style: normal; color: #c8cdd6">in the text</em>: every tag wears a box. The boundaries are character offsets from <span style="font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; color: #c8cdd6">parse_caption</span> over the API — the browser draws where a tag ends, it never decides it.</span>
   </div>
 
   <div style="border: 1px solid #7aa2f7; border-radius: 7px; padding: 10px 12px; background: #1c1f25; display: flex; flex-direction: column">
@@ -17,38 +17,9 @@
 
     <div style="color: #8b919c; font-size: 12px; margin: 4px 0">stage output; overwritten by the next correct/position run</div>
 
-    <div style="background: #0f1115; color: #e6e6e6; border: 1px solid #4b5a80; border-radius: 4px; padding: 5px 7px; font: 13px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; margin-top: 6px; min-height: 78px; white-space: pre-wrap">1girl, solo, long_hair, school_uniform, looking_at_viewer, outdoors. On the left, a wooden bench, cherry_blossoms. In the background, a school_building.</div>
+    <div style="background: #0f1115; color: #e6e6e6; border: 1px solid #4b5a80; border-radius: 4px; padding: 5px 7px; font: 13px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; margin-top: 6px; min-height: 78px; white-space: pre-wrap"><span style="box-shadow: 0 0 0 1px #565e6e; border-radius: 3px; background: #ffffff0d">1girl</span>, <span style="box-shadow: 0 0 0 1px #565e6e; border-radius: 3px; background: #ffffff0d">solo</span>, <span style="box-shadow: 0 0 0 1px #e0af68a6; border-radius: 3px; background: #e0af6814">@rurudo</span>, <span style="box-shadow: 0 0 0 1px #565e6e; border-radius: 3px; background: #ffffff0d">long_hair</span>, <span style="box-shadow: 0 0 0 1px #7aa2f7; border-radius: 3px; background: #ffffff0d">school_uniform</span>, <span style="box-shadow: 0 0 0 1px #565e6e; border-radius: 3px; background: #ffffff0d">looking_at_viewer</span>, <span style="box-shadow: 0 0 0 1px #565e6e; border-radius: 3px; background: #ffffff0d">outdoors</span>. <span style="box-shadow: 0 0 0 1px #7aa2f7a6; border-radius: 3px; background: #7aa2f714">On the left</span>, <span style="box-shadow: 0 0 0 1px #7aa2f759; border-radius: 3px; background: #ffffff0d">a wooden bench</span>, <span style="box-shadow: 0 0 0 1px #7aa2f759; border-radius: 3px; background: #ffffff0d">cherry_blossoms</span>. <span style="box-shadow: 0 0 0 1px #7aa2f7a6; border-radius: 3px; background: #7aa2f714">In the background</span>, <span style="box-shadow: 0 0 0 1px #7aa2f759; border-radius: 3px; background: #ffffff0d">a school_building</span>.</div>
 
-    <div style="margin-top: 6px; display: flex; flex-direction: column">
-      <div style="color: #8b919c; font-size: 12px; margin: 4px 0">6 tags, 2 clauses</div>
-
-      <div style="display: flex; gap: 8px; padding: 3px 0; align-items: baseline">
-        <span style="flex-shrink: 0; min-width: 12ch; color: #8b919c; font: 11px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; text-transform: uppercase; letter-spacing: 0.04em">bag</span>
-        <span style="display: flex; flex-wrap: wrap; gap: 4px">
-          <span style="background: #ffffff0d; border: 1px solid #2a2e36; border-radius: 10px; padding: 0 7px; font-size: 12px">1girl</span>
-          <span style="background: #ffffff0d; border: 1px solid #2a2e36; border-radius: 10px; padding: 0 7px; font-size: 12px">solo</span>
-          <span style="background: #ffffff0d; border: 1px solid #2a2e36; border-radius: 10px; padding: 0 7px; font-size: 12px">long_hair</span>
-          <span style="background: #ffffff0d; border: 1px solid #2a2e36; border-radius: 10px; padding: 0 7px; font-size: 12px">school_uniform</span>
-          <span style="background: #ffffff0d; border: 1px solid #2a2e36; border-radius: 10px; padding: 0 7px; font-size: 12px">looking_at_viewer</span>
-          <span style="background: #ffffff0d; border: 1px solid #2a2e36; border-radius: 10px; padding: 0 7px; font-size: 12px">outdoors</span>
-        </span>
-      </div>
-
-      <div style="display: flex; gap: 8px; padding: 3px 0; align-items: baseline">
-        <span style="flex-shrink: 0; min-width: 12ch; color: #7aa2f7; font: 12px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; letter-spacing: 0.04em">On the left,</span>
-        <span style="display: flex; flex-wrap: wrap; gap: 4px">
-          <span style="background: #ffffff0d; border: 1px solid #2a2e36; border-radius: 10px; padding: 0 7px; font-size: 12px">a wooden bench</span>
-          <span style="background: #ffffff0d; border: 1px solid #2a2e36; border-radius: 10px; padding: 0 7px; font-size: 12px">cherry_blossoms</span>
-        </span>
-      </div>
-
-      <div style="display: flex; gap: 8px; padding: 3px 0; align-items: baseline">
-        <span style="flex-shrink: 0; min-width: 12ch; color: #7aa2f7; font: 12px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; letter-spacing: 0.04em">In the background,</span>
-        <span style="display: flex; flex-wrap: wrap; gap: 4px">
-          <span style="background: #ffffff0d; border: 1px solid #2a2e36; border-radius: 10px; padding: 0 7px; font-size: 12px">a school_building</span>
-        </span>
-      </div>
-    </div>
+    <div style="color: #8b919c; font-size: 12px; margin: 4px 0">7 tags · 2 clauses · double-click a tag to look it up</div>
 
     <div style="margin-top: 10px; border: 1px solid #2a2e36; border-left: 2px solid #e0af68; border-radius: 6px; padding: 8px 10px; background: #ffffff05">
       <div style="display: flex; align-items: center; gap: 8px">
@@ -85,15 +56,15 @@
     <div style="display: grid; grid-template-columns: 88px 1fr; gap: 6px 10px; font-size: 12px; align-items: baseline">
       <span style="font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; color: #c8cdd6">.card-h</span><span style="color: #8b919c">kind dot · kind · path · Save — the dot is the same dot as in the tree</span>
       <span style="font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; color: #c8cdd6">.hint</span><span style="color: #8b919c">what writes here and what overwrites it — stated, not implied</span>
-      <span style="font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; color: #c8cdd6">textarea.cap</span><span style="color: #8b919c">the raw text on disk, in mono; border goes <span style="font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; color: #c8cdd6">#4b5a80</span> <span style="display: inline-block; width: 18px; height: 9px; border: 1px solid #4b5a80; border-radius: 3px; vertical-align: -1px"></span> when dirty</span>
-      <span style="font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; color: #c8cdd6">.parsed</span><span style="color: #8b919c">the same string, read back through the grammar — <span style="font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; color: #c8cdd6">bag</span> is dim uppercase (a label); a position header keeps its case and takes the accent (verbatim caption text)</span>
+      <span style="font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; color: #c8cdd6">.capwrap</span><span style="color: #8b919c">the caption on disk, in mono, edited as one string — the boxes are painted on a backdrop <em style="font-style: normal; color: #c8cdd6">behind</em> a real <span style="font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; color: #c8cdd6">textarea</span>, so the caret, the selection and the IME stay the browser's. It grows to fit rather than scrolling; its border goes <span style="font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; color: #c8cdd6">#4b5a80</span> <span style="display: inline-block; width: 18px; height: 9px; border: 1px solid #4b5a80; border-radius: 3px; vertical-align: -1px"></span> when dirty</span>
+      <span style="font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; color: #c8cdd6">.tb</span><span style="color: #8b919c">one box per tag, cut at the offsets <span style="font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; color: #c8cdd6">parse_caption</span> returned — the comma between two of them belongs to neither. A plain tag is <span style="box-shadow: 0 0 0 1px #565e6e; border-radius: 3px; background: #ffffff0d; padding: 0 4px">#565e6e</span>, a clause header <span style="box-shadow: 0 0 0 1px #7aa2f7a6; border-radius: 3px; background: #7aa2f714; padding: 0 4px">#7aa2f7a6</span> with the tags it owns a step fainter <span style="box-shadow: 0 0 0 1px #7aa2f759; border-radius: 3px; background: #ffffff0d; padding: 0 4px">#7aa2f759</span>, an artist handle <span style="box-shadow: 0 0 0 1px #e0af68a6; border-radius: 3px; background: #e0af6814; padding: 0 4px">#e0af68a6</span>, and the tag the caret is inside takes the full accent <span style="box-shadow: 0 0 0 1px #7aa2f7; border-radius: 3px; background: #ffffff0d; padding: 0 4px">#7aa2f7</span></span>
       <span style="font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; color: #c8cdd6">.diff</span><span style="color: #8b919c">warn-tinted, left-barred: proposed, not written</span>
-      <span style="font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; color: #c8cdd6">.tag</span><span style="color: #8b919c">every tag is a button — one click asks the Danbooru KB what it is, and <span style="font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; color: #c8cdd6">.taglens</span> answers in a card under the chip (category, post count, wiki blurb). Same chip in the diff, so a proposed tag can be questioned before it is applied</span>
+      <span style="font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; color: #c8cdd6">.tag</span><span style="color: #8b919c">the diff's chip — a proposed tag can be questioned before it is applied. Chip or box, asking is the same gesture: <span style="font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; color: #c8cdd6">.taglens</span> answers in a card under it (category, post count, wiki blurb), one click on a chip and a double-click in the field, where a single click is how you put the caret somewhere</span>
     </div>
   </div>
 
   <div style="border-left: 2px solid #2a2e36; padding-left: 11px; font-size: 12px; color: #8b919c; text-wrap: pretty">
-    The diff and the parse render through the same <span style="font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; color: #c8cdd6">.clause</span> / <span style="font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; color: #c8cdd6">.tag</span> markup — a proposal only adds <span style="color: #9ece6a">+</span> / <span style="color: #f7768e">−</span> colour on top, so before and after are read the same way.
+    The parse is drawn <em style="font-style: normal; color: #c8cdd6">in place</em> — the caption is never taken apart into chips, because it is not stored as chips. The diff is the one place the grammar becomes a list, through <span style="font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; color: #c8cdd6">.clause</span> / <span style="font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; color: #c8cdd6">.tag</span> with <span style="color: #9ece6a">+</span> / <span style="color: #f7768e">−</span> colour on top: there, two captions are being compared rather than one edited.
   </div>
 
 </div>

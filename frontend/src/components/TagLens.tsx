@@ -11,6 +11,13 @@ import { t } from "../i18n";
     three components at two depths, and there is only ever one card open. */
 const [target, setTarget] = createSignal<{ tag: string; x: number; y: number } | null>(null);
 
+/** Open the card on `tag`, hanging from the box the caller clicked. The chip
+    below is one caller; the boxed caption editor is the other, where the "chip"
+    is a rectangle painted behind the text of a real textarea. */
+export function showTag(tag: string, from: DOMRect) {
+  setTarget({ tag, x: from.left, y: from.bottom });
+}
+
 /** The chip. Every tag in the UI goes through here, so every tag is clickable. */
 export function Tag(props: { tag: string; class?: string; prefix?: string }) {
   return (
@@ -18,10 +25,7 @@ export function Tag(props: { tag: string; class?: string; prefix?: string }) {
       type="button"
       class={`tag${props.class ? " " + props.class : ""}`}
       title={t().tag.what(props.tag)}
-      onClick={(e) => {
-        const r = e.currentTarget.getBoundingClientRect();
-        setTarget({ tag: props.tag, x: r.left, y: r.bottom });
-      }}
+      onClick={(e) => showTag(props.tag, e.currentTarget.getBoundingClientRect())}
     >
       {props.prefix}
       {props.tag}

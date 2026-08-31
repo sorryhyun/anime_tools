@@ -36,6 +36,7 @@ from anime_tools.captions.position_clauses import (
     horizontal_names,
     ordered_indices,
     parse_caption,
+    tag_spans,
 )
 
 GT = (
@@ -124,6 +125,62 @@ def test_a_lowercase_scene_tag_in_the_bag_is_not_a_header():
     parsed = parse_caption("1girl, blue hair, on the beach")
     assert parsed.flat_tags == ("1girl", "blue hair", "on the beach")
     assert not parsed.clauses
+
+
+def test_tag_spans_slice_the_caption_they_came_from():
+    """A span is offsets, so slicing the source with it must give the tag back.
+
+    This is the whole contract the GUI's boxed editor draws on: whitespace, the
+    comma and the caption-terminating period sit *outside* the span, so a box
+    hugs the tag and the punctuation between two tags stays unboxed.
+    """
+    for span in tag_spans(GT):
+        assert GT[span.start : span.end] == span.text
+        assert span.text == span.text.strip()
+        assert not span.text.endswith(".")
+    # Two adjacent tags: the ", " between them belongs to neither.
+    safe, girls = tag_spans(GT)[:2]
+    assert GT[safe.end : girls.start] == ", "
+
+
+def test_tag_spans_and_parse_caption_are_the_same_walk():
+    """``parse_caption`` is written on top of ``tag_spans``; pin that they agree.
+
+    Every caption shape the parse tests above cover, read back out of the spans:
+    a header opens its clause, the tags after it belong to it, and everything
+    before the first header is the flat bag.
+    """
+    for caption in (
+        GT,
+        "1girl, blue hair, smile",
+        "1girl, white socks, On the left, red eyes",
+        "safe, 2girls. on the left, red eyes. on the right, aqua eyes.",
+        "1girl, :d, >_<. On the left, :3.",
+        "1girl, blue hair, on the beach",
+        "",
+    ):
+        parsed = parse_caption(caption)
+        spans = tag_spans(caption)
+        assert tuple(s.text for s in spans if s.clause < 0) == parsed.flat_tags
+        # Lowercased on both sides: a span is the source slice, so it keeps a
+        # hand-written ``on the left`` verbatim, where ``header`` is the
+        # canonical emission form.
+        assert [s.text.lower() for s in spans if s.kind == "header"] == [
+            c.header.lower() for c in parsed.clauses
+        ]
+        for i, clause in enumerate(parsed.clauses):
+            body = tuple(s.text for s in spans if s.clause == i and s.kind != "header")
+            assert body == clause.tags
+
+
+def test_tag_span_kinds_name_the_artist_and_the_header():
+    kinds = {s.text: s.kind for s in tag_spans(GT)}
+    assert kinds["@rurudo"] == "artist"
+    assert kinds["On the left"] == "header"
+    assert kinds["cat girl"] == "tag"
+    # ``@ @`` is the booru eye-shape tag, not a handle — same guard the shuffle
+    # and the trainer use, so the editor cannot tint it as an artist.
+    assert [s.kind for s in tag_spans("1girl, @ @")] == ["tag", "tag"]
 
 
 def test_compose_without_clauses_is_a_plain_join():

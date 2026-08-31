@@ -230,9 +230,21 @@ export interface Clause {
   tags: string[];
 }
 
+/** One tag's half-open `[start, end)` slice of the caption text the parse was
+    run on — `position_clauses.TagSpan`. The editor draws a box around each one,
+    which is how a tag is delimited on screen without the browser ever deciding
+    where a tag ends. `clause` is -1 in the flat bag, else the clause it is in. */
+export interface Span {
+  start: number;
+  end: number;
+  kind: "tag" | "header" | "artist";
+  clause: number;
+}
+
 /** The caption grammar, already parsed server-side — never split(",") here. */
 export interface Parsed {
   flat_tags: string[];
+  spans: Span[];
   clauses: Clause[];
 }
 

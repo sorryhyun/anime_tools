@@ -78,7 +78,10 @@ dicts and says which module writes each one.
   are data.
 - **Never split a caption in the browser.** Clause structure comes from the
   server (`/api/dataset/item`, `/api/dataset/parse`) — the grammar has one
-  implementation, in `anime_tools/captions/`. No `split(",")`, ever.
+  implementation, in `anime_tools/captions/`. No `split(",")`, ever. The boxed
+  editor slices the caption, but only at offsets that parse returned as `spans`;
+  the one thing done to them here is `alignSpans`, which compares two strings
+  and invents no boundary of its own.
 - **Props are not destructured.** Solid props are getters; `const { x } = props`
   reads them once and freezes the value. Write `props.x` at the use site, and
   pass callbacks rather than setters where a component should not own state.

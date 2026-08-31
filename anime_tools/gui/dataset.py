@@ -28,7 +28,7 @@ from anime_tools import workspace as WS
 from anime_tools._env import curation_home, resolve_path
 from anime_tools._json import read_json
 from anime_tools._walk import IMAGE_EXTENSIONS, glob_images_pathlib
-from anime_tools.captions.position_clauses import parse_caption
+from anime_tools.captions.position_clauses import parse_caption, tag_spans
 from anime_tools.captions.variants import read_variants_sidecar, variants_sidecar_path
 from anime_tools.grouping.groups import MANIFEST_VERSION
 from anime_tools.gui.settings import load_settings
@@ -444,11 +444,20 @@ def _image_info(p: Path | None) -> dict[str, Any] | None:
 
 
 def parsed_caption(text: str) -> dict[str, Any]:
-    """The caption grammar as JSON: flat bag + position clauses, never a
-    ``split(",")`` on the client."""
+    """The caption grammar as JSON: flat bag + position clauses + where each tag
+    sits in the string, never a ``split(",")`` on the client.
+
+    ``spans`` is what lets the caption editor draw a box around every tag inside
+    the textarea without knowing the grammar: the browser slices the text it is
+    already holding at offsets the parse handed it.
+    """
     parsed = parse_caption(text)
     return {
         "flat_tags": list(parsed.flat_tags),
+        "spans": [
+            {"start": s.start, "end": s.end, "kind": s.kind, "clause": s.clause}
+            for s in tag_spans(text)
+        ],
         "clauses": [
             {
                 "header": c.header,
