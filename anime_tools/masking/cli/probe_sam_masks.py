@@ -32,11 +32,10 @@ from anime_tools._device import resolve_device
 from anime_tools._env import resolve_path
 from anime_tools._json import write_json
 from anime_tools._walk import walk_images
-from anime_tools.downloads import DEFAULT_SAM3_CHECKPOINT
 
 # Imported for `load_sam3`, and for the numpy<2 `np.bool` alias sam3 needs,
 # which is that module's import side effect.
-from anime_tools.masking._sam3 import load_sam3
+from anime_tools.masking._sam3 import add_checkpoint_arg, load_sam3
 from anime_tools.stages.instance_detection import Detection, mask_box_fill
 
 COLORS = [
@@ -97,7 +96,7 @@ def parse_args() -> argparse.Namespace:
         help="Processor confidence floor — low on purpose, we want to see every "
         "proposal including the ones the audit filters out",
     )
-    p.add_argument("--checkpoint", default=DEFAULT_SAM3_CHECKPOINT)
+    add_checkpoint_arg(p)
     p.add_argument("--device", default=None, help="cuda|cpu (default: auto)")
     p.add_argument("--out", default="post_image_dataset/captions/mask_probe")
     p.add_argument(

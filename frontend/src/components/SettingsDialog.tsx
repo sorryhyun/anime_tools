@@ -1,5 +1,6 @@
 import { createEffect, createMemo, createSignal, For, on, Show } from "solid-js";
 import { createStore, reconcile, unwrap } from "solid-js/store";
+import { REPORT_SETTING } from "../types";
 import type {
   DatasetRoots,
   Field,
@@ -63,7 +64,8 @@ export type SettingsTab = (typeof SETTINGS_TABS)[number][0];
 export interface SettingsOut {
   token: string | null;
   roots: Record<string, string> | null;
-  /** The stage defaults (`path_pattern` / `tagger_dir`), or null if untouched. */
+  /** The stage defaults (`path_pattern` / `tagger_dir` / `checkpoint` /
+      `report_root`), or null if untouched. */
   defaults: Record<string, string> | null;
   /** The preflight stage's form values, or null if untouched. */
   preprocess: Record<string, unknown> | null;
@@ -137,12 +139,9 @@ export function SettingsDialog(props: {
           ROOT_NAMES.map((n) => [n, rootEls[n]?.value.trim() ?? ""]),
         );
         const changed = ROOT_NAMES.some((n) => picked[n] !== (current(n)?.path ?? ""));
-        const defaults = Object.fromEntries(
-          props.fields.map((f) => [f.setting!, defEls[f.setting!]?.value.trim() ?? ""]),
-        );
-        const defChanged = props.fields.some(
-          (f) => defaults[f.setting!] !== (props.defaults[f.setting!] ?? ""),
-        );
+        const defKeys = [...props.fields.map((f) => f.setting!), REPORT_SETTING];
+        const defaults = Object.fromEntries(defKeys.map((k) => [k, defEls[k]?.value.trim() ?? ""]));
+        const defChanged = defKeys.some((k) => defaults[k] !== (props.defaults[k] ?? ""));
         const preChanged = JSON.stringify(unwrap(pre)) !== JSON.stringify(props.preprocessValues);
         props.onClose({
           token: t || null,
@@ -214,7 +213,10 @@ export function SettingsDialog(props: {
           <p class="dim" style="margin:0 0 8px">
             Filled into every stage that takes them, so no stage form re-asks. Leave one blank for
             the CLI's own default. <code>--device</code> is not here on purpose: each stage
-            auto-detects it.
+            auto-detects it. <code>report_root</code> is the one knob with no flag of its own: each
+            stage keeps its own directory under it (<code>captions/autotag</code>,{" "}
+            <code>groups/groups.json</code>), so moving the root moves them all without ever
+            pointing two stages at one report.
           </p>
         </Show>
         <div class="kv">
@@ -229,6 +231,13 @@ export function SettingsDialog(props: {
               />
             )}
           </For>
+          <SettingRow
+            label={REPORT_SETTING}
+            ref={(el) => (defEls[REPORT_SETTING] = el)}
+            value={props.defaults[REPORT_SETTING] ?? ""}
+            placeholder={props.roots?.report_root}
+            hint="where every stage's report.json lands — blank = beside the dst root"
+          />
         </div>
 
         <Show when={props.preprocess}>

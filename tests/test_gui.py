@@ -30,6 +30,13 @@ def _await_job(c, response, tries: int = 200) -> dict:
     raise AssertionError(f"job {job_id} still running")
 
 
+def _opt(argv: list[str], flag: str) -> str:
+    """The value ``flag`` carries in ``argv``. Position-free on purpose: the
+    bound fields (roots, stage defaults, the report root) all land in parser
+    order, so an added binding must not move an unrelated assertion."""
+    return argv[argv.index(flag) + 1]
+
+
 def _stage(sid: str) -> tuple[S.Stage, list[dict]]:
     st = S.BY_ID[sid]
     sc = S.schema(st)
@@ -167,14 +174,53 @@ def test_boolean_optional_action_and_positional_list():
     assert argv == ["--output-dir", "o", "a", "b"]
 
 
-def test_report_path_follows_form_value():
+def test_the_sam3_checkpoint_is_one_setting_for_three_stages():
+    """position / audit / masks_sam build the same SAM3, so they load the same
+    file — set once in Settings, never three times on three forms."""
+    required = {"config": "c.yaml", "mask_dir": "m"}
+    for stage_id in ("position", "audit", "masks_sam"):
+        _, fs = _stage(stage_id)
+        ckpt = next(f for f in fs if f["dest"] == "checkpoint")
+        assert ckpt["setting"] == "checkpoint", stage_id
+        assert ckpt["default"] == "models/sam3/sam3.pt", stage_id
+        argv = S.build_argv(
+            fs, required, settings={"checkpoint": "w.pt"}, roots={"src": "i"}
+        )
+        assert _opt(argv, "--checkpoint") == "w.pt", stage_id
+        # A path stranded in a saved form never stands in for the setting.
+        assert "--checkpoint" not in S.build_argv(
+            fs, {**required, "checkpoint": "stale.pt"}, roots={"src": "i"}
+        )
+
+
+def test_the_report_root_moves_every_report_and_splits_none():
+    """One Settings knob, one directory per stage: the tail comes off each
+    stage's own CLI default, so no two stages can be pointed at one report."""
+    tails = {}
+    for stage_id in ("resize", "autotag", "position", "audit", "groups"):
+        st, fs = _stage(stage_id)
+        dest = st.report[0]
+        f = next(x for x in fs if x["dest"] == dest)
+        assert f["report"] and f["default"].endswith(f["report"])
+        tails[stage_id] = f["report"]
+        assert _opt(S.build_argv(fs, {}, report_root="d"), f["flags"][0]) == (
+            f"d/{f['report']}"
+        )
+    assert len(set(tails.values())) == len(tails), tails
+
+
+def test_report_path_follows_the_settings_report_root():
     st, fs = _stage("autotag")
+    # No root: the CLI's own default, which is what a hand-run stage writes.
     assert (
         S.report_path(st, fs, {}) == "post_image_dataset/captions/autotag/report.json"
     )
-    assert S.report_path(st, fs, {"report_dir": "r"}) == "r/report.json"
+    assert S.report_path(st, fs, {}, "moved") == "moved/captions/autotag/report.json"
+    # A value stranded in a saved form is not consulted at all.
+    assert S.report_path(st, fs, {"report_dir": "r"}, "moved").startswith("moved/")
+    assert S.form_values(fs, {"report_dir": "r", "mode": "merge"}) == {"mode": "merge"}
     st, fs = _stage("groups")
-    assert S.report_path(st, fs, {"out": "g.json"}) == "g.json"
+    assert S.report_path(st, fs, {}, "moved") == "moved/groups/groups.json"
 
 
 # -- schema cache ---------------------------------------------------------
@@ -364,7 +410,15 @@ def test_job_runs_streams_and_persists_values(client):
     assert r.status_code == 200, r.text
     job = r.json()
     assert job["argv"][:3] == [sys.executable, "-m", "stub_stage"]
-    assert job["argv"][3:] == ["--n", "3", "--apply"]
+    # --report_dir is bound to the Settings report root, which defaults to the
+    # parent of the `dst` root rather than to the literal in the CLI default.
+    assert job["argv"][3:] == [
+        "--n",
+        "3",
+        "--apply",
+        "--report_dir",
+        "post_image_dataset/out",
+    ]
 
     with c.stream("GET", f"/api/jobs/{job['id']}/log") as s:
         body = "".join(s.iter_text())
@@ -383,17 +437,16 @@ def test_job_runs_streams_and_persists_values(client):
 
 def test_job_start_creates_the_report_directory(client):
     """The stub's own mkdir has no ``parents=True``, so a nested report dir only
-    works because ``POST /api/jobs`` made it first."""
+    works because ``POST /api/jobs`` made it first — and the run bar reads the
+    report back at the path it told the child to write."""
     c, home = client
-    job = _await_job(
-        c,
-        c.post(
-            "/api/jobs",
-            json={"stage": "stub", "values": {"report_dir": "deep/nested/reports"}},
-        ),
-    )
+    c.put("/api/settings", json={"stage_defaults": {S.REPORT_SETTING: "deep/nested"}})
+    job = _await_job(c, c.post("/api/jobs", json={"stage": "stub"}))
     assert job["state"] == "done", job
-    assert (home / "deep/nested/reports/report.json").is_file()
+    assert _opt(job["argv"], "--report_dir") == "deep/nested/out"
+    assert (home / "deep/nested/out/report.json").is_file()
+    assert c.get(f"/api/jobs/{job['id']}/report").json()["report"]["rows"] == [{"k": 1}]
+    c.put("/api/settings", json={"stage_defaults": {}})
 
 
 def test_settings_pattern_and_rel_pick_the_run_scope(client):
@@ -405,14 +458,14 @@ def test_settings_pattern_and_rel_pick_the_run_scope(client):
     batch = c.post(
         "/api/jobs", json={"stage": "stub", "values": {"n": 1, "path_pattern": "old/*"}}
     ).json()
-    assert batch["argv"][-2:] == ["--path_pattern", "sub/*"]
+    assert _opt(batch["argv"], "--path_pattern") == "sub/*"
     _await_job(c, c.get(f"/api/jobs/{batch['id']}"))
     # A bound dest is not the form's to remember, so it is not written back.
     assert c.get("/api/settings").json()["values"]["stub"] == {"n": 1}
 
     one = c.post("/api/jobs", json={"stage": "stub", "rel": "sub/b.jpg"}).json()
     # Stem, not filename: the resize step may have re-encoded it.
-    assert one["argv"][-2:] == ["--path_pattern", "sub/b.*"]
+    assert _opt(one["argv"], "--path_pattern") == "sub/b.*"
     _await_job(c, c.get(f"/api/jobs/{one['id']}"))
 
     # --device is auto-detected in the child and never sent.
@@ -475,12 +528,12 @@ def test_the_preflight_is_scoped_exactly_like_the_job(client, monkeypatch):
     c.put("/api/settings", json={"stage_defaults": {"path_pattern": "sub/*"}})
 
     one = c.post("/api/jobs", json={"stage": "stub", "rel": "a.png"}).json()
-    assert one["steps"][0]["argv"][-2:] == ["--path_pattern", "a.*"]
-    assert one["steps"][1]["argv"][-2:] == ["--path_pattern", "a.*"]
+    assert _opt(one["steps"][0]["argv"], "--path_pattern") == "a.*"
+    assert _opt(one["steps"][1]["argv"], "--path_pattern") == "a.*"
     _await_job(c, c.get(f"/api/jobs/{one['id']}"))
 
     batch = c.post("/api/jobs", json={"stage": "stub"}).json()
-    assert batch["steps"][0]["argv"][-2:] == ["--path_pattern", "sub/*"]
+    assert _opt(batch["steps"][0]["argv"], "--path_pattern") == "sub/*"
     _await_job(c, c.get(f"/api/jobs/{batch['id']}"))
 
 
@@ -761,10 +814,10 @@ def test_a_replay_reports_beside_the_run_it_replays():
     """``--from_report`` and ``--report_dir`` normally name the same directory:
     the replay must not clobber the dry run it is reading."""
     st, fs = _stage("autotag")
-    dry = S.report_path(st, fs, {"report_dir": "r"})
-    assert dry == "r/report.json"
-    replay = S.report_path(st, fs, {"report_dir": "r", S.REPLAY_FIELD: dry})
-    assert replay == f"r/{S.REPLAY_REPORT_NAME}" != dry
+    dry = S.report_path(st, fs, {}, "r")
+    assert dry == "r/captions/autotag/report.json"
+    replay = S.report_path(st, fs, {S.REPLAY_FIELD: dry}, "r")
+    assert replay == f"r/captions/autotag/{S.REPLAY_REPORT_NAME}" != dry
 
 
 def test_from_report_reaches_the_argv():

@@ -17,14 +17,30 @@ dump costs nothing).
 
 from __future__ import annotations
 
+import argparse
 from pathlib import Path
 
 import numpy as np
+
+from anime_tools.downloads import DEFAULT_SAM3_CHECKPOINT
 
 # sam3 pins numpy<2 upstream and still spells np.bool; alias it before sam3 is
 # imported anywhere. Deliberately a module-level side effect — see the docstring.
 if not hasattr(np, "bool"):
     np.bool = np.bool_
+
+
+def add_checkpoint_arg(p: argparse.ArgumentParser) -> None:
+    """``--checkpoint`` — SAM3 weights, defaulted from the download catalog.
+
+    Declared here, beside :func:`load_sam3`, because the flag and the load are
+    the same fact: every stage that builds SAM3 must name the file the ⚙
+    Settings → Models row *writes*, or the download button and the loader
+    disagree. It is also a :data:`anime_tools.gui.stages.SETTING_FIELDS` dest,
+    so the GUI hides it from the three SAM3 forms and fills it once from
+    Settings — which only works while all three spell it identically.
+    """
+    p.add_argument("--checkpoint", default=DEFAULT_SAM3_CHECKPOINT, help="SAM3 weights")
 
 
 def load_sam3(

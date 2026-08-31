@@ -20,6 +20,7 @@ import dataclasses
 
 import pytest
 
+from anime_tools.downloads import DEFAULT_SAM3_CHECKPOINT
 from anime_tools.stages.cli import (
     audit_multiview,
     autotag_captions,
@@ -77,6 +78,7 @@ def parsers() -> dict[str, dict[str, argparse.Action]]:
         ("report_dir", ("--report_dir", "--report-dir"), None),
         ("from_report", ("--from_report", "--from-report"), None),
         ("tagger_dir", ("--tagger_dir", "--tagger-dir"), None),
+        ("checkpoint", ("--checkpoint",), DEFAULT_SAM3_CHECKPOINT),
         ("device", ("--device",), None),
         ("src", ("--src",), "image_dataset"),
         ("dst", ("--dst",), "post_image_dataset/resized"),
@@ -88,6 +90,9 @@ def test_shared_flags_keep_one_spelling(parsers, dest, flags, default):
     ``--report_dir``'s default is per-stage (it names the stage's own report
     directory), so only its spelling is pinned; ``correct_captions`` requires
     its roots rather than defaulting them, and is exempt on that one point.
+    ``--checkpoint`` is declared once in ``masking/_sam3.py``, beside the
+    ``load_sam3`` it feeds, so the download button and every loader name the
+    same file.
     """
     seen = 0
     for name, acts in parsers.items():

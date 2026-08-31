@@ -16,7 +16,7 @@ import threading
 import webbrowser
 from collections.abc import Mapping
 from contextlib import asynccontextmanager
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any
 
 from fastapi import FastAPI, HTTPException, Request
@@ -97,8 +97,8 @@ def roots_for(
 
 def stage_defaults(settings: Mapping[str, Any]) -> dict[str, str]:
     """The Settings dialog's stage defaults, for the fields bound to them
-    (``S.SETTING_FIELDS``): ``path_pattern`` and ``tagger_dir`` mean the same
-    thing in every stage, so they are set once, not nine times.
+    (``S.SETTING_FIELDS``): ``path_pattern``, ``tagger_dir`` and ``checkpoint``
+    mean the same thing in every stage, so they are set once, not nine times.
 
     Blanks are dropped, so an emptied field means "the CLI's own default", not
     an empty pattern.
@@ -109,6 +109,21 @@ def stage_defaults(settings: Mapping[str, Any]) -> dict[str, str]:
         for k in S.SETTING_FIELDS.values()
         if str(got.get(k) or "").strip()
     }
+
+
+def report_root(settings: Mapping[str, Any], roots: D.Roots) -> str:
+    """Where every stage's report lands, home-relative — the root only.
+
+    Each stage appends its own tail (``S.Field.report``), so one setting moves
+    the whole set without ever giving two stages the same ``--report_dir``.
+
+    Blank in Settings — the default — means *beside the* ``dst`` *root*. The
+    reports describe the resized tree, so they should follow it: every stage CLI
+    defaults to a literal ``post_image_dataset/…`` instead, which is the right
+    answer only while the dataset sits where the default says it does.
+    """
+    got = str((settings.get(S.SETTINGS_KEY) or {}).get(S.REPORT_SETTING) or "").strip()
+    return got or PurePosixPath(D.rel_to_home(roots.dst)).parent.as_posix()
 
 
 def root_paths(roots: D.Roots) -> dict[str, str]:
@@ -160,10 +175,15 @@ def preprocess_steps(
         return []
     saved = settings.get(S.PREPROCESS_SETTINGS_KEY) or {}
     values = S.form_values(sc["fields"], saved)
+    reports = report_root(settings, roots)
     argv = S.build_argv(
-        sc["fields"], values, roots=root_paths(roots), settings=defaults
+        sc["fields"],
+        values,
+        roots=root_paths(roots),
+        settings=defaults,
+        report_root=reports,
     )
-    make_output_dirs(pre, S.report_path(pre, sc["fields"], values), roots)
+    make_output_dirs(pre, S.report_path(pre, sc["fields"], values, reports), roots)
     return [Step(pre.module, argv, pre.id)]
 
 
@@ -333,6 +353,7 @@ def create_app(
         settings = load_settings()
         roots = roots_for(settings)
         defaults = stage_defaults(settings)
+        reports = report_root(settings, roots)
         if rel:
             # Refuse rather than silently run the batch: a stage with no
             # --path_pattern has nothing to narrow, and "apply to this image"
@@ -347,10 +368,11 @@ def create_app(
                 apply=apply,
                 roots=root_paths(roots),
                 settings=defaults,
+                report_root=reports,
             )
         except ValueError as e:
             raise HTTPException(400, str(e)) from e
-        report = S.report_path(stage, sc["fields"], values)
+        report = S.report_path(stage, sc["fields"], values, reports)
         make_output_dirs(stage, report, roots)
         steps = [
             *preprocess_steps(
@@ -491,9 +513,13 @@ def create_app(
 
     @app.get("/api/dataset/roots")
     def dataset_roots() -> dict[str, Any]:
+        settings = load_settings()
         return {
-            "roots": roots_for(load_settings()).as_dict(),
+            "roots": roots_for(settings).as_dict(),
             "defaults": D.DEFAULT_ROOTS,
+            # What a blank `report_root` resolves to, so Settings can show it as
+            # the placeholder rather than re-deriving "beside dst" in TS.
+            "report_root": report_root({}, roots_for(settings)),
         }
 
     @app.put("/api/dataset/roots")
@@ -514,6 +540,7 @@ def create_app(
         return {
             "roots": roots.as_dict(),
             "defaults": D.DEFAULT_ROOTS,
+            "report_root": report_root({}, roots),
             "created": created,
         }
 

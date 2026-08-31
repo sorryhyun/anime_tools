@@ -29,6 +29,7 @@ from dataclasses import asdict, replace
 from pathlib import Path
 
 from anime_tools._env import resolve_path
+from anime_tools.masking._sam3 import add_checkpoint_arg
 from anime_tools.stages.cli._args import (
     add_apply_args,
     add_dataset_args,
@@ -37,7 +38,6 @@ from anime_tools.stages.cli._args import (
     make_progress,
 )
 from anime_tools.stages.cli._detection import (
-    add_checkpoint_arg,
     add_detection_args,
     detection_options,
 )

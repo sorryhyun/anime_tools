@@ -4,16 +4,19 @@ import type { Field, Stage, Values } from "../types";
 import { PathPicker } from "./PathPicker";
 
 /** Group fields by argparse group, preserving order. Fields bound to a dataset
-    root or to a Settings stage default (`path_pattern`, `tagger_dir`) are left
-    out: the server fills them from Settings, so no two forms can disagree about
-    them. So is `--device`, which the stage auto-detects. And so are the two the
-    run bar owns -- `--apply` (Run / Apply) and `--from_report` (how Apply
-    replays the run it is applying): a stale path left in a form field would
-    quietly turn the next Run into a replay of an old one. */
+    root, to a Settings stage default (`path_pattern`, `tagger_dir`,
+    `checkpoint`) or to the Settings `report_root` (`--report_dir`, groups'
+    `--out`) are left out: the server fills them from Settings, so no two forms
+    can disagree about them. So is `--device`, which the stage auto-detects. And
+    so are the two the run bar owns -- `--apply` (Run / Apply) and
+    `--from_report` (how Apply replays the run it is applying): a stale path
+    left in a form field would quietly turn the next Run into a replay of an
+    old one. */
 export function grouped(fields: Field[]): [string, Field[]][] {
   const m = new Map<string, Field[]>();
   for (const f of fields) {
-    if (f.dest === "apply" || f.dest === REPLAY_FIELD || f.root || f.setting || f.auto) continue;
+    if (f.dest === "apply" || f.dest === REPLAY_FIELD) continue;
+    if (f.root || f.setting || f.report || f.auto) continue;
     const g = m.get(f.group) ?? [];
     g.push(f);
     m.set(f.group, g);

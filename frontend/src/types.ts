@@ -16,9 +16,13 @@ export interface Field {
   label: string;
   /** Bound to a dataset root — filled server-side from Settings, hidden here. */
   root: RootName | null;
-  /** Bound to a Settings *stage default* (`path_pattern` / `tagger_dir`) —
-      filled server-side the same way, and hidden here for the same reason. */
+  /** Bound to a Settings *stage default* (`path_pattern` / `tagger_dir` /
+      `checkpoint`) — filled server-side the same way, and hidden here for the
+      same reason. */
   setting: string | null;
+  /** This stage's own path under the Settings `report_root` (`captions/autotag`,
+      `groups/groups.json`): bound server-side, so hidden here too. */
+  report: string | null;
   /** Auto-detected by the stage (`--device`): never shown, never sent. */
   auto: boolean;
 }
@@ -26,6 +30,10 @@ export interface Field {
 /** The argparse dest a replay-capable stage exposes. Like `--apply` it is
     GUI-managed, not typed into the form: the Apply dialog is its only route. */
 export const REPLAY_FIELD = "from_report";
+
+/** Mirrors `stages.REPORT_SETTING`: the one stage default with no argparse
+    field behind it, so the Settings dialog renders its row by hand. */
+export const REPORT_SETTING = "report_root";
 
 export interface Stage {
   id: string;
@@ -92,7 +100,8 @@ export interface Info {
 
 export interface Settings {
   values?: Record<string, Record<string, unknown>>;
-  /** `path_pattern` / `tagger_dir`: set once here, not on every stage form. */
+  /** `path_pattern` / `tagger_dir` / `checkpoint` / `report_root`: set once
+      here, not on every stage form. */
   stage_defaults?: Record<string, string>;
   /** The resize preflight's form values. It has no dock panel to carry a form,
       so its knobs are set here and apply to every stage it runs in front of. */
@@ -164,6 +173,9 @@ export type RootName = "src" | "dst" | "masks";
 export interface DatasetRoots {
   roots: Record<RootName, RootInfo>;
   defaults: Record<RootName, string>;
+  /** What a blank `report_root` resolves to (the parent of `dst`) — the
+      Settings placeholder, derived server-side. */
+  report_root: string;
 }
 
 export interface Clause {

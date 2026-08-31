@@ -237,9 +237,9 @@ export default function App() {
   };
   const markUndone = (id: string) =>
     localStorage.setItem("undone", JSON.stringify([...undone(), id].slice(-100)));
-  /** `path_pattern` / `tagger_dir`: one value each, from Settings, for every
-      stage that takes them. The server fills the flags; this is only the copy
-      the run bar and the Settings dialog show. */
+  /** `path_pattern` / `tagger_dir` / `checkpoint` / `report_root`: one value
+      each, from Settings, for every stage that takes them. The server fills the
+      flags; this is only the copy the run bar and the Settings dialog show. */
   const stageDefaults = () => settings.stage_defaults ?? {};
   /** One Field descriptor per Settings-bound dest, first stage that has it
       wins: the input's label, help and placeholder all come from the real

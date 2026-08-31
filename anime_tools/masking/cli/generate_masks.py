@@ -11,6 +11,7 @@ from PIL import Image
 from tqdm import tqdm
 
 from anime_tools._device import resolve_device
+from anime_tools._env import resolve_path
 from anime_tools.masking._masks import (
     add_device_arg,
     add_force_arg,
@@ -24,7 +25,7 @@ from anime_tools.masking._masks import (
 
 # Imported for `load_sam3`, and for the numpy<2 `np.bool` alias sam3 needs,
 # which is that module's import side effect.
-from anime_tools.masking._sam3 import load_sam3
+from anime_tools.masking._sam3 import add_checkpoint_arg, load_sam3
 from anime_tools.path_filter import filter_paths_by_glob
 
 
@@ -98,9 +99,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     add_mask_dir_args(parser)
     add_force_arg(parser)
-    parser.add_argument(
-        "--checkpoint", type=str, default=None, help="Local SAM3 checkpoint path"
-    )
+    add_checkpoint_arg(parser)
     add_device_arg(parser)
     add_workers_arg(parser, help="I/O workers for loading/saving (default: 4)")
     parser.add_argument(
@@ -138,7 +137,9 @@ def main() -> None:
 
     print("Loading SAM3 model...")
     # The processor owns the model; nothing here touches it directly.
-    _model, processor = load_sam3(args.checkpoint or None, args.device)
+    _model, processor = load_sam3(
+        resolve_path(args.checkpoint) if args.checkpoint else None, args.device
+    )
 
     def detect_union(inference_state, prompt_list, shape, threshold) -> np.ndarray:
         """OR-combine SAM3 detections for every prompt into one binary mask."""

@@ -52,7 +52,7 @@ from anime_tools._json import write_json
 
 # The one SAM3 entry point: `load_sam3`/`make_processor`, and (as this module's
 # import side effect) the numpy<2 `np.bool` alias sam3 needs before it loads.
-from anime_tools.masking._sam3 import load_sam3, make_processor
+from anime_tools.masking._sam3 import add_checkpoint_arg, load_sam3, make_processor
 from anime_tools.stages.cli._args import (
     add_apply_args,
     add_dataset_args,
@@ -61,7 +61,6 @@ from anime_tools.stages.cli._args import (
     make_progress,
 )
 from anime_tools.stages.cli._detection import (
-    add_checkpoint_arg,
     add_detection_args,
     detection_options,
 )

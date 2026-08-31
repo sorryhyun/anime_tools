@@ -17,7 +17,6 @@ from __future__ import annotations
 
 import argparse
 
-from anime_tools.downloads import DEFAULT_SAM3_CHECKPOINT
 from anime_tools.stages.instance_detection import DEFAULT_SUBJECT_PROMPT_EMBED
 
 # Flags a stage may leave out because it pins the value itself: the audit
@@ -25,11 +24,6 @@ from anime_tools.stages.instance_detection import DEFAULT_SUBJECT_PROMPT_EMBED
 # count to relax. :func:`detection_options` reads them only when declared, so
 # an omitted flag falls through to the dataclass default.
 OPTIONAL_FLAGS = ("blank_crops", "min_instances", "strict_count")
-
-
-def add_checkpoint_arg(p: argparse.ArgumentParser) -> None:
-    """``--checkpoint`` — SAM3 weights, defaulted from the download catalog."""
-    p.add_argument("--checkpoint", default=DEFAULT_SAM3_CHECKPOINT, help="SAM3 weights")
 
 
 def add_detection_args(

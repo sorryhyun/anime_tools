@@ -18,7 +18,7 @@ import os
 import subprocess
 import sys
 from dataclasses import dataclass, field
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any
 
 REPLAY_FIELD = "from_report"
@@ -56,12 +56,29 @@ SETTINGS_KEY = "stage_defaults"
 SETTING_FIELDS: dict[str, str] = {
     # argparse dest → settings key. Stage-independent knobs that mean the same
     # thing everywhere they appear, so they are set once in ⚙ Settings instead
-    # of on nine forms: which images a run touches, and which tagger checkpoint
-    # loads. Like ROOT_FIELDS these are hidden from the form and filled by
+    # of on nine forms: which images a run touches, which tagger checkpoint
+    # loads, and which SAM3 weights the three detector stages build from. Like
+    # ROOT_FIELDS these are hidden from the form and filled by
     # :func:`build_argv`.
     "path_pattern": "path_pattern",
     "tagger_dir": "tagger_dir",
+    "checkpoint": "checkpoint",
 }
+
+REPORT_SETTING = "report_root"
+"""The directory every stage's report lands under, in :data:`SETTINGS_KEY`.
+
+Not a :data:`SETTING_FIELDS` entry, because one value cannot be handed to every
+stage as-is: two stages sharing a ``--report_dir`` would have one stage's
+``--from_report`` replay read the other's report. Each stage keeps its own
+sub-path (:func:`report_subpath`) and only the *root* is the setting, so the
+whole set moves together and the four defaults stay distinct.
+
+Blank means "beside the ``dst`` root" — see ``server.report_root``. That is what
+the CLI defaults spell out (``post_image_dataset/captions/autotag`` is
+``post_image_dataset/resized``'s sibling), except they spell it as a literal, so
+a dataset moved off ``post_image_dataset/`` would leave its reports behind.
+"""
 
 SCOPE_FIELD = "path_pattern"
 """The :data:`SETTING_FIELDS` key the GUI narrows to run a stage on one image."""
@@ -250,6 +267,21 @@ def preprocess_for(stage_id: str) -> str | None:
 BY_ID: dict[str, Stage] = {s.id: s for s in STAGES}
 
 
+def report_subpath(default: str) -> str:
+    """The part of a report default that is *not* a dataset root.
+
+    Every ``--report_dir`` / ``--out`` default is written
+    ``<dataset root>/<this stage's own path>`` — ``post_image_dataset`` +
+    ``captions/autotag``, ``post_image_dataset`` + ``groups/groups.json``.
+    Dropping that first component is what lets one :data:`REPORT_SETTING` move
+    every stage's report at once while each keeps a directory of its own: the
+    root is the setting, the tail is the stage's identity, and the CLI default
+    stays the single place the tail is written down.
+    """
+    parts = PurePosixPath(default).parts
+    return PurePosixPath(*parts[1:]).as_posix() if len(parts) > 1 else default
+
+
 @dataclass
 class Field:
     dest: str
@@ -272,6 +304,10 @@ class Field:
     setting: str | None = None
     """Bound to a :data:`SETTING_FIELDS` key: hidden from the form the same
     way, filled from the Settings dialog's stage defaults."""
+    report: str | None = None
+    """This stage's own path under the :data:`REPORT_SETTING` root
+    (``captions/autotag``, ``groups/groups.json``): hidden from the form and
+    filled by :func:`build_argv` as ``<root>/<report>``."""
     auto: bool = False
     """In :data:`AUTO_FIELDS`: never shown, never sent, always auto-detected."""
 
@@ -366,10 +402,13 @@ def schema(stage: Stage) -> dict[str, Any]:
         return {**base, "available": False, "error": str(e), "fields": [], "doc": ""}
     fs = fields_of(parser)
     bound = ROOT_FIELDS.get(stage.id, {})
+    report_dest = stage.report[0] if stage.report else None
     for f in fs:
         f.root = bound.get(f.dest)
         f.setting = SETTING_FIELDS.get(f.dest)
         f.auto = f.dest in AUTO_FIELDS
+        if f.dest == report_dest and isinstance(f.default, str):
+            f.report = report_subpath(f.default)
     return {
         **base,
         "available": True,
@@ -392,6 +431,7 @@ def build_argv(
     apply: bool = False,
     roots: dict[str, str] | None = None,
     settings: dict[str, str] | None = None,
+    report_root: str | None = None,
 ) -> list[str]:
     """Turn a ``{dest: value}`` form payload into argv for ``python -m <module>``.
 
@@ -405,8 +445,11 @@ def build_argv(
     :data:`ROOT_FIELDS`, overriding whatever the form sent: the dataset roots
     are set once in Settings and no stage gets to disagree with them.
     ``settings`` does the same for :data:`SETTING_FIELDS` (``path_pattern`` /
-    ``tagger_dir``) — and it is also how the GUI narrows one run to a single
-    image, by handing in a ``path_pattern`` that matches just that file.
+    ``tagger_dir`` / ``checkpoint``) — and it is also how the GUI narrows one
+    run to a single image, by handing in a ``path_pattern`` that matches just
+    that file. ``report_root`` fills the report field the same way, joined to
+    the stage's own :attr:`Field.report` tail so the four stages keep four
+    directories under the one root.
 
     :data:`AUTO_FIELDS` (``--device``) never reach the argv at all: the stage
     auto-detects them.
@@ -421,11 +464,15 @@ def build_argv(
             if apply:
                 argv.append(f.flags[0])
             continue
-        if f.root or f.setting:
+        if f.root or f.setting or f.report:
             # Bound fields come from Settings and *only* from Settings: a stale
             # value left in a saved form must never win over the roots or the
             # pattern the user set, so `values` is not consulted at all.
-            v = (roots or {}).get(f.root or "") or (settings or {}).get(f.setting or "")
+            v = (
+                (roots or {}).get(f.root or "")
+                or (settings or {}).get(f.setting or "")
+                or (f"{report_root}/{f.report}" if report_root and f.report else "")
+            )
         else:
             v = values.get(f.dest, f.default)
         if f.kind == "bool":
@@ -480,6 +527,7 @@ def form_values(fields: list[dict[str, Any]], values: dict[str, Any]) -> dict[st
         for f in fields
         if f.get("root")
         or f.get("setting")
+        or f.get("report")
         or f.get("auto")
         or f["dest"] in AUTO_FIELDS
     }
@@ -487,9 +535,17 @@ def form_values(fields: list[dict[str, Any]], values: dict[str, Any]) -> dict[st
 
 
 def report_path(
-    stage: Stage, fields: list[dict[str, Any]], values: dict[str, Any]
+    stage: Stage,
+    fields: list[dict[str, Any]],
+    values: dict[str, Any],
+    report_root: str | None = None,
 ) -> str | None:
-    """Where this stage's report lands for the given form values (unresolved).
+    """Where this stage's report lands for this run (unresolved).
+
+    The same answer :func:`build_argv` puts on the argv, which is the point:
+    the GUI reads back exactly the file the child was told to write. The report
+    field is bound (:attr:`Field.report`), so ``values`` never carries it — with
+    no ``report_root`` this falls back to the CLI's own default.
 
     A replay (``--from_report``) writes :data:`REPLAY_REPORT_NAME` instead:
     ``--from_report`` and ``--report_dir`` normally name the same directory, so
@@ -499,7 +555,8 @@ def report_path(
         return None
     dest, filename = stage.report
     default = next((f["default"] for f in fields if f["dest"] == dest), None)
-    base = values.get(dest) or default
+    tail = next((f.get("report") for f in fields if f["dest"] == dest), None)
+    base = f"{report_root}/{tail}" if report_root and tail else default
     if not base:
         return None
     if filename and values.get(REPLAY_FIELD):
