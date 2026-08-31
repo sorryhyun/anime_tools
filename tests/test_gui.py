@@ -383,7 +383,11 @@ def client(tmp_path, monkeypatch):
     monkeypatch.setitem(S.BY_ID, "stub", fake)
     schemas["stub"] = S.schema(fake)
     app = create_app(jobs=JobManager(log_dir=tmp_path / "logs"), schemas=schemas)
-    with TestClient(app) as c:
+    # A browser on this machine, which is what the panel always is: the two
+    # routes that open or list something outside the dataset (`/api/pick`,
+    # `/api/ls`) answer a stranger differently, and `tests/test_gui_nativepick.py`
+    # is where that half is pinned.
+    with TestClient(app, client=("127.0.0.1", 4242)) as c:
         yield c, tmp_path
 
 
@@ -395,7 +399,9 @@ def test_index_and_info(client):
     assert ids == [s.id for s in S.STAGES]
 
 
-def test_files_and_ls_are_confined_to_home(client):
+def test_files_are_confined_to_the_dataset(client):
+    """Serving a *file* is bounded by the trees the panel is showing, always --
+    browsing (``/api/ls``) is the looser half, and only for a local browser."""
     c, _ = client
     assert (
         c.get("/api/files", params={"path": "image_dataset/a.png"}).status_code == 200
@@ -406,13 +412,25 @@ def test_files_and_ls_are_confined_to_home(client):
     assert c.get("/api/ls", params={"path": "image_dataset"}).json()["entries"] == [
         {"name": "a.png", "dir": False}
     ]
-    assert c.get("/api/ls", params={"path": "/"}).status_code == 404
 
 
-def test_files_and_ls_reject_dotdot_traversal(client):
-    """`..` must not escape the home: `is_relative_to` is purely textual, so
+def test_the_browser_walks_up_by_the_parent_the_server_names(client):
+    """The picker joins names onto a path but never takes one apart, so ``..``
+    is a field in the answer -- and it goes past the home, which is how a root
+    is pinned to a tree beside it."""
+    c, home = client
+    at_home = c.get("/api/ls").json()
+    assert at_home["path"] == "" and at_home["parent"] == home.parent.as_posix()
+    up = c.get("/api/ls", params={"path": at_home["parent"]}).json()
+    assert up["path"] == home.parent.as_posix()
+    assert {"name": home.name, "dir": True} in up["entries"]
+    assert c.get("/api/ls", params={"path": "/"}).json()["parent"] is None
+
+
+def test_files_reject_dotdot_traversal(client):
+    """`..` must not escape the dataset: `is_relative_to` is purely textual, so
     `<home>/image_dataset/../../x` would sail through without the normpath
-    collapse `under_home` does."""
+    collapse `reachable` does."""
     c, home = client
     outside = home.parent / "gui_traversal_target.txt"
     outside.write_text("secret")
@@ -420,8 +438,10 @@ def test_files_and_ls_reject_dotdot_traversal(client):
         traversal = f"image_dataset/../../{outside.name}"
         assert outside.is_file()  # the target really exists — 404 is the guard
         assert c.get("/api/files", params={"path": traversal}).status_code == 404
+        # The *browser* may walk out there -- this machine's file manager could
+        # too -- but reading what it finds is still refused.
         assert (
-            c.get("/api/ls", params={"path": "image_dataset/../.."}).status_code == 404
+            c.get("/api/ls", params={"path": "image_dataset/../.."}).status_code == 200
         )
         # `..` that stays inside the home keeps working, as do plain paths.
         assert (

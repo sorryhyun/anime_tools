@@ -49,6 +49,16 @@ _PATH_HINTS = (
     "onnx",
 )
 
+_DIR_HINTS = ("dir", "src", "dst", "root", "source", "tokenizer", "qwen3")
+"""Which of those name a *directory*, so the host's chooser opens in the mode
+that can return one. Everything else with a path in its name is a file --
+``--out`` is ``groups.json``, ``--from_report`` is a report, ``--checkpoint``
+and ``--prompt_embed`` are weights -- and ``--report_dir`` says which it is
+right in the flag. The two tokenizer flags are the ones that don't: ``--qwen3``
+and ``--t5_tokenizer_path`` are HF tokenizer *directories*, so they are named
+here. Derived here rather than in the browser for the same reason every other
+fact about a flag is: the form never re-types argparse."""
+
 
 SETTINGS_KEY = "stage_defaults"
 """Where :data:`SETTING_FIELDS`' values live in the settings file."""
@@ -344,6 +354,9 @@ class Field:
     help: str = ""
     required: bool = False
     path: bool = False
+    path_kind: str = "dir"
+    """``dir`` | ``file``: which chooser the ``…`` beside a ``path`` field opens
+    (see :data:`_DIR_HINTS`). Meaningless unless ``path``."""
     group: str = ""
     negate: str | None = None
     """For BooleanOptionalAction: the ``--no-…`` flag."""
@@ -424,6 +437,7 @@ def fields_of(parser: argparse.ArgumentParser) -> list[Field]:
                 help=(a.help or "").replace("%(default)s", str(default)),
                 required=bool(a.required) or not flags,
                 path=any(h in name for h in _PATH_HINTS),
+                path_kind="dir" if any(h in name for h in _DIR_HINTS) else "file",
                 group=groups.get(id(a), ""),
                 negate=negate,
                 label=label,

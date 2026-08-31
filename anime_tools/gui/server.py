@@ -9,6 +9,7 @@ opts into remote use (there is no auth — put it behind your own tunnel).
 from __future__ import annotations
 
 import argparse
+import asyncio
 import json
 import mimetypes
 import os
@@ -26,6 +27,7 @@ from anime_tools import downloads as DL
 from anime_tools._env import curation_home, models_dir, resolve_path, workspace_dir
 from anime_tools._json import read_json
 from anime_tools.gui import dataset as D
+from anime_tools.gui import nativepick as NP
 from anime_tools.gui import proposals as P
 from anime_tools.gui import stages as S
 from anime_tools.gui import tags as T
@@ -33,6 +35,43 @@ from anime_tools.gui.jobs import JobManager, Step
 from anime_tools.gui.settings import load_settings, save_settings
 
 STATIC = Path(__file__).parent / "static"
+
+
+LOOPBACK_HOSTS = frozenset({"127.0.0.1", "::1", "localhost", "::ffff:127.0.0.1"})
+"""Who may open a window on this desktop: only the machine it is drawn on."""
+
+
+def _is_loopback(request: Request) -> bool:
+    client = request.client
+    return client is not None and client.host in LOOPBACK_HOSTS
+
+
+def _within(p: Path) -> bool:
+    """Is this path one the panel may show a stranger's browser?"""
+    try:
+        D.reachable(p)
+    except D.DatasetError:
+        return False
+    return True
+
+
+def _start_dir(path: str) -> Path | None:
+    """Where the host's chooser should open, given whatever the field holds.
+
+    The field is a path that may be relative (anchored under the home, like
+    every other one), may name a file, and may not exist yet -- a root the user
+    is about to create is the ordinary case. Walking up to the first directory
+    that *is* there beats opening on the home every time someone browses from a
+    typo, and ``None`` (let the desktop decide) beats a path that isn't real.
+    """
+    try:
+        p = resolve_path(path) if path.strip() else curation_home()
+    except (OSError, ValueError):
+        return None
+    for cand in (p, *p.parents):
+        if cand.is_dir():
+            return cand
+    return None
 
 
 def _hf_token_present() -> bool:
@@ -513,10 +552,11 @@ def create_app(
     async def put_dataset_roots(request: Request) -> dict[str, Any]:
         body = await request.json()
         picked = {k: str(body.get(k) or "").strip() for k in D.DEFAULT_ROOTS}
-        roots = D.resolve_roots(picked)
+        roots = D.resolve_roots(picked, trusted=True)
         # Saving Settings is the one explicit "these are my roots" gesture, so
-        # it makes them real. resolve_roots already refused anything outside the
-        # curation home, so no mkdir can land outside it.
+        # it makes them real -- and it is the only ``trusted`` resolve, because
+        # it is what *defines* the trees the panel may read (``dataset_bases``).
+        # A root outside the home is therefore set here or nowhere.
         try:
             created = D.ensure_roots(roots)
         except OSError as e:
@@ -642,10 +682,10 @@ def create_app(
 
     @app.get("/api/files")
     def files(path: str) -> FileResponse:
-        # under_home collapses ".." before the containment test — resolve_path +
+        # reachable collapses ".." before the containment test — resolve_path +
         # is_relative_to alone is purely textual and lets traversal through.
         try:
-            p = D.under_home(path)
+            p = D.reachable(path)
         except D.DatasetError as e:
             raise HTTPException(404, "not found") from e
         if not p.is_file():
@@ -653,19 +693,75 @@ def create_app(
         mime = mimetypes.guess_type(p.name)[0] or "application/octet-stream"
         return FileResponse(p, media_type=mime)
 
+    @app.post("/api/pick")
+    async def pick_path(request: Request) -> dict[str, Any]:
+        """Open the *host's* folder/file chooser and answer with what it got.
+
+        The dialog opens on the machine running this server, so it is offered
+        only to a browser on that same machine: from anywhere else it would be
+        a window nobody can see, holding the request until it times out. Both
+        that refusal and a host with no chooser at all come back as
+        ``available: false``, which is the panel's cue to fall back to the
+        in-page ``/api/ls`` browser rather than to show an error.
+
+        The answer is written the way the settings file wants it — relative to
+        the curation home when it is under it (:func:`~anime_tools.gui.dataset.
+        rel_to_home`), absolute when it is not. A root outside the home is
+        still refused, but by the save that means it, not by the browse.
+        """
+        if not _is_loopback(request):
+            return {"available": False, "path": None}
+        body = await request.json()
+        kind = "dir" if str(body.get("kind") or "dir") != "file" else "file"
+        # A dialog is as slow as the person in front of it, so it waits on a
+        # thread; the loop keeps serving the panel behind it.
+        res = await asyncio.to_thread(
+            NP.pick,
+            kind,
+            _start_dir(str(body.get("path") or "")),
+            title=str(body.get("title") or ""),
+        )
+        return {
+            "available": res.available,
+            "path": D.rel_to_home(Path(res.path)) if res.path else None,
+        }
+
     @app.get("/api/ls")
-    def ls(path: str = "") -> dict[str, Any]:
-        """Directory listing for the path picker, restricted to the home tree."""
-        home = curation_home()
+    def ls(request: Request, path: str = "") -> dict[str, Any]:
+        """Directory listing for the fallback path browser.
+
+        The fallback has to be able to reach the same places the host's own
+        chooser can, or a host without one could never point a root at a
+        sibling tree — so for a browser on *this* machine it walks anywhere,
+        the way that machine's file manager would, and ``parent`` is how it
+        goes up (the client joins names but never takes a path apart). From
+        anywhere else it stays inside :func:`~anime_tools.gui.dataset.
+        dataset_bases`, which is the same tree the file and thumbnail routes
+        serve.
+        """
         try:
-            p = D.under_home(path) if path else home
+            p = (
+                (D.lexical(path) if _is_loopback(request) else D.reachable(path))
+                if path
+                else curation_home()
+            )
         except D.DatasetError as e:
             raise HTTPException(404, "not found") from e
         if not p.is_dir():
             raise HTTPException(404, "not found")
         entries = sorted(p.iterdir(), key=lambda e: (not e.is_dir(), e.name.lower()))
+        parent = p.parent
         return {
-            "path": str(p.relative_to(home)) if p != home else "",
+            # Home-relative inside the home, absolute outside it, "" at the home
+            # itself -- the picker joins names onto this and hands it back.
+            "path": "" if p == curation_home() else D.rel_to_home(p),
+            # None at the filesystem root, and at the edge of what this client
+            # may see: the ".." the picker draws is exactly this field.
+            "parent": (
+                D.rel_to_home(parent)
+                if parent != p and (_is_loopback(request) or _within(parent))
+                else None
+            ),
             "entries": [
                 {"name": e.name, "dir": e.is_dir()}
                 for e in entries

@@ -12,6 +12,7 @@ import type {
   Listing,
   ModelCatalog,
   Parsed,
+  PickResult,
   Proposal,
   ProposalIndex,
   Settings,
@@ -63,6 +64,10 @@ export const api = {
   /** Put back the captions an Apply wrote. */
   undo: (id: string) => req<UndoResult>(`/api/jobs/${id}/undo`, { method: "POST" }),
   ls: (path: string) => req<Listing>(`/api/ls?path=${encodeURIComponent(path)}`),
+  /** Ask the host to open its own chooser, starting from `path`. Localhost
+      only, by the server's rule — see `PickResult.available`. */
+  pick: (kind: "dir" | "file", path: string, title: string) =>
+    req<PickResult>("/api/pick", json("POST", { kind, path, title })),
   fileUrl: (path: string) => `/api/files?path=${encodeURIComponent(path)}`,
   thumbUrl: (path: string, size = 96) => `/api/thumb?path=${encodeURIComponent(path)}&size=${size}`,
 

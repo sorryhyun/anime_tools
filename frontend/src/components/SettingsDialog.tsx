@@ -14,7 +14,7 @@ import type {
 } from "../types";
 import { Dialog } from "./Dialog";
 import { FieldRow, grouped } from "./StageForm";
-import { PathPicker } from "./PathPicker";
+import { browsePath, PathPicker } from "./PathPicker";
 import { HelpToggle } from "./HelpToggle";
 import { StatusLine } from "./StatusLine";
 
@@ -112,8 +112,9 @@ export function SettingsDialog(props: {
       open and diffed on OK, so an untouched block sends nothing. */
   const [pre, setPre] = createStore<Record<string, unknown>>({});
   const [tab, setTab] = createSignal<SettingsTab>("general");
-  /** Which root row's browse button is open. The root inputs are uncontrolled,
-      so a pick is written straight onto the element the way typing would be. */
+  /** Which root row's fallback browser is open -- only the hosts with no
+      chooser of their own get here. The root inputs are uncontrolled, so a pick
+      is written straight onto the element the way typing would be. */
   const [picking, setPicking] = createSignal<RootName | null>(null);
   createEffect(
     on(
@@ -227,7 +228,14 @@ export function SettingsDialog(props: {
                     placeholder={props.roots?.defaults[n]}
                     err={gone()}
                     hint={(gone() ? t().settings.rootMissing : "") + rootHelp(n)}
-                    onPick={() => setPicking(n)}
+                    onPick={() =>
+                      void browsePath(
+                        "dir",
+                        rootEls[n]?.value ?? "",
+                        (path) => rootEls[n] && (rootEls[n]!.value = path),
+                        () => setPicking(n),
+                      )
+                    }
                   />
                 );
               }}

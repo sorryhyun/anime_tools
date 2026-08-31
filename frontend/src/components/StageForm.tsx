@@ -2,7 +2,7 @@ import { createMemo, createSignal, For, Show, Switch, Match } from "solid-js";
 import { t } from "../i18n";
 import { REPLAY_FIELD } from "../types";
 import type { Field, Stage, Values } from "../types";
-import { PathPicker } from "./PathPicker";
+import { browsePath, PathPicker } from "./PathPicker";
 
 /** Group fields by argparse group, preserving order. Fields bound to a dataset
     root, to a Settings stage default (`path_pattern`, `tagger_dir`,
@@ -124,6 +124,8 @@ export function StageForm(props: {
   help: boolean;
   onHelp: () => void;
 }) {
+  /** Which field's fallback browser is open. Only a host with no chooser of
+      its own gets here -- see `browsePath`. */
   const [picking, setPicking] = createSignal<string | null>(null);
   const groups = createMemo(() => grouped(props.stage.fields));
   const value = (f: Field) => props.values[f.dest] ?? f.default;
@@ -161,7 +163,14 @@ export function StageForm(props: {
                     value={value(f)}
                     dirty={dirty(f)}
                     setValue={(v) => props.setValue(f.dest, v)}
-                    onPick={() => setPicking(f.dest)}
+                    onPick={() =>
+                      void browsePath(
+                        f.path_kind,
+                        str(value(f)),
+                        (path) => props.setValue(f.dest, path),
+                        () => setPicking(f.dest),
+                      )
+                    }
                   />
                 )}
               </For>

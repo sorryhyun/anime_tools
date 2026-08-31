@@ -284,9 +284,9 @@ def undo(report_path: Path, roots: D.Roots, stage: str) -> dict[str, Any]:
             skipped["no-caption-path"] += 1
             continue
         try:
-            target = D.under_home(root / caption_path)
+            target = D.reachable(root / caption_path)
         except D.DatasetError:
-            skipped["outside-home"] += 1
+            skipped["outside-dataset"] += 1
             continue
         image = str(row.get("image") or "")
         if before:

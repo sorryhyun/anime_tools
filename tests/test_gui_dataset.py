@@ -209,7 +209,6 @@ def test_roots_are_settable_and_persisted(client, home):
     # A blank field means "default", not "the home directory".
     assert roots["dst"]["path"] == "workspace/resized"
     assert c.get("/api/dataset/roots").json()["roots"]["src"]["path"] == "sub"
-    assert c.put("/api/dataset/roots", json={"src": "/etc"}).status_code == 400
 
 
 def test_saving_roots_creates_the_missing_directories(client, home):
@@ -237,11 +236,41 @@ def test_saving_roots_creates_the_missing_directories(client, home):
     assert r2.json()["created"] == []
 
 
-def test_a_rejected_root_is_never_created(client, home):
-    """The containment check runs first: no mkdir outside the curation home."""
+def test_a_root_can_be_a_tree_beside_the_home(client, home):
+    """The ordinary layout: ``anime_tools/`` checked out next to ``anima_lora/``,
+    so ``src`` is ``../anima_lora/image_dataset`` and no home holds both."""
     c, _ = client
-    assert c.put("/api/dataset/roots", json={"src": "../escape"}).status_code == 400
+    sibling = home.parent / "anima_lora" / "image_dataset"
+    _png(sibling / "z.png")
+    (home.parent / "not-mine.txt").write_text("private", encoding="utf-8")
+
+    r = c.put("/api/dataset/roots", json={"src": "../anima_lora/image_dataset"})
+    assert r.status_code == 200, r.text
+    # Outside the home, so it is reported by the name it actually has.
+    assert r.json()["roots"]["src"] == {"path": sibling.as_posix(), "exists": True}
+    # The listing and the pixels follow the root out of the home...
+    assert [i["rel"] for i in c.get("/api/dataset").json()["items"]] == ["z.png"]
+    assert c.get("/api/thumb", params={"path": f"{sibling}/z.png"}).status_code == 200
+    # ...but only that tree: what is merely *near* it is still nobody's business.
+    outsider = home.parent / "not-mine.txt"
+    assert c.get("/api/files", params={"path": str(outsider)}).status_code == 404
+
+
+def test_a_root_outside_the_home_is_never_created(client, home):
+    """Pointing at a tree beside the home is the point; conjuring one is not."""
+    c, _ = client
+    r = c.put("/api/dataset/roots", json={"src": "../escape"})
+    assert r.status_code == 200, r.text
+    assert "src" not in r.json()["created"]
+    assert r.json()["roots"]["src"]["exists"] is False
     assert not (home.parent / "escape").exists()
+
+
+def test_a_query_param_cannot_point_the_listing_anywhere(client, home):
+    """A saved root widens what may be read; a request's own override never
+    does -- only the Settings save that means it gets to move that line."""
+    c, _ = client
+    assert c.get("/api/dataset", params={"src": "../elsewhere"}).status_code == 400
 
 
 def test_reading_never_creates_a_root(client, home):

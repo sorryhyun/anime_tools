@@ -11,6 +11,9 @@ export interface Field {
   help: string;
   required: boolean;
   path: boolean;
+  /** Which chooser the `…` opens — derived server-side from the flag's name,
+      like everything else about it. */
+  path_kind: "dir" | "file";
   group: string;
   negate: string | null;
   label: string;
@@ -136,8 +139,22 @@ export interface ModelCatalog {
 }
 
 export interface Listing {
+  /** Home-relative inside the curation home, absolute outside it, `""` at the
+      home itself. */
   path: string;
+  /** Where `..` goes, or null at the top of what this browser may see. The
+      server hands it over rather than the client splitting a path. */
+  parent: string | null;
   entries: { name: string; dir: boolean }[];
+}
+
+/** What the host's own chooser said. `available: false` means there was none to
+    open (a headless host, or this browser is not on the machine the server runs
+    on) and the caller falls back to the in-page `Listing` browser; `available`
+    with a null `path` is an ordinary cancel. */
+export interface PickResult {
+  available: boolean;
+  path: string | null;
 }
 
 export type Values = Record<string, unknown>;

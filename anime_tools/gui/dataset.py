@@ -44,6 +44,7 @@ from anime_tools._walk import IMAGE_EXTENSIONS, glob_images_pathlib
 from anime_tools.captions.position_clauses import parse_caption
 from anime_tools.captions.variants import read_variants_sidecar, variants_sidecar_path
 from anime_tools.grouping.groups import MANIFEST_VERSION
+from anime_tools.gui.settings import load_settings
 from anime_tools.masking._masks import mask_name
 from anime_tools.path_filter import filter_paths_by_glob
 
@@ -97,18 +98,59 @@ class Roots:
         }
 
 
-def under_home(path: str | Path) -> Path:
-    """``resolve_path`` + the same containment rule ``/api/files`` enforces."""
-    p = resolve_path(path)
-    # Collapse ".." *before* the test: ``is_relative_to`` is purely textual, so
-    # ``<home>/../elsewhere`` would otherwise sail through it — harmless while
-    # every caller only read, load-bearing now that saving roots mkdirs them.
-    # Lexical (``normpath``), not ``resolve()``: a symlinked dataset root has to
-    # keep working.
-    p = Path(os.path.normpath(p))
+def lexical(path: str | Path) -> Path:
+    """``resolve_path`` with ``..`` collapsed, and nothing else.
+
+    Lexical (``normpath``), not ``resolve()``: a dataset root is routinely a
+    symlink to where the images actually live, and following it would report
+    the tree under a name the user never typed — and would defeat the
+    containment test below, which compares the path the user gave against the
+    trees they said they use.
+    """
+    return Path(os.path.normpath(resolve_path(path)))
+
+
+def dataset_bases() -> tuple[Path, ...]:
+    """Every tree this panel may reach: the curation home, plus any dataset root
+    the **saved** settings pin outside it.
+
+    The home alone was the rule until roots were allowed out of it, and it was
+    only ever a proxy for the real one: what the panel may list, thumbnail and
+    serve is *the dataset it is showing*. A curation home beside the trainer's
+    checkout (``anime_tools/`` next to ``anima_lora/``) makes
+    ``../anima_lora/image_dataset`` the ordinary answer for ``src``, and there
+    is no home that contains both without swallowing everything else beside
+    them.
+
+    **Saved**, never a request's own root overrides: a root outside the home
+    widens what may be read, so only the explicit Settings save that means it
+    gets to do the widening (:func:`resolve_roots` with ``trusted``). A query
+    param can still name any root it likes, but it is checked against these
+    bases like every other path.
+    """
     home = curation_home()
-    if not p.is_relative_to(home):
-        raise DatasetError(f"outside the curation home: {p}")
+    bases = [home]
+    saved = load_settings().get(SETTINGS_KEY) or {}
+    for name in DEFAULT_ROOTS:
+        raw = str(saved.get(name) or "").strip()
+        if not raw:
+            continue
+        p = lexical(raw)
+        if not p.is_relative_to(home):
+            bases.append(p)
+    return tuple(bases)
+
+
+def reachable(path: str | Path) -> Path:
+    """``lexical`` + the containment rule every read enforces.
+
+    ``..`` is collapsed *before* the test: ``is_relative_to`` is purely textual,
+    so ``<home>/../elsewhere`` would otherwise sail through it.
+    """
+    p = lexical(path)
+    bases = dataset_bases()
+    if not any(p.is_relative_to(b) for b in bases):
+        raise DatasetError(f"outside the curation home and the dataset roots: {p}")
     return p
 
 
@@ -117,34 +159,56 @@ def rel_to_home(p: Path) -> str:
     return p.relative_to(home).as_posix() if p.is_relative_to(home) else p.as_posix()
 
 
-def resolve_roots(values: dict[str, Any] | None = None) -> Roots:
+def resolve_roots(
+    values: dict[str, Any] | None = None, *, trusted: bool = False
+) -> Roots:
     """Roots from ``values`` (a ``settings["dataset"]`` blob or query params),
     falling back to :data:`DEFAULT_ROOTS`. Blank strings fall back too, so an
-    emptied form field means "default", not "the home directory"."""
+    emptied form field means "default", not "the home directory".
+
+    ``trusted`` is the Settings **save** and nothing else: that request is what
+    *defines* :func:`dataset_bases`, so it cannot be checked against them —
+    a root outside the home could never be set a first time. Every other
+    caller (every read request, through ``server.roots_for``) is checked, which
+    is what keeps a query param from pointing the listing at a stranger's tree.
+    """
     got = values or {}
+    check = lexical if trusted else reachable
     paths = {}
     for name, default in DEFAULT_ROOTS.items():
         raw = got.get(name)
-        paths[name] = under_home(str(raw).strip() if raw else default)
+        paths[name] = check(str(raw).strip() if raw else default)
     return Roots(**paths)
+
+
+def owned(p: Path) -> bool:
+    """Is this a directory the panel may *create*?
+
+    The panel reads the trees you point it at and creates only what is under
+    its own home. A root outside the home is one that already exists — a
+    sibling checkout's ``image_dataset`` — and a typo in one is a missing root
+    the Settings row says is missing, not a new empty directory somewhere out
+    in the filesystem.
+    """
+    return p.is_relative_to(curation_home())
 
 
 def ensure_roots(roots: Roots) -> list[str]:
     """Create the root directories, returning the names actually made.
 
     Every root but :data:`EXPORT_ROOTS`' — an ``out`` tree that exists should
-    mean an export happened, and Export makes its own destination.
+    mean an export happened, and Export makes its own destination — and only
+    the ones this panel :func:`owned`.
 
     Only ever called from an *explicit write* — saving the Settings dialog —
     never from :func:`resolve_roots`, which every read request goes through: a
     listing must keep reporting a missing root as missing (``list_items`` says
     ``missing: True``) instead of quietly conjuring an empty tree behind a
-    typo. The paths are already :func:`under_home` by construction, so this
-    cannot mkdir outside the curation home.
+    typo.
     """
     made = []
     for name, p in roots.items():
-        if name in EXPORT_ROOTS:
+        if name in EXPORT_ROOTS or not owned(p):
             continue
         if not p.is_dir():
             p.mkdir(parents=True, exist_ok=True)
@@ -155,12 +219,14 @@ def ensure_roots(roots: Roots) -> list[str]:
 def ensure_output_dir(path: str | Path) -> Path | None:
     """Best-effort mkdir for a directory a job is about to *write* to.
 
-    Returns the path when it exists afterwards, ``None`` when it is outside the
-    curation home or could not be created — a stage that mkdirs its own output
-    (most do) or fails loudly is a better error than a 500 from here.
+    Returns the path when it exists afterwards, ``None`` when it is not one the
+    panel :func:`owned` or could not be created — a stage that mkdirs its own
+    output (most do) or fails loudly is a better error than a 500 from here.
     """
     try:
-        p = under_home(path)
+        p = reachable(path)
+        if not owned(p):
+            return None
         p.mkdir(parents=True, exist_ok=True)
     except (DatasetError, OSError):
         return None
@@ -171,7 +237,7 @@ def _rel_key(rel: str) -> Path:
     """Validate a client-supplied relative image path.
 
     Rejects absolute paths and any ``..`` segment before it is ever joined to a
-    root — ``under_home`` catches escapes too, but only after the join, and a
+    root — ``reachable`` catches escapes too, but only after the join, and a
     root can itself sit deep enough that ``..`` stays inside the home.
     """
     p = Path(str(rel).replace("\\", "/"))
@@ -369,7 +435,7 @@ def load_groups(report_root: str) -> dict[str, Any]:
     other source tree is the one failure worth naming out loud (its rels join
     onto nothing), so ``source_dir`` rides along for the client to show.
     """
-    path = under_home(f"{report_root}/{GROUPS_SUBPATH}")
+    path = reachable(f"{report_root}/{GROUPS_SUBPATH}")
     out: dict[str, Any] = {
         "path": rel_to_home(path),
         "missing": True,
@@ -534,7 +600,7 @@ def _thumb_bytes(path: str, mtime: float, size: int) -> bytes:
 
 def thumbnail(path: str, size: int = 192) -> bytes:
     """Cached WEBP thumbnail. Keyed on mtime, so an overwritten file re-renders."""
-    p = under_home(path)
+    p = reachable(path)
     if not p.is_file():
         raise DatasetError(f"not found: {path}")
     return _thumb_bytes(str(p), p.stat().st_mtime, max(16, min(int(size), 1024)))
