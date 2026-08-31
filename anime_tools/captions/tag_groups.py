@@ -56,7 +56,7 @@ Validation
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -319,6 +319,32 @@ def resolved_to_dict(resolved: tuple[ResolvedGroup, ...]) -> list[dict]:
         }
         for g in resolved
     ]
+
+
+def resolved_from_dict(raw: Iterable[Mapping]) -> tuple[ResolvedGroup, ...]:
+    """Inverse of :func:`resolved_to_dict` — read ``vocab.json[groups]`` back.
+
+    The snapshot is already projected onto vocab indices, so this is a plain
+    revival: no vocab, no YAML and no re-resolution. Absent optional keys
+    (``description``, the escape pair, ``sentinel_index``) come back as their
+    :class:`ResolvedGroup` defaults, so a group dict written by an older build
+    revives rather than raising.
+    """
+    return tuple(
+        ResolvedGroup(
+            name=str(g["name"]),
+            mode=str(g["mode"]),
+            description=str(g.get("description", "")),
+            tag_indices=tuple(int(i) for i in g.get("tag_indices") or ()),
+            tag_names=tuple(str(n) for n in g.get("tag_names") or ()),
+            escape_indices=tuple(int(i) for i in g.get("escape_indices") or ()),
+            escape_names=tuple(str(n) for n in g.get("escape_names") or ()),
+            sentinel_index=(
+                None if g.get("sentinel_index") is None else int(g["sentinel_index"])
+            ),
+        )
+        for g in raw
+    )
 
 
 def expand_category_members(

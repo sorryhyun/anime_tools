@@ -58,6 +58,7 @@ from safetensors.torch import load_file as st_load
 from anime_tools.captions import tag_groups as tg
 from anime_tools.captions import tag_rules as tr
 from anime_tools.captions.taxonomy import classify_people, is_solo_names
+from anime_tools.captions.vocab_io import load_vocab
 from anime_tools.tagger.dbv4_backend import (
     UNSUPPORTED_LOGIT,
     Dbv4Backend,
@@ -376,8 +377,7 @@ class AnimaTagger:
         self._dbv4: Dbv4Backend | None = None
         self._sidecar: SidecarHead | None = None
 
-        with open(self.ckpt_dir / "vocab.json", encoding="utf-8") as f:
-            vocab = json.load(f)
+        vocab = load_vocab(self.ckpt_dir)
         self.tag_entries: list[_TagEntry] = [
             _TagEntry(
                 name=t["name"],

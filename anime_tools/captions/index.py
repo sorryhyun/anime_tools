@@ -50,6 +50,7 @@ from anime_tools.captions.position_clauses import parse_caption
 # Shared torch-free tag-shape primitives, kept in sync with the Anima Tagger
 # vocab build (anime_tools/tagger/cli/vocab.py).
 from anime_tools.captions.taxonomy import is_artist_tag, is_count_tag, is_rating_tag
+from anime_tools.captions.vocab_io import load_vocab, names_by_category
 from anime_tools.path_filter import filter_paths_by_glob
 
 DEFAULT_VOCAB = "models/captioners/anima-tagger-dbv4/vocab.json"
@@ -123,14 +124,17 @@ def _norm_words(tag: str) -> set[str]:
 
 
 def _load_vocab_sets(vocab_path: str) -> dict[str, set[str]]:
-    with open(vocab_path, encoding="utf-8") as f:
-        vocab = json.load(f)
-    sets: dict[str, set[str]] = {axis: set() for axis in VOCAB_LOAD_AXES}
-    for entry in vocab["tags"]:
-        cat = entry.get("category")
-        if cat in sets:
-            sets[cat].add(entry["name"].strip().lower())
-    return sets
+    """``axis -> {vocab name}`` for the axes the classifier tests membership on.
+
+    Names are folded to the form caption tags arrive in (the index lowercases
+    but does not touch underscores — a vocab name and a caption tag that differ
+    by an underscore are two different tags to danbooru's own vocab).
+    """
+    return names_by_category(
+        load_vocab(vocab_path),
+        VOCAB_LOAD_AXES,
+        key=lambda n: n.strip().lower(),
+    )
 
 
 def _vocab_typed_non_copyright(tag: str, vsets: dict[str, set[str]]) -> bool:

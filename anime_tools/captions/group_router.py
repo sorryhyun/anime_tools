@@ -21,6 +21,7 @@ import torch
 import torch.nn.functional as F
 
 from anime_tools.captions.taxonomy import solo_multi_indices
+from anime_tools.captions.vocab_io import resolved_groups
 
 __all__ = [
     "GroupRouter",
@@ -109,33 +110,37 @@ class GroupRouter:
         train_multi_hot: torch.Tensor,
         device: torch.device,
     ) -> GroupRouter:
-        """Build the router from a vocab dict + the train split's multi_hot."""
+        """Build the router from a vocab dict + the train split's multi_hot.
+
+        The vocab's ``groups`` are read back through
+        :func:`~anime_tools.captions.vocab_io.resolved_groups`, so the schema of
+        a snapshotted group lives with the writer that produced it
+        (``tag_groups.resolved_to_dict``) and this method only moves the
+        surviving indices onto ``device``.
+        """
         n_tags = int(train_multi_hot.shape[1])
-        groups_raw: list[dict] = list(vocab_dict.get("groups") or [])
+        groups = resolved_groups(vocab_dict)
 
         softmax_member: list[int] = []
         softmax_groups: list[_SoftmaxGroup] = []
         sentinel_idx_list: list[int] = []
-        for g in groups_raw:
-            mode = g["mode"]
-            if mode in ("softmax_when_solo", "softmax"):
-                idxs = list(g.get("tag_indices") or [])
-                esc = list(g.get("escape_indices") or [])
+        for g in groups:
+            if g.mode in ("softmax_when_solo", "softmax"):
+                idxs = list(g.tag_indices)
                 if not idxs:
                     continue
-                sent = g.get("sentinel_index")
                 sentinel_local: int | None = None
-                if sent is not None:
-                    sentinel_local = idxs.index(int(sent))
-                    sentinel_idx_list.append(int(sent))
+                if g.sentinel_index is not None:
+                    sentinel_local = idxs.index(g.sentinel_index)
+                    sentinel_idx_list.append(g.sentinel_index)
                 softmax_member.extend(idxs)
                 softmax_groups.append(
                     _SoftmaxGroup(
-                        name=str(g["name"]),
-                        mode=mode,
+                        name=g.name,
+                        mode=g.mode,
                         tag_indices=torch.tensor(idxs, dtype=torch.long, device=device),
                         escape_indices=torch.tensor(
-                            esc, dtype=torch.long, device=device
+                            list(g.escape_indices), dtype=torch.long, device=device
                         ),
                         sentinel_local=sentinel_local,
                     )
@@ -167,13 +172,13 @@ class GroupRouter:
         # Per-tag group id over ALL groups (any mode, incl. multilabel) — drives
         # group-conditional negative weighting. tag_to_group is ≤1 group/tag so
         # no collision. Ungrouped tags get the sentinel ``n_group_slots``.
-        n_group_slots = len(groups_raw)
+        n_group_slots = len(groups)
         group_of_tag: torch.Tensor | None = None
         if n_group_slots > 0:
             got = [n_group_slots] * n_tags
-            for gid, g in enumerate(groups_raw):
-                for ti in g.get("tag_indices") or []:
-                    got[int(ti)] = gid
+            for gid, g in enumerate(groups):
+                for ti in g.tag_indices:
+                    got[ti] = gid
             group_of_tag = torch.tensor(got, dtype=torch.long, device=device)
 
         return cls(

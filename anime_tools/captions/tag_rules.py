@@ -72,23 +72,14 @@ _RESERVED_KEYS = frozenset(
 
 
 def load_rules(path: str | Path) -> TagRules:
-    """Load a ``tag_rules.yaml`` (gelcrawl format) into a :class:`TagRules`."""
-    with open(path, encoding="utf-8") as f:
-        raw = yaml.safe_load(f) or {}
+    """Load a ``tag_rules.yaml`` (gelcrawl format) into a :class:`TagRules`.
 
-    repl_map = raw.pop("replacements", {}) or {}
-    remove = frozenset(raw.pop("remove", []) or [])
-    overrides = dict(raw.pop("category_overrides", {}) or {})
-    coverage_ignore = tuple(str(s) for s in (raw.pop("coverage_ignore", []) or []))
-    dedup = {str(base): frozenset(variants) for base, variants in raw.items()}
-    replacements = tuple((str(k), str(v)) for k, v in repl_map.items())
-    return TagRules(
-        replacements=replacements,
-        remove=remove,
-        dedup=dedup,
-        category_overrides={str(k): str(v) for k, v in overrides.items()},
-        coverage_ignore=coverage_ignore,
-    )
+    The YAML and the ``to_dict`` JSON snapshot are the same mapping, so this is
+    :func:`from_dict` over the parsed file — the two used to be twin bodies and
+    the reserved-key list was the only thing keeping them agreeing.
+    """
+    with open(path, encoding="utf-8") as f:
+        return from_dict(yaml.safe_load(f) or {})
 
 
 def from_dict(d: dict) -> TagRules:
@@ -97,7 +88,11 @@ def from_dict(d: dict) -> TagRules:
     remove = frozenset(d.get("remove", []) or [])
     overrides = dict(d.get("category_overrides", {}) or {})
     coverage_ignore = tuple(str(s) for s in (d.get("coverage_ignore", []) or []))
-    dedup = {k: frozenset(v) for k, v in d.items() if k not in _RESERVED_KEYS}
+    dedup = {
+        str(base): frozenset(variants)
+        for base, variants in d.items()
+        if base not in _RESERVED_KEYS
+    }
     replacements = tuple((str(k), str(v)) for k, v in repl_map.items())
     return TagRules(
         replacements=replacements,

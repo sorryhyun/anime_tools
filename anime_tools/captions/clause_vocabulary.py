@@ -364,20 +364,18 @@ def load_clause_vocabulary(
     disable a gate, so it is logged rather than left to be discovered in a dry
     run's diff.
     """
-    import json
-
     from anime_tools.captions import tag_groups as tg
+    from anime_tools.captions.vocab_io import (
+        load_vocab,
+        names_by_category,
+        names_in_categories,
+    )
 
     ckpt = Path(ckpt_dir)
-    with open(ckpt / "vocab.json", encoding="utf-8") as f:
-        vocab = json.load(f)
-    characters = frozenset(
-        t["name"] for t in vocab["tags"] if t.get("category") == "character"
-    )
-    excluded = frozenset(
-        t["name"]
-        for t in vocab["tags"]
-        if t.get("category") in {"copyright", "artist", "metadata", "deprecated"}
+    vocab = load_vocab(ckpt)
+    characters = frozenset(names_by_category(vocab, ("character",))["character"])
+    excluded = names_in_categories(
+        vocab, ("copyright", "artist", "metadata", "deprecated")
     )
     policy = clause_groups or default_clause_groups()
     groups_path = ckpt / "groups.yaml"
