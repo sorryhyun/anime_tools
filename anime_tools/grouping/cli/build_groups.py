@@ -12,8 +12,8 @@ cache, so a re-run — or a re-run at different thresholds — is cheap.
 
 import argparse
 import importlib
-from pathlib import Path
 
+from anime_tools._env import resolve_path
 from anime_tools.grouping.groups import (
     DEFAULT_CELL_MATCH_MIN,
     DEFAULT_GRID,
@@ -101,10 +101,14 @@ def build_parser() -> argparse.ArgumentParser:
 def main() -> None:
     args = build_parser().parse_args()
 
+    # Anchor bare relatives under the curation home like every stage CLI does,
+    # so `--out` lands in the dataset tree rather than wherever the shell was.
+    source_dir, out = resolve_path(args.source_dir), resolve_path(args.out)
+
     embedder = load_embedder(args.embedder, device=args.device)
     m = build_groups(
-        Path(args.source_dir),
-        Path(args.out),
+        source_dir,
+        out,
         cell_match_min=args.cell_match_min,
         match_frac_min=args.match_frac_min,
         sim_min=args.sim_min,
@@ -119,7 +123,7 @@ def main() -> None:
         f"{m['n_groups']} group(s) over {m['n_images']} image(s) "
         f"({m['n_grouped']} grouped, {m['n_singletons']} ungrouped) "
         f"@ cell_match_min {args.cell_match_min} / match_frac_min "
-        f"{args.match_frac_min} → {args.out}"
+        f"{args.match_frac_min} → {out}"
     )
 
 

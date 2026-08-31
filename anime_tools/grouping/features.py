@@ -32,13 +32,19 @@ import numpy as np
 import torch
 from PIL import Image
 
+from anime_tools._walk import IMAGE_EXTENSIONS, glob_images_pathlib
 from anime_tools.captions.position_clauses import parse_caption
 from anime_tools.captions.taxonomy import normalize_tag
 
 CACHE_ROOT = Path(
     os.environ.get("NEAR_TWIN_CACHE", Path.home() / ".cache" / "near_twin")
 )
-IMAGE_EXTS = (".png", ".webp", ".jpg", ".jpeg", ".jxl", ".avif")
+# The curation walker's extension list, lowercased and deduped. Derived rather
+# than retyped: this module used to carry its own tuple that disagreed with
+# ``_walk`` in both directions (no ``.bmp``; ``.jxl``/``.avif`` unconditionally,
+# even with no Pillow plugin to decode them), so grouping saw a different image
+# pool from the stages and the GUI browsing the same tree.
+IMAGE_EXTS: tuple[str, ...] = tuple(sorted({e.lower() for e in IMAGE_EXTENSIONS}))
 PE_NATIVE = 512  # PE-Spatial-B16-512 square bucket → 32x32 patch grid
 GRID_NATIVE = 32
 GRID_CACHE = 16  # cached pooled grid edge; any pooled grid <= 16 pools down from here
@@ -88,15 +94,12 @@ def _image_size(path: Path) -> tuple[int, int]:
 def iter_images(root: Path) -> list[Path]:
     """Every image file under ``root`` (recursive), sorted.
 
-    Mirrors the GUI dataset browser's walk (``gui.discovery._imgs``) so a
-    curation tool sees the same image pool the user browses. Follows symlinked
-    subtrees (``image_dataset/`` is symlinks into nested artist dirs).
+    The shared curation glob (``_walk.glob_images_pathlib``), so a grouping run
+    sees the same image pool the stages process and the GUI browses.
     """
     if not root.is_dir():
         return []
-    return sorted(
-        p for p in root.rglob("*") if p.is_file() and p.suffix.lower() in IMAGE_EXTS
-    )
+    return glob_images_pathlib(root, recursive=True)
 
 
 def gather_members(
@@ -118,9 +121,7 @@ def gather_members(
             artist = artist_dir.name
             if artists_filter and artist not in artists_filter:
                 continue
-            for img in sorted(artist_dir.iterdir()):
-                if img.suffix.lower() not in IMAGE_EXTS:
-                    continue
+            for img in glob_images_pathlib(artist_dir, recursive=False):
                 key = (artist, img.stem)
                 if key in seen:
                     continue

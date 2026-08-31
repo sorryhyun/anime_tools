@@ -135,3 +135,51 @@ def test_build_groups_survives_stem_collision(tmp_path, monkeypatch):
     assert group["members"] == ["a/1.png", "a/2.png"]
     # b/1.png did not inherit (or clobber) a/1.png's embedding.
     assert manifest["n_singletons"] == 1
+
+
+# --------------------------------------------------------------------------- #
+# One walk: grouping enumerates images through ``_walk``, not its own tuple.
+# --------------------------------------------------------------------------- #
+
+
+def test_image_exts_is_the_curation_walkers_list():
+    """The two used to disagree in both directions — grouping had no ``.bmp``
+    and claimed ``.jxl``/``.avif`` even with no Pillow plugin to decode them."""
+    from anime_tools._walk import IMAGE_EXTENSIONS
+
+    assert set(F.IMAGE_EXTS) == {e.lower() for e in IMAGE_EXTENSIONS}
+
+
+def _touch(path):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    Image.new("RGB", (4, 4)).save(path)
+
+
+def test_iter_images_sees_what_the_stages_see(tmp_path):
+    from anime_tools._walk import walk_images
+
+    _touch(tmp_path / "a" / "one.png")
+    _touch(tmp_path / "a" / "two.bmp")  # was invisible to grouping
+    _touch(tmp_path / "b" / "three.webp")
+    (tmp_path / "a" / "one.txt").write_text("1girl", encoding="utf-8")
+
+    assert F.iter_images(tmp_path) == walk_images(tmp_path, recursive=True)
+    assert [p.name for p in F.iter_images(tmp_path)] == [
+        "one.png",
+        "two.bmp",
+        "three.webp",
+    ]
+
+
+def test_iter_images_on_a_missing_root_is_empty(tmp_path):
+    assert F.iter_images(tmp_path / "nope") == []
+
+
+def test_gather_members_uses_the_same_glob(tmp_path):
+    _touch(tmp_path / "artist_a" / "s1.png")
+    _touch(tmp_path / "artist_a" / "s2.bmp")
+    (tmp_path / "artist_a" / "notes.txt").write_text("", encoding="utf-8")
+
+    by_artist = F.gather_members([tmp_path], None)
+    assert [m.stem for m in by_artist["artist_a"]] == ["s1", "s2"]
+    assert by_artist["artist_a"][1].txt_path.name == "s2.txt"

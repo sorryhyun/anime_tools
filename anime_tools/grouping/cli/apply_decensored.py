@@ -21,15 +21,15 @@ import csv
 import shutil
 from pathlib import Path
 
-from anime_tools._env import curation_home
-
-ROOT = curation_home()
-SINCOS_DIR = ROOT / "image_dataset" / "sincos"
-DECEN_DIR = ROOT / "sincos_decensored"
-OUT_DIR = ROOT / "output" / "curate" / "sincos_decensored"
-BACKUP_DIR = OUT_DIR / "backup_censored"
-LORA_CACHE = ROOT / "post_image_dataset" / "lora" / "sincos"
-RESIZED = ROOT / "post_image_dataset" / "resized" / "sincos"
+from ._decensored import (
+    BACKUP_DIR,
+    DECEN_DIR,
+    LORA_CACHE,
+    OUT_DIR,
+    RESIZED,
+    ROOT,
+    SINCOS_DIR,
+)
 
 
 def invalidate_caches(stem: str, apply: bool) -> list[str]:

@@ -27,14 +27,10 @@ from pathlib import Path
 import numpy as np
 from PIL import Image
 
-from anime_tools._env import curation_home
+from ._decensored import DECEN_DIR, OUT_DIR, SINCOS_DIR
 
 WORKERS = min(12, (os.cpu_count() or 4))
 
-ROOT = curation_home()
-SINCOS_DIR = ROOT / "image_dataset" / "sincos"
-DECEN_DIR = ROOT / "sincos_decensored"
-OUT_DIR = ROOT / "output" / "curate" / "sincos_decensored"
 
 CACHE_VER = 2  # bump to invalidate _desc_*.npz when descriptor schema changes
 AR_TOL = 0.06  # |log(ar_a/ar_b)| gate; ~6% aspect-ratio tolerance
