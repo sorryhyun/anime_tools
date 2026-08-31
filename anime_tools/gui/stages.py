@@ -76,9 +76,9 @@ sub-path (:func:`report_subpath`) and only the *root* is the setting, so the
 whole set moves together and the four defaults stay distinct.
 
 Blank means "beside the ``dst`` root" — see ``server.report_root``. That is what
-the CLI defaults spell out (``post_image_dataset/captions/autotag`` is
-``post_image_dataset/resized``'s sibling), except they spell it as a literal, so
-a dataset moved off ``post_image_dataset/`` would leave its reports behind.
+the CLI defaults spell out (``workspace/captions/autotag`` is
+``workspace/resized``'s sibling), except they spell it as a literal, so a
+dataset moved off ``workspace/`` would leave its reports behind.
 
 The one report a stage *reads* rather than writes (:data:`REPORT_INPUTS`) is
 bound the same way, so the audit's report and the curated apply that consumes it
@@ -102,7 +102,7 @@ PREPROCESS_STAGE = "resize"
 """The stage that populates the resized tree, run as a preflight rather than a
 dock panel.
 
-Every stage bound to the ``dst`` root walks ``post_image_dataset/resized/`` and
+Every stage bound to the ``dst`` root walks ``workspace/resized/`` and
 tags the pixels training sees, so an image that exists only in the caption
 master is invisible to it — the run reports zero rows and writes nothing, which
 reads like a bug. Rather than making that a step the user has to remember,
@@ -286,8 +286,8 @@ def report_subpath(default: str) -> str:
     """The part of a report default that is *not* a dataset root.
 
     Every ``--report_dir`` / ``--out`` default is written
-    ``<dataset root>/<this stage's own path>`` — ``post_image_dataset`` +
-    ``captions/autotag``, ``post_image_dataset`` + ``groups/groups.json``.
+    ``<dataset root>/<this stage's own path>`` — ``workspace`` +
+    ``captions/autotag``, ``workspace`` + ``groups/groups.json``.
     Dropping that first component is what lets one :data:`REPORT_SETTING` move
     every stage's report at once while each keeps a directory of its own: the
     root is the setting, the tail is the stage's identity, and the CLI default

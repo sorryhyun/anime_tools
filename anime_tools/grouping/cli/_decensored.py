@@ -13,6 +13,7 @@ over one artist directory, not a stage.
 
 from __future__ import annotations
 
+from anime_tools import workspace as WS
 from anime_tools._env import curation_home
 
 __all__ = [
@@ -35,5 +36,5 @@ OUT_DIR = ROOT / "output" / "curate" / "sincos_decensored"
 # Apply-side only: where a replaced original is kept, and the two image-derived
 # caches that must be invalidated for a stem whose pixels changed.
 BACKUP_DIR = OUT_DIR / "backup_censored"
-LORA_CACHE = ROOT / "post_image_dataset" / "lora" / "sincos"
-RESIZED = ROOT / "post_image_dataset" / "resized" / "sincos"
+LORA_CACHE = ROOT / WS.WORKSPACE / "lora" / "sincos"
+RESIZED = ROOT / WS.RESIZED / "sincos"

@@ -9,7 +9,7 @@ caption in the dataset's hand-written convention::
 v2 *moves* an attributable tag out of the flat bag into its clause (each
 attribute asserted exactly once) rather than the additive v1 (``rewrite=False``).
 Reversible via :func:`anime_tools.captions.position_clauses.flatten_caption`;
-lands only on the derived caption (``post_image_dataset/resized/<rel>.txt``),
+lands only on the derived caption (``workspace/resized/<rel>.txt``),
 never the hand-written master under ``image_dataset/``.
 
 This module owns the *pipeline*: knobs, the detect→crop→tag→compose pass over

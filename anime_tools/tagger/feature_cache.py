@@ -1,7 +1,7 @@
 """The dbv4 hidden-state cache — where it lives and how it is read.
 
 One dbv4 forward per ``dataset.json`` image, kept as
-``post_image_dataset/anima_tagger/dbv4/<arch>_hidden.safetensors``: the frozen
+``workspace/anima_tagger/dbv4/<arch>_hidden.safetensors``: the frozen
 backbone's penultimate features plus its own probabilities, so the sidecar head
 can be retrained (and the calibration probe re-run) without touching a GPU
 again. The stem list the cache was built for rides in the safetensors metadata
@@ -24,6 +24,8 @@ import torch
 from safetensors import safe_open
 from safetensors.torch import load_file as st_load
 
+from anime_tools import workspace as WS
+
 __all__ = [
     "DBV4_CACHE_DIR",
     "dbv4_cache_path",
@@ -34,8 +36,9 @@ __all__ = [
 
 # Decoupled from the checkpoint dir on purpose: the cache is dataset-derived and
 # bulky, so it lives with the other dataset caches and is shared across
-# checkpoints built over the same corpus.
-DBV4_CACHE_DIR = Path("post_image_dataset") / "anima_tagger" / "dbv4"
+# checkpoints built over the same corpus. Dataset-derived means the workspace:
+# it is something the tools produced, not something Export ships.
+DBV4_CACHE_DIR = Path(WS.WORKSPACE) / "anima_tagger" / "dbv4"
 
 
 def dbv4_cache_path(arch: str, explicit: str | Path | None = None) -> Path:

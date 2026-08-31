@@ -21,6 +21,7 @@ import json
 import sys
 from collections import Counter
 
+from anime_tools import workspace as WS
 from anime_tools._env import resolve_path
 from anime_tools._json import read_json, write_json
 from anime_tools.stages.multiview_audit import (
@@ -36,7 +37,7 @@ def build_parser() -> argparse.ArgumentParser:
         # `audit_multiview`'s own --report_dir, plus the file it writes there:
         # the accept list is a list of *that* report's rows, so the two defaults
         # are one path split in half. Pinned together in test_stage_cli_args.
-        default="post_image_dataset/captions/multiview_audit/report.json",
+        default=f"{WS.REPORTS}/multiview_audit/report.json",
         help="Audit report.json the accept list refers to",
     )
     p.add_argument(

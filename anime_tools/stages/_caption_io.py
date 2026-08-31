@@ -16,7 +16,7 @@ comment in every one of those files:
     ``{stem}.variants.txt`` wins over ``{stem}.txt`` at encode time, so a
     caption rewritten without dropping its sidecar keeps training the *old*
     text no matter how fresh the caption is. Every write into the derived tree
-    (``post_image_dataset/resized/``) passes ``drop_variants=True``; writes into
+    (``workspace/resized/``) passes ``drop_variants=True``; writes into
     the caption master never need it, because the sidecar lives beside the
     derived caption.
 

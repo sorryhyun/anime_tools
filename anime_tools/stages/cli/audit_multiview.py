@@ -28,6 +28,7 @@ import json
 from dataclasses import asdict, replace
 from pathlib import Path
 
+from anime_tools import workspace as WS
 from anime_tools._env import resolve_path
 from anime_tools.masking._sam3 import add_checkpoint_arg
 from anime_tools.stages.cli._args import (
@@ -59,7 +60,7 @@ from anime_tools.stages.multiview_audit import (
 from anime_tools.stages.position_captions import PositionCaptionOptions
 from anime_tools.stages.replay import ReplaySpec, run_replay_cli
 
-DEFAULT_REPORT_DIR = "post_image_dataset/captions/multiview_audit"
+DEFAULT_REPORT_DIR = f"{WS.REPORTS}/multiview_audit"
 
 
 def build_parser() -> argparse.ArgumentParser:

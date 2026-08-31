@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import argparse
 
+from anime_tools import workspace as WS
 from anime_tools.tagger.dbv4_meta import DEFAULT_TAGGER_DIR
 
 PATTERN_HELP = "fnmatch glob (| to OR-combine) on the path relative to {root}"
@@ -53,7 +54,7 @@ def add_dataset_args(
     that populates it.
     """
     p.add_argument("--src", default="image_dataset", help=src_help)
-    p.add_argument("--dst", default="post_image_dataset/resized", help=dst_help)
+    p.add_argument("--dst", default=WS.RESIZED, help=dst_help)
     add_path_pattern_arg(p, help=PATTERN_HELP.format(root=pattern_root))
 
 

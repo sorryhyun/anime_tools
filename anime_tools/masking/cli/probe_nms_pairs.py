@@ -28,6 +28,7 @@ from pathlib import Path
 
 from PIL import Image
 
+from anime_tools import workspace as WS
 from anime_tools._device import resolve_device
 from anime_tools._env import resolve_path
 from anime_tools._json import write_json
@@ -49,9 +50,9 @@ PREFETCH_DEPTH = 4
 
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description=__doc__)
-    p.add_argument("--dst", default="post_image_dataset/resized")
+    p.add_argument("--dst", default=WS.RESIZED)
     p.add_argument("--path_pattern", dest="path_pattern", default="*")
-    p.add_argument("--out", default="post_image_dataset/captions/nms_pairs.json")
+    p.add_argument("--out", default=f"{WS.REPORTS}/nms_pairs.json")
     p.add_argument("--prompt", default="girl")
     p.add_argument(
         "--prompt_embed",

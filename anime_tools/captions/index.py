@@ -5,7 +5,8 @@ Walks caption ``.txt`` sidecars under a source dir, classifies each tag
 character / copyright / artist / count via the Anima
 Tagger vocab (artist additionally by the ``@`` prefix, which is exact and not
 limited by the vocab's frequency cutoff), and writes a single JSON index to
-``post_image_dataset/captions/caption_index.json``::
+``workspace/captions/caption_index.json`` (published to
+``post_image_dataset/captions/`` by Export)::
 
     {
       "meta":  {... provenance: vocab path+mtime, src, n_images, generated ...},
@@ -26,7 +27,7 @@ stripped and posix-normalized (e.g. ``en/1``) — subdir-disambiguated so the
 same bare filename may repeat across folders (see :func:`caption_key`).
 
 This is a *dataset artifact* — it lives beside the VAE/PE caches under
-``post_image_dataset/`` (not in any checkpoint) and is regenerated when the
+the workspace (not in any checkpoint) and is regenerated when the
 dataset or vocab changes. It encodes **no sampling policy**: how a method backs
 off across the character → copyright → artist tiers is the method's own concern
 (e.g. the IP-Adapter distinct-pair sampler). Consumers: the IP-Adapter
@@ -40,6 +41,7 @@ from collections import OrderedDict
 from datetime import UTC, datetime
 from pathlib import Path
 
+from anime_tools import workspace as WS
 from anime_tools._env import resolve_path
 from anime_tools._json import write_json
 from anime_tools._walk import IMAGE_EXTENSIONS, caption_key, safe_walk
@@ -55,7 +57,11 @@ from anime_tools.captions.vocab_io import load_vocab, names_by_category
 from anime_tools.path_filter import filter_paths_by_glob
 
 DEFAULT_VOCAB = "models/captioners/anima-tagger-dbv4/vocab.json"
-DEFAULT_OUT = "post_image_dataset/captions/caption_index.json"
+# The index is a *contract* artifact (docs/contract.md §2), so its published
+# home stays under ``post_image_dataset/captions/`` -- but it is produced
+# here, and the tools only write the workspace. Export publishes it, like
+# every other row in that table.
+DEFAULT_OUT = f"{WS.REPORTS}/caption_index.json"
 # Artist is detected by the `@` prefix (superset of the vocab artist list);
 # character/copyright/count are classified by vocab membership.
 VOCAB_AXES = ("character", "copyright", "count")

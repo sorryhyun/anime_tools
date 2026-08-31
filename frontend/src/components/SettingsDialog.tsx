@@ -17,12 +17,15 @@ import { PathPicker } from "./PathPicker";
 import { HelpToggle } from "./HelpToggle";
 import { StatusLine } from "./StatusLine";
 
-/** The three dataset trees, in the order the dialog lists them. */
-export const ROOT_NAMES: RootName[] = ["src", "dst", "masks"];
+/** The dataset trees, in the order the dialog lists them: input, then the three
+    the workspace owns, then the tree Export publishes to. */
+export const ROOT_NAMES: RootName[] = ["src", "master", "dst", "masks", "out"];
 const ROOT_HELP: Record<RootName, string> = {
-  src: "source images + hand-written master captions",
-  dst: "resized images + derived captions + .variants.txt",
-  masks: "{stem}_mask.png, mirroring the source subdirs",
+  src: "input — source images + hand-written master captions; never written",
+  master: "workspace — revised master captions",
+  dst: "workspace — resized images + derived captions + .variants.txt",
+  masks: "workspace — {stem}_mask.png, mirroring the source subdirs",
+  out: "output — where Export publishes; the tree the trainer reads",
 };
 
 /** One `label / input / hint` row of a `.kv` grid.
@@ -210,7 +213,8 @@ export function SettingsDialog(props: {
           <h4>Dataset roots</h4>
           <Show when={props.help}>
             <p class="dim" style="margin:0 0 8px">
-              Relative to the curation home; the three trees are joined by the same relative path.
+              Relative to the curation home; the trees are joined by the same relative path. The
+              tools only ever write the workspace — <code>out</code> is Export's alone.
             </p>
           </Show>
           <div class="kv">

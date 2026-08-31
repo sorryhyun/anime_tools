@@ -4,12 +4,15 @@ Torch-free and Qt-free like the rest of ``anime_tools.gui`` — it only walks
 paths and calls into the (torch-free) caption grammar, so the server process
 stays light enough for ``tests/test_boundary.py``.
 
-The three trees it joins are the ones ``docs/contract.md`` pins, keyed by the
-*same relative path* in each:
+The trees it joins are keyed by the *same relative path* in each — three of
+them today, and the two the workspace phase added beside them
+(:mod:`anime_tools.workspace` is where the layout is written down):
 
-``src``    ``image_dataset/<rel>``                    source image + hand-written master caption
-``dst``    ``post_image_dataset/resized/<rel>``       resized image + derived caption + ``.variants.txt``
-``masks``  ``post_image_dataset/masks/<rel>``         ``{stem}_mask.png`` (nested; flat is the legacy fallback)
+``src``     ``image_dataset/<rel>``            source image + hand-written master caption
+``master``  ``workspace/master/<rel>``         the revised master overlay (empty until Phase 2 fills it)
+``dst``     ``workspace/resized/<rel>``        resized image + derived caption + ``.variants.txt``
+``masks``   ``workspace/masks/<rel>``          ``{stem}_mask.png`` (nested; flat is the legacy fallback)
+``out``     ``post_image_dataset/``            the export destination -- browsed by nothing, written by Export
 
 Only ``master`` and ``derived`` are writable. ``.variants.txt`` is generated
 (``# … do not hand-edit``) and is served read-only; editing a derived caption
@@ -34,6 +37,7 @@ from io import BytesIO
 from pathlib import Path
 from typing import Any
 
+from anime_tools import workspace as WS
 from anime_tools._env import curation_home, resolve_path
 from anime_tools._json import read_json
 from anime_tools._walk import IMAGE_EXTENSIONS, glob_images_pathlib
@@ -44,11 +48,12 @@ from anime_tools.masking._masks import mask_name
 from anime_tools.path_filter import filter_paths_by_glob
 
 SETTINGS_KEY = "dataset"
-DEFAULT_ROOTS: dict[str, str] = {
-    "src": "image_dataset",
-    "dst": "post_image_dataset/resized",
-    "masks": "post_image_dataset/masks",
-}
+DEFAULT_ROOTS = WS.DEFAULT_ROOTS
+OUTPUT_ROOTS = WS.OUTPUT_ROOTS
+EXPORT_ROOTS = WS.EXPORT_ROOTS
+"""The layout, imported rather than restated: :mod:`anime_tools.workspace` is
+the one place the default paths are written, so the GUI and the migrate CLI
+cannot drift about where the workspace is."""
 CAPTION_KINDS = ("master", "derived")
 GROUPS_SUBPATH = "groups/groups.json"
 """The grouping manifest's tail under the Settings ``report_root`` — the same
@@ -68,14 +73,27 @@ class DatasetError(ValueError):
 
 @dataclass(frozen=True)
 class Roots:
+    """The five dataset roots of one request, resolved and containment-checked.
+
+    Field order is :data:`DEFAULT_ROOTS`' order (input, workspace, output),
+    which is also the order ⚙ Settings lists them in. :meth:`items` walks that
+    mapping rather than a hand-written tuple, so a sixth root would only have
+    to be declared once.
+    """
+
     src: Path
+    master: Path
     dst: Path
     masks: Path
+    out: Path
+
+    def items(self) -> tuple[tuple[str, Path], ...]:
+        return tuple((name, getattr(self, name)) for name in DEFAULT_ROOTS)
 
     def as_dict(self) -> dict[str, Any]:
         return {
             name: {"path": rel_to_home(p), "exists": p.is_dir()}
-            for name, p in (("src", self.src), ("dst", self.dst), ("masks", self.masks))
+            for name, p in self.items()
         }
 
 
@@ -112,7 +130,10 @@ def resolve_roots(values: dict[str, Any] | None = None) -> Roots:
 
 
 def ensure_roots(roots: Roots) -> list[str]:
-    """Create the three root directories, returning the names actually made.
+    """Create the root directories, returning the names actually made.
+
+    Every root but :data:`EXPORT_ROOTS`' — an ``out`` tree that exists should
+    mean an export happened, and Export makes its own destination.
 
     Only ever called from an *explicit write* — saving the Settings dialog —
     never from :func:`resolve_roots`, which every read request goes through: a
@@ -122,7 +143,9 @@ def ensure_roots(roots: Roots) -> list[str]:
     cannot mkdir outside the curation home.
     """
     made = []
-    for name, p in (("src", roots.src), ("dst", roots.dst), ("masks", roots.masks)):
+    for name, p in roots.items():
+        if name in EXPORT_ROOTS:
+            continue
         if not p.is_dir():
             p.mkdir(parents=True, exist_ok=True)
             made.append(name)

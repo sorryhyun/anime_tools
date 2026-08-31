@@ -18,6 +18,20 @@ to the trainer originals.
 
 ## 2. File artifacts (what the trainer reads)
 
+Since the workspace phase (2026-08-31) the curation stages no longer write these
+paths directly: they write `workspace/`, and **Export** publishes from there to
+the paths in this table. Nothing in this table moved — same paths, same formats,
+same producers — only *when* they appear, which is the point of the change.
+`workspace/` itself is curation-private in the same sense as the near-twin
+feature cache: nothing in the trainer reads it, and its layout
+(`anime_tools/workspace/__init__.py`) is not part of this contract.
+
+> **In flight.** The workspace landed first; Export (`plan.md` Phase 3) has not.
+> Until it does, point ⚙ Settings › Dataset roots at the pre-workspace paths, or
+> run the stages with an explicit `--dst post_image_dataset/resized`, to keep
+> feeding the trainer. `python -m anime_tools.workspace.migrate` moves an
+> existing tree the other way when you are ready.
+
 | Artifact | Producer (curation) | Consumer (trainer) | Format |
 |---|---|---|---|
 | `image_dataset/**/{stem}.txt` — caption master | autotag / position / correction stages, GUI caption editor | `preprocess-te` (`library/preprocess/text.py`), caption index | **Caption grammar** (§3). Parsed only via `position_clauses.parse_caption` — never `split(",")`. |
@@ -64,7 +78,7 @@ latents `{stem}_{WxH}_anima.npz`, TE `{stem}_anima_te.safetensors`, PE
 | **Tokenizers** (caption length / erasure pool) | Curation scripts take tokenizer **directories** only (`anime_tools/captions/tokenizers.py::load_{qwen3,t5}_tokenizer_from_dir`). The trainer wrapper resolves a `.safetensors` text-encoder path → bundled config dir (`library.anima.weights.qwen3_tokenizer_dir` / `t5_tokenizer_dir`) and passes `--qwen3 <dir> --t5_tokenizer_path <dir>`. Curation never learns the safetensors→config mapping. |
 | **Grouping embedder** | `anime_tools.grouping.features.Embedder` protocol: `.device`, `.dtype`, `__call__(batch[B,3,512,512] in [-1,1]) -> (cls[B,D] f32 L2-normed, grid16[B,16,16,D] f16)`. **Phase 2 (2026-08-30) reversed the Phase-0 seam: PE-Spatial-B16-512 is owned here** — the vendored PE tower is `anime_tools.vision.pe` (`load_pe_spatial()`, Hub fetch, `ANIME_TOOLS_MODELS/pe/`), the default embedder is `anime_tools.grouping.embedder:pe_spatial_embedder` (bf16, matching the pre-split trainer cache), and `build_groups` / the CLI use it when no `--embedder module:callable(device=…)` override is given. The trainer re-exports the tower as `library.models.pe` (REPA / CMMD / PE caching) and keeps its own encoder registry (`library.vision.{encoder,encoders,buckets}`), which the package never imports. |
 | **Tagger backend** | dbv4 only (`config.json["backend"] == "dbv4"`); the in-house PE dual-encoder head was deleted 2026-08-30 (archived under `_archive/anima_tagger_training/pe_backend_removed_2026_08_30/`). The tagger never imports `library.vision`. Checkpoint layout: `config.json`, `vocab.json`, `rules.yaml`, `groups.json`, `thresholds.safetensors`, optional `sidecar.safetensors`; GPL backbone fetched from the gated upstream repo at load. |
-| **Home / model paths** | `anime_tools/_env.py`: `curation_home()` = `ANIME_TOOLS_HOME` → `ANIMA_HOME` → checkout root; `resolve_path()` anchors bare relatives there; `models_dir()` = `ANIME_TOOLS_MODELS` → `<home>/models`. In-tree all three coincide with `library.env.anima_home()`, so nothing changes for the trainer; a standalone `anime_tools` install sets `ANIME_TOOLS_HOME`/`ANIME_TOOLS_MODELS`. The trainer's `make` wrappers keep passing explicit dirs (`--tagger_dir`, `--src/--dst`). |
+| **Home / model paths** | `anime_tools/_env.py`: `curation_home()` = `ANIME_TOOLS_HOME` → `ANIMA_HOME` → checkout root; `resolve_path()` anchors bare relatives there; `models_dir()` = `ANIME_TOOLS_MODELS` → `<home>/models`; `workspace_dir()` = `ANIME_TOOLS_WORKSPACE` → `<home>/workspace`, everything the curation stages write. In-tree all three coincide with `library.env.anima_home()`, so nothing changes for the trainer; a standalone `anime_tools` install sets `ANIME_TOOLS_HOME`/`ANIME_TOOLS_MODELS`. The trainer's `make` wrappers keep passing explicit dirs (`--tagger_dir`, `--src/--dst`). |
 | **`path_pattern` glob** | One implementation, `anime_tools/path_filter.py::filter_paths_by_glob` (moved from `library/datasets/`, shim left); training subsets and every curation stage share it. |
 | **HF fetch** | `anime_tools/_hf.py` (moved from `library/runtime/hf_download.py`, shim left); tests patch the canonical path. |
 | **Process boundary** | Curation stages are plain CLIs; the trainer's daemon wraps them (`make … --queue`). No daemon client in `anime_tools`. |

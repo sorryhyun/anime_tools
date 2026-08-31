@@ -71,7 +71,7 @@ class ReplaySpec:
     ``target_root`` is the tree ``caption_path`` is relative to: ``"src"`` for
     the stages that write the caption master (autotag, multiview audit),
     ``"dst"`` for the clause rewrite, which only ever touches the derived
-    caption under ``post_image_dataset/resized/``.
+    caption under ``workspace/resized/``.
     """
 
     stage: str

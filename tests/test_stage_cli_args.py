@@ -84,7 +84,7 @@ def parsers() -> dict[str, dict[str, argparse.Action]]:
         ("prompt_embed", ("--prompt_embed",), DEFAULT_SUBJECT_PROMPT_EMBED),
         ("device", ("--device",), None),
         ("src", ("--src",), "image_dataset"),
-        ("dst", ("--dst",), "post_image_dataset/resized"),
+        ("dst", ("--dst",), "workspace/resized"),
     ],
 )
 def test_shared_flags_keep_one_spelling(parsers, dest, flags, default):

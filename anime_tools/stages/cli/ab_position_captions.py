@@ -31,6 +31,7 @@ from pathlib import Path
 
 from PIL import Image, ImageDraw
 
+from anime_tools import workspace as WS
 from anime_tools._device import resolve_device
 from anime_tools._env import resolve_path
 from anime_tools._json import write_json
@@ -61,9 +62,9 @@ _B = (80, 200, 120)  # …the challenger as the thing to look at
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--src", default="image_dataset")
-    p.add_argument("--dst", default="post_image_dataset/resized")
+    p.add_argument("--dst", default=WS.RESIZED)
     p.add_argument("--path_pattern", dest="path_pattern", default="*")
-    p.add_argument("--out", default="post_image_dataset/captions/position_ab")
+    p.add_argument("--out", default=f"{WS.REPORTS}/position_ab")
     # GOTCHA: pass these as `--a_flags=--foo`, not `--a_flags --foo` — argparse
     # reads a `-`-leading value as the next option and dies on "expected one
     # argument". An empty side (= shipped defaults) needs `--a_flags=` likewise.

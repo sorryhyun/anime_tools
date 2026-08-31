@@ -196,13 +196,13 @@ export interface RootInfo {
   exists: boolean;
 }
 
-export type RootName = "src" | "dst" | "masks";
+export type RootName = "src" | "master" | "dst" | "masks" | "out";
 
 export interface DatasetRoots {
   roots: Record<RootName, RootInfo>;
   defaults: Record<RootName, string>;
-  /** What a blank `report_root` resolves to (the parent of `dst`) — the
-      Settings placeholder, derived server-side. */
+  /** What a blank `report_root` resolves to (the parent of `dst`, i.e. the
+      workspace) — the Settings placeholder, derived server-side. */
   report_root: string;
 }
 

@@ -33,7 +33,7 @@ writes ``apply_report.json`` so it can never clobber the report it read.
     # the same two-step, paying for the tagger once:
     python -m anime_tools.stages.cli.autotag_captions
     python -m anime_tools.stages.cli.autotag_captions --apply \
-        --from_report post_image_dataset/captions/autotag/report.json
+        --from_report workspace/captions/autotag/report.json
 """
 
 from __future__ import annotations
@@ -42,6 +42,7 @@ import argparse
 from dataclasses import asdict
 from pathlib import Path
 
+from anime_tools import workspace as WS
 from anime_tools._device import resolve_device
 from anime_tools._env import resolve_path
 from anime_tools.stages.autotag import (
@@ -64,7 +65,7 @@ from anime_tools.stages.cli._report import (
 )
 from anime_tools.stages.replay import ReplaySpec, run_replay_cli
 
-DEFAULT_REPORT_DIR = "post_image_dataset/captions/autotag"
+DEFAULT_REPORT_DIR = f"{WS.REPORTS}/autotag"
 TE_NOTE = "captions changed — run `make preprocess-te` to re-encode."
 
 

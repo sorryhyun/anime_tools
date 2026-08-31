@@ -243,9 +243,7 @@ def test_the_report_root_moves_every_report_and_splits_none():
 def test_report_path_follows_the_settings_report_root():
     st, fs = _stage("autotag")
     # No root: the CLI's own default, which is what a hand-run stage writes.
-    assert (
-        S.report_path(st, fs, {}) == "post_image_dataset/captions/autotag/report.json"
-    )
+    assert S.report_path(st, fs, {}) == "workspace/captions/autotag/report.json"
     assert S.report_path(st, fs, {}, "moved") == "moved/captions/autotag/report.json"
     # A value stranded in a saved form is not consulted at all.
     assert S.report_path(st, fs, {"report_dir": "r"}, "moved").startswith("moved/")
@@ -448,7 +446,7 @@ def test_job_runs_streams_and_persists_values(client):
         "3",
         "--apply",
         "--report_dir",
-        "post_image_dataset/out",
+        "workspace/out",
     ]
 
     with c.stream("GET", f"/api/jobs/{job['id']}/log") as s:
@@ -871,7 +869,7 @@ def test_dataset_items_refreshes_only_what_it_is_asked_for(client):
     assert [x["rel"] for x in rows] == ["sub/b.png", "a.png"]
     assert rows[0]["dir"] == "sub" and rows[0]["derived"] is False
     # A caption written since the listing shows up on the refreshed row.
-    dst = tmp_path / "post_image_dataset" / "resized" / "sub"
+    dst = tmp_path / "workspace" / "resized" / "sub"
     dst.mkdir(parents=True)
     (dst / "b.txt").write_text("1girl.")
     assert c.post("/api/dataset/items", json={"rels": ["sub/b.png"]}).json()["items"][
@@ -899,19 +897,22 @@ def test_apply_replays_a_dry_run_end_to_end(tmp_path, monkeypatch):
     monkeypatch.setenv("ANIME_TOOLS_HOME", str(tmp_path))
     c = TestClient(create_app())
     # Saving Settings makes the roots real (nothing existed a moment ago).
+    # Registry order (input, then the three the workspace owns); `out` is
+    # Export's to create, so it is not here.
     assert c.put("/api/dataset/roots", json={}).json()["created"] == [
         "src",
+        "master",
         "dst",
         "masks",
     ]
-    src, dst = tmp_path / "image_dataset", tmp_path / "post_image_dataset" / "resized"
+    src, dst = tmp_path / "image_dataset", tmp_path / "workspace" / "resized"
     for n in ("a", "b", "c"):
         (src / f"{n}.png").write_bytes(b"\x89PNG\r\n\x1a\n")
         (src / f"{n}.txt").write_text("1girl, solo.")
         (dst / f"{n}.png").write_bytes(b"\x89PNG\r\n\x1a\n")
 
     # What the tagger pass left behind, which is exactly what Apply now skips.
-    rdir = tmp_path / "post_image_dataset" / "captions" / "autotag"
+    rdir = tmp_path / "workspace" / "captions" / "autotag"
     rdir.mkdir(parents=True)
     (rdir / "report.json").write_text(
         json.dumps(
@@ -941,9 +942,7 @@ def test_apply_replays_a_dry_run_end_to_end(tmp_path, monkeypatch):
         json={
             "stage": "autotag",
             "apply": True,
-            "values": {
-                S.REPLAY_FIELD: "post_image_dataset/captions/autotag/report.json"
-            },
+            "values": {S.REPLAY_FIELD: "workspace/captions/autotag/report.json"},
         },
     ).json()
     assert "--from_report" in job["argv"] and "--apply" in job["argv"]

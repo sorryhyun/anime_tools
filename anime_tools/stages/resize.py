@@ -1,7 +1,7 @@
 """Mirror the caption master into bucket-resolution resized images.
 
 The first stage of the pipeline and the one every later stage assumes has run:
-``autotag`` / ``position`` / ``correct`` all walk ``post_image_dataset/resized/``
+``autotag`` / ``position`` / ``correct`` all walk ``workspace/resized/``
 and tag the *resized* pixels, because that is the pixel data training sees. An
 image that exists only under ``image_dataset/`` is invisible to all of them.
 

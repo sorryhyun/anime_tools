@@ -23,34 +23,16 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, JSONResponse, Response, StreamingResponse
 
 from anime_tools import downloads as DL
-from anime_tools._env import curation_home, models_dir, resolve_path
-from anime_tools._json import read_json, write_json
+from anime_tools._env import curation_home, models_dir, resolve_path, workspace_dir
+from anime_tools._json import read_json
 from anime_tools.gui import dataset as D
 from anime_tools.gui import proposals as P
 from anime_tools.gui import stages as S
 from anime_tools.gui import tags as T
 from anime_tools.gui.jobs import JobManager, Step
+from anime_tools.gui.settings import load_settings, save_settings
 
 STATIC = Path(__file__).parent / "static"
-SETTINGS_NAME = ".anime_tools_gui.json"
-
-
-def _settings_path() -> Path:
-    return curation_home() / SETTINGS_NAME
-
-
-def load_settings() -> dict[str, Any]:
-    p = _settings_path()
-    if p.exists():
-        try:
-            return read_json(p)
-        except (OSError, ValueError):
-            return {}
-    return {}
-
-
-def save_settings(data: dict[str, Any]) -> None:
-    write_json(_settings_path(), data)
 
 
 def _hf_token_present() -> bool:
@@ -79,19 +61,18 @@ def _hf_token_present() -> bool:
 # --------------------------------------------------------------------------- #
 
 
-def roots_for(
-    settings: Mapping[str, Any], src: str = "", dst: str = "", masks: str = ""
-) -> D.Roots:
+def roots_for(settings: Mapping[str, Any], **overrides: str) -> D.Roots:
     """The dataset roots for this request.
 
-    Query params win; anything blank falls back to the saved roots, then to
-    :data:`D.DEFAULT_ROOTS`.
+    Per-request overrides (query params, or the body of the two POSTs) win;
+    anything blank falls back to the saved roots, then to
+    :data:`D.DEFAULT_ROOTS`. Keyword-only and named after the roots themselves,
+    so the callers that pass only the three browsable trees say so, and adding
+    ``master`` / ``out`` to a route is a keyword rather than a fourth
+    positional.
     """
     saved = settings.get(D.SETTINGS_KEY) or {}
-    merged = {
-        **saved,
-        **{k: v for k, v in (("src", src), ("dst", dst), ("masks", masks)) if v},
-    }
+    merged = {**saved, **{k: v for k, v in overrides.items() if v}}
     return D.resolve_roots(merged)
 
 
@@ -118,10 +99,13 @@ def report_root(settings: Mapping[str, Any], roots: D.Roots) -> str:
     Each stage appends its own tail (``S.Field.report``), so one setting moves
     the whole set without ever giving two stages the same ``--report_dir``.
 
-    Blank in Settings — the default — means *beside the* ``dst`` *root*. The
-    reports describe the resized tree, so they should follow it: every stage CLI
-    defaults to a literal ``post_image_dataset/…`` instead, which is the right
-    answer only while the dataset sits where the default says it does.
+    Blank in Settings — the default — means *beside the* ``dst`` *root*, which
+    under the default layout is the workspace itself: ``workspace/resized``'s
+    parent is ``workspace``, so the diffs land at ``workspace/captions/<stage>/``
+    and the grouping manifest at ``workspace/groups/`` without either being
+    named here. The reports describe the resized tree, so they follow it; every
+    stage CLI defaults to a literal ``post_image_dataset/…`` instead, which is
+    the right answer only while the dataset sits where the default says it does.
     """
     got = str((settings.get(S.SETTINGS_KEY) or {}).get(S.REPORT_SETTING) or "").strip()
     return got or PurePosixPath(D.rel_to_home(roots.dst)).parent.as_posix()
@@ -139,15 +123,17 @@ def make_output_dirs(stage: S.Stage, report: str | None, roots: D.Roots) -> None
 
     Outputs only, and only the ones the GUI itself chose:
 
-    * ``dst`` / ``masks`` when this stage binds them (``S.ROOT_FIELDS``) —
-      they come from Settings, not from the stage form.
+    * the workspace roots this stage binds (``D.OUTPUT_ROOTS`` ∩
+      ``S.ROOT_FIELDS``) — they come from Settings, not from the stage form.
     * the report directory, from ``S.report_path``.
 
     Never ``src``, and never a free-text path off the stage form: an empty tree
     conjured behind a mistyped ``--source`` hides the typo, where the stage's
-    own "no images found" does not.
+    own "no images found" does not. Never ``out`` either — only Export writes
+    there, and it makes its own destination, so an export tree that exists is
+    an export that happened.
     """
-    for name in set(S.ROOT_FIELDS.get(stage.id, {}).values()) & {"dst", "masks"}:
+    for name in set(S.ROOT_FIELDS.get(stage.id, {}).values()) & D.OUTPUT_ROOTS:
         D.ensure_output_dir(getattr(roots, name))
     if report:
         D.ensure_output_dir(Path(report).parent)
@@ -236,9 +222,9 @@ class Schemas:
 def create_app(
     *, jobs: JobManager | None = None, schemas: dict[str, Any] | None = None
 ) -> FastAPI:
-    mgr = jobs or JobManager(
-        log_dir=curation_home() / "post_image_dataset" / "gui_logs"
-    )
+    # Job logs are curation output like everything else, so they live in the
+    # workspace rather than in the tree Export publishes to.
+    mgr = jobs or JobManager(log_dir=workspace_dir() / "gui_logs")
     # Schemas come from a child interpreter (see Schemas): passing them in
     # short-circuits the thread entirely, otherwise it starts right here and the
     # app is returned without waiting for it.
@@ -555,7 +541,7 @@ def create_app(
         limit: int = 2000,
     ) -> dict[str, Any]:
         return D.list_items(
-            roots_for(load_settings(), src, dst, masks),
+            roots_for(load_settings(), src=src, dst=dst, masks=masks),
             pattern=pattern or None,
             query=q,
             limit=limit,
@@ -584,7 +570,7 @@ def create_app(
         body = await request.json()
         rels = [str(r) for r in (body.get("rels") or [])][: D.MAX_ITEMS]
         roots = roots_for(
-            load_settings(), *(str(body.get(k) or "") for k in ("src", "dst", "masks"))
+            load_settings(), **{k: str(body.get(k) or "") for k in D.DEFAULT_ROOTS}
         )
         return {"items": D.item_rows(roots, rels)}
 
@@ -592,7 +578,7 @@ def create_app(
     def dataset_item(
         rel: str, src: str = "", dst: str = "", masks: str = ""
     ) -> dict[str, Any]:
-        roots = roots_for(load_settings(), src, dst, masks)
+        roots = roots_for(load_settings(), src=src, dst=dst, masks=masks)
         try:
             return D.item_detail(roots, rel)
         except D.DatasetError as e:
@@ -604,7 +590,7 @@ def create_app(
     async def put_dataset_item(request: Request) -> dict[str, Any]:
         body = await request.json()
         roots = roots_for(
-            load_settings(), *(str(body.get(k) or "") for k in ("src", "dst", "masks"))
+            load_settings(), **{k: str(body.get(k) or "") for k in D.DEFAULT_ROOTS}
         )
         try:
             return D.write_caption(
@@ -808,7 +794,7 @@ def main(argv: list[str] | None = None) -> None:
     p.add_argument(
         "--home",
         default=None,
-        help="Curation home (image_dataset/, post_image_dataset/, models/ live "
+        help="Curation home (image_dataset/, workspace/, models/ live "
         "here). Default: $ANIME_TOOLS_HOME, $ANIMA_HOME, or the CWD",
     )
     p.add_argument(

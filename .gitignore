@@ -11,8 +11,13 @@ build/
 !.claude/skills/
 models/
 networks/
-post_image_dataset/
+# The curation home is the checkout during dev, so its three dataset trees land
+# here: the input, the workspace the tools write, and the tree Export publishes
+# to. `/workspace/` is anchored -- a bare `workspace/` would also swallow the
+# `anime_tools/workspace/` package, which is source.
 image_dataset/
+/workspace/
+post_image_dataset/
 bench/*/results/
 _archive/
 

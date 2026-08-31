@@ -16,7 +16,7 @@ re-encode — which is what makes a body-part prompt cheap to compare against
 ``girl``. Renders land at ``<out>/<stem>/prompt_<label>.png`` and the numbers in
 a ``probe.json`` carrying every proposal's score / box / area fraction / box
 fill, the same schema the earlier prompt sweeps under
-``post_image_dataset/captions/mask_probe/`` use.
+``workspace/captions/mask_probe/`` use.
 """
 
 from __future__ import annotations
@@ -28,6 +28,7 @@ from pathlib import Path
 import numpy as np
 from PIL import Image, ImageDraw
 
+from anime_tools import workspace as WS
 from anime_tools._device import resolve_device
 from anime_tools._env import resolve_path
 from anime_tools._json import write_json
@@ -76,7 +77,7 @@ def parse_args() -> argparse.Namespace:
         help="Image paths (repo-relative ok). Omit and pass --path_pattern to "
         "sweep the resized tree instead",
     )
-    p.add_argument("--dst", default="post_image_dataset/resized")
+    p.add_argument("--dst", default=WS.RESIZED)
     p.add_argument(
         "--path_pattern",
         dest="path_pattern",
@@ -98,7 +99,7 @@ def parse_args() -> argparse.Namespace:
     )
     add_checkpoint_arg(p)
     p.add_argument("--device", default=None, help="cuda|cpu (default: auto)")
-    p.add_argument("--out", default="post_image_dataset/captions/mask_probe")
+    p.add_argument("--out", default=f"{WS.REPORTS}/mask_probe")
     p.add_argument(
         "--summary",
         default=None,

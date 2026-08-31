@@ -13,6 +13,7 @@ cache, so a re-run — or a re-run at different thresholds — is cheap.
 import argparse
 import importlib
 
+from anime_tools import workspace as WS
 from anime_tools._env import resolve_path
 from anime_tools.grouping.groups import (
     DEFAULT_CELL_MATCH_MIN,
@@ -46,7 +47,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p.add_argument(
         "--out",
-        default="post_image_dataset/groups/groups.json",
+        default=f"{WS.GROUPS}/groups.json",
         help="Manifest path the GUI Dataset tab reads",
     )
     p.add_argument(

@@ -11,7 +11,7 @@ inverse pass that merges clauses back into the bag.
 
 The caption master (``image_dataset/``) is never written — clauses land on the
 derived caption next to the resized image (``--dst``, i.e.
-``post_image_dataset/resized/<rel>.txt``), the same file the TE step encodes.
+``workspace/resized/<rel>.txt``), the same file the TE step encodes.
 
 Dry-run is the default: nothing is written until ``--apply`` is passed. An
 ``--apply`` run bumps the caption's mtime (so TE caches go correctly stale) and
@@ -33,7 +33,7 @@ report it read.
     # the same two-step, paying for SAM3 + the tagger once:
     python -m anime_tools.stages.cli.position_captions
     python -m anime_tools.stages.cli.position_captions --apply \
-        --from_report post_image_dataset/captions/position/report.json
+        --from_report workspace/captions/position/report.json
 """
 
 from __future__ import annotations
@@ -46,6 +46,7 @@ from pathlib import Path
 
 import numpy as np
 
+from anime_tools import workspace as WS
 from anime_tools._device import resolve_device
 from anime_tools._env import resolve_path
 from anime_tools._json import write_json
@@ -83,7 +84,7 @@ from anime_tools.stages.position_captions import (
 )
 from anime_tools.stages.replay import ReplaySpec, run_replay_cli
 
-DEFAULT_REPORT_DIR = "post_image_dataset/captions/position"
+DEFAULT_REPORT_DIR = f"{WS.REPORTS}/position"
 TE_NOTE = (
     "\nWritten to the resized captions (the master is untouched). Run "
     "`make preprocess-te` now to regenerate the variant sidecars and "

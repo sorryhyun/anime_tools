@@ -1,7 +1,7 @@
 """Which caption file a stage reads for a resized image — once, for all of them.
 
 The rule is one line and easy to retype slightly wrong: the **derived** caption
-(``post_image_dataset/resized/<rel>.txt``) is authoritative when it exists, and
+(``workspace/resized/<rel>.txt``) is authoritative when it exists, and
 the hand-written **master** (``image_dataset/<rel>.txt``) is the read-only
 fallback for an image the mirror pass has not reached yet. Derived-first matters
 in both directions — the derived text is already order-corrected, and it carries

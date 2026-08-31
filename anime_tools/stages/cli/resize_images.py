@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import argparse
 
+from anime_tools import workspace as WS
 from anime_tools._env import resolve_path
 from anime_tools.buckets import ALLOWED_TARGET_RES
 from anime_tools.stages.cli._args import (
@@ -40,7 +41,7 @@ from anime_tools.stages.resize import (
     run_resize_images,
 )
 
-DEFAULT_REPORT_DIR = "post_image_dataset/captions/resize"
+DEFAULT_REPORT_DIR = f"{WS.REPORTS}/resize"
 
 
 def build_parser() -> argparse.ArgumentParser:

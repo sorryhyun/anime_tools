@@ -24,6 +24,8 @@ import logging
 import os
 from pathlib import Path
 
+from anime_tools import workspace as WS
+
 
 def curation_home() -> Path:
     for key in ("ANIME_TOOLS_HOME", "ANIMA_HOME"):
@@ -43,6 +45,21 @@ def resolve_path(path) -> Path:
     if p.is_absolute():
         return p
     return curation_home() / p
+
+
+def workspace_dir() -> Path:
+    """Where the tools write (``ANIME_TOOLS_WORKSPACE`` overrides; default
+    ``<home>/workspace``).
+
+    The curation half produces nothing outside this directory: resized images,
+    masks, derived and revised captions, the stage reports and the grouping
+    manifest all live under it, and ``anime_tools.workspace`` lays out the
+    subdirectories. Publishing to the trainer's paths is Export's job alone.
+    """
+    override = os.environ.get("ANIME_TOOLS_WORKSPACE")
+    if override:
+        return Path(override).expanduser().resolve()
+    return curation_home() / WS.WORKSPACE
 
 
 def models_dir() -> Path:

@@ -84,7 +84,7 @@ def parse_args() -> argparse.Namespace:
         "--feature_cache",
         default=None,
         help="safetensors with cached hidden features; default "
-        "post_image_dataset/anima_tagger/dbv4/<arch>_hidden.safetensors",
+        "workspace/anima_tagger/dbv4/<arch>_hidden.safetensors",
     )
     p.add_argument("--categories", default=",".join(DEFAULT_CATEGORIES))
     p.add_argument(

@@ -26,8 +26,8 @@ def home(tmp_path, monkeypatch):
     """A miniature curation home: two images, one fully derived."""
     monkeypatch.setenv("ANIME_TOOLS_HOME", str(tmp_path))
     src = tmp_path / "image_dataset"
-    dst = tmp_path / "post_image_dataset" / "resized"
-    masks = tmp_path / "post_image_dataset" / "masks"
+    dst = tmp_path / "workspace" / "resized"
+    masks = tmp_path / "workspace" / "masks"
 
     _png(src / "a.png")
     (src / "a.txt").write_text("1girl, solo. On the left, cat.", encoding="utf-8")
@@ -121,7 +121,7 @@ def test_item_detail_matches_a_re_encoded_resized_image(client):
     """The resize step may change the extension, so dst is matched on stem."""
     c, _ = client
     it = c.get("/api/dataset/item", params={"rel": "sub/b.jpg"}).json()
-    assert it["resized"]["path"] == "post_image_dataset/resized/sub/b.png"
+    assert it["resized"]["path"] == "workspace/resized/sub/b.png"
     assert [r["label"] for r in it["variants"]["rows"]] == ["v0", "v1"]
 
 
@@ -156,7 +156,7 @@ def test_writing_a_derived_caption_flags_the_stale_sidecar(client, home):
     )
     assert r.json()["variants_stale"] is True
     # ...and the sidecar itself is left alone; regenerating it is the stage's job.
-    assert (home / "post_image_dataset/resized/sub/b.variants.txt").exists()
+    assert (home / "workspace/resized/sub/b.variants.txt").exists()
 
 
 def test_writing_creates_the_destination_folder(client, home):
@@ -164,7 +164,7 @@ def test_writing_creates_the_destination_folder(client, home):
     c.put(
         "/api/dataset/item", json={"rel": "a.png", "kind": "derived", "text": "1girl"}
     )
-    assert (home / "post_image_dataset" / "resized" / "a.txt").read_text() == "1girl"
+    assert (home / "workspace" / "resized" / "a.txt").read_text() == "1girl"
 
 
 def test_caption_writes_are_confined_and_validated(client):
@@ -207,13 +207,15 @@ def test_roots_are_settable_and_persisted(client, home):
     roots = r.json()["roots"]
     assert roots["src"] == {"path": "sub", "exists": True}
     # A blank field means "default", not "the home directory".
-    assert roots["dst"]["path"] == "post_image_dataset/resized"
+    assert roots["dst"]["path"] == "workspace/resized"
     assert c.get("/api/dataset/roots").json()["roots"]["src"]["path"] == "sub"
     assert c.put("/api/dataset/roots", json={"src": "/etc"}).status_code == 400
 
 
 def test_saving_roots_creates_the_missing_directories(client, home):
     """Settings is the explicit 'these are my roots' gesture, so it makes them."""
+    from anime_tools.gui import dataset as D
+
     c, _ = client
     assert not (home / "shots").exists()
     r = c.put(
@@ -221,10 +223,12 @@ def test_saving_roots_creates_the_missing_directories(client, home):
         json={"src": "shots", "dst": "out/resized", "masks": "out/masks"},
     )
     assert r.status_code == 200, r.text
-    assert sorted(r.json()["created"]) == ["dst", "masks", "src"]
+    # Every root but `out`: the export tree is Export's to create.
+    assert sorted(r.json()["created"]) == ["dst", "masks", "master", "src"]
     for rel in ("shots", "out/resized", "out/masks"):
         assert (home / rel).is_dir()
-    assert all(v["exists"] for v in r.json()["roots"].values())
+    made = {k: v for k, v in r.json()["roots"].items() if k not in D.EXPORT_ROOTS}
+    assert all(v["exists"] for v in made.values())
     # Second save has nothing left to create.
     r2 = c.put(
         "/api/dataset/roots",
@@ -304,7 +308,7 @@ def _manifest(home: Path, groups: list[dict], **over) -> Path:
     from anime_tools._json import write_json
     from anime_tools.grouping.groups import MANIFEST_VERSION
 
-    p = home / "post_image_dataset" / "groups" / "groups.json"
+    p = home / "workspace" / "groups" / "groups.json"
     write_json(
         p,
         {
@@ -344,7 +348,7 @@ def test_groups_are_rels_the_listing_can_join(client):
     )
     body = c.get("/api/dataset/groups").json()
     assert not body["missing"] and not body["stale"]
-    assert body["path"] == "post_image_dataset/groups/groups.json"
+    assert body["path"] == "workspace/groups/groups.json"
     assert body["source_dir"] == "image_dataset"
     assert body["groups"] == [
         {
@@ -375,7 +379,7 @@ def test_a_missing_manifest_is_not_an_error(client):
     c, _ = client
     body = c.get("/api/dataset/groups").json()
     assert body["missing"] and body["groups"] == []
-    assert body["path"] == "post_image_dataset/groups/groups.json"
+    assert body["path"] == "workspace/groups/groups.json"
 
 
 def test_an_older_manifest_still_lists_its_components(client, home):
@@ -387,7 +391,7 @@ def test_an_older_manifest_still_lists_its_components(client, home):
 
 def test_an_unreadable_manifest_is_a_400(client, home):
     c, _ = client
-    p = home / "post_image_dataset" / "groups" / "groups.json"
+    p = home / "workspace" / "groups" / "groups.json"
     p.parent.mkdir(parents=True, exist_ok=True)
     p.write_text("{not json", encoding="utf-8")
     assert c.get("/api/dataset/groups").status_code == 400

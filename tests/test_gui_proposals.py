@@ -32,7 +32,7 @@ def home(tmp_path, monkeypatch):
     """Two images: one captioned in both trees, one with no master at all."""
     monkeypatch.setenv("ANIME_TOOLS_HOME", str(tmp_path))
     src = tmp_path / "image_dataset"
-    dst = tmp_path / "post_image_dataset" / "resized"
+    dst = tmp_path / "workspace" / "resized"
     _png(src / "a.png")
     (src / "a.txt").write_text("1girl, solo", encoding="utf-8")
     _png(dst / "a.png")
@@ -57,7 +57,7 @@ def _autotag_report(home: Path, *, apply: bool = False) -> Path:
         "stage": "autotag_captions",
         "apply": apply,
         "src": str(home / "image_dataset"),
-        "dst": str(home / "post_image_dataset" / "resized"),
+        "dst": str(home / "workspace" / "resized"),
         "rows": [
             {
                 "image": "a.png",
@@ -82,7 +82,7 @@ def _autotag_report(home: Path, *, apply: bool = False) -> Path:
             },
         ],
     }
-    p = home / "post_image_dataset" / "captions" / "autotag" / "report.json"
+    p = home / "workspace" / "captions" / "autotag" / "report.json"
     p.parent.mkdir(parents=True, exist_ok=True)
     p.write_text(json.dumps(report), encoding="utf-8")
     return p
@@ -109,7 +109,7 @@ def test_a_row_that_changes_nothing_is_not_a_proposal(home, roots):
 
 
 def test_the_derived_caption_is_the_position_stage_s_target(home, roots):
-    """``position_captions`` only ever rewrites ``post_image_dataset/resized``,
+    """``position_captions`` only ever rewrites ``workspace/resized``,
     so its diff belongs on the *derived* card, not the master's."""
     report = {
         "summary": {"apply": False},
@@ -127,7 +127,7 @@ def test_the_derived_caption_is_the_position_stage_s_target(home, roots):
     p.write_text(json.dumps(report), encoding="utf-8")
     got = P.read(p, roots, "position")["a.png"]
     assert got.kind == "derived"
-    assert got.path == "post_image_dataset/resized/a.txt"
+    assert got.path == "workspace/resized/a.txt"
 
 
 def test_a_stage_that_proposes_nothing_is_refused(home, roots):
@@ -227,7 +227,7 @@ def test_undo_twice_is_a_no_op_not_a_second_revert(home, roots):
 def test_undoing_the_clause_rewrite_drops_the_stale_sidecar(home, roots):
     """``.variants.txt`` wins over the caption at encode time, so a sidecar left
     beside a restored caption would keep training the applied text."""
-    dst = home / "post_image_dataset" / "resized"
+    dst = home / "workspace" / "resized"
     (dst / "a.txt").write_text("1girl. On the left, solo.", encoding="utf-8")
     (dst / "a.variants.txt").write_text(
         "v0\t1girl. On the left, solo.\n", encoding="utf-8"
