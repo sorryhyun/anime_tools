@@ -13,7 +13,7 @@ import logging
 import random
 from pathlib import Path
 
-import torch
+from anime_tools._device import resolve_device
 
 logger = logging.getLogger(__name__)
 
@@ -69,7 +69,7 @@ def cmd_predict(args: argparse.Namespace) -> None:
         print(f"split:        {'val' if stem in set(manifest.val_stems) else 'train'}")
         print()
 
-    device = args.device or ("cuda" if torch.cuda.is_available() else "cpu")
+    device = resolve_device(args.device)
     tagger = AnimaTagger(out_dir, device=device)
     img = Image.open(image_path)
     out = tagger.predict(img)

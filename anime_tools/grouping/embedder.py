@@ -55,8 +55,9 @@ def pe_spatial_embedder(
     bf16 by default — byte-compatible with the pre-split trainer embedder
     (``load_pe_encoder`` default), so existing ``$NEAR_TWIN_CACHE`` entries
     stay valid."""
+    from anime_tools._device import resolve_device
     from anime_tools.vision.pe import load_pe_spatial
 
-    dev = torch.device(device or ("cuda" if torch.cuda.is_available() else "cpu"))
+    dev = torch.device(resolve_device(device))
     model = load_pe_spatial(dev, model_path=model_path, dtype=dtype)
     return PESpatialEmbedder(model, dev, dtype)

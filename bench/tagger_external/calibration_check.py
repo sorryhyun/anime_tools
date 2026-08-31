@@ -33,7 +33,6 @@ from __future__ import annotations
 
 import argparse
 import csv
-import json
 import logging
 import sys
 from pathlib import Path
@@ -42,12 +41,16 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 
 import torch
-from safetensors import safe_open
 from safetensors.torch import load_file as st_load
 
-from anime_tools.tagger.cli.calibrate import calibrate_thresholds
+from anime_tools.tagger.cli.calibrate import DEFAULT_SWEEP, calibrate_thresholds
 from anime_tools.tagger.data import TaggerCheckpoint
 from anime_tools.tagger.dbv4_backend import SidecarHead
+from anime_tools.tagger.feature_cache import (
+    dbv4_cache_path,
+    load_dbv4_cache,
+    multi_hot_from_manifest,
+)
 from bench._common import make_run_dir, write_result
 
 logging.basicConfig(level=logging.INFO, format="%(message)s")
@@ -102,13 +105,8 @@ def main() -> None:
     cfg, vocab, dataset = ckpt.config, ckpt.vocab, ckpt.dataset
     n_tags = ckpt.n_tags
     arch = cfg["dbv4"]["arch"]
-    cache_path = Path(
-        args.feature_cache
-        or f"post_image_dataset/anima_tagger/dbv4/{arch}_hidden.safetensors"
-    )
-    with safe_open(str(cache_path), "pt") as f:
-        cached_stems = json.loads(f.metadata()["stems"])
-    cache = st_load(str(cache_path))
+    cache_path = dbv4_cache_path(arch, args.feature_cache)
+    cache, cached_stems = load_dbv4_cache(cache_path)
     pos = {s: i for i, s in enumerate(cached_stems)}
     stems = [
         s for s in dataset["split"][args.split] if s in pos and cache["ok"][pos[s]]
@@ -116,9 +114,7 @@ def main() -> None:
     rows = torch.tensor([pos[s] for s in stems])
     probs = cache["probs"][rows].float()
     tag_idx = dict(zip(dataset["stems"], dataset["tag_indices"]))
-    gt = torch.zeros(len(stems), n_tags)
-    for n, s in enumerate(stems):
-        gt[n, tag_idx[s]] = 1.0
+    gt = multi_hot_from_manifest([tag_idx[s] for s in stems], n_tags)
 
     # supported (dbv4-native) vs sidecar rows
     unmatched = {u["index"] for u in cfg["alignment"]["unmatched"]}
@@ -140,10 +136,9 @@ def main() -> None:
     support = gt.sum(0)
     scored = support >= args.min_support
 
-    # val-optimal thresholds for the transfer test (same sweep as calibrate.py)
-    sweep = torch.arange(0.05, 0.951, 0.05)
+    # val-optimal thresholds for the transfer test
     val_thr, _ = calibrate_thresholds(
-        probs, gt, sweep, default=float("nan"), min_support=args.min_support
+        probs, gt, DEFAULT_SWEEP, default=float("nan"), min_support=args.min_support
     )
 
     slices: dict[str, torch.Tensor] = {

@@ -125,8 +125,8 @@ ground — softens the long-tail without overshoot.
 | `anima_tagger.py` | `AnimaTagger` — public inference class. Exposes `predict`/`predict_caption`. Requires `config.json["backend"] == "dbv4"` (the legacy PE dual-encoder head was removed 2026-08-30 — curation split Phase 0; archived under `_archive/anima_tagger_training/pe_backend_removed_2026_08_30/`). Implements all post-prediction refinements (group argmax, character floor, original-fallback, girls-count cap, top-1 artist/copyright). |
 | `dbv4_backend.py` | `animetimm/caformer_b36.dbv4-full` loader + `align_vocab` (the single vocab join point) + `SidecarHead` (our linear head over the backbone's hidden state). |
 | `group_router.py` | `GroupRouter` + `compute_grouped_loss` — typed tag-group routing (softmax / softmax_when_solo / multilabel, sentinel + escape semantics). Promoted out of the archived trainer because the inference rule, calibrator and benches still resolve groups through it. |
-| `feature_cache.py` | `feature_cache_root` / `cache_dir_for` — path layout under `post_image_dataset/anima_tagger/` (dbv4 hidden-state cache + legacy token caches). |
-| `anima_tagger_data.py` | `TaggerManifest` (+ the legacy cached-feature datasets / bucket sampler, load-only). |
+| `feature_cache.py` | The dbv4 hidden-state cache: `dbv4_cache_path` / `dbv4_cache_stems` / `load_dbv4_cache` (the stem list rides in the safetensors metadata — a cache built for another manifest is misaligned row-for-row, so every reader checks it) + `multi_hot_from_manifest`. The archived PE token-cache path helpers went with their caches. |
+| `data.py` | `TaggerCheckpoint.from_dir(path, require=…, backend=…)` — the one read of a checkpoint dir (`config.json` / `vocab.json` / `dataset.json`, the "run build_vocab first" exit, `idx_to_name`) — and `TaggerManifest`. |
 | `tag_rules.py` | `tag_rules.yaml` loader/applier (replacements, always-remove, clothing dedup, `category_overrides`, `coverage_ignore`). |
 | `tag_groups.py` | `tag_groups.yaml` loader; `TagGroup`/`TagGroups`/`ResolvedGroup`; modes `softmax`, `softmax_when_solo`, `multilabel`. |
 | `taxonomy.py` / `readback.py` / `correction.py` | Danbooru category taxonomy + count-tag regex; Read-It-Back tag-adherence instrument; caption correction helpers. |
@@ -229,7 +229,7 @@ pulls them eagerly. They
 land in the **HF hub cache**, not under `models/` — that is where
 `Dbv4Backend._load_model` looks. The dbv4 hidden-state cache lives at
 `post_image_dataset/anima_tagger/dbv4/<arch>_hidden.safetensors`
-(`feature_cache.py`), read by `train_sidecar.py`, `bench/readback` and
+(`feature_cache.py`), read by `train_sidecar.py` and
 `bench/tagger_external/calibration_check.py`.
 
 ### Legacy PE dual-encoder path (archived)

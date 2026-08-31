@@ -48,6 +48,7 @@ from torch import nn
 
 logger = logging.getLogger(__name__)
 
+from anime_tools._device import resolve_device
 from anime_tools.tagger.dbv4_meta import (
     DEFAULT_DBV4_ARCH,
     DEFAULT_DBV4_IMG_SIZE,
@@ -245,9 +246,7 @@ class Dbv4Backend:
         self.repo = repo
         self.arch = arch
         self.img_size = int(img_size)
-        if device is None:
-            device = "cuda" if torch.cuda.is_available() else "cpu"
-        self.device = torch.device(device)
+        self.device = torch.device(resolve_device(device))
         self.dtype = dtype
         self.revision = revision
         self._card = card

@@ -19,14 +19,16 @@ Ours is re-read from the saved artifacts so both arms score the same crops.
 
 (run from the trainer checkout: the probe reads the trainer's
 ``bench/position_captions/results/`` artifacts, resolved against the curation
-home = ``ANIMA_HOME`` / CWD.) ``load_external`` / ``collect_external`` were
-inlined from the archived ``run_bench.py`` (curation split Phase 3b).
+home = ``ANIMA_HOME`` / CWD.) The external tagger is loaded through the
+package's own :class:`~anime_tools.tagger.dbv4_backend.Dbv4Backend` — the two
+are the same timm-over-``animetimm/*.dbv4-full`` load, and the copy this file
+inlined from the archived ``run_bench.py`` (curation split Phase 3b) had drifted
+into its own square-pad, its own normalisation and its own state-dict check.
 """
 
 from __future__ import annotations
 
 import argparse
-import csv
 import json
 import logging
 import sys
@@ -38,84 +40,48 @@ sys.path.insert(0, str(REPO_ROOT))
 import torch
 from PIL import Image
 
+from anime_tools._device import resolve_device
 from anime_tools._env import resolve_path
+from anime_tools.captions.vocab_io import names_by_category, resolved_groups
+from anime_tools.tagger.data import TaggerCheckpoint
+from anime_tools.tagger.dbv4_backend import Dbv4Backend
 from bench._common import make_run_dir, write_result
 
 log = logging.getLogger("probe_position_rescore")
 
 
-def _pad_square_white(im: Image.Image) -> Image.Image:
-    w, h = im.size
-    s = max(w, h)
-    if w == h:
-        return im
-    canvas = Image.new("RGB", (s, s), (255, 255, 255))
-    canvas.paste(im, ((s - w) // 2, (s - h) // 2))
-    return canvas
+def load_external(args, device: torch.device) -> Dbv4Backend:
+    """The external tagger, through the package's own dbv4 loader.
 
-
-def load_external(args, device: torch.device):
-    import timm
-    from huggingface_hub import hf_hub_download
-    from safetensors.torch import load_file as st_load
-
-    repo = args.external_repo
-    weights = hf_hub_download(repo, "model.safetensors")
-    tags_csv = hf_hub_download(repo, "selected_tags.csv")
-    meta_p = hf_hub_download(repo, "meta.json")
-    with open(meta_p) as f:
-        meta = json.load(f)
-    margs = meta.get("model_args", {})
-    kwargs = {}
-    if "act_layer" in margs:
-        kwargs["act_layer"] = margs["act_layer"]
-    with open(tags_csv, newline="") as f:
-        rows = list(csv.DictReader(f))
-    model = timm.create_model(
-        args.external_arch, pretrained=False, num_classes=len(rows), **kwargs
+    bf16 only on CUDA — the probe scores a few hundred crops, and bf16 on CPU
+    buys nothing but noise in the probabilities it is comparing.
+    """
+    return Dbv4Backend(
+        repo=args.external_repo,
+        arch=args.external_arch,
+        img_size=args.external_img_size,
+        device=device,
+        dtype=torch.bfloat16 if device.type == "cuda" else torch.float32,
     )
-    sd = st_load(weights)
-    missing, unexpected = model.load_state_dict(sd, strict=False)
-    if missing or unexpected:
-        raise SystemExit(
-            f"external state_dict mismatch: missing={missing[:5]} unexpected={unexpected[:5]}"
-        )
-    model.to(device).eval()
-    pcfg = model.pretrained_cfg
-    mean = torch.tensor(pcfg.get("mean", (0.485, 0.456, 0.406))).view(1, 3, 1, 1)
-    std = torch.tensor(pcfg.get("std", (0.229, 0.224, 0.225))).view(1, 3, 1, 1)
-    return model, rows, mean, std
 
 
 def collect_external(
-    args, model, mean, std, image_paths: list[str], device: torch.device
+    backend: Dbv4Backend, images: list, batch_size: int
 ) -> torch.Tensor:
-    import numpy as np
+    """``[N, n_classes]`` sigmoid probs; ``images`` are paths or PIL images.
 
-    S = args.external_img_size
+    Paths are opened a batch at a time, so a long crop list never sits decoded
+    in memory at once.
+    """
     probs: list[torch.Tensor] = []
-    autocast = (
-        torch.amp.autocast("cuda", dtype=torch.bfloat16)
-        if device.type == "cuda"
-        else torch.autocast("cpu", enabled=False)
-    )
-    for i in range(0, len(image_paths), args.external_batch_size):
-        chunk = image_paths[i : i + args.external_batch_size]
-        arrs = []
-        for p in chunk:
-            im = Image.open(p).convert("RGB")
-            im = _pad_square_white(im).resize((S, S), Image.BICUBIC)
-            arrs.append(
-                torch.from_numpy(np.asarray(im, dtype=np.float32) / 255.0).permute(
-                    2, 0, 1
-                )
-            )
-        x = (torch.stack(arrs) - mean) / std
-        with torch.no_grad(), autocast:
-            out = model(x.to(device, non_blocking=True))
-        probs.append(out.float().sigmoid().cpu())
-        if (i // args.external_batch_size) % 20 == 0:
-            log.info("external: %d/%d", i + len(chunk), len(image_paths))
+    for i in range(0, len(images), batch_size):
+        chunk = [
+            im if isinstance(im, Image.Image) else Image.open(im).convert("RGB")
+            for im in images[i : i + batch_size]
+        ]
+        probs.append(backend.forward(chunk).probs)
+        if (i // batch_size) % 20 == 0:
+            log.info("external: %d/%d", i + len(chunk), len(images))
     return torch.cat(probs)
 
 
@@ -146,19 +112,16 @@ def parse_args():
 
 def main():
     args = parse_args()
-    device = torch.device(
-        args.device or ("cuda" if torch.cuda.is_available() else "cpu")
-    )
-    vocab = json.loads(
-        (resolve_path(args.model_dir) / "vocab.json").read_text(encoding="utf-8")
-    )
-    hair_group = next(g for g in vocab["groups"] if g["name"] == "hair_color")
-    hair_names = set(hair_group["tag_names"])
-    char_names = {t["name"] for t in vocab["tags"] if t["category"] == "character"}
+    device = torch.device(resolve_device(args.device))
+    ckpt = TaggerCheckpoint.from_dir(resolve_path(args.model_dir))
+    hair_group = next(g for g in resolved_groups(ckpt.vocab) if g.name == "hair_color")
+    hair_names = set(hair_group.tag_names)
+    char_names = names_by_category(ckpt.vocab, ("character",))["character"]
 
-    model, rows, mean, std = load_external(args, device)
-    col = {r["name"].replace("_", " "): j for j, r in enumerate(rows)}
-    thr = {r["name"].replace("_", " "): float(r["best_threshold"]) for r in rows}
+    backend = load_external(args, device)
+    card = backend.card
+    col = card.name_to_col
+    thr = {n: float(card.rows[j]["best_threshold"]) for n, j in col.items()}
     hair_cols = {n: col[n] for n in hair_names if n in col}
 
     # ---- autocaption crops ----
@@ -179,7 +142,7 @@ def main():
                 continue
             crop_paths.append(str(auto_dir / inst["crop"]))
             jobs.append((img["image"], inst, gt_hair, gt_chars))
-    probs = collect_external(args, model, mean, std, crop_paths, device)
+    probs = collect_external(backend, crop_paths, args.external_batch_size)
 
     hair_tot = hair_hit_ours = hair_hit_ext = 0
     char_tot = char_hit_ours = char_hit_ext = 0
@@ -228,14 +191,8 @@ def main():
             other = r["right" if side == "left" else "left"]
             halves.append(img.crop(box))
             bjobs.append((r["case"], side, want, other, r[f"{side}_correct"]))
-    tmp = []
-    for i, hp in enumerate(halves):
-        p = bind_dir / f"_half_{i}.png"
-        hp.save(p)
-        tmp.append(str(p))
-    bprobs = collect_external(args, model, mean, std, tmp, device)
-    for p in tmp:
-        Path(p).unlink()
+    # The halves are already in memory — no PNG round-trip through the run dir.
+    bprobs = collect_external(backend, halves, args.external_batch_size)
     side_ours = side_ext = 0
     for (case, side, want, other, ours_ok), pr in zip(bjobs, bprobs):
         side_ours += bool(ours_ok)

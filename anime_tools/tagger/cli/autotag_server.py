@@ -33,6 +33,7 @@ import argparse
 import logging
 import sys
 
+from anime_tools._device import resolve_device
 from anime_tools._env import resolve_path, setup_logging
 from anime_tools.tagger.tagger import (
     DEFAULT_TAGGER_DIR,
@@ -60,11 +61,10 @@ def main() -> None:
     p.add_argument("--device", default=None)
     args = p.parse_args()
 
-    import torch
     from PIL import Image
 
     ckpt_dir = ensure_tagger_checkpoint(resolve_path(args.tagger_dir))
-    device = args.device or ("cuda" if torch.cuda.is_available() else "cpu")
+    device = resolve_device(args.device)
     tagger = AnimaTagger(ckpt_dir, device=device)
     # Warm the lazily-loaded PE encoders with a tiny dummy image so the first
     # real request is fast and READY genuinely means "ready to serve".

@@ -55,6 +55,7 @@ import torch
 from PIL import Image
 from safetensors.torch import load_file as st_load
 
+from anime_tools._device import resolve_device
 from anime_tools.captions import tag_groups as tg
 from anime_tools.captions import tag_rules as tr
 from anime_tools.captions.taxonomy import classify_people, is_solo_names
@@ -350,9 +351,7 @@ class AnimaTagger:
         pe_aux_ckpt: str | Path | None = None,
     ):
         self.ckpt_dir = Path(ckpt_dir)
-        if device is None:
-            device = "cuda" if torch.cuda.is_available() else "cpu"
-        self.device = torch.device(device)
+        self.device = torch.device(resolve_device(device))
         self.dtype = dtype
         # Accepted for call-site compat (ComfyUI workflows / old scripts) but
         # no-ops: the PE dual-encoder backend and PE-LoRA are gone.

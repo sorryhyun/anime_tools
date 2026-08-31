@@ -46,9 +46,10 @@ from safetensors.torch import load_file as st_load
 from safetensors.torch import save_file as st_save
 from torch.utils.data import DataLoader, Dataset
 
+from anime_tools._device import resolve_device
 from anime_tools.captions import tag_rules as tr
 from anime_tools.captions.taxonomy import classify_people
-from anime_tools.tagger.cli.calibrate import calibrate_thresholds
+from anime_tools.tagger.cli.calibrate import DEFAULT_SWEEP, calibrate_thresholds
 from anime_tools.tagger.cli.eval_metrics import (
     per_tag_average_precision,
     per_tag_prf,
@@ -60,6 +61,12 @@ from anime_tools.tagger.dbv4_backend import (
     align_vocab,
     preprocess_dbv4,
     rename_recovery_from_rules,
+)
+from anime_tools.tagger.feature_cache import (
+    dbv4_cache_path,
+    dbv4_cache_stems,
+    load_dbv4_cache,
+    multi_hot_from_manifest,
 )
 
 logging.basicConfig(level=logging.INFO, format="%(message)s")
@@ -274,9 +281,7 @@ def train_head(
 def main() -> None:
     args = parse_args()
     ckpt_dir = Path(args.ckpt_dir)
-    device = torch.device(
-        args.device or ("cuda" if torch.cuda.is_available() else "cpu")
-    )
+    device = torch.device(resolve_device(args.device))
     ckpt = TaggerCheckpoint.from_dir(
         ckpt_dir, require=("vocab", "dataset"), backend="dbv4"
     )
@@ -297,19 +302,11 @@ def main() -> None:
     image_paths: list[str] = list(dataset["image_paths"])
     if args.limit:
         stems, image_paths = stems[: args.limit], image_paths[: args.limit]
-    cache_path = Path(
-        args.feature_cache
-        or f"post_image_dataset/anima_tagger/dbv4/{d['arch']}_hidden.safetensors"
-    )
+    cache_path = dbv4_cache_path(d["arch"], args.feature_cache)
 
     # ---- stage 1: cache ----
     if cache_path.exists():
-        meta_stems = json.loads(
-            __import__("safetensors")
-            .safe_open(str(cache_path), "pt")
-            .metadata()["stems"]
-        )
-        if meta_stems != stems:
+        if dbv4_cache_stems(cache_path) != stems:
             raise SystemExit(
                 f"{cache_path} was built for a different stem list — delete it or "
                 f"pass --feature_cache"
@@ -329,7 +326,7 @@ def main() -> None:
         )
     if args.cache_only:
         return
-    cache = st_load(str(cache_path))
+    cache, _ = load_dbv4_cache(cache_path)
     hidden, probs, ok = cache["hidden"], cache["probs"], cache["ok"]
 
     # ---- labels ----
@@ -345,13 +342,11 @@ def main() -> None:
         },
     )
     stem_pos = {s: i for i, s in enumerate(stems)}
-    col_of = {vi: j for j, vi in enumerate(bce_indices)}
-    y_bce = torch.zeros(len(stems), len(bce_indices))
-    for n, ti in enumerate(dataset["tag_indices"][: len(stems)]):
-        for t in ti:
-            j = col_of.get(int(t))
-            if j is not None:
-                y_bce[n, j] = 1.0
+    y_bce = multi_hot_from_manifest(
+        dataset["tag_indices"][: len(stems)],
+        len(bce_indices),
+        col_of={vi: j for j, vi in enumerate(bce_indices)},
+    )
     people_labels = (
         [] if args.no_people else list(vocab.get("people_count_labels") or [])
     )
@@ -386,9 +381,8 @@ def main() -> None:
     b_va, p_va = _eval_head(head, hidden[val_idx], None, None, device)
     s_va = b_va.sigmoid()
     yb_va = y_bce[val_idx]
-    sweep = torch.arange(0.05, 0.951, 0.05)
     thr_rows, _ = calibrate_thresholds(
-        s_va, yb_va, sweep, default=0.5, min_support=args.min_support
+        s_va, yb_va, DEFAULT_SWEEP, default=0.5, min_support=args.min_support
     )
     pred = s_va >= thr_rows
     _, _, f1, sup = per_tag_prf(pred, yb_va)

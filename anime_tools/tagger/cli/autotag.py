@@ -16,6 +16,7 @@ from __future__ import annotations
 import argparse
 import logging
 
+from anime_tools._device import resolve_device
 from anime_tools._env import resolve_path, setup_logging
 from anime_tools.tagger.tagger import (
     DEFAULT_TAGGER_DIR,
@@ -48,7 +49,6 @@ def main() -> None:
     )
     args = p.parse_args()
 
-    import torch
     from PIL import Image
 
     image_path = resolve_path(args.image)
@@ -56,7 +56,7 @@ def main() -> None:
         raise SystemExit(f"image not found: {image_path}")
 
     ckpt_dir = ensure_tagger_checkpoint(resolve_path(args.tagger_dir))
-    device = args.device or ("cuda" if torch.cuda.is_available() else "cpu")
+    device = resolve_device(args.device)
     tagger = AnimaTagger(ckpt_dir, device=device)
     caption = tagger.predict_caption(
         Image.open(image_path), min_confidence=args.min_confidence

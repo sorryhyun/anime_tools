@@ -625,9 +625,10 @@ def load_pe_spatial(
     import shutil
     from pathlib import Path
 
+    from anime_tools._device import resolve_device
     from anime_tools._hf import hf_download
 
-    dev = torch.device(device or ("cuda" if torch.cuda.is_available() else "cpu"))
+    dev = torch.device(resolve_device(device))
     ckpt = Path(model_path) if model_path else default_pe_spatial_path()
     if not ckpt.is_file():
         logger.info(

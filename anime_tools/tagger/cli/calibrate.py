@@ -16,6 +16,11 @@ from __future__ import annotations
 
 import torch
 
+# The sweep the docstring describes, in one place: both callers used to spell
+# `torch.arange(0.05, 0.951, 0.05)` themselves, one of them under a comment
+# saying "same sweep as calibrate.py".
+DEFAULT_SWEEP = torch.arange(0.05, 0.951, 0.05)
+
 
 def calibrate_thresholds(
     scores: torch.Tensor,  # [N, n_tags] sigmoid probabilities
