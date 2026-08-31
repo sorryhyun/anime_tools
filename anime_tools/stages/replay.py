@@ -40,13 +40,13 @@ Three things make a replay safe to trust:
 from __future__ import annotations
 
 import argparse
-import json
 from collections import Counter
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 
 from anime_tools._env import resolve_path
+from anime_tools._json import read_json, write_json
 from anime_tools.path_filter import filter_paths_by_glob
 
 from ._caption_io import read_caption, write_caption
@@ -123,7 +123,7 @@ def load_report(path: Path) -> dict:
     if not path.exists():
         raise StaleReportError(f"report not found: {path}")
     try:
-        report = json.loads(path.read_text(encoding="utf-8"))
+        report = read_json(path)
     except (OSError, ValueError) as exc:
         raise StaleReportError(f"report is not readable JSON: {path} ({exc})") from exc
     if not isinstance(report, dict):
@@ -421,10 +421,7 @@ def build_replay_report(
 
 def write_replay_report(report: Mapping[str, object], report_dir: Path) -> Path:
     """Write the replay report next to (never over) the dry run's."""
-    report_dir.mkdir(parents=True, exist_ok=True)
-    path = report_dir / REPLAY_REPORT_NAME
-    path.write_text(json.dumps(report, indent=2, ensure_ascii=False), encoding="utf-8")
-    return path
+    return write_json(report_dir / REPLAY_REPORT_NAME, report)
 
 
 def print_replay(rows: Sequence[ReplayRow], stats: ReplayStats, *, apply: bool) -> None:

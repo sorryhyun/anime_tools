@@ -21,7 +21,6 @@ that it stays out). ``tests/test_gui_proposals.py`` compares the two copies.
 
 from __future__ import annotations
 
-import json
 from collections import Counter
 from collections.abc import Iterator, Mapping
 from dataclasses import dataclass
@@ -29,6 +28,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
+from anime_tools._json import read_json
 from anime_tools.gui import dataset as D
 
 # Statuses a replayed row carries (``stages.replay.ReplayRow``), as opposed to
@@ -105,7 +105,7 @@ def load(path: Path) -> dict[str, Any]:
     if not path.is_file():
         raise ProposalError(f"report not found: {path}")
     try:
-        report = json.loads(path.read_text(encoding="utf-8"))
+        report = read_json(path)
     except (OSError, ValueError) as exc:
         raise ProposalError(f"report is not readable JSON: {path} ({exc})") from exc
     if not isinstance(report, dict):

@@ -30,10 +30,11 @@ stays torch-free.
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
 
 import numpy as np
+
+from anime_tools._json import write_json
 
 MANIFEST_VERSION = 2
 # Stage-B near-twin gate — same semantics as the miner's defaults, but looser on
@@ -275,6 +276,4 @@ def build_groups(
 
 
 def _write_manifest(out_path: Path, manifest: dict) -> None:
-    out_path = Path(out_path)
-    out_path.parent.mkdir(parents=True, exist_ok=True)
-    out_path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
+    write_json(out_path, manifest)

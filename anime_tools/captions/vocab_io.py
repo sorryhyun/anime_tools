@@ -30,10 +30,10 @@ Nothing here imports torch: the group rows come back as
 
 from __future__ import annotations
 
-import json
 from collections.abc import Callable, Iterable, Mapping
 from pathlib import Path
 
+from anime_tools._json import read_json
 from anime_tools.captions.tag_groups import ResolvedGroup, resolved_from_dict
 
 __all__ = [
@@ -49,8 +49,7 @@ def load_vocab(path: str | Path) -> dict:
     p = Path(path)
     if p.is_dir():
         p = p / "vocab.json"
-    with open(p, encoding="utf-8") as f:
-        return json.load(f)
+    return read_json(p)
 
 
 def names_by_category(

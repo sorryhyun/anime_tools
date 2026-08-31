@@ -20,13 +20,13 @@ from __future__ import annotations
 
 import argparse
 import csv
-import json
 import logging
 import random
 from collections import Counter, defaultdict
 from collections.abc import Iterable, Sequence
 from pathlib import Path
 
+from anime_tools._json import read_json, write_json
 from anime_tools.captions import position_clauses as pc
 from anime_tools.captions import tag_groups as tg
 from anime_tools.captions import tag_rules as tr
@@ -130,8 +130,7 @@ def load_tag_cache(path: Path) -> dict[str, str]:
     path = Path(path)
     if path.suffix.lower() == ".csv":
         return _load_tag_cache_csv(path)
-    with open(path) as f:
-        raw = json.load(f)
+    raw = read_json(path)
     out: dict[str, str] = {}
     for tag, type_id in raw.items():
         cat = TAG_TYPE_NAMES.get(int(type_id))
@@ -683,9 +682,7 @@ def cmd_build_vocab(args: argparse.Namespace) -> None:
         seed=args.seed,
     )
 
-    vocab_path = out_dir / "vocab.json"
-    with open(vocab_path, "w") as f:
-        json.dump(vocab, f, indent=2, ensure_ascii=False)
+    vocab_path = write_json(out_dir / "vocab.json", vocab)
     logger.info("wrote %s", vocab_path)
 
     # Snapshot groups + rules into the checkpoint dir so the inference wrapper
@@ -707,9 +704,7 @@ def cmd_build_vocab(args: argparse.Namespace) -> None:
 
     # Manifest drops captions without a sibling image, rating tag, or in-vocab tag.
     manifest = build_manifest(index, vocab, split)
-    manifest_path = out_dir / "dataset.json"
-    with open(manifest_path, "w") as f:
-        json.dump(manifest, f, indent=2, ensure_ascii=False)
+    manifest_path = write_json(out_dir / "dataset.json", manifest)
     logger.info(
         "wrote %s — %d trainable samples (dropped %d no_image, %d no_rating, "
         "%d no_invocab_tags)",

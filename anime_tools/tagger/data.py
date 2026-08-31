@@ -16,10 +16,11 @@ trainer (``anime_tools/tagger/cli/train_sidecar.py``) keeps its own cache.
 
 from __future__ import annotations
 
-import json
 from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
+
+from anime_tools._json import read_json
 
 # Which files a checkpoint dir holds, by the short name ``require`` uses.
 CHECKPOINT_FILES: dict[str, str] = {
@@ -46,8 +47,7 @@ class TaggerManifest:
 
     @classmethod
     def from_path(cls, path: Path) -> TaggerManifest:
-        with open(path) as f:
-            return cls.from_dict(json.load(f))
+        return cls.from_dict(read_json(path))
 
     @classmethod
     def from_dict(cls, d: dict) -> TaggerManifest:
@@ -121,7 +121,7 @@ class TaggerCheckpoint:
                 f"need {' and '.join(missing)} — run --mode build_vocab first"
             )
         loaded = {
-            k: json.loads((d / name).read_text(encoding="utf-8"))
+            k: read_json(d / name)
             for k, name in CHECKPOINT_FILES.items()
             if (d / name).exists()
         }

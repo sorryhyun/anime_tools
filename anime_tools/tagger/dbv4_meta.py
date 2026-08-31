@@ -16,8 +16,9 @@ torch. ``tagger.py`` re-exports every name below, so the historical
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
+
+from anime_tools._json import read_json
 
 DEFAULT_DBV4_REPO = "animetimm/caformer_b36.dbv4-full"
 DEFAULT_DBV4_ARCH = "caformer_b36"
@@ -57,8 +58,7 @@ def backbone_repo_for(ckpt_dir: str | Path) -> str:
     another ``animetimm/*.dbv4-full`` variant must resolve *that* backbone.
     """
     try:
-        with open(Path(ckpt_dir) / "config.json", encoding="utf-8") as f:
-            cfg = json.load(f)
+        cfg = read_json(Path(ckpt_dir) / "config.json")
     except (OSError, ValueError):
         return DEFAULT_DBV4_REPO
     repo = (cfg.get("dbv4") or {}).get("repo")

@@ -43,7 +43,6 @@ underscores replaced by spaces (matching Anima's training-time T5 input).
 
 from __future__ import annotations
 
-import json
 import logging
 import os
 import re
@@ -56,6 +55,7 @@ from PIL import Image
 from safetensors.torch import load_file as st_load
 
 from anime_tools._device import resolve_device
+from anime_tools._json import read_json
 from anime_tools.captions import tag_groups as tg
 from anime_tools.captions import tag_rules as tr
 from anime_tools.captions.taxonomy import classify_people, is_solo_names
@@ -213,8 +213,7 @@ def ensure_tagger_backbone(ckpt_dir: str | Path) -> str:
 
 def _is_dbv4_dir(ckpt_dir: Path) -> bool:
     try:
-        with open(ckpt_dir / "config.json", encoding="utf-8") as f:
-            return json.load(f).get("backend") == "dbv4"
+        return read_json(ckpt_dir / "config.json").get("backend") == "dbv4"
     except (OSError, ValueError):
         return False
 
@@ -360,8 +359,7 @@ class AnimaTagger:
         # threshold (some F1 thresholds are ~0.05, too permissive on its own).
         self._character_floor = float(character_floor)
 
-        with open(self.ckpt_dir / "config.json", encoding="utf-8") as f:
-            cfg_d = json.load(f)
+        cfg_d = read_json(self.ckpt_dir / "config.json")
         self._cfg_d = cfg_d
         self.backend_kind: str = str(cfg_d.get("backend", "pe"))
         if self.backend_kind != "dbv4":

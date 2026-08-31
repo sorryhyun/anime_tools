@@ -34,7 +34,6 @@ identity-pair sampler, artist balancing, dataset analytics.
 """
 
 import argparse
-import json
 import os
 import re
 from collections import OrderedDict
@@ -42,6 +41,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from anime_tools._env import resolve_path
+from anime_tools._json import write_json
 from anime_tools._walk import IMAGE_EXTENSIONS, caption_key, safe_walk
 
 # The single caption grammar — never hand-split a caption (a raw split(",")
@@ -400,9 +400,7 @@ def main():
         recover_positional=not args.no_positional_recover,
         path_pattern=args.path_pattern,
     )
-    out.parent.mkdir(parents=True, exist_ok=True)
-    with open(out, "w", encoding="utf-8") as f:
-        json.dump(index, f, ensure_ascii=False, indent=1)
+    write_json(out, index)
 
     m = index["meta"]
     cov = {

@@ -22,7 +22,6 @@ fill, the same schema the earlier prompt sweeps under
 from __future__ import annotations
 
 import argparse
-import json
 import re
 from pathlib import Path
 
@@ -31,6 +30,7 @@ from PIL import Image, ImageDraw
 
 from anime_tools._device import resolve_device
 from anime_tools._env import resolve_path
+from anime_tools._json import write_json
 from anime_tools._walk import walk_images
 from anime_tools.downloads import DEFAULT_SAM3_CHECKPOINT
 
@@ -301,10 +301,7 @@ def main() -> None:
     summary_path = (
         resolve_path(args.summary) if args.summary else out_root / "probe.json"
     )
-    summary_path.parent.mkdir(parents=True, exist_ok=True)
-    summary_path.write_text(
-        json.dumps({"prompts": dict(prompts), "images": summary}, indent=1)
-    )
+    write_json(summary_path, {"prompts": dict(prompts), "images": summary})
     print(f"\nwrote: {summary_path}")
 
 

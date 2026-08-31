@@ -33,6 +33,7 @@ from PIL import Image, ImageDraw
 
 from anime_tools._device import resolve_device
 from anime_tools._env import resolve_path
+from anime_tools._json import write_json
 from anime_tools._walk import walk_images
 from anime_tools.captions.position_clauses import parse_caption
 from anime_tools.stages.cli._models import load_tagger
@@ -304,17 +305,13 @@ def main() -> None:
         print(f"  [{index}/{len(images)}] {rel}  +{gained}")
 
     rows.sort(key=lambda r: -r["gained"])
-    (out_dir / "report.json").write_text(
-        json.dumps(
-            {
-                "labels": list(labels),
-                "summary": {**stats, "status": status_counts},
-                "rows": rows,
-            },
-            indent=1,
-            ensure_ascii=False,
-        ),
-        encoding="utf-8",
+    write_json(
+        out_dir / "report.json",
+        {
+            "labels": list(labels),
+            "summary": {**stats, "status": status_counts},
+            "rows": rows,
+        },
     )
     index_path = write_index(out_dir, rows, labels)
     print(json.dumps({**stats, "status": status_counts}, indent=2))

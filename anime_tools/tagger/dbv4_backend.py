@@ -33,7 +33,6 @@ mapped onto Anima's ``safe``/``nsfw`` here.
 from __future__ import annotations
 
 import csv
-import json
 import logging
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
@@ -49,6 +48,7 @@ from torch import nn
 logger = logging.getLogger(__name__)
 
 from anime_tools._device import resolve_device
+from anime_tools._json import read_json, write_json
 from anime_tools.tagger.dbv4_meta import (
     DEFAULT_DBV4_ARCH,
     DEFAULT_DBV4_IMG_SIZE,
@@ -119,8 +119,7 @@ def load_dbv4_card(
         filename="meta.json",
         revision=revision,
     )
-    with open(meta_p, encoding="utf-8") as f:
-        meta = json.load(f)
+    meta = read_json(meta_p)
     with open(tags_csv, newline="", encoding="utf-8") as f:
         rows = list(csv.DictReader(f))
     card = Dbv4Card(repo=repo, rows=rows, model_args=dict(meta.get("model_args", {})))
@@ -397,8 +396,7 @@ class SidecarHead(nn.Module):
         meta = self.meta()
         if extra_meta:
             meta.update(dict(extra_meta))
-        with open(ckpt_dir / SIDECAR_META, "w", encoding="utf-8") as f:
-            json.dump(meta, f, indent=2)
+        write_json(ckpt_dir / SIDECAR_META, meta)
 
     @classmethod
     def load(cls, ckpt_dir: str | Path) -> SidecarHead | None:
@@ -406,8 +404,7 @@ class SidecarHead(nn.Module):
         w, m = ckpt_dir / SIDECAR_WEIGHTS, ckpt_dir / SIDECAR_META
         if not (w.exists() and m.exists()):
             return None
-        with open(m, encoding="utf-8") as f:
-            meta = json.load(f)
+        meta = read_json(m)
         head = cls(
             d_in=int(meta["d_in"]),
             bce_indices=meta.get("bce_indices", []),

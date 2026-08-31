@@ -23,6 +23,7 @@ from fastapi.responses import FileResponse, JSONResponse, Response, StreamingRes
 
 from anime_tools import downloads as DL
 from anime_tools._env import curation_home, models_dir, resolve_path
+from anime_tools._json import read_json, write_json
 from anime_tools.gui import dataset as D
 from anime_tools.gui import proposals as P
 from anime_tools.gui import stages as S
@@ -41,16 +42,14 @@ def load_settings() -> dict[str, Any]:
     p = _settings_path()
     if p.exists():
         try:
-            return json.loads(p.read_text(encoding="utf-8"))
+            return read_json(p)
         except (OSError, ValueError):
             return {}
     return {}
 
 
 def save_settings(data: dict[str, Any]) -> None:
-    _settings_path().write_text(
-        json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8"
-    )
+    write_json(_settings_path(), data)
 
 
 def _hf_token_present() -> bool:
@@ -300,9 +299,7 @@ def create_app(
         p = resolve_path(job.report_path)
         if not p.exists():
             raise HTTPException(404, f"report not found: {p}")
-        return JSONResponse(
-            {"path": str(p), "report": json.loads(p.read_text(encoding="utf-8"))}
-        )
+        return JSONResponse({"path": str(p), "report": read_json(p)})
 
     # ---- proposals: a finished Run, read as a per-image diff -------------
 

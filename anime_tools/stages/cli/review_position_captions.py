@@ -33,6 +33,7 @@ from PIL import Image, ImageDraw
 
 from anime_tools._device import resolve_device
 from anime_tools._env import resolve_path
+from anime_tools._json import write_json
 from anime_tools._walk import walk_images
 from anime_tools.captions.position_clauses import parse_caption
 from anime_tools.stages.cli._models import load_tagger
@@ -404,21 +405,17 @@ def main() -> None:
 
     # Clause-carrying rows first: they are the ones with something to adjudicate.
     rows.sort(key=lambda r: (not r["has_clauses"], not r["drift"], r["image"]))
-    (out_dir / "report.json").write_text(
-        json.dumps(
-            {
-                "pattern": args.path_pattern,
-                "flags": args.flags,
-                "summary": summary,
-                "rows": [
-                    {k: v for k, v in r.items() if k not in {"before", "after"}}
-                    for r in rows
-                ],
-            },
-            indent=1,
-            ensure_ascii=False,
-        ),
-        encoding="utf-8",
+    write_json(
+        out_dir / "report.json",
+        {
+            "pattern": args.path_pattern,
+            "flags": args.flags,
+            "summary": summary,
+            "rows": [
+                {k: v for k, v in r.items() if k not in {"before", "after"}}
+                for r in rows
+            ],
+        },
     )
     index_path = write_index(out_dir, rows, summary, args.path_pattern)
     print(json.dumps(summary, indent=2))

@@ -47,6 +47,7 @@ from safetensors.torch import save_file as st_save
 from torch.utils.data import DataLoader, Dataset
 
 from anime_tools._device import resolve_device
+from anime_tools._json import write_json
 from anime_tools.captions import tag_rules as tr
 from anime_tools.captions.taxonomy import classify_people
 from anime_tools.tagger.cli.calibrate import DEFAULT_SWEEP, calibrate_thresholds
@@ -438,8 +439,7 @@ def main() -> None:
             "seed": args.seed,
         },
     )
-    with open(ckpt_dir / "sidecar_metrics.json", "w", encoding="utf-8") as f:
-        json.dump(metrics, f, indent=2)
+    write_json(ckpt_dir / "sidecar_metrics.json", metrics)
     log.info("=== sidecar val metrics ===")
     log.info(json.dumps({k: v for k, v in metrics.items() if k != "train"}, indent=2))
     log.info("wrote sidecar into %s", ckpt_dir)

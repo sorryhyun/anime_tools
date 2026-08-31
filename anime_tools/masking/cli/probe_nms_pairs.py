@@ -30,6 +30,7 @@ from PIL import Image
 
 from anime_tools._device import resolve_device
 from anime_tools._env import resolve_path
+from anime_tools._json import write_json
 from anime_tools._walk import walk_images
 from anime_tools.downloads import DEFAULT_SAM3_CHECKPOINT
 from anime_tools.stages.cli.position_captions import build_detect_fn
@@ -187,13 +188,9 @@ def main() -> None:
     whole = [p for p in proposals if p["area_frac"] >= 0.9 and p["fill"] is not None]
     summary["whole_canvas_fills"] = sorted(p["fill"] for p in whole)
 
-    out = resolve_path(args.out)
-    out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(
-        json.dumps(
-            {"summary": summary, "pairs": rows, "proposals": proposals}, indent=2
-        ),
-        encoding="utf-8",
+    out = write_json(
+        resolve_path(args.out),
+        {"summary": summary, "pairs": rows, "proposals": proposals},
     )
     print(json.dumps(summary, indent=2))
     print(f"\nwrote: {out}")

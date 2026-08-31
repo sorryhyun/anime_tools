@@ -21,7 +21,6 @@ Then ``AnimaTagger("models/captioners/anima-tagger-dbv4")`` works anywhere a
 from __future__ import annotations
 
 import argparse
-import json
 import logging
 import shutil
 from pathlib import Path
@@ -29,6 +28,7 @@ from pathlib import Path
 import torch
 from safetensors.torch import save_file as st_save
 
+from anime_tools._json import read_json, write_json
 from anime_tools.captions import tag_rules as tr
 from anime_tools.tagger.dbv4_backend import (
     DEFAULT_DBV4_ARCH,
@@ -73,8 +73,7 @@ def main() -> None:
         elif f in ("vocab.json", "rules.yaml"):
             raise SystemExit(f"{src / f} missing")
 
-    with open(out / "vocab.json", encoding="utf-8") as f:
-        vocab = json.load(f)
+    vocab = read_json(out / "vocab.json")
     rules = tr.load_rules(out / "rules.yaml")
     card = load_dbv4_card(args.repo, revision=args.revision)
     align = align_vocab(vocab["tags"], card, rename_recovery_from_rules(rules))
@@ -86,8 +85,7 @@ def main() -> None:
         {"thresholds": thresholds.contiguous()}, str(out / "thresholds.safetensors")
     )
 
-    with open(src / "config.json", encoding="utf-8") as f:
-        src_cfg = json.load(f)
+    src_cfg = read_json(src / "config.json")
     cfg = {
         "backend": "dbv4",
         "dbv4": {
@@ -117,8 +115,7 @@ def main() -> None:
             "never_fire": NEVER_FIRE,
         },
     }
-    with open(out / "config.json", "w", encoding="utf-8") as f:
-        json.dump(cfg, f, indent=2, ensure_ascii=False)
+    write_json(out / "config.json", cfg)
     logger.info(
         "wrote %s: %d/%d tags supported by %s; unmatched by category %s",
         out,

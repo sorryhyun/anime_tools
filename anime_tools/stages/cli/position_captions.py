@@ -48,6 +48,7 @@ import numpy as np
 
 from anime_tools._device import resolve_device
 from anime_tools._env import resolve_path
+from anime_tools._json import write_json
 
 # The one SAM3 entry point: `load_sam3`/`make_processor`, and (as this module's
 # import side effect) the numpy<2 `np.bool` alias sam3 needs before it loads.
@@ -463,13 +464,9 @@ def _run_flatten(args, src: Path, dst: Path, report_dir: Path) -> None:
         "written": stats.written,
         "skipped": dict(sorted(stats.skipped.items(), key=lambda kv: -kv[1])),
     }
-    report_dir.mkdir(parents=True, exist_ok=True)
     # Its own name, not ``report.json``: a flatten is the inverse pass, and a
     # ``--from_report`` replay of one would write the clauses back.
-    (report_dir / "flatten_report.json").write_text(
-        json.dumps({"summary": summary, "images": rows}, indent=2, ensure_ascii=False),
-        encoding="utf-8",
-    )
+    write_json(report_dir / "flatten_report.json", {"summary": summary, "images": rows})
     print(json.dumps(summary, indent=2, ensure_ascii=False))
     print(f"\nreport: {report_dir / 'flatten_report.json'}")
     print_dry_run_footer(args.apply, TE_NOTE)

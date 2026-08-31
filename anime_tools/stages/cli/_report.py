@@ -10,9 +10,10 @@ run, so a stage that forgets a key produces a report nothing can replay.
 
 from __future__ import annotations
 
-import json
 from collections.abc import Mapping
 from pathlib import Path
+
+from anime_tools._json import write_json
 
 DRY_RUN_NOTE = "\nDry run — no captions written. Re-run with --apply to write."
 """What every caption stage says when it wrote nothing. One string, because
@@ -46,10 +47,7 @@ def write_stage_report(report_dir: Path, payload: Mapping[str, object]) -> Path:
     ``ensure_ascii=False`` is not cosmetic: the dataset paths and captions are
     Korean and Japanese, and an escaped report is unreadable in review.
     """
-    report_dir.mkdir(parents=True, exist_ok=True)
-    path = report_dir / "report.json"
-    path.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
-    return path
+    return write_json(report_dir / "report.json", payload)
 
 
 def print_dry_run_footer(apply: bool, note: str | None = None) -> None:

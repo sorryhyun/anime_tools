@@ -22,6 +22,7 @@ import sys
 from collections import Counter
 
 from anime_tools._env import resolve_path
+from anime_tools._json import read_json, write_json
 from anime_tools.stages.multiview_audit import (
     apply_curated,
     revert_curated,
@@ -67,7 +68,7 @@ def main() -> None:
 
     if args.revert:
         manifest_path = resolve_path(args.revert)
-        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        manifest = read_json(manifest_path)
         results = revert_curated(
             manifest["entries"], source_dir=source_dir, apply=args.apply
         )
@@ -85,7 +86,7 @@ def main() -> None:
         print("either --accept <list> or --revert <manifest> is required")
         sys.exit(2)
     report_path = resolve_path(args.report)
-    report = json.loads(report_path.read_text(encoding="utf-8"))
+    report = read_json(report_path)
     rows = (
         report["images"] if isinstance(report, dict) and "images" in report else report
     )
@@ -110,13 +111,9 @@ def main() -> None:
         if args.manifest
         else report_path.parent / "curated_manifest.json"
     )
-    manifest_path.write_text(
-        json.dumps(
-            {"report": str(report_path), "applied": args.apply, "entries": manifest},
-            indent=2,
-            ensure_ascii=False,
-        ),
-        encoding="utf-8",
+    write_json(
+        manifest_path,
+        {"report": str(report_path), "applied": args.apply, "entries": manifest},
     )
     print(f"\nmanifest: {manifest_path}")
     if not args.apply:
