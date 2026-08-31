@@ -1,8 +1,9 @@
 # Workspace + Export
 
-Status: **Phases 1, 3 and 5 done**, 2026-08-31. Phases 4 and 2 pending, in that order.
-Reframes the curation side around a
-**workspace** the tools own, and an explicit **Export** that publishes from it.
+Status: **Phases 1, 3 and 5 done**, 2026-08-31; Phase 4's caption ladder done
+2026-09-01. The rest of Phase 4 and then Phase 2 are pending, in that order.
+Reframes the curation side around a **workspace** the tools own, and an explicit
+**Export** that publishes from it.
 
 ## The idea
 
@@ -231,9 +232,11 @@ panel, a form, the job runner, the SSE log, per-image scope, and a working
 Run → Apply → Undo, with no frontend change at all. What is left is the part the
 registry cannot infer — telling the user what is *pending*:
 
-- **A fourth per-row dot** for export state — in workspace / exported / stale —
-  computed from the export report plus the mtime stamp above, so the sidebar
-  says what is published without opening anything.
+- **A per-row export flag** — in workspace / exported / stale — computed from
+  the export report plus the mtime stamp above, so the sidebar says what is
+  published without opening anything. It belongs beside `resized` and `mask` in
+  `_row`'s row *flags*, not on the caption strip: the strip is the caption
+  ladder now (see below), and export is a fact about the image.
 - **A count in the status line** — "12 images pending export" — so the button
   means something before you press it.
 
@@ -241,7 +244,30 @@ registry cannot infer — telling the user what is *pending*:
 
 - `anime_tools/gui/dataset.py` — the export state on each row (`_row`)
 - `anime_tools/gui/server.py` — the pending-export count on `/api/dataset`
-- `frontend/src/components/{DatasetTree,StatusLine}.tsx` — the dot and the count
+- `frontend/src/components/{DatasetTree,StatusLine}.tsx` — the flag and the count
+
+### Done ahead of the rest: the caption ladder ✅
+
+> **Landed 2026-09-01.** The panel used to be one editable card per *tree*
+> (master, derived) plus a read-only variants table, which made you answer
+> "which tree?" before you could type — a question the workspace/Export split
+> had already made the wrong one to ask, since the trees are where the tools
+> keep working copies and Export is the moment one becomes training data.
+>
+> `dataset.CAPTION_LADDER` is now the one declaration of what captions an image
+> has: a `Rung` each for `master`, `derived` and the generated `variants`
+> sidecar, in order. It reaches the browser twice — as the `captions` flag map
+> on every `/api/dataset` row (the dot strip) and as `caption_versions`' ordered
+> `versions` on `/api/dataset/item`, with the sidecar rung **expanded** into one
+> entry per label (`v0`, `v1`, `r1`…), each already parsed, because a variant is
+> a caption and the browser may not split one. `CAPTION_KINDS` — what
+> `write_caption` accepts — is derived as the `editable` rungs, and the listing
+> ships `ladder` so `DatasetTree` retypes no rung names.
+>
+> The panel is one editor with a badge per version. It opens on what the last
+> run rewrote, else the newest writable caption on disk; a badge is the switch,
+> and a run's diff rides under the editor when its rung is the one on screen and
+> is a one-line pointer to that badge otherwise.
 
 ---
 
@@ -293,12 +319,15 @@ can name `master`.
   together or the test says so.
 - `proposals.CAPTION_KIND`: `{"src": "master", "dst": "derived"}` →
   `{"master": "revised", "dst": "derived"}`.
-- `dataset.CAPTION_KINDS` → `("master", "revised", "derived")`; `caption_paths`
-  gains the overlay; `write_caption`'s `master` kind writes the overlay, since
-  `image_dataset/` is no longer writable.
-- **The row's dot strip stays three wide.** Rather than a fourth dot, the master
-  dot gets three states — hollow (no caption), filled (original only),
-  filled-with-ring (revised in the workspace) — and keeps the same click target.
+- **`dataset.CAPTION_LADDER` gains one row**:
+  `Rung("revised", "master", editable=True)` between `master` and `derived`,
+  with `master` flipped to `editable=False` — `image_dataset/` is no longer
+  writable, and `CAPTION_KINDS`, `caption_paths`, the row's `captions` map, the
+  panel's badges and the sidebar's dot strip are all derived from that tuple, so
+  that line plus a `caption.revised` label and a `.dot.revised` colour is the
+  whole GUI half of this phase. The three-state master dot the earlier sketch
+  called for is not needed: a revised master is its own rung and its own badge,
+  which is what the ladder was for.
 
 ### Touchpoints
 
@@ -306,7 +335,7 @@ can name `master`.
 - `anime_tools/stages/replay.py` — `apply_one`, `replay_rows`, `ReplaySpec` docstring
 - `anime_tools/stages/{autotag,multiview_audit}.py` and their CLIs
 - `anime_tools/gui/{proposals,dataset}.py`
-- `frontend/src/components/DatasetTree.tsx` — the master dot's third state
+- `frontend/src/i18n/*.ts`, `frontend/src/styles.css` — the new rung's label and hue
 - `tests/test_gui_proposals.py`, `tests/test_replay.py`, `tests/test_gui_dataset.py`
 
 ---

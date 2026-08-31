@@ -92,7 +92,7 @@ export function createDataset(config: Config) {
   const onSaved = (entry: CaptionEntry) => {
     mutateItem((prev) =>
       prev
-        ? { ...prev, captions: prev.captions.map((c) => (c.kind === entry.kind ? entry : c)) }
+        ? { ...prev, versions: prev.versions.map((c) => (c.kind === entry.kind ? entry : c)) }
         : prev,
     );
     const rel = sel()?.rel;
@@ -100,7 +100,9 @@ export function createDataset(config: Config) {
       prev
         ? {
             ...prev,
-            items: prev.items.map((x) => (x.rel === rel ? { ...x, [entry.kind]: true } : x)),
+            items: prev.items.map((x) =>
+              x.rel === rel ? { ...x, captions: { ...x.captions, [entry.kind]: true } } : x,
+            ),
           }
         : prev,
     );

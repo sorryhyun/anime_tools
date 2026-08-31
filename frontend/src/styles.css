@@ -89,10 +89,10 @@ aside { grid-column:1; grid-row:2/4; border-right:1px solid var(--line); backgro
 .dot { width:7px; height:7px; flex:none; border-radius:50%; background:var(--dim) }
 .dot.master { background:var(--accent) } .dot.derived { background:var(--ok) } .dot.variants { background:var(--warn) }
 .dot.proposal { background:var(--warn) }
-/* An image's three caption files, as a strip on its own row rather than three
-   labelled children under a chevron: filled is a file on disk, hollow is not,
-   and either one is the button that selects it. Three rows per image was the
-   sidebar's whole vertical budget spent on a fact three pixels can carry. */
+/* An image's caption ladder, as a strip on its own row rather than a labelled
+   child per rung under a chevron: filled is a file on disk, hollow is not, and
+   either one is the button that opens that version in the panel. A row per rung
+   was the sidebar's whole vertical budget spent on a fact three pixels carry. */
 .caps { display:flex; gap:5px; flex:none; padding-left:6px }
 .caps .dot { padding:0; border:0; cursor:pointer; width:8px; height:8px; box-shadow:0 0 0 3px transparent }
 .caps .dot.off { background:none; box-shadow:inset 0 0 0 1px var(--line) }
@@ -148,6 +148,32 @@ main { grid-column:2; grid-row:2; display:grid; grid-template-rows:auto minmax(0
    would otherwise break onto a second line one character at a time. */
 .card-h .badge, .card-h button { flex:none; white-space:nowrap }
 .hint { font-size:12px; margin:4px 0 }
+/* The caption ladder, as the badges over the one editor: master, whatever the
+   stages derived from it, then the generated v0…vN. Same readout as the
+   sidebar's dot strip -- filled dot = on disk, hollow = not -- so a badge and
+   the row's dot are recognisably the same file, and the badge is also the
+   switch that puts that version in the field below. A rung added to
+   `dataset.CAPTION_LADDER` wants one `.dot.<kind>` colour here, beside the
+   three below; without one it falls through to the sidecar's. */
+.vbs { display:flex; flex-wrap:wrap; align-items:center; gap:4px }
+.vb { display:flex; align-items:center; gap:5px; padding:2px 8px; border-radius:10px; background:none; border:1px solid transparent; color:var(--dim); font-size:11px }
+/* Background-only, like the ☰ menu's rows: the base `button:hover` accent ring
+   is louder than five pills in a strip can carry, and it wins on source order
+   (same specificity, declared later), so it is overridden rather than left. */
+.vb:hover { color:var(--fg); background:#ffffff0c; border-color:transparent }
+.vb.on:hover { border-color:var(--line) }
+.vb.on { color:var(--fg); background:var(--sel); border-color:var(--line) }
+.vb.off { color:#5a606b }
+/* A rung holding an unsaved draft, so text typed against another version is
+   visible from the one you are on -- the same warn tint the field's own
+   "unsaved" note wears. */
+.vb.mod, .vb.mod.on, .vb.mod.off { color:var(--warn) }
+.vb .dot { width:6px; height:6px }
+.vb.off .dot { background:none; box-shadow:inset 0 0 0 1px var(--line) }
+/* A generated version is read in the same boxed field it would be edited in,
+   dimmed rather than swapped for a table: the boxes are how a caption is read
+   here, and a table cell cannot show one. */
+textarea.cap.ro { color:var(--dim); cursor:default }
 /* The caption editor. Tags are not chips -- a caption is one string and is
    edited as one -- so the boxes are painted on a backdrop *behind* a real
    textarea: same font, same width, same padding, glyphs transparent, while the

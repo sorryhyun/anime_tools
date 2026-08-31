@@ -1,14 +1,14 @@
-import { createEffect, createMemo, createSignal, For, Index, on, Show } from "solid-js";
+import { createEffect, createMemo, createSignal, For, on, Show } from "solid-js";
 import { api } from "../api";
 import { t } from "../i18n";
 import { CaptionCard } from "./CaptionCard";
 import type {
   CaptionEntry,
-  CaptionKind,
   ImageInfo,
   ItemDetail,
   NodeKind,
   Proposal,
+  VersionKind,
 } from "../types";
 
 /** The two files a preview can show, plus `overlay`: the mask drawn over the
@@ -43,13 +43,16 @@ export function ItemView(props: {
   loading: boolean;
   error?: string;
   kind: NodeKind;
-  /** What the last Run proposed for this image, or undefined. It lands on the
-      caption card of the kind the stage writes -- master or derived. */
+  /** Which caption version the panel shows. The panel picks for itself when
+      this is `image` — see `CaptionCard`. */
+  onSelectCaption: (kind: VersionKind) => void;
+  /** What the last Run proposed for this image, or undefined. It rides under
+      the editor when the version it rewrites is the one on screen. */
   proposal?: Proposal;
   proposalStage?: string;
   /** The caption kind whose diff was dropped, because the form changed since
       the run. */
-  droppedKind?: CaptionKind;
+  droppedKind?: VersionKind;
   /** The one global "show explanations" preference: the prose under a card is
       the same kind of text the ? hides everywhere else. */
   help: boolean;
@@ -148,14 +151,6 @@ export function ItemView(props: {
   // A zoom belongs to the picture it was aimed at, not to the pane: moving to
   // another image or another view starts fitted again.
   createEffect(on([() => props.item, view], reset, { defer: true }));
-
-  // Picking `variants` in the tree has to bring its card into view, the same
-  // way CaptionCard does for the two editable ones.
-  let variantsCard!: HTMLDivElement;
-  createEffect(() => {
-    if (props.kind === "variants" && props.item)
-      variantsCard?.scrollIntoView({ block: "nearest", behavior: "smooth" });
-  });
 
   return (
     <main>
@@ -269,52 +264,23 @@ export function ItemView(props: {
                 </Show>
               </div>
 
+              {/* One caption panel, not one card per tree: an image has a
+                  *ladder* of captions (the hand-written master, what the stages
+                  derived from it, then the generated v0…vN) and the panel's
+                  badges are that ladder. Which tree a version lives in is an
+                  answer it gives, not a question it asks. */}
               <div class="captions">
-                {/* Index, not For: the pair is fixed and in fixed order, so a
-                    saved entry should update its card, not replace it. */}
-                <Index each={it().captions}>
-                  {(c) => (
-                    <CaptionCard
-                      help={props.help}
-                      rel={it().rel}
-                      entry={c()}
-                      selected={props.kind === c().kind}
-                      proposal={props.proposal?.kind === c().kind ? props.proposal : undefined}
-                      proposalStage={props.proposalStage}
-                      dropped={props.droppedKind === c().kind}
-                      onSaved={props.onSaved}
-                    />
-                  )}
-                </Index>
-
-                <div classList={{ card: true, sel: props.kind === "variants" }} ref={variantsCard}>
-                  <div class="card-h">
-                    <span class="dot variants" />
-                    <b title={it().variants.path}>{t().item.variants}</b>
-                    <span class="sp" />
-                    <span class="badge">{t().item.readOnly}</span>
-                  </div>
-                  <Show when={props.help}>
-                    <div class="dim hint">{t().item.variantsHint}</div>
-                  </Show>
-                  <Show
-                    when={it().variants.rows.length}
-                    fallback={<div class="dim hint">{t().item.noSidecar}</div>}
-                  >
-                    <table class="variants">
-                      <tbody>
-                        <For each={it().variants.rows}>
-                          {(r) => (
-                            <tr>
-                              <td class="vlabel">{r.label}</td>
-                              <td>{r.text}</td>
-                            </tr>
-                          )}
-                        </For>
-                      </tbody>
-                    </table>
-                  </Show>
-                </div>
+                <CaptionCard
+                  help={props.help}
+                  rel={it().rel}
+                  versions={it().versions}
+                  kind={props.kind}
+                  onSelect={props.onSelectCaption}
+                  proposal={props.proposal}
+                  proposalStage={props.proposalStage}
+                  dropped={props.droppedKind !== undefined}
+                  onSaved={props.onSaved}
+                />
               </div>
             </div>
           </>

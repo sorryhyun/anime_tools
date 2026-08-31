@@ -167,14 +167,23 @@ export interface DatasetItem {
   dir: string;
   name: string;
   stem: string;
-  master: boolean;
-  derived: boolean;
-  variants: boolean;
+  /** One flag per `DatasetList.ladder` rung — the row's caption dot strip.
+      Keyed by rung rather than spelled out as fields, so a rung the server
+      adds appears here without a type change. */
+  captions: Record<string, boolean>;
   /** The resized image exists under the dst root — matched on stem, since
       resize may have re-encoded. Everything downstream of resize walks that
       tree, so a row without it is invisible to every stage but autotag. */
   resized: boolean;
   mask: boolean;
+}
+
+/** One rung of the server's caption ladder (`dataset.CAPTION_LADDER`). The
+    sidebar draws its dot strip from these rather than from a copy of the names,
+    which is what keeps the strip and `DatasetItem.captions` in step. */
+export interface Rung {
+  kind: VersionKind;
+  editable: boolean;
 }
 
 export interface DatasetList {
@@ -183,6 +192,7 @@ export interface DatasetList {
   total: number;
   truncated?: boolean;
   items: DatasetItem[];
+  ladder: Rung[];
 }
 
 /** One near-twin component out of the grouping stage's `groups.json`. Rels
@@ -248,9 +258,18 @@ export interface Parsed {
   clauses: Clause[];
 }
 
+/** A writable caption file — what `PUT /api/dataset/item` accepts and what a
+    stage proposes against (`proposals.CAPTION_KIND`). */
 export type CaptionKind = "master" | "derived";
+
+/** One rung of the caption ladder, by id. The file rungs are named
+    (`master`, `derived`, the `variants` placeholder); a sidecar rung expands
+    server-side into one id per label it holds, so `v0`, `v1`, `r1` … are rung
+    ids too and the set is not closed here. */
+export type VersionKind = CaptionKind | "variants" | (string & {});
+
 /** What a tree row can select: the image itself, or one caption under it. */
-export type NodeKind = "image" | CaptionKind | "variants";
+export type NodeKind = "image" | VersionKind;
 
 /** The selection: one dataset image, and which of its files is on screen. It
     is mirrored into the URL hash (`#rel|kind`), so a GUI link points at it. */
@@ -263,12 +282,18 @@ export interface Sel {
     is stored in, and the near-twin components the Groups stage found in it. */
 export type TreeMode = "tree" | "groups";
 
+/** One caption of one image: a rung of the ladder, already parsed.
+    `editable` is the rung's, not the file's — a variant is read-only whether or
+    not it is on disk, and Phase 2 makes the original master read-only the same
+    way. */
 export interface CaptionEntry {
-  kind: CaptionKind;
+  kind: VersionKind;
   path: string;
   exists: boolean;
+  editable: boolean;
   text: string;
-  mtime?: number;
+  /** `null` when the file does not exist yet. */
+  mtime: number | null;
   parsed: Parsed | null;
   /** Set by the PUT: the .variants.txt sidecar no longer matches v0. */
   variants_stale?: boolean;
@@ -325,8 +350,9 @@ export interface ItemDetail {
   image: ImageInfo | null;
   resized: ImageInfo | null;
   mask: ImageInfo | null;
-  captions: CaptionEntry[];
-  variants: { path: string; exists: boolean; rows: { label: string; text: string }[] };
+  /** Every caption this image has, oldest first: the ladder's file rungs, then
+      the sidecar expanded into one entry per label. The panel's badge row. */
+  versions: CaptionEntry[];
 }
 
 /** One Danbooru tag as the KB knows it — `/api/tags/describe`, behind a click

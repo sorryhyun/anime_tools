@@ -1,6 +1,15 @@
 import { createEffect, createMemo, createSignal, For, on, Show } from "solid-js";
 import { slots, t } from "../i18n";
-import type { DatasetGroups, DatasetItem, DatasetList, NodeKind, Sel, TreeMode } from "../types";
+import type {
+  DatasetGroups,
+  DatasetItem,
+  DatasetList,
+  NodeKind,
+  Rung,
+  Sel,
+  TreeMode,
+  VersionKind,
+} from "../types";
 
 /** Folders render lazily, but one flat folder can still hold thousands of
     images; rows past this need an explicit click. */
@@ -9,15 +18,20 @@ const PAGE = 200;
     is the one thing that makes this sidebar feel slow. */
 const AUTO_EXPAND_MAX = 400;
 
-/** The three caption files, as the dots on an image row. Every image has the
-    same three, so they are a fixed strip on the row rather than three child
-    rows under a chevron: a filled dot is a file on disk, a hollow one is not,
-    and clicking either selects it. */
-const CAPS: { kind: NodeKind; label: string; hint: () => string }[] = [
-  { kind: "master", label: "m", hint: () => t().tree.capMaster },
-  { kind: "derived", label: "d", hint: () => t().tree.capDerived },
-  { kind: "variants", label: "v", hint: () => t().tree.capVariants },
-];
+/** The caption ladder, as the dots on an image row: a filled dot is a file on
+    disk, a hollow one is not, and clicking either opens that version in the
+    panel. A fixed strip rather than child rows under a chevron, because every
+    image has the same rungs.
+
+    Which rungs there are is the server's answer (`DatasetList.ladder`), not a
+    list retyped here — only what to *call* one is ours, and a rung with nothing
+    to call it wears its own id. */
+const CAP_HINT: Record<string, () => string> = {
+  master: () => t().tree.capMaster,
+  derived: () => t().tree.capDerived,
+  variants: () => t().tree.capVariants,
+};
+const capHint = (k: VersionKind) => CAP_HINT[k]?.() ?? k;
 
 interface Folder {
   path: string;
@@ -138,6 +152,9 @@ export function DatasetTree(props: {
   onCollapse: () => void;
 }) {
   const tree = createMemo(() => build(props.list?.items ?? []));
+  /** The rungs the dot strip draws — the listing carries them, so the strip
+      cannot come apart from the `captions` map on each row. */
+  const ladder = createMemo<Rung[]>(() => props.list?.ladder ?? []);
   const grouped = createMemo(() => regroup(props.list?.items ?? [], props.groups));
   // Folders whose state differs from the default, not folders that are open --
   // the default flips with dataset size, and an override has to survive that.
@@ -212,10 +229,10 @@ export function DatasetTree(props: {
     </>
   );
 
-  /** One image: the thumbnail, the name, its flags — and the three caption
-      dots, which are both the "what exists" readout and the way to select one.
-      In group view the name carries its folder, since the row is no longer
-      sitting under it. */
+  /** One image: the thumbnail, the name, its flags — and the caption ladder's
+      dots, which are both the "what exists" readout and the way to open one in
+      the panel. In group view the name carries its folder, since the row is no
+      longer sitting under it. */
   const ImageNode = (p: { it: DatasetItem; depth: number; withDir?: boolean }) => {
     const on = (k: NodeKind) => props.sel?.rel === p.it.rel && props.sel.kind === k;
     return (
@@ -253,14 +270,14 @@ export function DatasetTree(props: {
           </Show>
         </span>
         <span class="caps">
-          <For each={CAPS}>
+          <For each={ladder()}>
             {(c) => {
-              const present = () => !!p.it[c.kind as "master" | "derived" | "variants"];
+              const present = () => !!p.it.captions[c.kind];
               return (
                 <button
                   classList={{ dot: true, [c.kind]: true, off: !present(), on: on(c.kind) }}
-                  title={`${c.hint()} — ${present() ? t().tree.onDisk : t().tree.capMissing}`}
-                  aria-label={c.label}
+                  title={`${capHint(c.kind)} — ${present() ? t().tree.onDisk : t().tree.capMissing}`}
+                  aria-label={c.kind}
                   onClick={(e) => {
                     e.stopPropagation();
                     select(p.it.rel, c.kind);

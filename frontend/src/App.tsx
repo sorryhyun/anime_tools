@@ -116,6 +116,7 @@ export default function App() {
         loading={dataset.item.loading}
         error={dataset.item.error ? String(dataset.item.error) : undefined}
         kind={dataset.sel()?.kind ?? "image"}
+        onSelectCaption={(kind) => dataset.setSel({ rel: dataset.sel()?.rel ?? "", kind })}
         proposal={runner.shownProposal()}
         proposalStage={stages.cur()?.title}
         droppedKind={runner.droppedKind()}

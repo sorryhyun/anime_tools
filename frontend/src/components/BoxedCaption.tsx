@@ -72,6 +72,10 @@ export function BoxedCaption(props: {
   spans: Span[];
   parsedText: string;
   dirty: boolean;
+  /** A generated version (a `v0…vN` sidecar row) is shown in the same editor
+      rather than a second widget: the boxes are how a caption is read here, and
+      a read-only textarea still selects, copies and looks a tag up. */
+  readOnly?: boolean;
   placeholder: string;
   onInput: (v: string) => void;
   onKeyDown: (e: KeyboardEvent & { currentTarget: HTMLTextAreaElement }) => void;
@@ -134,8 +138,9 @@ export function BoxedCaption(props: {
         </For>
       </div>
       <textarea
-        classList={{ cap: true, dirty: props.dirty }}
+        classList={{ cap: true, dirty: props.dirty, ro: !!props.readOnly }}
         spellcheck={false}
+        readOnly={!!props.readOnly}
         ref={ta}
         value={props.text}
         placeholder={props.placeholder}

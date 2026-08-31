@@ -67,16 +67,37 @@ def test_listing_joins_the_three_trees(client):
         "dir": "",
         "name": "a.png",
         "stem": "a",
-        "master": True,
-        "derived": False,
-        "variants": False,
+        # One flag per ladder rung, keyed by rung: the sidebar's dot strip.
+        "captions": {"master": True, "derived": False, "variants": False},
         "resized": False,  # resize has not run over this one
         "mask": True,  # flat masks/{stem}_mask.png is the legacy fallback
     }
     b = by_rel["sub/b.jpg"]
-    assert b["dir"] == "sub" and b["derived"] and b["variants"] and not b["mask"]
+    assert b["dir"] == "sub" and b["captions"]["derived"] and b["captions"]["variants"]
+    assert not b["mask"]
     # …and `resized` is matched on stem, so the jpg -> png re-encode still counts.
     assert b["resized"]
+
+
+def test_the_listing_carries_the_caption_ladder(client):
+    """The dot strip is drawn from the server's rungs, not a copy of their names.
+
+    Same declaration as the row's ``captions`` map and the panel's badges, which
+    is what makes Phase 2's ``revised`` overlay one line rather than three.
+    """
+    from anime_tools.gui import dataset as D
+
+    c, _ = client
+    body = c.get("/api/dataset").json()
+    assert body["ladder"] == [
+        {"kind": "master", "editable": True},
+        {"kind": "derived", "editable": True},
+        {"kind": "variants", "editable": False},
+    ]
+    assert [r["kind"] for r in body["ladder"]] == list(body["items"][0]["captions"])
+    assert D.CAPTION_KINDS == ("master", "derived")
+    # A missing root still says what the rungs are, so the strip has a shape.
+    assert c.get("/api/dataset", params={"src": "nowhere"}).json()["ladder"]
 
 
 def test_listing_filters(client):
@@ -119,8 +140,8 @@ def test_item_detail_parses_the_caption_grammar(client):
     it = c.get("/api/dataset/item", params={"rel": "a.png"}).json()
     assert it["image"]["width"] == 8 and it["mask"]["path"].endswith("a_mask.png")
     assert it["resized"] is None
-    master, derived = it["captions"]
-    assert master["kind"] == "master" and master["exists"]
+    master, derived, variants = it["versions"]
+    assert master["kind"] == "master" and master["exists"] and master["editable"]
     # Clauses come parsed: the browser never splits a caption on commas.
     assert master["parsed"] == {
         "flat_tags": ["1girl", "solo"],
@@ -142,7 +163,12 @@ def test_item_detail_parses_the_caption_grammar(client):
         ],
     }
     assert derived["kind"] == "derived" and not derived["exists"]
-    assert derived["text"] == "" and derived["parsed"] is None
+    assert (
+        derived["text"] == "" and derived["parsed"] is None and derived["mtime"] is None
+    )
+    # No sidecar, but the rung it would fill keeps its place on the badge row.
+    assert variants["kind"] == "variants"
+    assert not variants["exists"] and not variants["editable"]
 
 
 def test_item_detail_matches_a_re_encoded_resized_image(client):
@@ -150,7 +176,13 @@ def test_item_detail_matches_a_re_encoded_resized_image(client):
     c, _ = client
     it = c.get("/api/dataset/item", params={"rel": "sub/b.jpg"}).json()
     assert it["resized"]["path"] == "workspace/resized/sub/b.png"
-    assert [r["label"] for r in it["variants"]["rows"]] == ["v0", "v1"]
+    # The sidecar rung expands into one badge per label, each already parsed:
+    # a variant is a caption, so the browser does not split it either.
+    assert [v["kind"] for v in it["versions"]] == ["master", "derived", "v0", "v1"]
+    v0 = it["versions"][2]
+    assert v0["exists"] and not v0["editable"]
+    assert v0["path"].endswith("sub/b.variants.txt")
+    assert v0["parsed"]["flat_tags"] == ["1boy", "solo", "night"]
 
 
 def test_item_detail_rejects_unknown_and_escaping_paths(client):

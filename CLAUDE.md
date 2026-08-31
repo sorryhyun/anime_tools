@@ -263,9 +263,20 @@ helper.
   so a filter, a truncation and the run's pending dots mean the same thing in both modes,
   and whatever no component claims falls into an `ungrouped` bucket rather than off the tree.
   A missing manifest is not an error (the Groups stage may never have run); an unparseable one is
-  a 400. One row per image: its three caption files are a **dot strip on the row** —
-  filled is on disk, hollow is not, and either is the button that selects that card —
-  rather than three labelled children under a chevron. **The browser never splits a caption**:
+  a 400. An image's captions are a **ladder**, not a set of unrelated files —
+  `dataset.CAPTION_LADDER`, a `Rung` per caption (the hand-written `master`, the `derived` one the
+  stages write, the generated `variants` sidecar), declared once and travelling to the browser
+  **twice**: as the `captions` flag map on each `/api/dataset` row (the strip of dots, filled on
+  disk, hollow not, each the button that opens that version) and as `caption_versions`' ordered
+  `versions` on `/api/dataset/item`, where the sidecar rung is *expanded* into one entry per label
+  it holds (`v0`, `v1`, `r1`…) because those are versions of the caption in the same sense the
+  rungs above them are. So the panel is **one editor with a badge per version**, not a card per
+  tree: it opens on what the last run rewrote, else the newest writable caption on disk, and which
+  tree a version lives in is an answer it gives rather than a question it asks before you can type.
+  `CAPTION_KINDS` (what `write_caption` accepts) is the ladder's `editable` rungs, and the listing
+  ships the rungs themselves as `ladder`, so `DatasetTree` retypes no names — adding
+  Phase 2's `revised` overlay is one `Rung` plus its label and dot colour.
+  **The browser never splits a caption**:
   clause structure comes from `parse_caption` via `/api/dataset/item` and `/api/dataset/parse`,
   which also answer `spans` — every tag's `[start, end)` in the very text they parsed,
   from `position_clauses.tag_spans` (the one walk of the string; `parse_caption` is written on top

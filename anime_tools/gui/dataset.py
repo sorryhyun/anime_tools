@@ -9,8 +9,14 @@ the *same relative path* in each (:mod:`anime_tools.workspace` owns the layout):
 ``masks``   ``workspace/masks/<rel>``          ``{stem}_mask.png`` (nested; flat is the legacy fallback)
 ``out``     ``post_image_dataset/``            the export destination -- browsed by nothing, written by Export
 
-Only ``master`` and ``derived`` are writable. ``.variants.txt`` is generated and
-served read-only; editing a derived caption makes its sidecar stale, which
+An image's captions are a **ladder**, not a set of unrelated files
+(:data:`CAPTION_LADDER`): the hand-written master, then whatever the stages
+derived from it, then the generated variants. That order is declared once here
+and travels to the browser twice -- as the dots on a sidebar row
+(:func:`_row`) and as the badges over the one caption editor
+(:func:`caption_versions`) -- so a rung is added in one place rather than three.
+Only the rungs marked ``editable`` can be written; ``.variants.txt`` is
+generated, and editing the caption above it makes the sidecar stale, which
 :func:`write_caption` reports so the UI can say so out loud.
 """
 
@@ -41,7 +47,52 @@ OUTPUT_ROOTS = WS.OUTPUT_ROOTS
 EXPORT_ROOTS = WS.EXPORT_ROOTS
 """Imported rather than restated, so the GUI and the migrate CLI cannot drift
 about where the workspace is."""
-CAPTION_KINDS = ("master", "derived")
+
+
+@dataclass(frozen=True)
+class Rung:
+    """One rung of the caption ladder: a caption file and what may be done to it.
+
+    ``root`` names the :class:`Roots` field the file lives in, so the ladder is
+    also the whole answer to "where is this caption" -- there is no second table
+    mapping a kind to a tree.
+    """
+
+    kind: str
+    root: str
+    editable: bool
+    sidecar: bool = False
+    """The generated ``.variants.txt`` beside the caption, not the caption."""
+
+
+CAPTION_LADDER: tuple[Rung, ...] = (
+    Rung("master", "src", editable=True),
+    Rung("derived", "dst", editable=True),
+    Rung("variants", "dst", editable=False, sidecar=True),
+)
+"""The captions of one image, oldest first.
+
+Phase 2 of ``plan.md`` inserts ``Rung("revised", "master", editable=True)``
+between the first two and flips ``master`` to ``editable=False`` -- which is the
+whole GUI half of that phase, because the sidebar strip, the panel's badges and
+:func:`write_caption`'s guard all read this tuple.
+"""
+
+CAPTION_KINDS = tuple(r.kind for r in CAPTION_LADDER if r.editable)
+"""The writable rungs — what :func:`write_caption` accepts."""
+
+
+def ladder_schema() -> list[dict[str, Any]]:
+    """:data:`CAPTION_LADDER` as the listing hands it to the browser.
+
+    The sidebar's dot strip is drawn from this rather than from a copy of the
+    rung names in the frontend, so the strip and :func:`_row`'s ``captions`` map
+    cannot come apart. Only the *root* stays server-side: the panel names the
+    tree from the path it is given.
+    """
+    return [{"kind": r.kind, "editable": r.editable} for r in CAPTION_LADDER]
+
+
 GROUPS_SUBPATH = "groups/groups.json"
 """The grouping manifest's tail under the Settings ``report_root`` — the same
 split ``stages.report_subpath`` makes of ``build_groups``' own ``--out``
@@ -302,13 +353,17 @@ def mask_path(roots: Roots, rel: Path) -> Path | None:
 
 
 def caption_paths(roots: Roots, rel: Path) -> dict[str, Path]:
+    """Every rung's file, keyed by rung kind.
+
+    The one place a caption kind becomes a path — :data:`CAPTION_LADDER` names
+    the root, so there is no second table to keep in step with it.
+    """
     txt = rel.with_suffix(".txt")
-    derived = roots.dst / txt
-    return {
-        "master": roots.src / txt,
-        "derived": derived,
-        "variants": variants_sidecar_path(derived),
-    }
+    out: dict[str, Path] = {}
+    for r in CAPTION_LADDER:
+        p = getattr(roots, r.root) / txt
+        out[r.kind] = variants_sidecar_path(p) if r.sidecar else p
+    return out
 
 
 def list_items(
@@ -330,6 +385,7 @@ def list_items(
             "missing": True,
             "total": 0,
             "items": [],
+            "ladder": ladder_schema(),
         }
 
     paths = glob_images_pathlib(roots.src, recursive=True)
@@ -355,11 +411,17 @@ def list_items(
         "total": total,
         "truncated": total > len(items),
         "items": items,
+        "ladder": ladder_schema(),
     }
 
 
 def _row(roots: Roots, rel: Path, name: str) -> dict[str, Any]:
     """One sidebar row: the image plus which of its siblings exist.
+
+    ``captions`` is one flag per :data:`CAPTION_LADDER` rung — the dot strip is
+    the ladder seen from the sidebar, so a new rung appears here and in
+    :func:`caption_versions` from the same declaration. A stat apiece, so this
+    stays cheap enough for a whole-dataset listing.
 
     ``resized`` is matched on *stem* (:func:`_sibling_image`) and is a row flag
     rather than a caption dot: nothing selects it, it only says whether the
@@ -372,9 +434,7 @@ def _row(roots: Roots, rel: Path, name: str) -> dict[str, Any]:
         "dir": "" if parent == "." else parent,
         "name": name,
         "stem": rel.stem,
-        "master": caps["master"].is_file(),
-        "derived": caps["derived"].is_file(),
-        "variants": caps["variants"].is_file(),
+        "captions": {r.kind: caps[r.kind].is_file() for r in CAPTION_LADDER},
         "resized": _sibling_image(roots.dst / rel.parent, rel.stem) is not None,
         "mask": mask_path(roots, rel) is not None,
     }
@@ -484,11 +544,15 @@ def parsed_caption(text: str) -> dict[str, Any]:
     }
 
 
-def _caption_entry(kind: str, p: Path) -> dict[str, Any]:
+def _caption_entry(kind: str, p: Path, *, editable: bool) -> dict[str, Any]:
+    """One rung, as the panel gets it: the text, the parse of it, and whether
+    the editor over it is a field or a read-out."""
     entry: dict[str, Any] = {
         "kind": kind,
         "path": rel_to_home(p),
         "exists": p.is_file(),
+        "editable": editable,
+        "mtime": None,
     }
     if entry["exists"]:
         text = p.read_text(encoding="utf-8").strip()
@@ -501,13 +565,49 @@ def _caption_entry(kind: str, p: Path) -> dict[str, Any]:
     return entry
 
 
+def caption_versions(roots: Roots, rel: Path) -> list[dict[str, Any]]:
+    """Every caption this image has, oldest first — the panel's badge row.
+
+    :data:`CAPTION_LADDER` in order, with the sidecar rung *expanded* into one
+    entry per label it holds (``v0``, ``v1``, ``r1``…), because those are
+    versions of the caption in exactly the sense the rungs above them are. An
+    absent sidecar still contributes its one hollow ``variants`` rung, so the
+    badge that would hold them keeps its place and can say what is missing.
+
+    Every entry arrives parsed. A variant is a caption like any other and the
+    browser is not allowed to split one, so the spans its boxes are drawn from
+    come from here rather than from a round trip per badge.
+    """
+    caps = caption_paths(roots, rel)
+    out: list[dict[str, Any]] = []
+    for r in CAPTION_LADDER:
+        p = caps[r.kind]
+        rows = read_variants_sidecar(p) if r.sidecar and p.is_file() else []
+        if not rows:
+            out.append(_caption_entry(r.kind, p, editable=r.editable))
+            continue
+        mtime = p.stat().st_mtime
+        home = rel_to_home(p)
+        out.extend(
+            {
+                "kind": label,
+                "path": home,
+                "exists": True,
+                "editable": False,
+                "mtime": mtime,
+                "text": text,
+                "parsed": parsed_caption(text),
+            }
+            for label, text in rows
+        )
+    return out
+
+
 def item_detail(roots: Roots, rel_str: str) -> dict[str, Any]:
     rel = _rel_key(rel_str)
     src_image = roots.src / rel
     if not src_image.is_file():
         raise DatasetError(f"not in the dataset: {rel.as_posix()}")
-    caps = caption_paths(roots, rel)
-    variants = caps["variants"]
     parent = rel.parent.as_posix()
     return {
         "rel": rel.as_posix(),
@@ -517,19 +617,7 @@ def item_detail(roots: Roots, rel_str: str) -> dict[str, Any]:
         "image": _image_info(src_image),
         "resized": _image_info(_sibling_image(roots.dst / rel.parent, rel.stem)),
         "mask": _image_info(mask_path(roots, rel)),
-        "captions": [_caption_entry(k, caps[k]) for k in CAPTION_KINDS],
-        "variants": {
-            "path": rel_to_home(variants),
-            "exists": variants.is_file(),
-            "rows": (
-                [
-                    {"label": lab, "text": txt}
-                    for lab, txt in read_variants_sidecar(variants)
-                ]
-                if variants.is_file()
-                else []
-            ),
-        },
+        "versions": caption_versions(roots, rel),
     }
 
 
@@ -553,7 +641,7 @@ def write_caption(roots: Roots, rel_str: str, kind: str, text: str) -> dict[str,
     p.parent.mkdir(parents=True, exist_ok=True)
     p.write_text(body, encoding="utf-8")
 
-    entry = _caption_entry(kind, p)
+    entry = _caption_entry(kind, p, editable=True)
     # The sidecar was generated from the previous derived text, so its v0 no
     # longer matches what the TE step would encode.
     sidecar = caption_paths(roots, rel)["variants"]
