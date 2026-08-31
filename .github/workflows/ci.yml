@@ -21,6 +21,8 @@ jobs:
         continue-on-error: true
       - run: uv run pytest -q -n auto
       - uses: oven-sh/setup-bun@v2
+      # Same prettier pass the pre-commit hook runs (scripts/hooks/pre-commit).
+      - run: cd frontend && bun install --frozen-lockfile && bun run format:check
       # The built frontend (anime_tools/gui/static/index.html) is committed; fail if stale.
       - run: scripts/build_frontend.sh
       - run: git diff --exit-code -- anime_tools/gui/static/index.html

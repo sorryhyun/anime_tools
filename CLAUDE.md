@@ -14,6 +14,18 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 uv sync                       # torch/sam3 are plain dependencies (no extras since 0.3); GPU torch comes from PyPI on Linux, use --index https://download.pytorch.org/whl/cpu for CPU
 make install                  # scripts/ensure_bun.sh (bun for the frontend build) + uv sync
 make gui                      # anime-tools-gui dev server, opens the browser (GUI_HOST / GUI_PORT / GUI_ARGS)
+make hooks                    # core.hooksPath -> scripts/hooks (`make install` does this too). pre-commit formats only the
+                              # STAGED files: `ruff check --fix --exit-zero` + `ruff format` on .py, prettier on frontend/.
+                              # It rewrites and re-stages them in place and NEVER blocks the commit, because both
+                              # formatters are safe to apply unasked: `ruff format` and prettier are semantics-preserving
+                              # reprints -- layout only, never behaviour -- and idempotent, so there is nothing to review
+                              # and nothing to confirm. (`ruff check --fix` does edit code, e.g. dropping unused imports,
+                              # but only ever applies ruff's *safe* fix set; --unsafe-fixes is never passed, and the
+                              # findings it cannot fix are printed, not enforced -- same advisory stance as CI.)
+                              # Its one surprise: re-staging a file that also had unstaged edits puts those in the commit
+                              # too, so the hook names them on the way past. Bypass with `git commit --no-verify`.
+                              # frontend/.prettierignore holds src/styles.css (hand-compacted), index.html (copied verbatim
+                              # into the bundle) and *.md; printWidth 100 in frontend/.prettierrc.json. CI runs format:check.
 uv run pytest -q              # tests/ ; CPU-only unless ANIMA_TEST_GPU=1 (conftest blanks CUDA_VISIBLE_DEVICES)
 uv run pytest -q tests/test_position_captions.py -k "layout"   # single file / test
 uv run pytest -q -n auto      # pytest-xdist is in the dev group, but it is a NET LOSS here (~7s vs ~5s):

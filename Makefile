@@ -26,11 +26,12 @@ BUILD_FRONTEND := scripts/build_frontend.sh
 FRONTEND_DEV := cd frontend && bun install && ANIME_TOOLS_API=http://$(GUI_HOST):$(GUI_PORT) bun run dev
 endif
 
-.PHONY: install gui sync test frontend frontend-dev
-install:  ## one-shot dev setup: bun (frontend bundler) + uv sync
+.PHONY: install gui sync test hooks frontend frontend-dev
+install:  ## one-shot dev setup: bun (frontend bundler) + uv sync + git hooks
 	@$(REQUIRE_UV)
 	$(ENSURE_BUN)
 	uv sync
+	$(MAKE) hooks
 	@echo ""
 	@echo "ready -- run 'make gui' to open the web GUI"
 sync:
@@ -39,6 +40,9 @@ gui:  ## run the web GUI from this checkout and open it in a browser
 	uv run anime-tools-gui --host $(GUI_HOST) --port $(GUI_PORT) --open $(GUI_ARGS)
 test:
 	uv run pytest -q $(PYTEST_ARGS)
+hooks:  ## point git at scripts/hooks (ruff + prettier on staged files)
+	git config core.hooksPath scripts/hooks
+	@echo "git hooks: scripts/hooks (bypass one commit with git commit --no-verify)"
 frontend:  ## rebuild anime_tools/gui/static/index.html from frontend/ (needs bun)
 	$(BUILD_FRONTEND)
 frontend-dev:  ## bun dev server with hot reload, proxying /api to a running `make gui`

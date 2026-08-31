@@ -1,0 +1,108 @@
+#!/usr/bin/env sh
+# Format what is about to be committed: ruff for Python, prettier for the frontend.
+#
+# Installed by pointing git at this directory (`make hooks` -> core.hooksPath), so
+# it is versioned with the repo rather than copied into .git/hooks. Bypass one
+# commit with `git commit --no-verify`.
+#
+# Only *staged* files are touched, and the hook never blocks a commit over
+# formatting: `ruff format` and prettier are semantics-preserving rewrites, so
+# whatever they change is re-staged for you. The one case worth reading the
+# output for is a file that also had *unstaged* edits -- re-staging it puts
+# those edits in the commit too, so the hook names them on the way past.
+set -eu
+
+cd "$(git rev-parse --show-toplevel)"
+
+staged=$(git -c core.quotePath=false diff --cached --name-only --diff-filter=ACMR)
+[ -n "$staged" ] || exit 0
+
+py=$(printf '%s\n' "$staged" | grep -E '\.py$' || true)
+fe=$(printf '%s\n' "$staged" | grep -E '^frontend/.*\.(ts|tsx|js|jsx|mjs|cjs|css|json|html)$' || true)
+[ -n "$py$fe" ] || exit 0
+
+# Fingerprint every candidate now; whatever changes hash is what a formatter rewrote.
+targets=$(printf '%s\n' "$py" "$fe" | grep -v '^$' || true)
+before=$(printf '%s\n' "$targets" | while IFS= read -r f; do
+	printf '%s %s\n' "$(git hash-object -- "$f")" "$f"
+done)
+# Files that already differed from the index before we ran anything.
+dirty=$(git -c core.quotePath=false diff --name-only)
+
+fail=0
+
+if [ -n "$py" ]; then
+	if [ -x .venv/bin/ruff ]; then RUFF=.venv/bin/ruff
+	elif [ -x .venv/Scripts/ruff.exe ]; then RUFF=.venv/Scripts/ruff.exe
+	elif command -v ruff >/dev/null 2>&1; then RUFF=ruff
+	elif command -v uv >/dev/null 2>&1; then RUFF="uv run ruff"
+	else RUFF=""; fi
+
+	if [ -z "$RUFF" ]; then
+		echo "pre-commit: ruff not found (uv sync), skipping Python formatting" >&2
+	else
+		oldifs=$IFS; IFS='
+'; set -f; set -- $py; IFS=$oldifs; set +f
+		# Lint rules come from the maintainer's user-level ruff config and CI treats
+		# them as advisory (see CLAUDE.md), so fix what is auto-fixable, print the
+		# rest, and let the commit through either way. `ruff format` is the gate.
+		# shellcheck disable=SC2086
+		$RUFF check --fix --exit-zero -- "$@" || fail=1
+		# shellcheck disable=SC2086
+		$RUFF format -- "$@" >/dev/null || fail=1
+	fi
+fi
+
+if [ -n "$fe" ]; then
+	BUN=""
+	if command -v bun >/dev/null 2>&1; then BUN=bun
+	elif [ -x "$HOME/.bun/bin/bun" ]; then BUN="$HOME/.bun/bin/bun"; fi
+
+	if [ -z "$BUN" ]; then
+		echo "pre-commit: bun not found (scripts/ensure_bun.sh), skipping prettier" >&2
+	elif [ ! -d frontend/node_modules/prettier ]; then
+		echo "pre-commit: frontend/node_modules is missing prettier (cd frontend && bun install), skipping" >&2
+	else
+		# prettier resolves .prettierignore entries relative to the ignore file, so it
+		# has to be handed frontend-relative paths from inside frontend/.
+		rel=$(printf '%s\n' "$fe" | sed 's|^frontend/||')
+		oldifs=$IFS; IFS='
+'; set -f; set -- $rel; IFS=$oldifs; set +f
+		# shellcheck disable=SC2086
+		(cd frontend && "$BUN" run --silent prettier --write --log-level warn -- "$@") || fail=1
+	fi
+fi
+
+if [ "$fail" -ne 0 ]; then
+	echo "pre-commit: a formatter failed; nothing was re-staged" >&2
+	exit 1
+fi
+
+restaged=""
+swept=""
+while IFS= read -r line; do
+	[ -n "$line" ] || continue
+	hash=${line%% *}
+	f=${line#* }
+	[ -f "$f" ] || continue
+	[ "$(git hash-object -- "$f")" != "$hash" ] || continue
+	git add -- "$f"
+	restaged="$restaged  $f
+"
+	# It had unstaged edits before we ran, and `git add` just took the whole file:
+	# those edits are in the commit now. Formatting is safe to apply blind; helping
+	# yourself to the rest of the working tree is not, so say so out loud.
+	if printf '%s\n' "$dirty" | grep -Fxq "$f"; then
+		swept="$swept  $f
+"
+	fi
+done <<EOF
+$before
+EOF
+
+[ -z "$restaged" ] || printf 'pre-commit: reformatted and re-staged:\n%s' "$restaged"
+if [ -n "$swept" ]; then
+	printf 'pre-commit: NOTE -- these also had unstaged edits, now included in the commit:\n%s' "$swept" >&2
+	echo "  not what you meant? \`git reset --soft HEAD^\` and re-stage." >&2
+fi
+exit 0
