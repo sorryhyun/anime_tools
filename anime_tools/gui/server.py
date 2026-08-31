@@ -14,6 +14,7 @@ import mimetypes
 import os
 import threading
 import webbrowser
+from collections.abc import Mapping
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
@@ -59,6 +60,111 @@ def _hf_token_present() -> bool:
         return bool(get_token())
     except Exception:  # noqa: BLE001 - best effort probe
         return False
+
+
+# --------------------------------------------------------------------------- #
+# Settings-derived values, as pure functions
+#
+# Each takes the settings mapping rather than reading it, so one request reads
+# the file once and everything it derives agrees. ``POST /api/jobs`` used to
+# re-read it about seven times on the way through — through ``_roots``,
+# ``_stage_defaults``, ``_root_paths``, ``_make_output_dirs`` and
+# ``_preprocess_steps`` — with nothing making those reads consistent with each
+# other. They live out here rather than inside ``create_app`` because none of
+# them needs the app, the job manager or the schema store to do its job.
+#
+# ``D.DatasetError`` is left to propagate: the app turns it into a 400 (see
+# ``create_app``), and the routes that want a 404 instead say so at the one call
+# that can produce theirs.
+# --------------------------------------------------------------------------- #
+
+
+def roots_for(
+    settings: Mapping[str, Any], src: str = "", dst: str = "", masks: str = ""
+) -> D.Roots:
+    """The dataset roots for this request.
+
+    Query params win; anything blank falls back to the saved roots, then to
+    :data:`D.DEFAULT_ROOTS`.
+    """
+    saved = settings.get(D.SETTINGS_KEY) or {}
+    merged = {
+        **saved,
+        **{k: v for k, v in (("src", src), ("dst", dst), ("masks", masks)) if v},
+    }
+    return D.resolve_roots(merged)
+
+
+def stage_defaults(settings: Mapping[str, Any]) -> dict[str, str]:
+    """The Settings dialog's stage defaults, for the fields bound to them
+    (``S.SETTING_FIELDS``): ``path_pattern`` and ``tagger_dir`` mean the same
+    thing in every stage, so they are set once, not nine times.
+
+    Blanks are dropped, so an emptied field means "the CLI's own default", not
+    an empty pattern.
+    """
+    got = settings.get(S.SETTINGS_KEY) or {}
+    return {
+        k: str(got[k]).strip()
+        for k in S.SETTING_FIELDS.values()
+        if str(got.get(k) or "").strip()
+    }
+
+
+def root_paths(roots: D.Roots) -> dict[str, str]:
+    """The dataset roots, home-relative, for the stage fields bound to them
+    (``S.ROOT_FIELDS``): one setting, no per-stage src/dst to disagree."""
+    return {k: v["path"] for k, v in roots.as_dict().items()}
+
+
+def make_output_dirs(stage: S.Stage, report: str | None, roots: D.Roots) -> None:
+    """Create the directories this run *writes* to, so a fresh home does not
+    need a mkdir tour before the first job.
+
+    Outputs only, and only the ones the GUI itself chose:
+
+    * ``dst`` / ``masks`` when this stage binds them (``S.ROOT_FIELDS``) —
+      they come from Settings, not from the stage form.
+    * the report directory, from ``S.report_path``.
+
+    Never ``src``, and never a free-text path off the stage form: an empty tree
+    conjured behind a mistyped ``--source`` hides the typo, where the stage's
+    own "no images found" does not.
+    """
+    for name in set(S.ROOT_FIELDS.get(stage.id, {}).values()) & {"dst", "masks"}:
+        D.ensure_output_dir(getattr(roots, name))
+    if report:
+        D.ensure_output_dir(Path(report).parent)
+
+
+def preprocess_steps(
+    stage: S.Stage,
+    *,
+    defaults: dict[str, str],
+    roots: D.Roots,
+    settings: Mapping[str, Any],
+    schemas: Mapping[str, Any],
+) -> list[Step]:
+    """The resize preflight for ``stage``, or nothing.
+
+    It runs with the *same* ``defaults`` the stage got, so a per-image Apply
+    resizes exactly that image and a batch resizes the batch. Its own knobs come
+    from the Settings ``preprocess`` block, since it has no panel to carry a
+    form. A stage whose preflight is unavailable (a schema that failed to load)
+    runs alone rather than failing — resize is a convenience, not a gate.
+    """
+    pre_id = S.preprocess_for(stage.id)
+    pre = S.BY_ID.get(pre_id or "")
+    sc = schemas.get(pre_id or "")
+    if pre is None or sc is None or not sc["available"]:
+        return []
+    saved = settings.get(S.PREPROCESS_SETTINGS_KEY) or {}
+    values = S.form_values(sc["fields"], saved)
+    argv = S.build_argv(
+        sc["fields"], values, roots=root_paths(roots), settings=defaults
+    )
+    make_output_dirs(pre, S.report_path(pre, sc["fields"], values), roots)
+    return [Step(pre.module, argv, pre.id)]
 
 
 class Schemas:
@@ -125,6 +231,16 @@ def create_app(
     app = FastAPI(title="anime_tools", docs_url=None, redoc_url=None, lifespan=lifespan)
     app.state.jobs = mgr
     app.state.schemas = store
+
+    # A refused path, root or report is a bad request, not a crash, and it was
+    # spelled out as `except … raise HTTPException(400, str(e))` at nine call
+    # sites. Registered once instead; the handful of routes that owe a *404*
+    # (an image that is not in the dataset, a file that is not there) still say
+    # so at the one call that can produce theirs.
+    @app.exception_handler(D.DatasetError)
+    @app.exception_handler(P.ProposalError)
+    async def _bad_request(_request: Request, exc: Exception) -> JSONResponse:
+        return JSONResponse({"detail": str(exc)}, status_code=400)
 
     @app.get("/")
     def index() -> FileResponse:
@@ -212,31 +328,38 @@ def create_app(
         values = S.form_values(sc["fields"], body.get("values") or {})
         apply = bool(body.get("apply"))
         rel = str(body.get("rel") or "").strip()
-        defaults = _stage_defaults()
+        # One read for the whole request: the roots, the stage defaults and the
+        # preflight's knobs all come out of it and must agree.
+        settings = load_settings()
+        roots = roots_for(settings)
+        defaults = stage_defaults(settings)
         if rel:
             # Refuse rather than silently run the batch: a stage with no
             # --path_pattern has nothing to narrow, and "apply to this image"
             # quietly meaning "apply to everything" is the worst outcome here.
             if not sc.get("scoped"):
                 raise HTTPException(400, f"{stage.id} cannot be scoped to one image")
-            try:
-                defaults = {**defaults, S.SCOPE_FIELD: D.item_pattern(rel)}
-            except D.DatasetError as e:
-                raise HTTPException(400, str(e)) from e
+            defaults = {**defaults, S.SCOPE_FIELD: D.item_pattern(rel)}
         try:
             argv = S.build_argv(
                 sc["fields"],
                 values,
                 apply=apply,
-                roots=_root_paths(),
+                roots=root_paths(roots),
                 settings=defaults,
             )
         except ValueError as e:
             raise HTTPException(400, str(e)) from e
         report = S.report_path(stage, sc["fields"], values)
-        _make_output_dirs(stage, report)
+        make_output_dirs(stage, report, roots)
         steps = [
-            *_preprocess_steps(stage, defaults),
+            *preprocess_steps(
+                stage,
+                defaults=defaults,
+                roots=roots,
+                settings=settings,
+                schemas=store.get(),
+            ),
             Step(stage.module, argv, stage.id),
         ]
         try:
@@ -250,6 +373,9 @@ def create_app(
             )
         except RuntimeError as e:
             raise HTTPException(409, str(e)) from e
+        # Re-read before writing: the job started, and a settings PUT could
+        # have landed while it did — merging into the request's own snapshot
+        # would silently roll that back.
         data = load_settings()
         data.setdefault("values", {})[stage.id] = values
         save_settings(data)
@@ -309,6 +435,16 @@ def create_app(
             raise HTTPException(404, "stage writes no report")
         return job, resolve_path(job.report_path)
 
+    def _proposals(job_id: str) -> tuple[Any, dict[str, P.Proposal]]:
+        """A finished run and what it proposes, keyed by dataset rel.
+
+        Both proposal endpoints want exactly this pair, and ``P.read`` is
+        report-mtime cached, so asking twice for one selection costs a dict
+        lookup.
+        """
+        job, path = _report_of(job_id)
+        return job, P.read(path, roots_for(load_settings()), job.stage)
+
     @app.get("/api/jobs/{job_id}/proposals")
     def job_proposals(job_id: str) -> dict[str, Any]:
         """Which dataset images this run wants to change.
@@ -318,11 +454,7 @@ def create_app(
         on it, so opening a 2000-image batch's diff does not put 2000 captions
         on the wire.
         """
-        job, path = _report_of(job_id)
-        try:
-            found = P.read(path, _roots(), job.stage)
-        except P.ProposalError as e:
-            raise HTTPException(400, str(e)) from e
+        job, found = _proposals(job_id)
         return {
             "stage": job.stage,
             "apply": job.apply,
@@ -334,11 +466,7 @@ def create_app(
     @app.get("/api/jobs/{job_id}/proposal")
     def job_proposal(job_id: str, rel: str) -> dict[str, Any]:
         """One image's pending change, both texts already parsed."""
-        job, path = _report_of(job_id)
-        try:
-            found = P.read(path, _roots(), job.stage)
-        except P.ProposalError as e:
-            raise HTTPException(400, str(e)) from e
+        _, found = _proposals(job_id)
         got = found.get(rel)
         if got is None:
             raise HTTPException(404, f"no proposal for {rel}")
@@ -355,102 +483,24 @@ def create_app(
         if not job.apply:
             raise HTTPException(400, "that run wrote nothing — nothing to undo")
         try:
-            return P.undo(path, _roots(), job.stage)
-        except P.ProposalError as e:
-            raise HTTPException(400, str(e)) from e
+            return P.undo(path, roots_for(load_settings()), job.stage)
         except OSError as e:
             raise HTTPException(500, f"undo failed: {e}") from e
 
     # ---- dataset browsing (the sidebar's image/caption tree) -------------
 
-    def _roots(src: str = "", dst: str = "", masks: str = "") -> D.Roots:
-        """Query params win; anything blank falls back to the saved roots, then
-        to :data:`D.DEFAULT_ROOTS`."""
-        saved = load_settings().get(D.SETTINGS_KEY) or {}
-        merged = {
-            **saved,
-            **{k: v for k, v in (("src", src), ("dst", dst), ("masks", masks)) if v},
-        }
-        try:
-            return D.resolve_roots(merged)
-        except D.DatasetError as e:
-            raise HTTPException(400, str(e)) from e
-
-    def _stage_defaults() -> dict[str, str]:
-        """The Settings dialog's stage defaults, for the fields bound to them
-        (``S.SETTING_FIELDS``): ``path_pattern`` and ``tagger_dir`` mean the
-        same thing in every stage, so they are set once, not nine times.
-
-        Blanks are dropped, so an emptied field means "the CLI's own default",
-        not an empty pattern.
-        """
-        got = load_settings().get(S.SETTINGS_KEY) or {}
-        return {
-            k: str(got[k]).strip()
-            for k in S.SETTING_FIELDS.values()
-            if str(got.get(k) or "").strip()
-        }
-
-    def _preprocess_steps(stage: S.Stage, defaults: dict[str, str]) -> list[Step]:
-        """The resize preflight for ``stage``, or nothing.
-
-        It runs with the *same* ``defaults`` the stage got, so a per-image Apply
-        resizes exactly that image and a batch resizes the batch. Its own knobs
-        come from the Settings ``preprocess`` block, since it has no panel to
-        carry a form. A stage whose preflight is unavailable (a schema that
-        failed to load) runs alone rather than failing — resize is a
-        convenience, not a gate.
-        """
-        pre_id = S.preprocess_for(stage.id)
-        pre = S.BY_ID.get(pre_id or "")
-        sc = store.get().get(pre_id or "")
-        if pre is None or sc is None or not sc["available"]:
-            return []
-        saved = load_settings().get(S.PREPROCESS_SETTINGS_KEY) or {}
-        values = S.form_values(sc["fields"], saved)
-        argv = S.build_argv(
-            sc["fields"], values, roots=_root_paths(), settings=defaults
-        )
-        _make_output_dirs(pre, S.report_path(pre, sc["fields"], values))
-        return [Step(pre.module, argv, pre.id)]
-
-    def _root_paths() -> dict[str, str]:
-        """The saved dataset roots, home-relative, for the stage fields bound to
-        them (``S.ROOT_FIELDS``): one setting, no per-stage src/dst to disagree."""
-        return {k: v["path"] for k, v in _roots().as_dict().items()}
-
-    def _make_output_dirs(stage: S.Stage, report: str | None) -> None:
-        """Create the directories this run *writes* to, so a fresh home does not
-        need a mkdir tour before the first job.
-
-        Outputs only, and only the ones the GUI itself chose:
-
-        * ``dst`` / ``masks`` when this stage binds them (``S.ROOT_FIELDS``) —
-          they come from Settings, not from the stage form.
-        * the report directory, from ``S.report_path``.
-
-        Never ``src``, and never a free-text path off the stage form: an empty
-        tree conjured behind a mistyped ``--source`` hides the typo, where the
-        stage's own "no images found" does not.
-        """
-        roots = _roots()
-        for name in set(S.ROOT_FIELDS.get(stage.id, {}).values()) & {"dst", "masks"}:
-            D.ensure_output_dir(getattr(roots, name))
-        if report:
-            D.ensure_output_dir(Path(report).parent)
-
     @app.get("/api/dataset/roots")
     def dataset_roots() -> dict[str, Any]:
-        return {"roots": _roots().as_dict(), "defaults": D.DEFAULT_ROOTS}
+        return {
+            "roots": roots_for(load_settings()).as_dict(),
+            "defaults": D.DEFAULT_ROOTS,
+        }
 
     @app.put("/api/dataset/roots")
     async def put_dataset_roots(request: Request) -> dict[str, Any]:
         body = await request.json()
         picked = {k: str(body.get(k) or "").strip() for k in D.DEFAULT_ROOTS}
-        try:
-            roots = D.resolve_roots(picked)
-        except D.DatasetError as e:
-            raise HTTPException(400, str(e)) from e
+        roots = D.resolve_roots(picked)
         # Saving Settings is the one explicit "these are my roots" gesture, so
         # it makes them real. resolve_roots already refused anything outside the
         # curation home, so no mkdir can land outside it.
@@ -477,7 +527,10 @@ def create_app(
         limit: int = 2000,
     ) -> dict[str, Any]:
         return D.list_items(
-            _roots(src, dst, masks), pattern=pattern or None, query=q, limit=limit
+            roots_for(load_settings(), src, dst, masks),
+            pattern=pattern or None,
+            query=q,
+            limit=limit,
         )
 
     @app.post("/api/dataset/items")
@@ -489,30 +542,36 @@ def create_app(
         """
         body = await request.json()
         rels = [str(r) for r in (body.get("rels") or [])][: D.MAX_ITEMS]
-        roots = _roots(*(str(body.get(k) or "") for k in ("src", "dst", "masks")))
+        roots = roots_for(
+            load_settings(), *(str(body.get(k) or "") for k in ("src", "dst", "masks"))
+        )
         return {"items": D.item_rows(roots, rels)}
 
     @app.get("/api/dataset/item")
     def dataset_item(
         rel: str, src: str = "", dst: str = "", masks: str = ""
     ) -> dict[str, Any]:
+        roots = roots_for(load_settings(), src, dst, masks)
         try:
-            return D.item_detail(_roots(src, dst, masks), rel)
+            return D.item_detail(roots, rel)
         except D.DatasetError as e:
+            # 404, not the app-wide 400: the roots resolved, this image is
+            # simply not in the dataset.
             raise HTTPException(404, str(e)) from e
 
     @app.put("/api/dataset/item")
     async def put_dataset_item(request: Request) -> dict[str, Any]:
         body = await request.json()
+        roots = roots_for(
+            load_settings(), *(str(body.get(k) or "") for k in ("src", "dst", "masks"))
+        )
         try:
             return D.write_caption(
-                _roots(*(str(body.get(k) or "") for k in ("src", "dst", "masks"))),
+                roots,
                 str(body.get("rel") or ""),
                 str(body.get("kind") or ""),
                 body.get("text") or "",
             )
-        except D.DatasetError as e:
-            raise HTTPException(400, str(e)) from e
         except OSError as e:
             raise HTTPException(500, f"write failed: {e}") from e
 

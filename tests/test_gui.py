@@ -884,3 +884,33 @@ def test_apply_replays_a_dry_run_end_to_end(tmp_path, monkeypatch):
         "items"
     ]
     assert [r["rel"] for r in rows] == ["a.png", "b.png"]
+
+
+# ---- one refusal, one status code -------------------------------------
+
+
+def test_a_refused_root_is_a_bad_request_not_a_crash(client):
+    """`DatasetError` and `ProposalError` are registered app-wide rather than
+    caught at nine call sites. Anything outside the curation home is refused."""
+    c, *_ = client
+    r = c.get("/api/dataset", params={"src": "/etc"})
+    assert r.status_code == 400
+    assert "curation home" in r.json()["detail"]
+
+
+def test_an_empty_caption_write_is_still_a_bad_request(client):
+    c, *_ = client
+    r = c.put(
+        "/api/dataset/item", json={"rel": "a.png", "kind": "master", "text": "  "}
+    )
+    assert r.status_code == 400
+    assert "empty caption" in r.json()["detail"]
+
+
+def test_an_image_that_is_not_in_the_dataset_is_a_404(client):
+    """The roots resolved — only the image is missing, so this one keeps its own
+    status rather than taking the app-wide 400."""
+    c, *_ = client
+    r = c.get("/api/dataset/item", params={"rel": "nope.png"})
+    assert r.status_code == 404
+    assert "not in the dataset" in r.json()["detail"]
