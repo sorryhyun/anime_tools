@@ -14,6 +14,7 @@ from anime_tools.captions.correction import (
 )
 from anime_tools.captions.tag_drop_groups import drop_group_names, parse_drop_groups
 from anime_tools.stages.captions import write_corrected_preprocess_captions
+from anime_tools.stages.cli._args import add_path_pattern_arg
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -25,11 +26,8 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help="danbooru_tags_classified.csv path (default: models/ lookup)",
     )
-    parser.add_argument(
-        "--path_pattern",
-        "--path-pattern",
-        dest="path_pattern",
-        default="*",
+    add_path_pattern_arg(
+        parser,
         help="Only write captions for resized images matching this relative glob",
     )
     parser.add_argument("--recursive", action="store_true", help="Walk subfolders")

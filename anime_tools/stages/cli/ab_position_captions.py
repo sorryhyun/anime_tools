@@ -26,7 +26,6 @@ from __future__ import annotations
 import argparse
 import html
 import json
-import sys
 import textwrap
 from pathlib import Path
 
@@ -42,14 +41,11 @@ from anime_tools._device import resolve_device
 from anime_tools._env import resolve_path
 from anime_tools._walk import walk_images
 from anime_tools.captions.position_clauses import parse_caption
-
-# Only the drawing helpers are borrowed — the palette below is this sheet's own,
-# since an A/B page reads by A-vs-B contrast rather than by verdict.
-from anime_tools.stages.multiview_sheet import _fit, _font, _text
+from anime_tools.stages.cli._models import load_tagger
+from anime_tools.stages.cli.position_captions import options_from_flag_string
+from anime_tools.stages.multiview_sheet import BOX_COLORS, _fit, _font, _text
 from anime_tools.stages.position_captions import (
-    PositionCaptionOptions,
     is_candidate,
-    load_clause_vocabulary,
     propose_for_image,
 )
 
@@ -60,18 +56,11 @@ _BG = (24, 24, 28)
 _FG = (232, 232, 236)
 _DIM = (150, 150, 158)
 _RULE = (52, 52, 60)
+# A-vs-B contrast, this sheet's own — the two verdict-neutral accents that say
+# which column is the incumbent. The per-instance palette is the shared
+# BOX_COLORS, so a box here means the same subject it means on a review sheet.
 _A = (150, 150, 158)  # the incumbent reads as neutral…
 _B = (80, 200, 120)  # …the challenger as the thing to look at
-_BOX_COLORS = [
-    (255, 90, 90),
-    (90, 170, 255),
-    (255, 210, 80),
-    (180, 120, 255),
-    (90, 230, 200),
-    (255, 140, 200),
-    (160, 255, 120),
-    (255, 175, 100),
-]
 
 
 def parse_args() -> argparse.Namespace:
@@ -103,20 +92,6 @@ def parse_args() -> argparse.Namespace:
     return args
 
 
-def build_options(flags: str) -> tuple[PositionCaptionOptions, argparse.Namespace]:
-    """Reuse the real CLI so an A/B can never drift from what ships."""
-    from anime_tools.stages.cli.position_captions import build_options_from_args
-    from anime_tools.stages.cli.position_captions import parse_args as pc_parse_args
-
-    argv = sys.argv
-    sys.argv = [argv[0], *flags.split()]
-    try:
-        args = pc_parse_args()
-    finally:
-        sys.argv = argv
-    return build_options_from_args(args), args
-
-
 def clause_map(caption: str | None) -> dict[str, tuple[str, ...]]:
     if not caption:
         return {}
@@ -142,7 +117,7 @@ def render(
     scale = preview.width / image.width
     marks = ImageDraw.Draw(preview)
     for index, inst in enumerate(shown.instances):
-        color = _BOX_COLORS[index % len(_BOX_COLORS)]
+        color = BOX_COLORS[index % len(BOX_COLORS)]
         marks.rectangle([v * scale for v in inst.box], outline=color, width=4)
         x1, y1 = inst.box[0] * scale, inst.box[1] * scale
         marks.rectangle([x1, y1, x1 + 26, y1 + 26], fill=color)
@@ -176,7 +151,7 @@ def render(
 
     cy = top
     for index, position in enumerate(positions):
-        color = _BOX_COLORS[index % len(_BOX_COLORS)]
+        color = BOX_COLORS[index % len(BOX_COLORS)]
         draw.rectangle([col_x, cy, col_x + 6, cy + 92], fill=color)
         ty = _text(draw, (col_x + 16, cy), position, head_font, _FG)
         a_tags, b_tags = a_clauses.get(position, ()), b_clauses.get(position, ())
@@ -240,8 +215,8 @@ def main() -> None:
         args.b_label or args.b_flags or "shipped",
     )
 
-    a_options, detect_args = build_options(args.a_flags)
-    b_options, b_detect_args = build_options(args.b_flags)
+    a_options, detect_args = options_from_flag_string(args.a_flags)
+    b_options, b_detect_args = options_from_flag_string(args.b_flags)
 
     from anime_tools.stages.cli.position_captions import build_detect_fn
 
@@ -261,17 +236,7 @@ def main() -> None:
         )
         print("detector A/B: B side runs its own detection pass", flush=True)
 
-    from anime_tools.tagger.tagger import (
-        DEFAULT_TAGGER_DIR,
-        AnimaTagger,
-        ensure_tagger_checkpoint,
-    )
-
-    ckpt = ensure_tagger_checkpoint(
-        resolve_path(detect_args.tagger_dir or DEFAULT_TAGGER_DIR)
-    )
-    tagger = AnimaTagger(ckpt, device=args.device)
-    vocabulary = load_clause_vocabulary(ckpt)
+    tagger, vocabulary, _ckpt = load_tagger(detect_args, quiet=True)
 
     images = walk_images(dst, recursive=True, pattern=args.path_pattern)
     if args.limit:

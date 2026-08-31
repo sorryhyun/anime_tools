@@ -24,10 +24,15 @@ near-free and only a tier change re-resizes.
 from __future__ import annotations
 
 import argparse
-import json
 
 from anime_tools._env import resolve_path
 from anime_tools.buckets import ALLOWED_TARGET_RES
+from anime_tools.stages.cli._args import (
+    add_dataset_args,
+    add_report_dir_arg,
+    make_progress,
+)
+from anime_tools.stages.cli._report import write_stage_report
 from anime_tools.stages.resize import (
     CROP_ANCHORS,
     DEFAULT_CROP_ANCHOR,
@@ -41,17 +46,9 @@ DEFAULT_REPORT_DIR = "post_image_dataset/captions/resize"
 
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(description=__doc__)
-    p.add_argument("--src", default="image_dataset", help="Caption master dir")
-    p.add_argument(
-        "--dst", default="post_image_dataset/resized", help="Resized image dir"
-    )
-    p.add_argument(
-        "--path_pattern",
-        "--path-pattern",
-        dest="path_pattern",
-        default="*",
-        help="fnmatch glob (| to OR-combine) on the path relative to --src",
-    )
+    # The one stage whose glob matches against --src: it walks the master to
+    # populate --dst, where every other stage then looks.
+    add_dataset_args(p, dst_help="Resized image dir", pattern_root="--src")
     p.add_argument(
         "--target_res",
         "--target-res",
@@ -137,13 +134,7 @@ def build_parser() -> argparse.ArgumentParser:
             "cover-crop to the limit; also keeps the token band solvable."
         ),
     )
-    p.add_argument(
-        "--report_dir",
-        "--report-dir",
-        dest="report_dir",
-        default=DEFAULT_REPORT_DIR,
-        help=f"Where report.json lands (default: {DEFAULT_REPORT_DIR})",
-    )
+    add_report_dir_arg(p, DEFAULT_REPORT_DIR)
     return p
 
 
@@ -169,9 +160,6 @@ def main() -> None:
         max_ratio=args.freefit_max_ratio,
     )
 
-    def progress(index: int, total: int, detail: str) -> None:
-        print(f"  [{index}/{total}] {detail}", flush=True)
-
     stats = run_resize_images(
         src=src,
         dst=dst,
@@ -182,11 +170,12 @@ def main() -> None:
         copy_captions=bool(args.copy_captions),
         overwrite=bool(args.overwrite),
         workers=int(args.workers),
-        progress=progress,
+        # Every line: the pass is per-image work with no per-image output to
+        # read afterwards, so the log is the only progress there is.
+        progress=make_progress(1),
     )
 
     report_dir = resolve_path(args.report_dir)
-    report_dir.mkdir(parents=True, exist_ok=True)
     report = {
         "src": str(src),
         "dst": str(dst),
@@ -207,9 +196,7 @@ def main() -> None:
         "buckets": dict(sorted(stats.buckets.items())),
         "failures": stats.failures,
     }
-    (report_dir / "report.json").write_text(
-        json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8"
-    )
+    write_stage_report(report_dir, report)
 
     print(
         f"Resized: {stats.written} written, "

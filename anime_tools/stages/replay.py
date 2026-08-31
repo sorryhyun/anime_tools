@@ -7,8 +7,9 @@ recomputing proposals the dry run already wrote down. The reports already carry
 everything a write needs: the destination caption path, the verbatim *before*
 text, and the exact proposed text. This module replays them.
 
-**Torch-free by construction** — stdlib plus :mod:`anime_tools.path_filter` and
-(lazily) :mod:`anime_tools.captions.variants`. A ``--from_report --apply`` run
+**Torch-free by construction** — stdlib plus :mod:`anime_tools._env`,
+:mod:`anime_tools.path_filter` and (lazily)
+:mod:`anime_tools.captions.variants`. A ``--from_report --apply`` run
 must never import a model; ``tests/test_stage_replay.py`` pins that in a
 subprocess.
 
@@ -38,12 +39,14 @@ Three things make a replay safe to trust:
 
 from __future__ import annotations
 
+import argparse
 import json
 from collections import Counter
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from anime_tools._env import resolve_path
 from anime_tools.path_filter import filter_paths_by_glob
 
 # The replay pass writes here, never over the dry run's ``report.json`` — the
@@ -433,4 +436,52 @@ def run_replay(
         ),
         report_dir,
     )
+    return rows, stats, out_path
+
+
+def run_replay_cli(
+    args: argparse.Namespace,
+    *,
+    spec: ReplaySpec,
+    src: Path,
+    dst: Path,
+    report_dir: Path,
+    notes: Sequence[str] = (),
+    after_write_note: str | Callable[[ReplayStats], str] | None = None,
+) -> tuple[list[ReplayRow], ReplayStats, Path]:
+    """:func:`run_replay` wrapped in the ``--from_report`` half of a stage CLI.
+
+    The three replay-capable stages all did the same thing around it: turn a
+    :class:`StaleReportError` into a ``SystemExit`` (a stale report is a user
+    mistake, not a traceback), say that no model was loaded, print the rows,
+    name the output report, and — only when an apply actually wrote something —
+    add the stage's own "now re-encode" epilogue.
+
+    ``notes`` prints extra lines before the rows (the audit announces which
+    verdict/confidence tiers its gate will write, which it chooses at *replay*
+    time rather than at audit time). ``after_write_note`` is that epilogue,
+    as a string or a callable over the stats when it quotes a count.
+    """
+    try:
+        rows, stats, out_path = run_replay(
+            spec=spec,
+            report_path=resolve_path(args.from_report),
+            src=src,
+            dst=dst,
+            report_dir=report_dir,
+            path_pattern=args.path_pattern,
+            apply=args.apply,
+        )
+    except StaleReportError as exc:
+        raise SystemExit(str(exc)) from exc
+
+    print(f"replaying {args.from_report} (no model loaded)")
+    for note in notes:
+        print(note)
+    print_replay(rows, stats, apply=args.apply)
+    print(f"\nreport: {out_path}")
+    if args.apply and stats.written and after_write_note:
+        print(
+            after_write_note(stats) if callable(after_write_note) else after_write_note
+        )
     return rows, stats, out_path

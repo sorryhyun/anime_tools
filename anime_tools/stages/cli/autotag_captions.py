@@ -40,7 +40,6 @@ writes ``apply_report.json`` so it can never clobber the report it read.
 from __future__ import annotations
 
 import argparse
-import json
 from dataclasses import asdict
 from pathlib import Path
 
@@ -52,28 +51,27 @@ from anime_tools.stages.autotag import (
     build_tag_fn,
     run_autotag_captions,
 )
-from anime_tools.stages.replay import (
-    ReplaySpec,
-    StaleReportError,
-    print_replay,
-    run_replay,
+from anime_tools.stages.cli._args import (
+    add_apply_args,
+    add_dataset_args,
+    add_model_args,
+    add_report_dir_arg,
+    make_progress,
 )
-from anime_tools.tagger.dbv4_meta import DEFAULT_TAGGER_DIR
+from anime_tools.stages.cli._report import (
+    print_dry_run_footer,
+    stage_report_header,
+    write_stage_report,
+)
+from anime_tools.stages.replay import ReplaySpec, run_replay_cli
 
 DEFAULT_REPORT_DIR = "post_image_dataset/captions/autotag"
+TE_NOTE = "captions changed — run `make preprocess-te` to re-encode."
 
 
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(description=__doc__)
-    p.add_argument("--src", default="image_dataset", help="Caption master dir")
-    p.add_argument("--dst", default="post_image_dataset/resized", help="Resized images")
-    p.add_argument(
-        "--path_pattern",
-        "--path-pattern",
-        dest="path_pattern",
-        default="*",
-        help="fnmatch glob (| to OR-combine) on the path relative to --dst",
-    )
+    add_dataset_args(p)
     p.add_argument(
         "--mode",
         choices=MODES,
@@ -91,36 +89,16 @@ def build_parser() -> argparse.ArgumentParser:
         help="Extra probability floor on top of the tagger's per-tag F1 "
         "thresholds (0-1). 0 leaves its own decisions untouched",
     )
-    p.add_argument(
-        "--apply",
-        action="store_true",
-        help="Write the proposed captions into the master (default: dry run)",
+    add_apply_args(
+        p,
+        apply_help="Write the proposed captions into the master (default: dry run)",
+        from_report_help="Replay a previous dry run's report.json instead of "
+        "re-tagging: writes exactly the captions it proposed and loads no "
+        "model. Skips any row whose caption changed since. Emits "
+        "apply_report.json (never clobbers the report it reads)",
     )
-    p.add_argument(
-        "--from_report",
-        "--from-report",
-        dest="from_report",
-        default=None,
-        help="Replay a previous dry run's report.json instead of re-tagging: "
-        "writes exactly the captions it proposed and loads no model. Skips any "
-        "row whose caption changed since. Emits apply_report.json (never "
-        "clobbers the report it reads)",
-    )
-    p.add_argument(
-        "--report_dir",
-        "--report-dir",
-        dest="report_dir",
-        default=DEFAULT_REPORT_DIR,
-        help=f"Where report.json lands (default: {DEFAULT_REPORT_DIR})",
-    )
-    p.add_argument(
-        "--tagger_dir",
-        "--tagger-dir",
-        dest="tagger_dir",
-        default=None,
-        help=f"Anima Tagger checkpoint dir (default: {DEFAULT_TAGGER_DIR})",
-    )
-    p.add_argument("--device", default=None, help="cuda|cpu (default: auto)")
+    add_report_dir_arg(p, DEFAULT_REPORT_DIR)
+    add_model_args(p)
     return p
 
 
@@ -144,23 +122,14 @@ REPLAY_SPEC = ReplaySpec(
 
 def _replay(args, *, src: Path, dst: Path, report_dir: Path) -> None:
     """Write a previous dry run's proposals — no tagger, no images opened."""
-    try:
-        rows, stats, out_path = run_replay(
-            spec=REPLAY_SPEC,
-            report_path=resolve_path(args.from_report),
-            src=src,
-            dst=dst,
-            report_dir=report_dir,
-            path_pattern=args.path_pattern,
-            apply=args.apply,
-        )
-    except StaleReportError as exc:
-        raise SystemExit(str(exc)) from exc
-    print(f"replaying {args.from_report} (no model loaded)")
-    print_replay(rows, stats, apply=args.apply)
-    print(f"report → {out_path}")
-    if args.apply and stats.written:
-        print("captions changed — run `make preprocess-te` to re-encode.")
+    run_replay_cli(
+        args,
+        spec=REPLAY_SPEC,
+        src=src,
+        dst=dst,
+        report_dir=report_dir,
+        after_write_note=TE_NOTE,
+    )
 
 
 def main() -> None:
@@ -186,10 +155,6 @@ def main() -> None:
         args.tagger_dir, device=device, min_confidence=args.min_confidence
     )
 
-    def progress(index: int, total: int, rel: str) -> None:
-        if index == 1 or index == total or index % 50 == 0:
-            print(f"  [{index}/{total}] {rel}", flush=True)
-
     rows, stats = run_autotag_captions(
         resized_dir=resized_dir,
         source_dir=source_dir,
@@ -197,30 +162,30 @@ def main() -> None:
         options=options,
         path_pattern=args.path_pattern,
         apply=args.apply,
-        progress=progress,
+        progress=make_progress(50, first=True),
     )
 
-    report_dir.mkdir(parents=True, exist_ok=True)
-    report = {
-        "mode": args.mode,
-        "min_confidence": args.min_confidence,
-        "apply": args.apply,
-        "src": str(source_dir),
-        "dst": str(resized_dir),
-        "path_pattern": args.path_pattern,
-        **dict(info),
-        "stats": {
-            "seen": stats.seen,
-            "candidates": stats.candidates,
-            "proposed": stats.proposed,
-            "written": stats.written,
-            "skipped": dict(stats.skipped),
+    report_path = write_stage_report(
+        report_dir,
+        {
+            "mode": args.mode,
+            "min_confidence": args.min_confidence,
+            **stage_report_header(
+                src=source_dir,
+                dst=resized_dir,
+                path_pattern=args.path_pattern,
+                apply=args.apply,
+            ),
+            **dict(info),
+            "stats": {
+                "seen": stats.seen,
+                "candidates": stats.candidates,
+                "proposed": stats.proposed,
+                "written": stats.written,
+                "skipped": dict(stats.skipped),
+            },
+            "rows": [asdict(r) for r in rows],
         },
-        "rows": [asdict(r) for r in rows],
-    }
-    report_path = report_dir / "report.json"
-    report_path.write_text(
-        json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8"
     )
 
     print(
@@ -229,11 +194,8 @@ def main() -> None:
     )
     for reason, count in stats.skipped.most_common():
         print(f"  skip:{reason} {count}")
-    print(f"report → {report_path}")
-    if not args.apply:
-        print("dry run — nothing written. Re-run with --apply to commit.")
-    elif stats.written:
-        print("captions changed — run `make preprocess-te` to re-encode.")
+    print(f"report: {report_path}")
+    print_dry_run_footer(args.apply, TE_NOTE if stats.written else None)
 
 
 if __name__ == "__main__":

@@ -259,10 +259,15 @@ def test_the_report_shapes_match_the_stages_own_replay_specs():
     server process because those modules import torch. This is the assertion
     that keeps the copy honest — the whole diff is wrong if a field name drifts.
     """
+    from anime_tools.stages.cli.audit_multiview import REPLAY_SPEC as audit
     from anime_tools.stages.cli.autotag_captions import REPLAY_SPEC as autotag
     from anime_tools.stages.cli.position_captions import REPLAY_SPEC as position
 
-    for stage_id, spec in (("autotag", autotag), ("position", position)):
+    for stage_id, spec in (
+        ("autotag", autotag),
+        ("position", position),
+        ("audit", audit),
+    ):
         shape = P.SHAPES[stage_id]
         assert (shape.rows_key, shape.before, shape.after) == (
             spec.rows_key,
@@ -275,20 +280,20 @@ def test_the_report_shapes_match_the_stages_own_replay_specs():
         assert shape.drop_variants == spec.drop_variants
 
 
-def test_the_audit_shape_matches_its_replay_spec():
-    """``audit_multiview`` builds its spec inside the replay path (its gate is
-    a verdict/confidence closure, not a status), so it is read off the source."""
-    import inspect
+def test_the_audit_gate_is_the_only_thing_its_replay_closes_over():
+    """The audit's writable set is a verdict/confidence gate rather than a row
+    status, so its module-level spec leaves ``row_filter`` open and the replay
+    path fills it in. Everything else about the spec — the half
+    :data:`P.SHAPES` mirrors — is pinned by the test above; this pins that the
+    gate is the *only* thing the closure changes, so the mirror stays complete.
+    """
+    from dataclasses import replace
 
-    from anime_tools.stages.cli import audit_multiview
+    from anime_tools.stages.cli.audit_multiview import REPLAY_SPEC as audit
 
-    body = inspect.getsource(audit_multiview._run_replay)
-    shape = P.SHAPES["audit"]
-    assert f'rows_key="{shape.rows_key}"' in body
-    assert f'before_field="{shape.before}"' in body
-    assert f'after_field="{shape.after}"' in body
-    assert f'target_root="{shape.root}"' in body
-    assert "newline=True" in body and shape.newline
+    assert audit.ok_status is None and audit.row_filter is None
+    gated = replace(audit, row_filter=lambda row: True)
+    assert replace(gated, row_filter=None) == audit
 
 
 # ---- the HTTP surface the run bar and the caption panel talk to --------

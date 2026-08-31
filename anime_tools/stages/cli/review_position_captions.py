@@ -27,7 +27,6 @@ from __future__ import annotations
 import argparse
 import html
 import json
-import sys
 from pathlib import Path
 
 import numpy as np
@@ -42,26 +41,13 @@ from anime_tools._device import resolve_device
 from anime_tools._env import resolve_path
 from anime_tools._walk import walk_images
 from anime_tools.captions.position_clauses import parse_caption
-from anime_tools.stages.multiview_sheet import _fit, _font
-from anime_tools.stages.position_captions import (
-    is_candidate,
-    load_clause_vocabulary,
-    propose_for_image,
-)
+from anime_tools.stages.cli._models import load_tagger
+from anime_tools.stages.cli.position_captions import options_from_flag_string
+from anime_tools.stages.multiview_sheet import BOX_COLORS, _fit, _font
+from anime_tools.stages.position_captions import is_candidate, propose_for_image
 
 PREVIEW = 900
 CROP = 320
-# Shared with the A/B sheet so a box and its crop card read as the same subject.
-BOX_COLORS = [
-    (255, 90, 90),
-    (90, 170, 255),
-    (255, 210, 80),
-    (180, 120, 255),
-    (90, 230, 200),
-    (255, 140, 200),
-    (160, 255, 120),
-    (255, 175, 100),
-]
 
 
 class PositionPalette:
@@ -119,20 +105,6 @@ def parse_args() -> argparse.Namespace:
     args = p.parse_args()
     args.device = resolve_device(args.device)
     return args
-
-
-def build_options(flags: str):
-    """Reuse the real CLI so the review can never drift from what ships."""
-    from anime_tools.stages.cli.position_captions import build_options_from_args
-    from anime_tools.stages.cli.position_captions import parse_args as pc_parse_args
-
-    argv = sys.argv
-    sys.argv = [argv[0], *flags.split()]
-    try:
-        args = pc_parse_args()
-    finally:
-        sys.argv = argv
-    return build_options_from_args(args), args
 
 
 def flat_key_set(caption: str) -> set[str]:
@@ -301,24 +273,14 @@ def main() -> None:
     (out_dir / "crops").mkdir(parents=True, exist_ok=True)
     (out_dir / "overlays").mkdir(parents=True, exist_ok=True)
 
-    options, detect_args = build_options(args.flags)
+    options, detect_args = options_from_flag_string(args.flags)
     detect_args.device = args.device
 
     from anime_tools.stages.cli.position_captions import build_detect_fn
 
     detect_fn, part_detect_fn, _model, _proc = build_detect_fn(detect_args)
 
-    from anime_tools.tagger.tagger import (
-        DEFAULT_TAGGER_DIR,
-        AnimaTagger,
-        ensure_tagger_checkpoint,
-    )
-
-    ckpt = ensure_tagger_checkpoint(
-        resolve_path(detect_args.tagger_dir or DEFAULT_TAGGER_DIR)
-    )
-    tagger = AnimaTagger(ckpt, device=args.device)
-    vocabulary = load_clause_vocabulary(ckpt)
+    tagger, vocabulary, _ckpt = load_tagger(detect_args, quiet=True)
 
     images = walk_images(dst, recursive=True, pattern=args.path_pattern)
     if args.limit:

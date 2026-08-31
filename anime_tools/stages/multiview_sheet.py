@@ -46,7 +46,9 @@ _VERDICT_COLOR = {
     EXTRA_CHARACTER: (240, 160, 60),
 }
 _UNSURE_COLOR = (140, 150, 170)
-_BOX_COLORS = [
+# Public, and the only copy: the review and A/B sheets import it so a numbered
+# box and its crop card read as the same subject across all three surfaces.
+BOX_COLORS = [
     (255, 90, 90),
     (90, 170, 255),
     (255, 210, 80),
@@ -146,7 +148,7 @@ def render_contact_sheet(
     overlay = preview.copy()
     marks = ImageDraw.Draw(overlay)
     for index, crop in enumerate(finding.crops):
-        color = _BOX_COLORS[index % len(_BOX_COLORS)]
+        color = BOX_COLORS[index % len(BOX_COLORS)]
         x1, y1, x2, y2 = (v * scale for v in crop.box)
         marks.rectangle([x1, y1, x2, y2], outline=color, width=4)
         label = f"{index + 1}"
@@ -203,7 +205,7 @@ def render_contact_sheet(
 
     cy = top
     for index, crop_info in enumerate(finding.crops):
-        color = _BOX_COLORS[index % len(_BOX_COLORS)]
+        color = BOX_COLORS[index % len(BOX_COLORS)]
         if index < len(crops):
             thumb = _fit(crops[index].convert("RGB"), tile)
             frame = Image.new("RGB", (tile, tile), _PANEL_BG)

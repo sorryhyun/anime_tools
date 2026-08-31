@@ -28,11 +28,18 @@ phase the work is one PR-sized change.
 - `bench/` cleanups ride along only where a phase touches the same seam
   (noted inline); nothing here blocks on bench.
 
-## Phase 1 — stage CLI scaffolding (`stages/cli/`)
+## Phase 1 — stage CLI scaffolding (`stages/cli/`) — **done**
 
 The largest pool: ~300+ duplicated lines across four parsers, with real teeth
 because `gui/stages.py` introspects `build_parser()` — a dropped `dest=` or a
 drifted default silently changes the GUI form.
+
+Landed as `_args.py` / `_detection.py` / `_models.py` / `_report.py` plus
+`replay.run_replay_cli` and `position_captions.options_from_flag_string`; net
+−330 lines across the seven CLIs. The one-off before/after schema snapshot is
+now a standing test, `tests/test_stage_cli_args.py` — including a field-by-field
+check that every `PositionCaptionOptions` field still moves when its flag does,
+which is the failure the audit's drifted copy actually shipped.
 
 1. **`stages/cli/_args.py`** — `add_dataset_args(p)` (`--src`, `--dst`,
    `--path_pattern`), `add_apply_args(p)` (`--apply`, `--from_report`,
@@ -75,6 +82,15 @@ drifted default silently changes the GUI form.
 
 Guards: full pytest; the before/after GUI schema snapshot; `--help` diff for
 each CLI should show only the audit's restored aliases.
+
+Outcome: the GUI schema is byte-identical for every stage but `audit`, whose
+only changes are `help` text and five restored `--foo-bar` aliases — every
+`dest`, default, kind and the field order are unchanged, so no saved form value
+and no stored command line moved. Two epilogue strings were unified onto the
+canonical wording (autotag printed `report → …` and a lowercase dry-run line);
+`audit_multiview`'s `ReplaySpec` is now module-level `REPLAY_SPEC` with only its
+verdict/confidence gate closed over at replay time, so `test_gui_proposals`
+pins it by object comparison like the other two instead of scraping the source.
 
 ## Phase 2 — caption write + apply semantics (`stages/`)
 

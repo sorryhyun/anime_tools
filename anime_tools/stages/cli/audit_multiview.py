@@ -25,7 +25,7 @@ from __future__ import annotations
 
 import argparse
 import json
-from dataclasses import asdict
+from dataclasses import asdict, replace
 from pathlib import Path
 
 import numpy as np
@@ -34,13 +34,26 @@ import numpy as np
 if not hasattr(np, "bool"):
     np.bool = np.bool_
 
-from anime_tools._device import resolve_device
 from anime_tools._env import resolve_path
-from anime_tools.downloads import DEFAULT_SAM3_CHECKPOINT
-from anime_tools.stages.cli.position_captions import build_detect_fn
-from anime_tools.stages.instance_detection import (
-    DEFAULT_SUBJECT_PROMPT_EMBED,
+from anime_tools.stages.cli._args import (
+    add_apply_args,
+    add_dataset_args,
+    add_model_args,
+    add_report_dir_arg,
+    make_progress,
 )
+from anime_tools.stages.cli._detection import (
+    add_checkpoint_arg,
+    add_detection_args,
+    detection_options,
+)
+from anime_tools.stages.cli._models import load_tagger
+from anime_tools.stages.cli._report import (
+    print_dry_run_footer,
+    stage_report_header,
+    write_stage_report,
+)
+from anime_tools.stages.cli.position_captions import build_detect_fn
 from anime_tools.stages.multiview_audit import (
     DEFAULT_IDENTITY_CONFIDENCE,
     DEFAULT_MULTIVIEW_PROB,
@@ -49,44 +62,20 @@ from anime_tools.stages.multiview_audit import (
     apply_findings,
     run_multiview_audit,
 )
-from anime_tools.stages.position_captions import (
-    PositionCaptionOptions,
-    load_clause_vocabulary,
-)
-from anime_tools.stages.replay import (
-    ReplaySpec,
-    StaleReportError,
-    print_replay,
-    run_replay,
-)
-from anime_tools.tagger.dbv4_meta import DEFAULT_TAGGER_DIR
+from anime_tools.stages.position_captions import PositionCaptionOptions
+from anime_tools.stages.replay import ReplaySpec, run_replay_cli
 
 DEFAULT_REPORT_DIR = "post_image_dataset/captions/multiview_audit"
 
 
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(description=__doc__)
-    p.add_argument("--src", default="image_dataset", help="Caption master dir")
-    p.add_argument("--dst", default="post_image_dataset/resized", help="Resized images")
-    p.add_argument(
-        "--path_pattern",
-        "--path-pattern",
-        dest="path_pattern",
-        default="*",
-        help="fnmatch glob (| to OR-combine) on the path relative to --dst",
-    )
-    p.add_argument(
-        "--apply",
-        action="store_true",
-        help="Write the suggested tag into the caption master (default: dry run)",
-    )
-    p.add_argument(
-        "--from_report",
-        "--from-report",
-        dest="from_report",
-        default=None,
-        help="Replay a previous dry run's report.json instead of re-auditing: "
-        "writes exactly the captions it proposed (still gated by "
+    add_dataset_args(p)
+    add_apply_args(
+        p,
+        apply_help="Write the suggested tag into the caption master (default: dry run)",
+        from_report_help="Replay a previous dry run's report.json instead of "
+        "re-auditing: writes exactly the captions it proposed (still gated by "
         "--apply_verdicts / --apply_confidence) and loads no model. Skips any "
         "caption that changed since. Emits apply_report.json",
     )
@@ -106,13 +95,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="Comma-separated confidence tiers --apply may write (strong, weak). "
         "A weak finding has only the geometry behind it — review the crops first",
     )
-    p.add_argument(
-        "--report_dir",
-        "--report-dir",
-        dest="report_dir",
-        default=DEFAULT_REPORT_DIR,
-        help=f"Where report.json lands (default: {DEFAULT_REPORT_DIR})",
-    )
+    add_report_dir_arg(p, DEFAULT_REPORT_DIR)
     p.add_argument(
         "--crops",
         action="store_true",
@@ -127,70 +110,18 @@ def build_parser() -> argparse.ArgumentParser:
         "boxed original + the crops the tagger saw + the proposed edit, one PNG "
         "per finding under <report_dir>/sheets/, named verdict-first",
     )
-    p.add_argument("--checkpoint", default=DEFAULT_SAM3_CHECKPOINT, help="SAM3 weights")
-    p.add_argument(
-        "--tagger_dir",
-        "--tagger-dir",
-        dest="tagger_dir",
-        default=None,
-        help=f"Anima Tagger checkpoint dir (default: {DEFAULT_TAGGER_DIR})",
+    add_checkpoint_arg(p)
+    add_model_args(p)
+    add_detection_args(
+        p,
+        score_threshold_help="Subject confidence floor. Raising it trades "
+        "recall for a shorter review list; this audit is precision-sensitive "
+        "since every hit is read by hand",
+        part_prompts_help="Comma-separated body-part prompts, tried only when "
+        "'girl' finds fewer than two subjects — recovers a sheet whose second "
+        'view is a headless close-up. Off by default; try "buttocks,hips,thighs"',
+        name_confidence=True,
     )
-    p.add_argument("--device", default=None, help="cuda|cpu (default: auto)")
-
-    g = p.add_argument_group("detection")
-    g.add_argument("--prompt", default="girl", help="SAM3 text prompt for a subject")
-    g.add_argument(
-        "--prompt_embed",
-        default=DEFAULT_SUBJECT_PROMPT_EMBED,
-        help="learned soft prompt (.safetensors) standing in for --prompt on the "
-        "subject pass (part prompts stay text); default = shipped, `none` = text",
-    )
-    g.add_argument(
-        "--score_threshold",
-        type=float,
-        default=0.5,
-        help="Subject confidence floor. Raising it trades recall for a shorter "
-        "review list; this audit is precision-sensitive since every hit is "
-        "read by hand",
-    )
-    g.add_argument("--retry_score_threshold", type=float, default=0.35)
-    g.add_argument(
-        "--part_prompts",
-        "--part-prompts",
-        dest="part_prompts",
-        default="",
-        help="Comma-separated body-part prompts, tried only when 'girl' finds "
-        "fewer than two subjects — recovers a sheet whose second view is a "
-        'headless close-up. Off by default; try "buttocks,hips,thighs"',
-    )
-    g.add_argument("--part_score_threshold", type=float, default=0.5)
-    g.add_argument("--part_containment_threshold", type=float, default=0.7)
-    g.add_argument("--iou_threshold", type=float, default=0.65)
-    g.add_argument("--containment_threshold", type=float, default=1.01)
-    g.add_argument(
-        "--mask_containment_threshold",
-        "--mask-containment-threshold",
-        dest="mask_containment_threshold",
-        type=float,
-        default=0.8,
-        help="Suppress a detection whose MASK is this nested inside a kept "
-        "one. On by default, unlike its box counterpart: a second girl in "
-        "front of the first nests identically by box but her mask is disjoint. "
-        ">1.0 disables (the pre-2026-08-19 behaviour). Same default as the "
-        "position stage so the audit dedupes detections the same way",
-    )
-    g.add_argument(
-        "--dedupe_fill_ratio",
-        type=float,
-        default=2.0,
-        help="Mask-quality tie-break inside an NMS-matched pair; 0 = off "
-        "(score-only survivor). See docs/experimental/multiview_audit.md §5.",
-    )
-    g.add_argument("--min_area_frac", type=float, default=0.005)
-    g.add_argument("--pad", type=float, default=0.06)
-    g.add_argument("--row_tol", type=float, default=0.25)
-    g.add_argument("--max_instances", type=int, default=8)
-    g.add_argument("--name_confidence", type=float, default=0.5)
 
     v = p.add_argument_group("verdict")
     v.add_argument(
@@ -237,53 +168,48 @@ def _gate(args) -> tuple[tuple[str, ...], tuple[str, ...]]:
     return verdicts, confidences
 
 
-def _run_replay(args, src: Path, dst: Path, report_dir: Path) -> None:
-    """Write a previous dry run's findings — no SAM3, no tagger, no pixels.
+# How ``replay`` reads an audit report: ``images``/``summary`` containers and
+# the caption **master** (``--src``), which is the one stage that writes it.
+# Unlike the other two the writable set is not a row ``status`` but the
+# verdict/confidence gate ``apply_findings`` applies, so ``row_filter`` is left
+# open here and closed over the CLI's own gate at replay time — replaying one
+# audit pass under ``--apply_verdicts "multiple views,extra-character"`` writes
+# strictly more of it than the default.
+REPLAY_SPEC = ReplaySpec(
+    stage="audit_multiview",
+    rows_key="images",
+    stats_key="summary",
+    before_field="caption",
+    after_field="proposed",
+    target_root="src",
+    # ``apply_findings`` writes ``proposed + "\n"``; a replay must be
+    # byte-identical to it.
+    newline=True,
+)
 
-    Unlike the other two stages, the writable set is not a row ``status`` but
-    the same verdict/confidence gate :func:`apply_findings` applies, so the
-    tiers are still chosen at replay time: replaying a report under
-    ``--apply_verdicts multiple views,extra-character`` writes strictly more of
-    it than the default, off one audit pass.
-    """
+
+def _run_replay(args, src: Path, dst: Path, report_dir: Path) -> None:
+    """Write a previous dry run's findings — no SAM3, no tagger, no pixels."""
     verdicts, confidences = _gate(args)
-    spec = ReplaySpec(
-        stage="audit_multiview",
-        rows_key="images",
-        stats_key="summary",
-        row_filter=lambda row: (
-            row.get("verdict") in verdicts and row.get("confidence") in confidences
+    run_replay_cli(
+        args,
+        spec=replace(
+            REPLAY_SPEC,
+            row_filter=lambda row: (
+                row.get("verdict") in verdicts and row.get("confidence") in confidences
+            ),
         ),
-        before_field="caption",
-        after_field="proposed",
-        target_root="src",
-        # ``apply_findings`` writes ``proposed + "\n"``; a replay must be
-        # byte-identical to it.
-        newline=True,
-    )
-    try:
-        rows, stats, out_path = run_replay(
-            spec=spec,
-            report_path=resolve_path(args.from_report),
-            src=src,
-            dst=dst,
-            report_dir=report_dir,
-            path_pattern=args.path_pattern,
-            apply=args.apply,
-        )
-    except StaleReportError as exc:
-        raise SystemExit(str(exc)) from exc
-    print(f"replaying {args.from_report} (no model loaded)")
-    print(f"gate: verdicts={list(verdicts)} confidences={list(confidences)}")
-    print_replay(rows, stats, apply=args.apply)
-    print(f"\nreport: {out_path}")
-    if args.apply and stats.written:
-        print(
+        src=src,
+        dst=dst,
+        report_dir=report_dir,
+        notes=[f"gate: verdicts={list(verdicts)} confidences={list(confidences)}"],
+        after_write_note=lambda stats: (
             f"\n{stats.written} caption(s) written to the master ({src}). Run "
             "`make preprocess-te` now to re-encode. The master is gitignored — "
             "the replayed report holds the before-text if you need to back "
             "this out."
-        )
+        ),
+    )
 
 
 def main() -> None:
@@ -297,42 +223,16 @@ def main() -> None:
         return
 
     detect_fn, part_detect_fn, sam_model, sam_processor = build_detect_fn(args)
+    # Loaded here and not in parse_args(): the --from_report replay returns
+    # before this and must stay torch-free.
+    tagger, vocabulary, _ckpt_dir = load_tagger(args)
 
-    from anime_tools.tagger.tagger import AnimaTagger, ensure_tagger_checkpoint
-
-    ckpt_dir = ensure_tagger_checkpoint(
-        resolve_path(args.tagger_dir or DEFAULT_TAGGER_DIR)
-    )
-    print(f"Loading Anima Tagger from {ckpt_dir}...", flush=True)
-    # Resolved here and not in parse_args(): the --from_report replay returns
-    # before this and must stay torch-free, and resolving imports torch.
-    tagger = AnimaTagger(ckpt_dir, device=resolve_device(args.device))
-    vocabulary = load_clause_vocabulary(ckpt_dir)
-
+    # Two subjects is what the audit is *for*, so it pins min_instances rather
+    # than exposing it; everything else is the position stage's detector,
+    # verbatim, because the audit sweeps what that stage skipped.
     options = PositionCaptionOptions(
-        prompt=args.prompt,
-        score_threshold=args.score_threshold,
-        retry_score_threshold=args.retry_score_threshold,
-        part_prompts=tuple(
-            t.strip() for t in args.part_prompts.split(",") if t.strip()
-        ),
-        part_score_threshold=args.part_score_threshold,
-        part_containment_threshold=args.part_containment_threshold,
-        iou_threshold=args.iou_threshold,
-        containment_threshold=args.containment_threshold,
-        mask_containment_threshold=args.mask_containment_threshold,
-        dedupe_fill_ratio=args.dedupe_fill_ratio,
-        min_area_frac=args.min_area_frac,
-        pad=args.pad,
-        row_tol=args.row_tol,
-        min_instances=2,
-        max_instances=args.max_instances,
-        name_confidence=args.name_confidence,
+        **detection_options(args, min_instances=2, name_confidence=args.name_confidence)
     )
-
-    def progress(index: int, total: int, rel: str) -> None:
-        if index % 200 == 0 or index == total:
-            print(f"  [{index}/{total}] {rel}", flush=True)
 
     rows, stats = run_multiview_audit(
         resized_dir=dst,
@@ -344,7 +244,7 @@ def main() -> None:
         path_pattern=args.path_pattern,
         crops_dir=(report_dir / "crops") if args.crops else None,
         sheets_dir=(report_dir / "sheets") if args.sheets else None,
-        progress=progress,
+        progress=make_progress(200),
         part_detect_fn=part_detect_fn,
         multiview_threshold=args.multiview_threshold,
         identity_confidence=args.identity_confidence,
@@ -360,12 +260,12 @@ def main() -> None:
         )
 
     summary = {
-        "applied": bool(args.apply),
-        # Recorded so ``--from_report`` can refuse to replay this report against
-        # a different pair of trees (the row paths are relative to these).
-        "src": str(src),
-        "dst": str(dst),
-        "path_pattern": args.path_pattern,
+        # The header carries the roots so ``--from_report`` can refuse to replay
+        # this report against a different pair of trees (the row paths are
+        # relative to them).
+        **stage_report_header(
+            src=src, dst=dst, path_pattern=args.path_pattern, apply=args.apply
+        ),
         "seen": stats.seen,
         "audited": stats.audited,
         "findings": stats.findings,
@@ -386,35 +286,28 @@ def main() -> None:
         ),
         "skipped": dict(sorted(stats.skipped.items(), key=lambda kv: -kv[1])),
     }
-    report_dir.mkdir(parents=True, exist_ok=True)
-    (report_dir / "report.json").write_text(
-        json.dumps(
-            {
-                "summary": summary,
-                "images": [asdict(r) for r in rows],
-                "written": [
-                    {"caption_path": rel, "before": before, "after": after}
-                    for rel, before, after in written
-                ],
-            },
-            indent=2,
-            ensure_ascii=False,
-        ),
-        encoding="utf-8",
+    report_path = write_stage_report(
+        report_dir,
+        {
+            "summary": summary,
+            "images": [asdict(r) for r in rows],
+            "written": [
+                {"caption_path": rel, "before": before, "after": after}
+                for rel, before, after in written
+            ],
+        },
     )
 
     print(json.dumps(summary, indent=2, ensure_ascii=False))
-    print(f"\nreport: {report_dir / 'report.json'}")
+    print(f"\nreport: {report_path}")
     if args.sheets:
         print(f"sheets: {report_dir / 'sheets'} (one PNG per finding, verdict-first)")
-    if args.apply:
-        print(
-            f"\n{len(written)} caption(s) written to the master ({src}). Run "
-            "`make preprocess-te` now to re-encode. The master is gitignored — "
-            "report.json holds the before-text if you need to back this out."
-        )
-    else:
-        print("\nDry run — no captions written. Re-run with --apply to write.")
+    print_dry_run_footer(
+        args.apply,
+        f"\n{len(written)} caption(s) written to the master ({src}). Run "
+        "`make preprocess-te` now to re-encode. The master is gitignored — "
+        "report.json holds the before-text if you need to back this out.",
+    )
 
 
 if __name__ == "__main__":

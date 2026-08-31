@@ -41,6 +41,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
 from dataclasses import asdict
 from pathlib import Path
 
@@ -52,9 +53,25 @@ if not hasattr(np, "bool"):
 
 from anime_tools._device import resolve_device
 from anime_tools._env import resolve_path
-from anime_tools.downloads import DEFAULT_SAM3_CHECKPOINT
+from anime_tools.stages.cli._args import (
+    add_apply_args,
+    add_dataset_args,
+    add_model_args,
+    add_report_dir_arg,
+    make_progress,
+)
+from anime_tools.stages.cli._detection import (
+    add_checkpoint_arg,
+    add_detection_args,
+    detection_options,
+)
+from anime_tools.stages.cli._models import load_tagger
+from anime_tools.stages.cli._report import (
+    print_dry_run_footer,
+    stage_report_header,
+    write_stage_report,
+)
 from anime_tools.stages.instance_detection import (
-    DEFAULT_SUBJECT_PROMPT_EMBED,
     load_soft_prompt,
     prompt_embed_sha256,
     resolve_prompt_embed,
@@ -63,18 +80,16 @@ from anime_tools.stages.position_captions import (
     Detection,
     PositionCaptionOptions,
     flatten_captions,
-    load_clause_vocabulary,
     run_position_captions,
 )
-from anime_tools.stages.replay import (
-    ReplaySpec,
-    StaleReportError,
-    print_replay,
-    run_replay,
-)
-from anime_tools.tagger.dbv4_meta import DEFAULT_TAGGER_DIR
+from anime_tools.stages.replay import ReplaySpec, run_replay_cli
 
 DEFAULT_REPORT_DIR = "post_image_dataset/captions/position"
+TE_NOTE = (
+    "\nWritten to the resized captions (the master is untouched). Run "
+    "`make preprocess-te` now to regenerate the variant sidecars and "
+    "re-encode."
+)
 # Both tokenizers pad to this (``--qwen3_max_token_length`` / ``--t5_…``); a
 # caption past it is silently truncated, and the padding invariant means the
 # tail simply never reaches the model.
@@ -83,45 +98,21 @@ DEFAULT_MAX_TOKENS = 512
 
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(description=__doc__)
-    p.add_argument(
-        "--src",
-        default="image_dataset",
-        help="Caption master dir (read-only fallback — never written)",
+    add_dataset_args(
+        p,
+        src_help="Caption master dir (read-only fallback — never written)",
+        dst_help="Resized images — and where the rewritten caption is written",
     )
-    p.add_argument(
-        "--dst",
-        default="post_image_dataset/resized",
-        help="Resized images — and where the rewritten caption is written",
-    )
-    p.add_argument(
-        "--path_pattern",
-        "--path-pattern",
-        dest="path_pattern",
-        default="*",
-        help="fnmatch glob (| to OR-combine) on the path relative to --dst",
-    )
-    p.add_argument(
-        "--apply",
-        action="store_true",
-        help="Write the proposed clauses into the resized captions (default: dry run)",
-    )
-    p.add_argument(
-        "--from_report",
-        "--from-report",
-        dest="from_report",
-        default=None,
-        help="Replay a previous dry run's report.json instead of re-running "
-        "SAM3 + the tagger: writes exactly the captions it proposed and loads "
-        "no model. Skips any caption that changed since. Emits "
+    add_apply_args(
+        p,
+        apply_help="Write the proposed clauses into the resized captions "
+        "(default: dry run)",
+        from_report_help="Replay a previous dry run's report.json instead of "
+        "re-running SAM3 + the tagger: writes exactly the captions it proposed "
+        "and loads no model. Skips any caption that changed since. Emits "
         "apply_report.json (never clobbers the report it reads)",
     )
-    p.add_argument(
-        "--report_dir",
-        "--report-dir",
-        dest="report_dir",
-        default=DEFAULT_REPORT_DIR,
-        help=f"Where report.json lands (default: {DEFAULT_REPORT_DIR})",
-    )
+    add_report_dir_arg(p, DEFAULT_REPORT_DIR)
     p.add_argument(
         "--crops",
         action="store_true",
@@ -135,128 +126,17 @@ def build_parser() -> argparse.ArgumentParser:
         "--apply run is backed out, and how the clause-free control corpus for a "
         "training A/B is built. Flattens hand-written clauses too.",
     )
-    p.add_argument("--checkpoint", default=DEFAULT_SAM3_CHECKPOINT, help="SAM3 weights")
-    p.add_argument(
-        "--tagger_dir",
-        "--tagger-dir",
-        dest="tagger_dir",
-        default=None,
-        help=f"Anima Tagger checkpoint dir (default: {DEFAULT_TAGGER_DIR})",
-    )
-    p.add_argument("--device", default=None, help="cuda|cpu (default: auto)")
-
-    g = p.add_argument_group("detection")
-    g.add_argument("--prompt", default="girl", help="SAM3 text prompt for a subject")
-    g.add_argument(
-        "--prompt_embed",
-        default=DEFAULT_SUBJECT_PROMPT_EMBED,
-        help="learned soft prompt (.safetensors) used in place of --prompt for "
-        "the subject pass; part prompts stay textual. Default = the shipped "
-        f"{DEFAULT_SUBJECT_PROMPT_EMBED}; pass `none` for the plain text prompt",
-    )
-    g.add_argument("--score_threshold", type=float, default=0.5)
-    g.add_argument(
-        "--retry_score_threshold",
-        type=float,
-        default=0.35,
-        help="Retry threshold when detection undershoots the expected count. "
-        "This is SAM3's own confidence floor, not a post-filter — see "
-        "build_detect_fn",
-    )
-    g.add_argument(
-        "--part_prompts",
-        "--part-prompts",
-        dest="part_prompts",
-        default="",
-        help="Comma-separated body-part prompts, tried only when the subject "
-        "prompt undershoots — recovers headless close-up panels (a hip / "
-        "backside crop next to one full body) that 'girl' cannot see at any "
-        'threshold. Off by default; try "buttocks,hips,thighs"',
-    )
-    g.add_argument(
-        "--part_score_threshold",
-        "--part-score-threshold",
-        dest="part_score_threshold",
-        type=float,
-        default=0.5,
-        help="Confidence floor for a body-part box (kept separate from the "
-        "subject threshold — part prompts are the looser concept)",
-    )
-    g.add_argument(
-        "--part_containment_threshold",
-        "--part-containment-threshold",
-        dest="part_containment_threshold",
-        type=float,
-        default=0.7,
-        help="Drop a part box this nested inside an already-kept box. Unlike "
-        "--containment_threshold this is safe to leave on: a part inside a "
-        "subject is that subject's own body, never a second subject",
-    )
-    g.add_argument("--iou_threshold", type=float, default=0.65)
-    g.add_argument(
-        "--containment_threshold",
-        "--containment-threshold",
-        dest="containment_threshold",
-        type=float,
-        default=1.01,
-        help="Suppress a box this nested inside a kept one (intersection over "
-        "the smaller box). Off by default (>1.0 disables): a real second "
-        "subject is as nested as a group box — enabling it cost 32 real "
-        "subjects to save 12 group boxes",
-    )
-    g.add_argument(
-        "--mask_containment_threshold",
-        "--mask-containment-threshold",
-        dest="mask_containment_threshold",
-        type=float,
-        default=0.8,
-        help="Suppress a detection whose MASK is this nested inside a kept "
-        "one. On by default, unlike its box counterpart: a second girl in "
-        "front of the first nests identically by box but her mask is disjoint. "
-        ">1.0 disables (the pre-2026-08-19 behaviour)",
-    )
-    g.add_argument(
-        "--dedupe_fill_ratio",
-        "--dedupe-fill-ratio",
-        dest="dedupe_fill_ratio",
-        type=float,
-        default=2.0,
-        help="Mask-quality tie-break inside an NMS-matched pair; 0 = off "
-        "(score-only survivor). See docs/experimental/multiview_audit.md §5.",
-    )
-    g.add_argument(
-        "--min_area_frac",
-        "--min-area-frac",
-        dest="min_area_frac",
-        type=float,
-        default=0.005,
-        help="Drop detections smaller than this fraction of the image — an "
-        "inset (a character on a phone screen) is not a bindable subject",
-    )
-    g.add_argument("--pad", type=float, default=0.06, help="bbox padding fraction")
-    g.add_argument(
-        "--no_blank_crops",
-        "--no-blank-crops",
-        dest="blank_crops",
-        action="store_false",
-        help="Skip mask-blanking (probe B: this is what caused the hair-color misses)",
-    )
-    g.add_argument(
-        "--row_tol",
-        type=float,
-        default=0.25,
-        help="Minimum fractional overlap (of the narrower box extent) for two "
-        "subjects to share a row — and a column, on magazine layouts where a "
-        "full-height subject bridges a stack of panels",
-    )
-    g.add_argument("--min_instances", type=int, default=2)
-    g.add_argument("--max_instances", type=int, default=8)
-    g.add_argument(
-        "--no_strict_count",
-        "--no-strict-count",
-        dest="strict_count",
-        action="store_false",
-        help="Propose clauses even when detection disagrees with the girls-count",
+    add_checkpoint_arg(p)
+    add_model_args(p)
+    add_detection_args(
+        p,
+        part_prompts_help="Comma-separated body-part prompts, tried only when "
+        "the subject prompt undershoots — recovers headless close-up panels (a "
+        "hip / backside crop next to one full body) that 'girl' cannot see at "
+        'any threshold. Off by default; try "buttocks,hips,thighs"',
+        blank_crops=True,
+        min_instances=True,
+        strict_count=True,
     )
 
     c = p.add_argument_group("clause composition")
@@ -428,32 +308,16 @@ def build_options_from_args(args: argparse.Namespace) -> PositionCaptionOptions:
     Split out of ``main`` so a second entry point (``ab_position_captions.py``,
     which builds two of these from two flag sets) reuses the shipping
     construction instead of a copy that would silently drift the moment a knob
-    is added.
+    is added. The detection half comes from
+    :func:`~anime_tools.stages.cli._detection.detection_options`, which the
+    multiview audit shares; only the clause-composition knobs are this stage's.
     """
     return PositionCaptionOptions(
-        prompt=args.prompt,
-        score_threshold=args.score_threshold,
-        retry_score_threshold=args.retry_score_threshold,
-        part_prompts=tuple(
-            t.strip() for t in args.part_prompts.split(",") if t.strip()
-        ),
-        part_score_threshold=args.part_score_threshold,
-        part_containment_threshold=args.part_containment_threshold,
-        iou_threshold=args.iou_threshold,
-        containment_threshold=args.containment_threshold,
-        mask_containment_threshold=args.mask_containment_threshold,
-        dedupe_fill_ratio=args.dedupe_fill_ratio,
-        min_area_frac=args.min_area_frac,
-        pad=args.pad,
-        blank_crops=args.blank_crops,
-        row_tol=args.row_tol,
+        **detection_options(args),
         max_clause_tags=args.max_clause_tags,
         max_novel_tags=args.max_novel_tags,
         name_confidence=args.name_confidence,
         allow_unlisted_names=args.allow_unlisted_names,
-        min_instances=args.min_instances,
-        max_instances=args.max_instances,
-        strict_count=args.strict_count,
         discriminative_only=args.discriminative_only,
         bag_gated_identity=args.bag_gated_identity,
         multi_view_gate=args.multi_view_gate,
@@ -465,6 +329,29 @@ def build_options_from_args(args: argparse.Namespace) -> PositionCaptionOptions:
         bag_relax_min_score=args.bag_relax_min_score,
         bag_word_relax=args.bag_word_relax,
     )
+
+
+def options_from_flag_string(
+    flags: str,
+) -> tuple[PositionCaptionOptions, argparse.Namespace]:
+    """Parse a flag *string* through this CLI's own parser.
+
+    The A/B and review sheets take their position-stage knobs as one opaque
+    ``--flags=--foo --bar`` string so they cannot drift from what ships: the
+    string goes through :func:`parse_args`, not a second parser. ``sys.argv`` is
+    swapped rather than passing the list, because ``parse_args`` is the entry
+    point those tools are pinning themselves to.
+
+    Returns ``(options, args)`` — the namespace as well, since the detector is
+    built from it (``--checkpoint``, ``--prompt_embed``, ``--tagger_dir``).
+    """
+    argv = sys.argv
+    sys.argv = [argv[0], *flags.split()]
+    try:
+        args = parse_args()
+    finally:
+        sys.argv = argv
+    return build_options_from_args(args), args
 
 
 def build_detect_fn(args: argparse.Namespace, *, model=None, processor=None):
@@ -581,20 +468,15 @@ def _run_flatten(args, src: Path, dst: Path, report_dir: Path) -> None:
         "skipped": dict(sorted(stats.skipped.items(), key=lambda kv: -kv[1])),
     }
     report_dir.mkdir(parents=True, exist_ok=True)
+    # Its own name, not ``report.json``: a flatten is the inverse pass, and a
+    # ``--from_report`` replay of one would write the clauses back.
     (report_dir / "flatten_report.json").write_text(
         json.dumps({"summary": summary, "images": rows}, indent=2, ensure_ascii=False),
         encoding="utf-8",
     )
     print(json.dumps(summary, indent=2, ensure_ascii=False))
     print(f"\nreport: {report_dir / 'flatten_report.json'}")
-    if args.apply:
-        print(
-            "\nWritten to the resized captions (the master is untouched). Run "
-            "`make preprocess-te` now to regenerate the variant sidecars and "
-            "re-encode."
-        )
-    else:
-        print("\nDry run — no captions written. Re-run with --apply to write.")
+    print_dry_run_footer(args.apply, TE_NOTE)
 
 
 # How ``replay`` reads a position report: ``images``/``summary`` containers,
@@ -616,27 +498,14 @@ REPLAY_SPEC = ReplaySpec(
 
 def _run_replay(args, src: Path, dst: Path, report_dir: Path) -> None:
     """Write a previous dry run's clauses — no SAM3, no tagger, no pixels."""
-    try:
-        rows, stats, out_path = run_replay(
-            spec=REPLAY_SPEC,
-            report_path=resolve_path(args.from_report),
-            src=src,
-            dst=dst,
-            report_dir=report_dir,
-            path_pattern=args.path_pattern,
-            apply=args.apply,
-        )
-    except StaleReportError as exc:
-        raise SystemExit(str(exc)) from exc
-    print(f"replaying {args.from_report} (no model loaded)")
-    print_replay(rows, stats, apply=args.apply)
-    print(f"\nreport: {out_path}")
-    if args.apply and stats.written:
-        print(
-            "\nWritten to the resized captions (the master is untouched). Run "
-            "`make preprocess-te` now to regenerate the variant sidecars and "
-            "re-encode."
-        )
+    run_replay_cli(
+        args,
+        spec=REPLAY_SPEC,
+        src=src,
+        dst=dst,
+        report_dir=report_dir,
+        after_write_note=TE_NOTE,
+    )
 
 
 def main() -> None:
@@ -662,17 +531,9 @@ def main() -> None:
     # SAM3 first, tagger second: both stay resident since the pipeline is
     # per-image (detect -> crop -> tag), not two dataset-wide passes.
     detect_fn, part_detect_fn, sam_model, sam_processor = build_detect_fn(args)
-
-    from anime_tools.tagger.tagger import AnimaTagger, ensure_tagger_checkpoint
-
-    ckpt_dir = ensure_tagger_checkpoint(
-        resolve_path(args.tagger_dir or DEFAULT_TAGGER_DIR)
-    )
-    print(f"Loading Anima Tagger from {ckpt_dir}...", flush=True)
-    # Resolved here and not in parse_args(): the --from_report replay returns
-    # before this and must stay torch-free, and resolving imports torch.
-    tagger = AnimaTagger(ckpt_dir, device=resolve_device(args.device))
-    vocabulary = load_clause_vocabulary(ckpt_dir)
+    # Loaded here and not in parse_args(): the --from_report replay returns
+    # before this and must stay torch-free.
+    tagger, vocabulary, _ckpt_dir = load_tagger(args)
 
     token_count_fn = None
     if args.qwen3:
@@ -684,10 +545,6 @@ def main() -> None:
             return len(tokenizer(text, add_special_tokens=True)["input_ids"])
 
     options = build_options_from_args(args)
-
-    def progress(index: int, total: int, rel: str) -> None:
-        if index % 200 == 0 or index == total:
-            print(f"  [{index}/{total}] {rel}", flush=True)
 
     rows, stats = run_position_captions(
         resized_dir=dst,
@@ -701,7 +558,7 @@ def main() -> None:
         apply=args.apply,
         crops_dir=(report_dir / "crops") if args.crops else None,
         token_count_fn=token_count_fn,
-        progress=progress,
+        progress=make_progress(200),
     )
     del sam_processor, sam_model
 
@@ -710,13 +567,13 @@ def main() -> None:
     ]
     embed_path = resolve_prompt_embed(args.prompt_embed)
     summary = {
-        "applied": bool(args.apply),
+        # The header carries the roots so ``--from_report`` can refuse to replay
+        # this report against a different pair of trees (the row paths are
+        # relative to them).
+        **stage_report_header(
+            src=src, dst=dst, path_pattern=args.path_pattern, apply=args.apply
+        ),
         "rewrite": bool(args.rewrite),
-        # Recorded so ``--from_report`` can refuse to replay this report against
-        # a different pair of trees (the row paths are relative to these).
-        "src": str(src),
-        "dst": str(dst),
-        "path_pattern": args.path_pattern,
         # Which detector produced these boxes — a soft prompt is a file, so
         # two runs are only comparable when the sha matches.
         "prompt": args.prompt,
@@ -755,37 +612,24 @@ def main() -> None:
         ),
         "over_token_budget": [r.image for r in over_budget],
     }
-    report_dir.mkdir(parents=True, exist_ok=True)
-    (report_dir / "report.json").write_text(
-        json.dumps(
-            {"summary": summary, "images": [asdict(r) for r in rows]},
-            indent=2,
-            ensure_ascii=False,
-        ),
-        encoding="utf-8",
+    report_path = write_stage_report(
+        report_dir, {"summary": summary, "images": [asdict(r) for r in rows]}
     )
 
     print(json.dumps(summary, indent=2, ensure_ascii=False))
-    print(f"\nreport: {report_dir / 'report.json'}")
+    print(f"\nreport: {report_path}")
     if over_budget:
         print(
             f"WARNING: {len(over_budget)} caption(s) exceed {args.max_tokens} tokens — "
             "the tail truncates silently at TE-cache time."
         )
-    if args.apply:
+    print_dry_run_footer(args.apply, TE_NOTE)
+    if args.apply and args.rewrite and stats.moved_tags:
         print(
-            "\nWritten to the resized captions (the master is untouched). Run "
-            "`make preprocess-te` now to regenerate the variant sidecars and "
-            "re-encode."
+            f"{stats.moved_tags} tag(s) moved out of the flat bag across "
+            f"{stats.rewritten} caption(s). To back that out: "
+            '`make caption-position ARGS="--flatten --apply"`.'
         )
-        if args.rewrite and stats.moved_tags:
-            print(
-                f"{stats.moved_tags} tag(s) moved out of the flat bag across "
-                f"{stats.rewritten} caption(s). To back that out: "
-                '`make caption-position ARGS="--flatten --apply"`.'
-            )
-    else:
-        print("\nDry run — no captions written. Re-run with --apply to write.")
 
 
 if __name__ == "__main__":
