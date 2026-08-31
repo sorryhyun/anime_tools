@@ -193,6 +193,37 @@ def test_the_sam3_checkpoint_is_one_setting_for_three_stages():
         )
 
 
+def test_the_soft_prompt_is_one_setting_for_both_detector_stages():
+    """The two SAM3 stages run the *same* detector, so the soft prompt it finds
+    a subject with is one weights path, not a form field on each."""
+    for stage_id in ("position", "audit"):
+        _, fs = _stage(stage_id)
+        embed = next(f for f in fs if f["dest"] == "prompt_embed")
+        assert embed["setting"] == "prompt_embed", stage_id
+        argv = S.build_argv(fs, {}, settings={"prompt_embed": "none"})
+        assert _opt(argv, "--prompt_embed") == "none", stage_id
+        # Blank in Settings = the shipped default, which the CLI already holds.
+        assert "--prompt_embed" not in S.build_argv(
+            fs, {"prompt_embed": "stale.safetensors"}
+        )
+
+
+def test_the_curated_apply_reads_the_audit_report_from_the_settings_root():
+    """``audit_apply`` writes no report of its own (so no ``Stage.report``: the
+    run bar has nothing to fetch, diff or undo), but the one it *reads* is the
+    audit's — bound to the same ``report_root`` so the two move together."""
+    st, fs = _stage("audit_apply")
+    assert st.report is None
+    f = next(x for x in fs if x["dest"] == "report")
+    assert f["report"] == "captions/multiview_audit/report.json"
+    assert S.report_path(st, fs, {}, "work") is None
+    argv = S.build_argv(fs, {"report": "stale.json"}, report_root="work")
+    assert _opt(argv, "--report") == "work/captions/multiview_audit/report.json"
+    # The audit writes exactly what this reads.
+    audit, afs = _stage("audit")
+    assert S.report_path(audit, afs, {}, "work") == _opt(argv, "--report")
+
+
 def test_the_report_root_moves_every_report_and_splits_none():
     """One Settings knob, one directory per stage: the tail comes off each
     stage's own CLI default, so no two stages can be pointed at one report."""

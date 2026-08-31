@@ -33,7 +33,10 @@ def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument(
         "--report",
-        default="post_image_dataset/captions/multiview_audit_full/report.json",
+        # `audit_multiview`'s own --report_dir, plus the file it writes there:
+        # the accept list is a list of *that* report's rows, so the two defaults
+        # are one path split in half. Pinned together in test_stage_cli_args.
+        default="post_image_dataset/captions/multiview_audit/report.json",
         help="Audit report.json the accept list refers to",
     )
     p.add_argument(

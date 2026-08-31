@@ -22,6 +22,7 @@ import pytest
 
 from anime_tools.downloads import DEFAULT_SAM3_CHECKPOINT
 from anime_tools.stages.cli import (
+    audit_apply_curated,
     audit_multiview,
     autotag_captions,
     correct_captions,
@@ -29,6 +30,7 @@ from anime_tools.stages.cli import (
     resize_images,
 )
 from anime_tools.stages.cli._detection import OPTIONAL_FLAGS, detection_options
+from anime_tools.stages.instance_detection import DEFAULT_SUBJECT_PROMPT_EMBED
 from anime_tools.stages.position_captions import PositionCaptionOptions
 
 SAM3_STAGES = {
@@ -79,6 +81,7 @@ def parsers() -> dict[str, dict[str, argparse.Action]]:
         ("from_report", ("--from_report", "--from-report"), None),
         ("tagger_dir", ("--tagger_dir", "--tagger-dir"), None),
         ("checkpoint", ("--checkpoint",), DEFAULT_SAM3_CHECKPOINT),
+        ("prompt_embed", ("--prompt_embed",), DEFAULT_SUBJECT_PROMPT_EMBED),
         ("device", ("--device",), None),
         ("src", ("--src",), "image_dataset"),
         ("dst", ("--dst",), "post_image_dataset/resized"),
@@ -92,7 +95,9 @@ def test_shared_flags_keep_one_spelling(parsers, dest, flags, default):
     its roots rather than defaulting them, and is exempt on that one point.
     ``--checkpoint`` is declared once in ``masking/_sam3.py``, beside the
     ``load_sam3`` it feeds, so the download button and every loader name the
-    same file.
+    same file; ``--prompt_embed`` comes from ``_detection.py`` the same way.
+    Both are ⚙ Settings stage defaults in the GUI, which only holds while every
+    stage that takes one takes it identically.
     """
     seen = 0
     for name, acts in parsers.items():
@@ -121,6 +126,16 @@ def test_report_dir_defaults_are_distinct(parsers):
     one stage's ``--from_report`` replay read another's report."""
     defaults = [parsers[name]["report_dir"].default for name in CAPTION_STAGES]
     assert len(set(defaults)) == len(defaults)
+
+
+def test_the_curated_apply_reads_the_report_the_audit_writes():
+    """``audit_apply_curated``'s accept list names rows of the audit's
+    ``report.json``, so its ``--report`` default is the audit's
+    ``--report_dir`` default plus the file written there — one path split in
+    half, and the halves have drifted apart before (the GUI now binds both to
+    the Settings ``report_root``, which only makes sense while they agree)."""
+    report = actions(audit_apply_curated.build_parser())["report"]
+    assert report.default == f"{audit_multiview.DEFAULT_REPORT_DIR}/report.json"
 
 
 # ---- the two SAM3 stages run the same detector -------------------------

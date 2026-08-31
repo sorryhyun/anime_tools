@@ -97,8 +97,9 @@ def roots_for(
 
 def stage_defaults(settings: Mapping[str, Any]) -> dict[str, str]:
     """The Settings dialog's stage defaults, for the fields bound to them
-    (``S.SETTING_FIELDS``): ``path_pattern``, ``tagger_dir`` and ``checkpoint``
-    mean the same thing in every stage, so they are set once, not nine times.
+    (``S.SETTING_FIELDS``): ``path_pattern``, ``tagger_dir``, ``checkpoint`` and
+    ``prompt_embed`` mean the same thing in every stage that takes them, so they
+    are set once, not nine times.
 
     Blanks are dropped, so an emptied field means "the CLI's own default", not
     an empty pattern.

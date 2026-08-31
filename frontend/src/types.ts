@@ -17,11 +17,12 @@ export interface Field {
   /** Bound to a dataset root — filled server-side from Settings, hidden here. */
   root: RootName | null;
   /** Bound to a Settings *stage default* (`path_pattern` / `tagger_dir` /
-      `checkpoint`) — filled server-side the same way, and hidden here for the
-      same reason. */
+      `checkpoint` / `prompt_embed`) — filled server-side the same way, and
+      hidden here for the same reason. */
   setting: string | null;
   /** This stage's own path under the Settings `report_root` (`captions/autotag`,
-      `groups/groups.json`): bound server-side, so hidden here too. */
+      `groups/groups.json`): bound server-side, so hidden here too. The audit's
+      curated apply *reads* its report through the same binding. */
   report: string | null;
   /** Auto-detected by the stage (`--device`): never shown, never sent. */
   auto: boolean;
@@ -100,8 +101,8 @@ export interface Info {
 
 export interface Settings {
   values?: Record<string, Record<string, unknown>>;
-  /** `path_pattern` / `tagger_dir` / `checkpoint` / `report_root`: set once
-      here, not on every stage form. */
+  /** `path_pattern` / `tagger_dir` / `checkpoint` / `prompt_embed` /
+      `report_root`: set once here, not on every stage form. */
   stage_defaults?: Record<string, string>;
   /** The resize preflight's form values. It has no dock panel to carry a form,
       so its knobs are set here and apply to every stage it runs in front of. */

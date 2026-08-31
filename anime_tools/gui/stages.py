@@ -57,12 +57,13 @@ SETTING_FIELDS: dict[str, str] = {
     # argparse dest → settings key. Stage-independent knobs that mean the same
     # thing everywhere they appear, so they are set once in ⚙ Settings instead
     # of on nine forms: which images a run touches, which tagger checkpoint
-    # loads, and which SAM3 weights the three detector stages build from. Like
-    # ROOT_FIELDS these are hidden from the form and filled by
-    # :func:`build_argv`.
+    # loads, which SAM3 weights the three detector stages build from, and which
+    # soft prompt the two of them find a subject with. Like ROOT_FIELDS these
+    # are hidden from the form and filled by :func:`build_argv`.
     "path_pattern": "path_pattern",
     "tagger_dir": "tagger_dir",
     "checkpoint": "checkpoint",
+    "prompt_embed": "prompt_embed",
 }
 
 REPORT_SETTING = "report_root"
@@ -78,7 +79,21 @@ Blank means "beside the ``dst`` root" — see ``server.report_root``. That is wh
 the CLI defaults spell out (``post_image_dataset/captions/autotag`` is
 ``post_image_dataset/resized``'s sibling), except they spell it as a literal, so
 a dataset moved off ``post_image_dataset/`` would leave its reports behind.
+
+The one report a stage *reads* rather than writes (:data:`REPORT_INPUTS`) is
+bound the same way, so the audit's report and the curated apply that consumes it
+move together.
 """
+
+REPORT_INPUTS: dict[str, str] = {
+    # stage id → the dest naming a report this stage *reads*. Bound to
+    # :data:`REPORT_SETTING` exactly like the report a stage writes — same
+    # root, same per-stage tail off the CLI default — but kept out of
+    # :attr:`Stage.report`, which means "the report this run produces" and is
+    # what the run bar fetches back, offers as a diff and lets Undo replay.
+    # ``audit_apply`` produces none: it reads the multiview audit's.
+    "audit_apply": "report",
+}
 
 SCOPE_FIELD = "path_pattern"
 """The :data:`SETTING_FIELDS` key the GUI narrows to run a stage on one image."""
@@ -402,12 +417,14 @@ def schema(stage: Stage) -> dict[str, Any]:
         return {**base, "available": False, "error": str(e), "fields": [], "doc": ""}
     fs = fields_of(parser)
     bound = ROOT_FIELDS.get(stage.id, {})
-    report_dest = stage.report[0] if stage.report else None
+    report_dests = {stage.report[0] if stage.report else None} | {
+        REPORT_INPUTS.get(stage.id)
+    }
     for f in fs:
         f.root = bound.get(f.dest)
         f.setting = SETTING_FIELDS.get(f.dest)
         f.auto = f.dest in AUTO_FIELDS
-        if f.dest == report_dest and isinstance(f.default, str):
+        if f.dest in report_dests and isinstance(f.default, str):
             f.report = report_subpath(f.default)
     return {
         **base,
@@ -445,11 +462,11 @@ def build_argv(
     :data:`ROOT_FIELDS`, overriding whatever the form sent: the dataset roots
     are set once in Settings and no stage gets to disagree with them.
     ``settings`` does the same for :data:`SETTING_FIELDS` (``path_pattern`` /
-    ``tagger_dir`` / ``checkpoint``) — and it is also how the GUI narrows one
-    run to a single image, by handing in a ``path_pattern`` that matches just
-    that file. ``report_root`` fills the report field the same way, joined to
-    the stage's own :attr:`Field.report` tail so the four stages keep four
-    directories under the one root.
+    ``tagger_dir`` / ``checkpoint`` / ``prompt_embed``) — and it is also how
+    the GUI narrows one run to a single image, by handing in a ``path_pattern``
+    that matches just that file. ``report_root`` fills the report field the
+    same way, joined to the stage's own :attr:`Field.report` tail so the four
+    stages keep four directories under the one root.
 
     :data:`AUTO_FIELDS` (``--device``) never reach the argv at all: the stage
     auto-detects them.

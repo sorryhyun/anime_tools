@@ -65,7 +65,7 @@ export interface SettingsOut {
   token: string | null;
   roots: Record<string, string> | null;
   /** The stage defaults (`path_pattern` / `tagger_dir` / `checkpoint` /
-      `report_root`), or null if untouched. */
+      `prompt_embed` / `report_root`), or null if untouched. */
   defaults: Record<string, string> | null;
   /** The preflight stage's form values, or null if untouched. */
   preprocess: Record<string, unknown> | null;
@@ -216,7 +216,8 @@ export function SettingsDialog(props: {
             auto-detects it. <code>report_root</code> is the one knob with no flag of its own: each
             stage keeps its own directory under it (<code>captions/autotag</code>,{" "}
             <code>groups/groups.json</code>), so moving the root moves them all without ever
-            pointing two stages at one report.
+            pointing two stages at one report — and the curated audit apply reads the audit's report
+            back out of it.
           </p>
         </Show>
         <div class="kv">

@@ -5,8 +5,9 @@ import { PathPicker } from "./PathPicker";
 
 /** Group fields by argparse group, preserving order. Fields bound to a dataset
     root, to a Settings stage default (`path_pattern`, `tagger_dir`,
-    `checkpoint`) or to the Settings `report_root` (`--report_dir`, groups'
-    `--out`) are left out: the server fills them from Settings, so no two forms
+    `checkpoint`, `prompt_embed`) or to the Settings `report_root`
+    (`--report_dir`, groups' `--out`, and the audit report the curated apply
+    reads) are left out: the server fills them from Settings, so no two forms
     can disagree about them. So is `--device`, which the stage auto-detects. And
     so are the two the run bar owns -- `--apply` (Run / Apply) and
     `--from_report` (how Apply replays the run it is applying): a stale path
