@@ -55,6 +55,9 @@ def test_destinations_follow_the_curation_home(home):
     assert by["tagger"].dest == home / "models" / "captioners" / "anima-tagger-dbv4"
     assert by["sam3"].dest == home / "models" / "sam3"
     assert by["pe_spatial"].dest == home / "models" / "pe"
+    # Not under models/: the soft prompt has to land on the relative path the
+    # --prompt_embed default resolves, which is the trainer's own layout.
+    assert by["soft_prompt"].dest == home / "networks" / "calibration"
     # Hub-cache assets have no path under models/ to keep in sync.
     assert by["tagger_backbone"].dest is None and by["mit_text"].dest is None
     assert by["mit_text"].location == "Hugging Face cache"
@@ -90,6 +93,10 @@ def test_rows_land_where_the_loaders_look():
     default = pc.build_parser().parse_args([]).checkpoint
     assert DL.resolve_path(default).parent == by["sam3"].dest
     assert DL.resolve_path(default).name == DL.SAM3_FILENAME
+
+    # Same for the soft prompt: the --prompt_embed default is the row's file.
+    embed = DL.resolve_path(pc.build_parser().parse_args([]).prompt_embed)
+    assert embed == by["soft_prompt"].dest / DL.SOFT_PROMPT_FILENAME
 
 
 def test_gated_rows_carry_their_accept_terms_url(home):
@@ -132,3 +139,53 @@ def test_cli_downloads_only_what_is_missing(home, monkeypatch, capsys):
     fetched.clear()
     assert DL.main(["pe_spatial"]) == 0  # an explicit id re-fetches regardless
     assert fetched == ["pe_spatial"]
+
+
+def test_a_url_row_downloads_over_plain_https(home, monkeypatch, capsys):
+    """The soft prompt is not on the Hub: its row fetches from a URL, and lands
+    flat in the same dest ``missing()`` probes."""
+    import urllib.request
+
+    asked: list[str] = []
+
+    class Fake:
+        def __init__(self, url):
+            asked.append(url)
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+        def read(self):
+            return b"soft-prompt-bytes"
+
+    monkeypatch.setattr(urllib.request, "urlopen", lambda url, timeout=None: Fake(url))
+
+    row = DL.by_id()["soft_prompt"]
+    assert not row.installed
+    row.fetch()
+
+    assert asked == [f"{DL.SOFT_PROMPT_URL}/{DL.SOFT_PROMPT_FILENAME}"]
+    landed = row.dest / DL.SOFT_PROMPT_FILENAME
+    assert landed.read_bytes() == b"soft-prompt-bytes"
+    assert list(row.dest.iterdir()) == [landed]  # no .part left behind
+    assert DL.by_id()["soft_prompt"].installed
+    assert str(landed) in capsys.readouterr().out
+
+
+def test_a_url_row_reports_a_failure_with_the_recovery(home, monkeypatch):
+    import urllib.error
+    import urllib.request
+
+    def boom(url, timeout=None):
+        raise urllib.error.URLError("no route to host")
+
+    monkeypatch.setattr(urllib.request, "urlopen", boom)
+    row = DL.by_id()["soft_prompt"]
+    with pytest.raises(FileNotFoundError) as e:
+        row.fetch()
+    assert "python -m anime_tools.downloads soft_prompt" in str(e.value)
+    assert not (row.dest / DL.SOFT_PROMPT_FILENAME).exists()
+    assert not list(row.dest.iterdir())  # the partial file is cleaned up

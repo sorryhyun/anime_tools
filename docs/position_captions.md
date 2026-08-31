@@ -772,7 +772,10 @@ poisoned): hair-per-crop **10/10** on dbv4 vs 8/10 on v5 today and 3/10 at the
 
 The subject pass now runs the learned `anime girl` soft prompt
 (`networks/calibration/sam3_girl_prompt.safetensors`, default `--prompt_embed`;
-`--prompt_embed none` restores the text `girl`). Detector A/B on the dbv4
+`--prompt_embed none` restores the text `girl`). A standalone `anime_tools`
+checkout has no `networks/`: fetch the artifact with `python -m
+anime_tools.downloads soft_prompt` (or the Settings → Models row), otherwise the
+default degrades to the text prompt with a warning. Detector A/B on the dbv4
 tagger, corpus-wide (480 candidates): proposed 433 → 439, 17 newly proposed
 (all clauses correct on eyeball — the headless/ass-focus panel beside a
 full-body view is the recovered population), 11 lost (mostly the old prompt's

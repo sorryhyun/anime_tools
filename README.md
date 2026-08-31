@@ -82,7 +82,7 @@ Download button that runs `python -m anime_tools.downloads` as an ordinary job
 Nothing has to be pre-fetched — every loader still fetches on first use; the
 buttons only move the wait, and any gated-repo refusal, to a moment you picked.
 FastAPI + uvicorn are plain dependencies; the trainer's own PySide6 GUI remains
-the rich editor. Design notes: [`docs/gui_plan.md`](docs/gui_plan.md).
+the rich editor.
 
 ## Layout of a curated dataset
 
@@ -93,6 +93,7 @@ post_image_dataset/resized/{stem}.variants.txt  shuffle / dropout variants (tab-
 post_image_dataset/captions/caption_index.json  typed-tag index (character / copyright / artist / count)
 models/captioners/anima-tagger-dbv4/            tagger checkpoint (auto-fetched from sorryhyun/anima-tagger)
 models/sam3/sam3.pt, models/pe/…             SAM3 / PE-Spatial weights (`python -m anime_tools.downloads --list`)
+networks/calibration/sam3_girl_prompt.safetensors  SAM3 subject soft prompt (default `--prompt_embed`)
 ```
 
 Every artifact the trainer reads is a **file**; the formats are frozen in

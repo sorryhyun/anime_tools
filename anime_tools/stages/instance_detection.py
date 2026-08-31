@@ -23,8 +23,11 @@ from PIL import Image
 # ``anime girl``, bench/sam3_soft_prompt/ keeper 20260826-2310, 1024 params):
 # keeps ``anime girl``'s recall (zero-proposal images 310 -> 4 corpus-wide) with
 # ``girl``'s junk profile (0 degenerate survivors). Part prompts stay textual.
-# ``resolve_prompt_embed`` turns a CLI value into a path or None.
-DEFAULT_SUBJECT_PROMPT_EMBED = "networks/calibration/sam3_girl_prompt.safetensors"
+# The path is the download catalog's (torch-free, so the import stays cheap) and
+# the CLIs import it from here; ``resolve_prompt_embed`` turns a CLI value into
+# a path or None.
+from anime_tools.downloads import DEFAULT_SUBJECT_PROMPT_EMBED
+
 _PROMPT_EMBED_OFF = {"", "none", "off", "text"}
 
 
@@ -45,7 +48,8 @@ def resolve_prompt_embed(spec: str | None) -> Path | None:
         return path
     if spec == DEFAULT_SUBJECT_PROMPT_EMBED:
         warnings.warn(
-            f"shipped soft prompt missing at {path}; falling back to the text prompt",
+            f"shipped soft prompt missing at {path}; falling back to the text "
+            "prompt (get it with `python -m anime_tools.downloads soft_prompt`)",
             stacklevel=2,
         )
         return None

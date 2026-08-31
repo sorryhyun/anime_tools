@@ -10,6 +10,7 @@ build/
 .claude/*
 !.claude/skills/
 models/
+networks/
 post_image_dataset/
 image_dataset/
 bench/*/results/
