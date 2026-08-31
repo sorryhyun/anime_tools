@@ -341,7 +341,14 @@ moved that are worth knowing about.
   closed and treats a corrupt cache as "recompute" instead of raising, which is
   the stance the rest of the package's caches take.
 
-## Phase 6 — GUI backend + frontend
+## Phase 6 — GUI backend + frontend — **done**
+
+Landed as `gui/proposals.py` on the replay primitives, five pure helpers hoisted
+out of `create_app` plus two app-wide exception handlers, and a frontend split
+into `components/SettingsDialog.tsx`, `components/StatusLine.tsx`,
+`components/ClauseRow.tsx` and `state.ts` (`createJobFollower` / `persisted`).
+`App.tsx` 1236 → 855 lines; three new GUI tests in `tests/test_gui.py` and the
+`SHAPES` pin collapsed to one whole-object comparison.
 
 1. **`gui/proposals.py` imports the replay primitives it copied** —
    `load_report`, `report_rows` (wrapping `StaleReportError` in
@@ -377,6 +384,28 @@ Guards: `make frontend` must be rerun and the committed bundle diffed in the
 same change (CI fails on drift); GUI pytest suite; manual smoke via `make gui`
 for the run→diff→apply loop.
 
+
+Outcome: no status string, response key or HTTP status changed. Three things
+are worth knowing.
+
+- **`SHAPES` is now `dict[str, ReplaySpec]`.** The out-of-scope note above was
+  half right: the three *instances* must stay hand-copied, because importing a
+  stage CLI pulls torch into the server, but the `ReplaySpec` **class** —
+  along with `load_report`, `report_rows` and `apply_one` — comes from
+  `stages/replay.py`, which is torch-free by construction and always was
+  importable here. `test_gui_proposals` went from seven field comparisons to
+  one equality, so a field added to `ReplaySpec` later cannot slip past the
+  mirror.
+- **Two adoption behaviours got slightly better, deliberately.** The server
+  adopts a `DatasetError` raised anywhere in a route as a 400 rather than a
+  500; the frontend's "is something already running?" guard tests `running`
+  instead of a job id, and an id outlives its job, so a second
+  externally-started job can now be adopted where before only the first could.
+- **The dock height stays hand-rolled.** `persisted` writes on every change,
+  and the height moves on every pointermove of a drag; it saves once on
+  pointerup instead. Item 6.3's "five localStorage signal pairs" is therefore
+  four.
+
 ## Sizing and order rationale
 
 Phases 1–2 first: they carry the highest drift risk (GUI schema coupling, the
@@ -391,3 +420,26 @@ mirror" (count regex, detection options, caption resolution, drift ladder)
 reduced to one definition each, and every invariant currently enforced by a
 comment ("kept byte-exact", "shared so they can't disagree", "mirrors the
 trainer") enforced by an import instead.
+
+## Where it landed — **all six phases done, 2026-08-31**
+
+The four "mirrors of a mirror" are one definition each, and so are nine more
+the review found on the way: the report shape, the drift ladder, the count
+regex, the tag normalizer, the vocab reader, the checkpoint reader, the dbv4
+cache, the image walk, the device probe, the JSON file, the threshold sweep,
+the SSE follower and the persisted signal. What is left duplicated is
+duplicated on purpose, and each copy now says so where it lives:
+
+| Copy | Why it stays | Pinned by |
+|---|---|---|
+| `gui/proposals.SHAPES` (three `ReplaySpec` instances) | importing a stage CLI pulls torch into the server | `tests/test_gui_proposals.py` |
+| `buckets.py` free-fit geometry | the dependency direction forbids importing the trainer | `tests/test_resize_images.py` |
+| `_walk.py` vs the trainer's `image_utils` | same | the trainer's own parity test |
+| `vision/pe.py` tower | kept diffable against upstream | — |
+| `grouping`'s two `.npz` caches | different shapes, one caller each (Phase 5, item 8) | — |
+
+Two later-phase items were not done as written, both because doing them would
+have invented an abstraction rather than removed a copy: Phase 5's
+`cached_descriptors` (one caller) and Phase 6's fifth persisted signal (the
+dock height, which must not write at frame rate). Both are recorded in their
+phase's outcome.
