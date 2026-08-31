@@ -28,6 +28,30 @@ _COUNT_RE = re.compile(
 
 _LEADING_INT_RE = re.compile(r"^(\d+)")
 
+_SPACE_RE = re.compile(r"\s+")
+
+# The exact / open-ended halves of :data:`_COUNT_RE`, kept apart because
+# :func:`count_of` needs the number and the noun out of the match. ``6+girls``
+# is a crowd tag, not the number six, so it reads as "unknown", not as 6.
+_EXACT_COUNT_RE = re.compile(r"^(\d+)(girl|boy|other)s?$")
+_OPEN_COUNT_RE = re.compile(r"^\d+\+(girl|boy|other)s?$")
+
+
+def normalize_tag(tag: str) -> str:
+    """A tag's canonical space form: trimmed, ``_``→`` ``, lowercased, collapsed.
+
+    The one normalizer. ``speech_bubble`` and ``Speech  Bubble`` both become
+    ``speech bubble``, so either danbooru convention keys the same entry — the
+    Danbooru KB is built through this, the caption corrector writes through it,
+    and every "does the caption already say this?" comparison in the grammar
+    and in grouping goes through it. Three near-copies used to disagree on the
+    underscore fold, which is exactly the pair a comparison must not miss.
+
+    It is a *key* function that happens also to be the corrector's output form;
+    callers that only compare must not write the result back.
+    """
+    return _SPACE_RE.sub(" ", tag.strip().replace("_", " ").lower())
+
 
 def is_count_tag(tag: str) -> bool:
     """True for people-count tags (``1girl``, ``2girls``, ``multiple_boys``…)."""
@@ -105,6 +129,82 @@ def classify_people(tags: Iterable[str]) -> int:
     if girls == 0 and boys == 1:
         return 6  # 1boy
     return 7  # fallback (e.g. 0g/2b without "others")
+
+
+def exact_count(tag: str, noun: str) -> int | None:
+    """The number in an exact ``N<noun>s`` tag (``3girls`` → 3), else ``None``.
+
+    Exact means countable: the open-ended ``6+girls`` and the ``multiple_*``
+    implication are not exact counts and answer ``None`` here — see
+    :func:`count_of`, which is this over a whole bag.
+    """
+    m = _EXACT_COUNT_RE.match(normalize_tag(tag))
+    return int(m.group(1)) if m is not None and m.group(2) == noun else None
+
+
+def count_of(tags: Iterable[str], noun: str) -> int | None:
+    """How many ``girl``/``boy``/``other`` subjects ``tags`` claims, if it says.
+
+    * an integer — the largest exact ``N<noun>s`` count present (``0`` when the
+      bag carries no count for this noun at all: the caption doesn't say)
+    * ``None`` — "more than one, count unknown": ``multiple girls`` or an
+      open-ended ``6+girls`` with no exact count to override it.
+
+    An exact count always wins over an open-ended or ``multiple_*`` tag, which
+    booru fires as an implication alongside it. Tags are read through
+    :func:`normalize_tag`, so the ``multiple_girls`` / ``multiple girls``
+    spelling disagreement resolves here instead of at each call site.
+    """
+    plural = f"multiple {noun}s"
+    exact: list[int] = []
+    unknown = False
+    for raw in tags:
+        tag = normalize_tag(raw)
+        if (n := exact_count(tag, noun)) is not None:
+            exact.append(n)
+        elif tag == plural or ((m := _OPEN_COUNT_RE.match(tag)) and m.group(1) == noun):
+            unknown = True
+    if exact:
+        return max(exact)
+    return None if unknown else 0
+
+
+# ``solo`` is a non-count membership tag — gelcrawl writes it alongside
+# ``1girl``/``1boy`` when there is exactly one figure — so the single-subject
+# predicate is "one of these fired, and no *other* count tag did". The
+# single-count names also match :data:`_COUNT_RE` (``\d+girls?``), which is why
+# they have to be excluded from the multi test rather than merely not counted.
+SINGLE_COUNT_NAMES = frozenset({"solo", "1girl", "1boy", "1other"})
+
+
+def is_solo_names(names: Iterable[str]) -> bool:
+    """True when a tag-name set describes a single subject.
+
+    The name-side twin of :func:`solo_multi_indices` (and of the trainer's
+    ``GroupRouter.solo_mask``): what ``softmax_when_solo`` groups gate on.
+    """
+    names = set(names)
+    has_multi = any(n not in SINGLE_COUNT_NAMES and is_count_tag(n) for n in names)
+    return bool(names & SINGLE_COUNT_NAMES) and not has_multi
+
+
+def solo_multi_indices(vocab_tags: Iterable[dict]) -> tuple[set[int], set[int]]:
+    """``(single_count_indices, multi_count_indices)`` over ``vocab.json`` rows.
+
+    The index-side twin of :func:`is_solo_names`, for consumers that hold a
+    multi-hot tensor rather than names. Same precedence: a single-count name is
+    never also counted as multi.
+    """
+    single: set[int] = set()
+    multi: set[int] = set()
+    for t in vocab_tags:
+        name = t["name"]
+        idx = int(t["index"])
+        if name in SINGLE_COUNT_NAMES:
+            single.add(idx)
+        elif is_count_tag(name):
+            multi.add(idx)
+    return single, multi
 
 
 def is_artist_tag(tag: str) -> bool:

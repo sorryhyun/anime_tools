@@ -4,6 +4,8 @@ build and the caption-index builder type tag *shape* identically (no drift)."""
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from anime_tools.captions import index as bci
 from anime_tools.captions import taxonomy as tx
 
@@ -56,28 +58,71 @@ def test_is_count_tag():
         assert not tx.is_count_tag(t), t
 
 
-def test_multi_count_regex_copies_match_taxonomy():
-    """The re-typed ``_MULTI_COUNT_RE`` copies must stay byte-identical to the
-    canonical taxonomy pattern — a copy that drops ``\\+?`` silently stops
-    matching real tags like ``6+girls``. (Folding them into one shared import
-    is a planned refactor; until then this pins the strings.)"""
-    from pathlib import Path
+def test_the_count_regex_has_no_copies_left():
+    """One count pattern, imported — not four re-typed ones.
 
+    Three modules and one method-local ``re.compile`` used to carry their own
+    copy of :data:`taxonomy._COUNT_RE`; a copy that drops ``\\+?`` silently
+    stops matching real tags like ``6+girls``, which is the drift this used to
+    merely detect. Now the pattern is unique in the tree, and the two
+    single-subject predicates that read it are the shared ones.
+    """
     from anime_tools.tagger.cli import derive_groups as dg
     from anime_tools.tagger.cli import role_markers as rm
 
+    assert dg._is_solo is tx.is_solo_names
+    assert rm._solo_index_sets is tx.solo_multi_indices
+
     canonical = tx._COUNT_RE.pattern
-    assert dg._MULTI_COUNT_RE.pattern == canonical
-    assert rm._MULTI_COUNT_RE.pattern == canonical
-    # The inline copy in tagger.py (built lazily inside a method) — pinned by
-    # source text, since compiling it requires a loaded checkpoint.
-    tagger_src = (Path(tx.__file__).parents[1] / "tagger" / "tagger.py").read_text(
-        encoding="utf-8"
+    package = Path(tx.__file__).parents[1]
+    carriers = sorted(
+        p.relative_to(package).as_posix()
+        for p in package.rglob("*.py")
+        if canonical in p.read_text(encoding="utf-8")
     )
-    assert canonical in tagger_src
-    for pat in (dg._MULTI_COUNT_RE, rm._MULTI_COUNT_RE, tx._COUNT_RE):
-        assert pat.match("6+girls")
-        assert pat.match("multiple_girls") and pat.match("multiple girls")
+    assert carriers == ["captions/taxonomy.py"]
+
+    assert tx._COUNT_RE.match("6+girls")
+    assert tx._COUNT_RE.match("multiple_girls") and tx._COUNT_RE.match("multiple girls")
+
+
+def test_solo_predicate_agrees_across_names_and_indices():
+    """The name side and the index side are one rule, not two.
+
+    ``1girl`` matches the multi-count pattern as much as ``2girls`` does, so the
+    single-count names have to be taken out of the multi test rather than
+    merely not counted — the precedence both halves have to share.
+    """
+    assert tx.is_solo_names({"solo", "1girl", "blue eyes"})
+    assert tx.is_solo_names({"1boy"})
+    assert not tx.is_solo_names({"1girl", "2girls"})
+    assert not tx.is_solo_names({"1girl", "multiple_girls"})
+    assert not tx.is_solo_names({"blue eyes"})  # no count tag at all
+
+    vocab = [
+        {"name": "1girl", "index": 0},
+        {"name": "solo", "index": 1},
+        {"name": "2girls", "index": 2},
+        {"name": "multiple boys", "index": 3},
+        {"name": "blue eyes", "index": 4},
+    ]
+    assert tx.solo_multi_indices(vocab) == ({0, 1}, {2, 3})
+
+
+def test_count_of_reads_one_number_out_of_the_bag():
+    assert tx.count_of(["1girl", "solo"], "girl") == 1
+    assert tx.count_of(["3girls", "2girls"], "girl") == 3
+    # An exact count wins over the ``multiple_*`` implication booru fires beside it,
+    # in either spelling.
+    assert tx.count_of(["2girls", "multiple_girls"], "girl") == 2
+    assert tx.count_of(["multiple_girls"], "girl") is None
+    assert tx.count_of(["multiple girls"], "girl") is None
+    # ``6+girls`` is "six or more", not six.
+    assert tx.count_of(["6+girls"], "girl") is None
+    # 0 = the caption doesn't say, which is not the same as "unknown".
+    assert tx.count_of(["blue eyes"], "girl") == 0
+    assert tx.count_of(["2girls", "1boy"], "boy") == 1
+    assert tx.count_of(["2girls"], "boy") == 0
 
 
 def test_caption_ratings_are_the_anima_band():

@@ -44,7 +44,6 @@ from pathlib import Path
 from PIL import Image
 
 from anime_tools.captions.caption_layout import (
-    GIRLS_COUNT_RE,
     caption_boy_count,
     is_candidate,
 )
@@ -59,6 +58,7 @@ from anime_tools.captions.position_clauses import (
     ordered_indices,
     parse_caption,
 )
+from anime_tools.captions.taxonomy import count_of, exact_count
 from anime_tools.stages.instance_detection import Detection, crop_instance
 
 from ._walk_captions import iter_captions
@@ -190,10 +190,13 @@ def is_audit_target(caption: str) -> tuple[bool, str]:
 
 
 def _girls_count(caption: str) -> int | None:
-    counts = [
-        int(m.group(1)) for t in flat_tag_set(caption) if (m := GIRLS_COUNT_RE.match(t))
-    ]
-    return max(counts) if counts else None
+    """The exact ``Ngirls`` the caption claims, or ``None`` if it claims none.
+
+    Unlike :func:`~anime_tools.captions.taxonomy.count_of`, "unknown" (a bare
+    ``multiple girls``) and "absent" collapse to one ``None`` here: this feeds a
+    *suggestion*, and both cases mean there is no number to compare against.
+    """
+    return count_of(flat_tag_set(caption), "girl") or None
 
 
 def identity_agreement(
@@ -312,10 +315,10 @@ def propose_caption(caption: str, tag: str) -> str:
     if tag.lower() in lowered:
         return caption.strip()
     count_at = next(
-        (i for i, t in enumerate(lowered) if GIRLS_COUNT_RE.match(t)),
+        (i for i, t in enumerate(lowered) if exact_count(t, "girl") is not None),
         None,
     )
-    if GIRLS_COUNT_RE.match(tag.lower()) and count_at is not None:
+    if exact_count(tag, "girl") is not None and count_at is not None:
         flat[count_at] = tag
     else:
         flat.append(tag)

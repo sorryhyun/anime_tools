@@ -43,33 +43,11 @@ from __future__ import annotations
 import argparse
 import json
 import logging
-import re
-from collections.abc import Sequence
 from pathlib import Path
 
+from anime_tools.captions.taxonomy import solo_multi_indices as _solo_index_sets
+
 logger = logging.getLogger(__name__)
-
-
-_SINGLE_COUNT_NAMES = {"solo", "1girl", "1boy", "1other"}
-_MULTI_COUNT_RE = re.compile(
-    r"^(?:\d+\+?(?:girl|boy|other)s?|multiple[_ ](?:girls|boys|others))$"
-)
-
-
-def _solo_index_sets(
-    vocab_tags: Sequence[dict],
-) -> tuple[set[int], set[int]]:
-    """Return ``(single_count_indices, multi_count_indices)`` from vocab."""
-    single_idx: set[int] = set()
-    multi_idx: set[int] = set()
-    for t in vocab_tags:
-        name = t["name"]
-        idx = int(t["index"])
-        if name in _SINGLE_COUNT_NAMES:
-            single_idx.add(idx)
-        elif _MULTI_COUNT_RE.match(name):
-            multi_idx.add(idx)
-    return single_idx, multi_idx
 
 
 def _name_prefix(name: str) -> str:

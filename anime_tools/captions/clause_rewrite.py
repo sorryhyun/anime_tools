@@ -18,6 +18,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 
 from anime_tools.captions.clause_vocabulary import ClauseVocabulary
+from anime_tools.captions.taxonomy import normalize_tag
 
 
 @dataclass(frozen=True)
@@ -48,13 +49,14 @@ class RemovalPlan:
 def _cmp_key(tag: str) -> str:
     """Comparison key for matching a bag tag against a clause/tagger tag.
 
-    Underscores fold to spaces because the two sides can disagree on form: the
-    tagger (and thus every clause it proposes, plus ``kept``/``scores`` keys and
-    the vocabulary's group map) emits the canonical space form, while a caption
-    may hold the underscore form (``speech_bubble``). Keys only — what gets
-    written back into the caption is always the original tag text.
+    :func:`~anime_tools.captions.taxonomy.normalize_tag`, named locally because
+    that is what this module means by it: the tagger (and thus every clause it
+    proposes, plus ``kept``/``scores`` keys and the vocabulary's group map)
+    emits the canonical space form, while a caption may hold the underscore
+    form (``speech_bubble``). Keys only — what gets written back into the
+    caption is always the original tag text.
     """
-    return tag.strip().lower().replace("_", " ")
+    return normalize_tag(tag)
 
 
 def _score_of(

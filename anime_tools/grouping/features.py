@@ -33,6 +33,7 @@ import torch
 from PIL import Image
 
 from anime_tools.captions.position_clauses import parse_caption
+from anime_tools.captions.taxonomy import normalize_tag
 
 CACHE_ROOT = Path(
     os.environ.get("NEAR_TWIN_CACHE", Path.home() / ".cache" / "near_twin")
@@ -41,15 +42,6 @@ IMAGE_EXTS = (".png", ".webp", ".jpg", ".jpeg", ".jxl", ".avif")
 PE_NATIVE = 512  # PE-Spatial-B16-512 square bucket → 32x32 patch grid
 GRID_NATIVE = 32
 GRID_CACHE = 16  # cached pooled grid edge; any pooled grid <= 16 pools down from here
-
-
-def normalize_tag(tag: str) -> str:
-    """Space-insensitive canonical form: lowercase, underscores→spaces, collapsed.
-
-    ``speech_bubble`` and ``speech bubble`` map to the same key so either
-    danbooru convention works.
-    """
-    return " ".join(tag.strip().lower().replace("_", " ").split())
 
 
 def read_tags(txt_path: Path) -> set[str]:

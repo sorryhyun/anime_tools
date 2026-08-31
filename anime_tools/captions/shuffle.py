@@ -10,6 +10,9 @@ from __future__ import annotations
 
 import random
 
+from anime_tools.captions.position_clauses import is_clause_header
+from anime_tools.captions.taxonomy import is_artist_tag
+
 # Sentinel users can drop into captions that lack a real artist tag, so the
 # shuffle/drop boundary keeps working. Stripped from caption variants before
 # they reach the tokenizer (see _generate_caption_variants in
@@ -17,18 +20,6 @@ import random
 # that feed the result to a tokenizer must strip it themselves — kept inside
 # the shuffle so the boundary index stays consistent with the input.
 NO_ARTIST_SENTINEL = "@no-artist"
-
-
-def _is_artist_tag(tag: str) -> bool:
-    """True for @-prefixed artist handles; False for booru emoticons like ``@ @``.
-
-    Matches the predicate the Anima Tagger uses (see
-    ``anime_tools/tagger/cli/vocab.py``): a single ``@`` followed by non-space
-    characters. ``@ @`` (``@_@`` after the corpus-wide ``_``→`` `` normalization)
-    is a general-category eye-shape tag and must not trigger the shuffle
-    boundary.
-    """
-    return len(tag) >= 2 and tag[0] == "@" and not tag[1].isspace()
 
 
 def find_anima_prefix_end(tags: list[str]) -> int:
@@ -44,7 +35,7 @@ def find_anima_prefix_end(tags: list[str]) -> int:
     split_idx = 0
     saw_artist = False
     for idx, tag in enumerate(tags):
-        if _is_artist_tag(tag):
+        if is_artist_tag(tag):
             split_idx = idx + 1
             saw_artist = True
         elif saw_artist:
@@ -74,10 +65,11 @@ def anima_smart_shuffle_caption(flex_tokens: list[str]) -> list[str]:
     prefix = flex_tokens[:split_idx]
     suffix = flex_tokens[split_idx:]
 
-    # Split suffix into sections delimited by "on the ..." tags
+    # Split suffix into sections delimited by "On the ..." clause headers — the
+    # grammar's own predicate, so a new header form is one edit, not three.
     sections: list[list[str]] = [[]]
     for tag in suffix:
-        if tag.startswith(("On the ", "In the ")):
+        if is_clause_header(tag):
             sections.append([tag])
         else:
             sections[-1].append(tag)
@@ -86,7 +78,7 @@ def anima_smart_shuffle_caption(flex_tokens: list[str]) -> list[str]:
     for section in sections:
         if not section:
             continue
-        if section[0].startswith("On the ") or section[0].startswith("In the "):
+        if is_clause_header(section[0]):
             header, body = [section[0]], section[1:]
         else:
             header, body = [], section

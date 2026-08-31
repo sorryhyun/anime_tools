@@ -20,7 +20,7 @@ from dataclasses import dataclass, field
 import torch
 import torch.nn.functional as F
 
-from anime_tools.captions.taxonomy import _COUNT_RE
+from anime_tools.captions.taxonomy import solo_multi_indices
 
 __all__ = [
     "GroupRouter",
@@ -152,26 +152,15 @@ class GroupRouter:
         # masking knocks out the (sample, group_tag) positions CE supervises.
         bce_pos_weight = pos_weight_sqrt(train_multi_hot).to(device)
 
-        # ``solo`` is a non-count membership tag — gelcrawl writes it alongside
-        # ``1girl``/``1boy`` when there's exactly one figure.
-        single_count_names = {"solo", "1girl", "1boy", "1other"}
-        solo_idx_list: list[int] = []
-        multi_idx_list: list[int] = []
-        for t in vocab_dict.get("tags", []):
-            name = t["name"]
-            idx = int(t["index"])
-            if name in single_count_names:
-                solo_idx_list.append(idx)
-            elif _COUNT_RE.match(name):
-                multi_idx_list.append(idx)
+        solo_idx, multi_idx = solo_multi_indices(vocab_dict.get("tags", []))
         solo_indices = (
-            torch.tensor(solo_idx_list, dtype=torch.long, device=device)
-            if solo_idx_list
+            torch.tensor(sorted(solo_idx), dtype=torch.long, device=device)
+            if solo_idx
             else None
         )
         multi_indices = (
-            torch.tensor(multi_idx_list, dtype=torch.long, device=device)
-            if multi_idx_list
+            torch.tensor(sorted(multi_idx), dtype=torch.long, device=device)
+            if multi_idx
             else None
         )
 

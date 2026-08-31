@@ -24,6 +24,8 @@ import re
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 
+from anime_tools.captions.taxonomy import normalize_tag
+
 # Clause headers the convention uses, in canonical emission form. ``In the`` is
 # accepted on read (it appears in a handful of hand-written captions for scene
 # regions) but never emitted.
@@ -91,14 +93,17 @@ class ParsedCaption:
 
     @property
     def tag_keys(self) -> frozenset[str]:
-        """The flat bag as a lookup set, lowercased and whitespace-stripped.
+        """The flat bag as a lookup set, in :func:`normalize_tag` form.
 
         Every "does the caption already say this?" test keys off this form —
         the rewrite compares crop tags against it, the prefilter matches count
-        and layout tags in it. Shared so the normalization can't drift between
-        the consumer that writes a tag and the one that looks it up.
+        and layout tags in it. It is the shared normalizer and not a local
+        ``lower()`` precisely because the two sides disagree on the underscore:
+        the tagger emits ``speech bubble``, a hand-written caption may hold
+        ``speech_bubble``, and a lookup that misses that pair is a caption that
+        gets told something it already said.
         """
-        return frozenset(t.strip().lower() for t in self.flat_tags)
+        return frozenset(normalize_tag(t) for t in self.flat_tags)
 
     def render(self) -> str:
         return compose_caption(self.flat_tags, self.clauses)
@@ -214,7 +219,9 @@ def flatten_caption(caption: str) -> str:
     seen: set[str] = set()
     flat: list[str] = []
     for tag in (*parsed.flat_tags, *(t for c in parsed.clauses for t in c.tags)):
-        key = tag.strip().lower()
+        # Same key as `tag_keys`: a tag the rewrite moved out in space form must
+        # not come back beside its own underscore spelling in the bag.
+        key = normalize_tag(tag)
         if key and key not in seen:
             seen.add(key)
             flat.append(tag)

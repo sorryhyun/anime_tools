@@ -57,7 +57,7 @@ from safetensors.torch import load_file as st_load
 
 from anime_tools.captions import tag_groups as tg
 from anime_tools.captions import tag_rules as tr
-from anime_tools.captions.taxonomy import classify_people
+from anime_tools.captions.taxonomy import classify_people, is_solo_names
 from anime_tools.tagger.dbv4_backend import (
     UNSUPPORTED_LOGIT,
     Dbv4Backend,
@@ -434,10 +434,6 @@ class AnimaTagger:
         groups_path = self.ckpt_dir / "groups.yaml"
         self._groups: tg.TagGroups | None = None
         self._group_lookup: dict[str, dict] = {}
-        # solo/1girl/1boy/1other are single-count; anything else matching the
-        # count regex is multi-count (mirrors the trainer's GroupRouter).
-        self._single_count_names = {"solo", "1girl", "1boy", "1other"}
-        self._multi_count_names: set = set()
         if groups_path.exists():
             self._groups = tg.load_groups(groups_path)
             tag_to_idx = {e.name: e.index for e in self.tag_entries}
@@ -464,16 +460,6 @@ class AnimaTagger:
                     "escape_names": tuple(g.escape),
                     "sentinel_local": sentinel_local,
                 }
-            from re import compile as _re_compile
-
-            count_re = _re_compile(
-                r"^(?:\d+\+?(?:girl|boy|other)s?|multiple[_ ](?:girls|boys|others))$"
-            )
-            for e in self.tag_entries:
-                if e.name in self._single_count_names:
-                    continue
-                if count_re.match(e.name):
-                    self._multi_count_names.add(e.name)
 
     # ------------------------------------------------------------------ #
     # Backend construction
@@ -618,9 +604,10 @@ class AnimaTagger:
         # with one argmax winner per applicable group.
         if self._group_lookup:
             kept_names = set(kept.keys())
-            is_solo = bool(kept_names & self._single_count_names) and not (
-                kept_names & self._multi_count_names
-            )
+            # ``softmax_when_solo`` applies only to single-subject images; the
+            # names in ``kept`` are vocab names, so the shared name-side
+            # predicate answers exactly what the trainer's index-side one does.
+            is_solo = is_solo_names(kept_names)
             group_preds: dict[str, str | None] = {}
             for name, info in self._group_lookup.items():
                 mode = info["mode"]

@@ -43,29 +43,12 @@ import yaml
 
 from anime_tools.captions.correction import load_tag_knowledge_base
 
+# The single-subject predicate, on space-form tag *names* (captions, not vocab
+# indices). ``role_markers`` and the trainer's ``GroupRouter`` gate on the same
+# rule over indices — see ``taxonomy.solo_multi_indices``.
+from anime_tools.captions.taxonomy import is_solo_names as _is_solo
+
 logger = logging.getLogger(__name__)
-
-
-# Single-subject predicate — mirrors the trainer's GroupRouter / role_markers
-# solo check, but on space-form tag *names* (captions, not vocab indices).
-_SINGLE_COUNT_NAMES = {"solo", "1girl", "1boy", "1other"}
-_MULTI_COUNT_RE = re.compile(
-    r"^(?:\d+\+?(?:girl|boy|other)s?|multiple[_ ](?:girls|boys|others))$"
-)
-
-
-def _is_solo(names: set[str]) -> bool:
-    """True when the caption is single-subject (one count tag, no multi tag).
-
-    The single-count names (``1girl``…) also satisfy ``_MULTI_COUNT_RE``
-    (``\\d+girls?``), so they must be excluded from the multi test first —
-    exactly the precedence role_markers gets from its ``elif``.
-    """
-    has_single = bool(names & _SINGLE_COUNT_NAMES)
-    has_multi = any(
-        n not in _SINGLE_COUNT_NAMES and _MULTI_COUNT_RE.match(n) for n in names
-    )
-    return has_single and not has_multi
 
 
 def _slug(path: str) -> str:

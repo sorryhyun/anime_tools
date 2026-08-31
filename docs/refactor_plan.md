@@ -201,10 +201,14 @@ only a trainer wants (frozen parameters, activation checkpointing off).
 — it clamps to the mask's shape rather than the image's, which is the point when
 the probe is reporting a misaligned mask.
 
-## Phase 4 — one tag-shape vocabulary (`captions/taxonomy.py`)
+## Phase 4 — one tag-shape vocabulary (`captions/taxonomy.py`) — **done**
 
-`taxonomy.py` is already the declared torch-free home of tag-shape primitives.
-Move the strays in:
+`taxonomy.py` was already the declared torch-free home of tag-shape primitives.
+The strays moved in: `normalize_tag`, `count_of` (+ its `exact_count` half),
+`SINGLE_COUNT_NAMES` / `is_solo_names` / `solo_multi_indices`. Every count
+regex outside `taxonomy.py` is gone — `tests/test_tag_taxonomy.py` now asserts
+that by scanning the package for the pattern, in place of the test that used to
+pin the four copies byte-for-byte.
 
 1. **`normalize_tag`** — today three behaviours: `correction.py:226`
    (canonical: strip/underscore-fold/lower/collapse), `grouping/features.py:45`
@@ -235,6 +239,22 @@ Move the strays in:
 
 Guards: caption tests are the densest in the suite; run with the captions
 skill's grammar rules in mind — no written-caption bytes may change.
+
+Outcome: no rendering changed, and two comparisons got stricter in the way the
+consolidation was for. `position_clauses.tag_keys` and `flatten_caption` now key
+on `normalize_tag` like `clause_rewrite._cmp_key` always did, so a tag the
+rewrite moved out in space form no longer comes back into the bag beside its own
+underscore spelling (pinned by
+`test_flatten_folds_the_underscore_spelling_of_a_tag_it_returns`); and
+`caption_boy_count` finally sees `multiple_boys`, which the hand-typed
+`"multiple boys" in tags` had been reading as "no boys" — the upper bound of the
+count gate now drops for that caption, as it always did for the space form.
+`multiview_audit`'s two `GIRLS_COUNT_RE` uses came along: the count reads through
+`count_of` and the splice through `exact_count`. Left alone deliberately:
+`tagger.py`'s `_GIRLS_COUNT_RE`, which is a different rule (it takes 6 out of
+`6+girls` as a character cap, where `count_of` reads that as "unknown"), and the
+underscore members of `caption_layout`'s `LAYOUT_TAGS`, now unreachable through
+`flat_tag_set` but still correct for a direct caller holding raw tags.
 
 ## Phase 5 — captions/grouping/tagger structural strays
 

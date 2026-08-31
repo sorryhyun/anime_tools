@@ -17,14 +17,8 @@ from __future__ import annotations
 import re
 
 from anime_tools.captions.position_clauses import flat_tag_set, has_clauses
+from anime_tools.captions.taxonomy import count_of
 
-GIRLS_COUNT_RE = re.compile(r"^(\d+)girls?$")
-BOYS_COUNT_RE = re.compile(r"^(\d+)boys?$")
-# ``6+girls`` is an open-ended crowd tag, not the number six — matching it
-# exactly is impossible, so it is treated like ``multiple girls``: count
-# unknown, trust detection.
-OPEN_GIRLS_RE = re.compile(r"^\d+\+girls?$")
-OPEN_BOYS_RE = re.compile(r"^\d+\+boys?$")
 # ``2koma`` / ``4koma`` name the panel count. Deliberately anchored, so the
 # open-ended ``multiple 4koma`` does not match and stays unbounded.
 KOMA_COUNT_RE = re.compile(r"^(\d+)koma$")
@@ -67,15 +61,14 @@ def caption_subject_count(caption: str) -> int | None:
     girls-count, because that count tags *characters* while each view/panel is
     its own bindable subject (``1girl, multiple views`` is routinely four).
     ``multiple girls`` / open-ended ``N+girls`` are ``None`` too — an exact
-    match against "six or more" can only fail.
+    match against "six or more" can only fail; that part is
+    :func:`~anime_tools.captions.taxonomy.count_of`'s rule, shared with the
+    boys count and the panel ceiling below.
     """
     tags = flat_tag_set(caption)
     if tags & LAYOUT_TAGS:
         return None
-    counts = [int(m.group(1)) for t in tags if (m := GIRLS_COUNT_RE.match(t))]
-    if not counts and ("multiple girls" in tags or any(map(OPEN_GIRLS_RE.match, tags))):
-        return None
-    return max(counts) if counts else 0
+    return count_of(tags, "girl")
 
 
 def caption_panel_ceiling(caption: str) -> int | None:
@@ -96,14 +89,12 @@ def caption_panel_ceiling(caption: str) -> int | None:
     panels = [int(m.group(1)) for t in tags if (m := KOMA_COUNT_RE.match(t))]
     if not panels:
         return None
-    girls = [int(m.group(1)) for t in tags if (m := GIRLS_COUNT_RE.match(t))]
-    if not girls and ("multiple girls" in tags or any(map(OPEN_GIRLS_RE.match, tags))):
-        return None
-    boys = caption_boy_count(caption)
-    if boys is None:
+    girls = count_of(tags, "girl")
+    boys = count_of(tags, "boy")
+    if girls is None or boys is None:
         return None
     # A page with no counted character at all still draws somebody per panel.
-    per_panel = max(max(girls, default=0) + boys, 1)
+    per_panel = max(girls + boys, 1)
     return max(panels) * per_panel
 
 
@@ -114,11 +105,7 @@ def caption_boy_count(caption: str) -> int | None:
     accepts the range ``girls .. girls + boys`` rather than equality. ``None`` =
     "some boys, count unknown", which drops the upper bound entirely.
     """
-    tags = flat_tag_set(caption)
-    counts = [int(m.group(1)) for t in tags if (m := BOYS_COUNT_RE.match(t))]
-    if not counts and ("multiple boys" in tags or any(map(OPEN_BOYS_RE.match, tags))):
-        return None
-    return max(counts) if counts else 0
+    return count_of(flat_tag_set(caption), "boy")
 
 
 def is_repeated_subject_layout(caption: str) -> bool:

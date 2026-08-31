@@ -26,10 +26,10 @@ from anime_tools.captions.taxonomy import (
     is_artist_tag,
     is_count_tag,
     is_rating_tag,
+    normalize_tag,
 )
 
 _CATEGORY_RE = re.compile(r"^\s*\[([^\]]+)\]")
-_SPACE_RE = re.compile(r"\s+")
 
 # The KB's two file names, spelled once. :mod:`anime_tools.downloads` imports
 # them for its catalog row, so the file a Download button fetches and the file
@@ -236,11 +236,6 @@ def load_tag_knowledge_base(path: str | Path) -> TagKnowledgeBase:
                 post_count=_parse_post_count(row[i_post]),
             )
     return TagKnowledgeBase(tags=tags, source=csv_path)
-
-
-def normalize_tag(tag: str) -> str:
-    tag = tag.strip().replace("_", " ").lower()
-    return _SPACE_RE.sub(" ", tag)
 
 
 def tag_key(tag: str) -> str:

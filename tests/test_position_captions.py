@@ -750,6 +750,26 @@ def test_flatten_undoes_the_rewrite(pipeline_bits):
     assert "On the" not in flatten_caption(proposal.proposed)
 
 
+def test_flatten_folds_the_underscore_spelling_of_a_tag_it_returns():
+    """A tag moved out in space form must not come back beside its own
+    underscore spelling.
+
+    ``tag_keys`` and the flatten dedupe both key on
+    :func:`~anime_tools.captions.taxonomy.normalize_tag` — the same normalizer
+    the rewrite's own ``_cmp_key`` uses to decide a tag *can* move. Keyed on a
+    bare ``lower()`` (as they were before the consolidation) the two spellings
+    read as two tags, and flattening a rewrite that moved ``speech_bubble``
+    while the tagger proposed ``speech bubble`` wrote both into one bag.
+    """
+    from anime_tools.captions.position_clauses import flatten_caption, parse_caption
+
+    caption = "safe, 1girl, speech_bubble, blue eyes. On the left, speech bubble."
+    flat = parse_caption(flatten_caption(caption)).flat_tags
+    assert list(flat) == ["safe", "1girl", "speech_bubble", "blue eyes"]
+    # The bag's own spelling is what survives — comparison folds, output doesn't.
+    assert "speech bubble" not in flat
+
+
 def test_count_mismatch_is_skipped_not_guessed(pipeline_bits):
     from anime_tools.stages.position_captions import propose_for_image
 

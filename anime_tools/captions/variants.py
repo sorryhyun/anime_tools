@@ -25,6 +25,8 @@ import random
 from collections.abc import Callable, Collection
 from pathlib import Path
 
+from anime_tools.captions.position_clauses import is_clause_header
+
 VARIANTS_SIDECAR_SUFFIX = ".variants.txt"
 _SIDECAR_HEADER = "# anima caption variants — auto-generated, do not hand-edit"
 
@@ -125,7 +127,7 @@ def _perturb_tags(
             if (
                 i >= split_idx
                 and tag != sentinel
-                and not tag.startswith(("On the ", "In the "))
+                and not is_clause_header(tag)
                 and not (protect_fn is not None and protect_fn(tag))
                 and random.random() < tag_randomize_rate
             )
