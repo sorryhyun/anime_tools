@@ -26,7 +26,7 @@ import type {
   Values,
 } from "./types";
 import { REPLAY_FIELD } from "./types";
-import { DatasetTree, type Sel } from "./components/DatasetTree";
+import { DatasetTree, type Sel, type TreeMode } from "./components/DatasetTree";
 import { ItemView } from "./components/ItemView";
 import { StagePanel } from "./components/StagePanel";
 import { Dialog } from "./components/Dialog";
@@ -81,6 +81,16 @@ export default function App() {
     ([q]) => api.dataset({ q }),
   );
   const [sel, setSel] = createSignal<Sel | null>(parseHash());
+  /** Which ordering the sidebar is showing. The grouping manifest is only
+      fetched while group view is up -- it is a file the Groups stage may never
+      have written, and the tree view has no use for it. */
+  const [treeMode, setTreeMode] = persisted<TreeMode>("treemode", "tree", (raw) =>
+    raw === "groups" ? "groups" : "tree",
+  );
+  const [groups] = createResource(
+    () => (treeMode() === "groups" ? ([roots(), reload()] as const) : false),
+    api.groups,
+  );
   const [item, { mutate: mutateItem, refetch: refetchItem }] = createResource<
     ItemDetail | undefined,
     string
@@ -673,7 +683,12 @@ export default function App() {
         list={list()}
         loading={list.loading}
         error={list.error ? String(list.error) : undefined}
-        resetKey={`${debouncedQuery()}|${reload()}`}
+        mode={treeMode()}
+        onMode={setTreeMode}
+        groups={groups()}
+        groupsLoading={groups.loading}
+        groupsError={groups.error ? String(groups.error) : undefined}
+        resetKey={`${treeMode()}|${debouncedQuery()}|${reload()}`}
         sel={sel()}
         onSelect={setSel}
         query={query()}

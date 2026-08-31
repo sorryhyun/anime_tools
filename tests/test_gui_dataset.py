@@ -291,3 +291,100 @@ def test_item_pattern_selects_exactly_the_one_image():
         D.item_pattern("char/a|b.png")
     with pytest.raises(D.DatasetError):
         D.item_pattern("../escape.png")
+
+
+# ---- group view: the grouping manifest, read back as the sidebar's second
+# ordering of the same rows ------------------------------------------------
+
+
+def _manifest(home: Path, groups: list[dict], **over) -> Path:
+    from anime_tools._json import write_json
+    from anime_tools.grouping.groups import MANIFEST_VERSION
+
+    p = home / "post_image_dataset" / "groups" / "groups.json"
+    write_json(
+        p,
+        {
+            "version": MANIFEST_VERSION,
+            "source_dir": str(home / "image_dataset"),
+            "groups": groups,
+            **over,
+        },
+    )
+    return p
+
+
+def test_groups_subpath_is_the_stage_report_tail():
+    """The view has to read the file the Groups stage writes, wherever Settings
+    points ``report_root`` — same split the stage's own report field gets."""
+    from anime_tools.grouping.cli.build_groups import build_parser
+    from anime_tools.gui.dataset import GROUPS_SUBPATH
+    from anime_tools.gui.stages import report_subpath
+
+    out = next(a for a in build_parser()._actions if a.dest == "out")
+    assert report_subpath(out.default) == GROUPS_SUBPATH
+
+
+def test_groups_are_rels_the_listing_can_join(client):
+    c, home = client
+    _manifest(
+        home,
+        [
+            {
+                "id": 0,
+                "artist": "sub",
+                "size": 2,
+                "mean_cosine": 0.9123,
+                "members": ["sub/b.jpg", "a.png"],
+            }
+        ],
+    )
+    body = c.get("/api/dataset/groups").json()
+    assert not body["missing"] and not body["stale"]
+    assert body["path"] == "post_image_dataset/groups/groups.json"
+    assert body["source_dir"] == "image_dataset"
+    assert body["groups"] == [
+        {
+            "id": 0,
+            "artist": "sub",
+            "mean_cosine": 0.9123,
+            "members": ["sub/b.jpg", "a.png"],
+        }
+    ]
+    # Every member is a rel the listing keys its rows by, which is the whole
+    # join: group view draws the same rows, in a different order.
+    rels = {i["rel"] for i in c.get("/api/dataset").json()["items"]}
+    assert set(body["groups"][0]["members"]) <= rels
+
+
+def test_groups_follow_the_report_root_setting(client, home):
+    c, _ = client
+    c.put("/api/settings", json={"stage_defaults": {"report_root": "elsewhere"}})
+    from anime_tools._json import write_json
+
+    write_json(home / "elsewhere/groups/groups.json", {"version": 2, "groups": []})
+    body = c.get("/api/dataset/groups").json()
+    assert body["path"] == "elsewhere/groups/groups.json" and not body["missing"]
+
+
+def test_a_missing_manifest_is_not_an_error(client):
+    """The Groups stage may simply never have run — the panel says so."""
+    c, _ = client
+    body = c.get("/api/dataset/groups").json()
+    assert body["missing"] and body["groups"] == []
+    assert body["path"] == "post_image_dataset/groups/groups.json"
+
+
+def test_an_older_manifest_still_lists_its_components(client, home):
+    c, _ = client
+    _manifest(home, [{"id": 0, "artist": "", "members": ["a.png"]}], version=1)
+    body = c.get("/api/dataset/groups").json()
+    assert body["stale"] and len(body["groups"]) == 1
+
+
+def test_an_unreadable_manifest_is_a_400(client, home):
+    c, _ = client
+    p = home / "post_image_dataset" / "groups" / "groups.json"
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text("{not json", encoding="utf-8")
+    assert c.get("/api/dataset/groups").status_code == 400

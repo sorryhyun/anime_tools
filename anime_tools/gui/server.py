@@ -561,6 +561,19 @@ def create_app(
             limit=limit,
         )
 
+    @app.get("/api/dataset/groups")
+    def dataset_groups() -> dict[str, Any]:
+        """The near-twin components the **Groups** stage wrote, rels only.
+
+        The sidebar's second ordering of the same listing: the client joins
+        these rels onto the ``/api/dataset`` rows it already has, so one filter
+        and one truncation serve both modes. The path is derived exactly like a
+        stage's report — ``report_root`` plus the stage's own tail — so the view
+        reads the file the Groups panel writes, wherever Settings points it.
+        """
+        settings = load_settings()
+        return D.load_groups(report_root(settings, roots_for(settings)))
+
     @app.post("/api/dataset/items")
     async def dataset_items(request: Request) -> dict[str, Any]:
         """Refresh named sidebar rows, for reloading exactly what a job touched.

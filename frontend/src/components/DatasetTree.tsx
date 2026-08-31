@@ -1,11 +1,15 @@
 import { createEffect, createMemo, createSignal, For, on, Show } from "solid-js";
 import { api } from "../api";
-import type { DatasetItem, DatasetList, NodeKind } from "../types";
+import type { DatasetGroups, DatasetItem, DatasetList, NodeKind } from "../types";
 
 export interface Sel {
   rel: string;
   kind: NodeKind;
 }
+
+/** The sidebar's two orderings of the same rows: the folder tree the dataset
+    is stored in, and the near-twin components the Groups stage found in it. */
+export type TreeMode = "tree" | "groups";
 
 /** Folders render lazily, but one flat folder can still hold thousands of
     images; rows past this need an explicit click. */
@@ -13,6 +17,16 @@ const PAGE = 200;
 /** Above this many images the tree opens collapsed — expanding 5k rows on load
     is the one thing that makes this sidebar feel slow. */
 const AUTO_EXPAND_MAX = 400;
+
+/** The three caption files, as the dots on an image row. Every image has the
+    same three, so they are a fixed strip on the row rather than three child
+    rows under a chevron: a filled dot is a file on disk, a hollow one is not,
+    and clicking either selects it. */
+const CAPS: { kind: NodeKind; label: string; hint: string }[] = [
+  { kind: "master", label: "m", hint: "master — image_dataset, the hand-written caption" },
+  { kind: "derived", label: "d", hint: "derived — post_image_dataset/resized, the stage output" },
+  { kind: "variants", label: "v", hint: "variants — .variants.txt, generated and read-only" },
+];
 
 interface Folder {
   path: string;
@@ -50,6 +64,47 @@ function build(items: DatasetItem[]): Folder {
   return root;
 }
 
+/** One near-twin component, resolved against the listing on screen. */
+interface Comp {
+  key: string;
+  id: number;
+  cos: number | null;
+  items: DatasetItem[];
+}
+interface Artist {
+  name: string;
+  comps: Comp[];
+  count: number;
+}
+
+/** The manifest's rels joined onto the rows the listing already has.
+ *
+ * The join is what keeps the two modes honest: a member the filter dropped (or
+ * that the truncation never sent) is simply not in the group, so a group's size
+ * on screen is always the number of rows you can actually click. Whatever is
+ * left over is the `ungrouped` bucket, so switching modes cannot lose an image.
+ */
+function regroup(items: DatasetItem[], groups?: DatasetGroups) {
+  const byRel = new Map(items.map((it) => [it.rel, it]));
+  const artists: Artist[] = [];
+  const seen = new Set<string>();
+  const byArtist = new Map<string, Artist>();
+  for (const g of groups?.groups ?? []) {
+    const rows = g.members.map((r) => byRel.get(r)).filter((x): x is DatasetItem => !!x);
+    if (rows.length < 2) continue; // a component the listing cut down to nothing
+    for (const r of rows) seen.add(r.rel);
+    let a = byArtist.get(g.artist);
+    if (!a) {
+      a = { name: g.artist, comps: [], count: 0 };
+      byArtist.set(g.artist, a);
+      artists.push(a);
+    }
+    a.comps.push({ key: `${g.artist}#${g.id}`, id: g.id, cos: g.mean_cosine, items: rows });
+    a.count += rows.length;
+  }
+  return { artists, ungrouped: items.filter((it) => !seen.has(it.rel)) };
+}
+
 export function DatasetTree(props: {
   list?: DatasetList;
   /** Changes only when the *listing* changes (filter, rescan) -- not when one
@@ -57,6 +112,12 @@ export function DatasetTree(props: {
   resetKey: string;
   loading: boolean;
   error?: string;
+  mode: TreeMode;
+  onMode: (mode: TreeMode) => void;
+  /** The grouping manifest, fetched only while group view is up. */
+  groups?: DatasetGroups;
+  groupsLoading: boolean;
+  groupsError?: string;
   sel: Sel | null;
   onSelect: (sel: Sel) => void;
   query: string;
@@ -69,26 +130,26 @@ export function DatasetTree(props: {
   onCollapse: () => void;
 }) {
   const tree = createMemo(() => build(props.list?.items ?? []));
+  const grouped = createMemo(() => regroup(props.list?.items ?? [], props.groups));
   // Folders whose state differs from the default, not folders that are open --
   // the default flips with dataset size, and an override has to survive that.
   const [flipped, setFlipped] = createSignal(new Set<string>());
-  const [openImages, setOpenImages] = createSignal(new Set<string>());
   const [shown, setShown] = createSignal(new Map<string, number>());
 
   // Small trees open so the whole dataset is visible at a glance; big ones stay
   // collapsed, because expanding thousands of rows on load is the one thing
   // that makes this sidebar feel slow.
   const openByDefault = createMemo(() => (props.list?.items.length ?? 0) <= AUTO_EXPAND_MAX);
-  const isOpen = (f: Folder) =>
-    f.path === "" || (flipped().has(f.path) ? !openByDefault() : openByDefault());
+  /** `key` is the collapse identity; `dflt` what it does before a click. */
+  const open = (key: string, dflt = openByDefault()) => (flipped().has(key) ? !dflt : dflt);
+  const isOpen = (f: Folder) => f.path === "" || open(f.path);
 
   const flip = (key: string) => (prev: Set<string>) => {
     const next = new Set(prev);
     if (!next.delete(key)) next.add(key);
     return next;
   };
-  const toggleDir = (f: Folder) => setFlipped(flip(f.path));
-  const toggleImage = (rel: string) => setOpenImages(flip(rel));
+  const toggle = (key: string) => setFlipped(flip(key));
 
   // A new listing (filter change, rescan) drops the per-folder paging and any
   // override that no longer refers to a folder that exists.
@@ -103,19 +164,25 @@ export function DatasetTree(props: {
     ),
   );
 
-  // Whatever selects an image -- a click, the ↑/↓ keys, a #rel link pasted into
-  // a fresh tab -- opens its caption children, since those are the next thing
-  // to click.
-  createEffect(
-    on(
-      () => props.sel?.rel,
-      (rel) => rel && setOpenImages((s) => (s.has(rel) ? s : new Set(s).add(rel))),
-    ),
-  );
   const select = (rel: string, kind: NodeKind) => props.onSelect({ rel, kind });
 
-  const limitOf = (f: Folder) => shown().get(f.path) ?? PAGE;
-  const more = (f: Folder) => setShown((m) => new Map(m).set(f.path, limitOf(f) + PAGE * 4));
+  const limitOf = (key: string) => shown().get(key) ?? PAGE;
+  const more = (key: string) => setShown((m) => new Map(m).set(key, limitOf(key) + PAGE * 4));
+
+  const Twisty = (p: { open: boolean }) => <span class="tw">{p.open ? "▾" : "▸"}</span>;
+
+  /** The "+ N more" row that ends a paged run of images. */
+  const More = (p: { key: string; total: number; depth: number }) => (
+    <Show when={p.total > limitOf(p.key)}>
+      <div
+        class="tn more"
+        style={{ "padding-left": `${16 + p.depth * 12}px` }}
+        onClick={() => more(p.key)}
+      >
+        + {p.total - limitOf(p.key)} more
+      </div>
+    </Show>
+  );
 
   const FolderNode = (p: { f: Folder; depth: number }) => (
     <>
@@ -123,104 +190,212 @@ export function DatasetTree(props: {
         <div
           class="tn dir"
           style={{ "padding-left": `${4 + p.depth * 12}px` }}
-          onClick={() => toggleDir(p.f)}
+          onClick={() => toggle(p.f.path)}
         >
-          <span class="tw">{isOpen(p.f) ? "▾" : "▸"}</span>
+          <Twisty open={isOpen(p.f)} />
           <span class="tl">{p.f.name}</span>
           <span class="tc">{p.f.count}</span>
         </div>
       </Show>
       <Show when={isOpen(p.f)}>
         <For each={p.f.folders}>{(c) => <FolderNode f={c} depth={p.depth + 1} />}</For>
-        <For each={p.f.items.slice(0, limitOf(p.f))}>
+        <For each={p.f.items.slice(0, limitOf(p.f.path))}>
           {(it) => <ImageNode it={it} depth={p.f.path === "" ? p.depth : p.depth + 1} />}
         </For>
-        <Show when={p.f.items.length > limitOf(p.f)}>
-          <div
-            class="tn more"
-            style={{ "padding-left": `${16 + p.depth * 12}px` }}
-            onClick={() => more(p.f)}
-          >
-            + {p.f.items.length - limitOf(p.f)} more
-          </div>
+        <More key={p.f.path} total={p.f.items.length} depth={p.depth} />
+      </Show>
+    </>
+  );
+
+  /** One image: the thumbnail, the name, its flags — and the three caption
+      dots, which are both the "what exists" readout and the way to select one.
+      In group view the name carries its folder, since the row is no longer
+      sitting under it. */
+  const ImageNode = (p: { it: DatasetItem; depth: number; withDir?: boolean }) => {
+    const on = (k: NodeKind) => props.sel?.rel === p.it.rel && props.sel.kind === k;
+    return (
+      <div
+        classList={{ tn: true, img: true, sel: props.sel?.rel === p.it.rel }}
+        style={{ "padding-left": `${8 + p.depth * 12}px` }}
+        title={p.it.rel}
+        onClick={() => select(p.it.rel, "image")}
+      >
+        <img
+          class="tt"
+          loading="lazy"
+          src={api.thumbUrl(`${props.list?.root}/${p.it.rel}`, 48)}
+          alt=""
+        />
+        <span class="tl">
+          <Show when={p.withDir && p.it.dir}>
+            <span class="dim">{p.it.dir}/</span>
+          </Show>
+          {p.it.name}
+        </span>
+        <span class="flags">
+          <Show when={props.pending?.has(p.it.rel)}>
+            <span class="flag prop" title="the last run proposes a change here">
+              ●
+            </span>
+          </Show>
+          <Show when={p.it.mask}>
+            <span class="flag mask" title="has a mask">
+              ◑
+            </span>
+          </Show>
+        </span>
+        <span class="caps">
+          <For each={CAPS}>
+            {(c) => {
+              const present = () => !!p.it[c.kind as "master" | "derived" | "variants"];
+              return (
+                <button
+                  classList={{ dot: true, [c.kind]: true, off: !present(), on: on(c.kind) }}
+                  title={`${c.hint} — ${present() ? "on disk" : "missing"}`}
+                  aria-label={c.label}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    select(p.it.rel, c.kind);
+                  }}
+                />
+              );
+            }}
+          </For>
+        </span>
+      </div>
+    );
+  };
+
+  /** Group view: artist ▸ component ▸ images, then everything the manifest did
+      not cluster. The bucket is collapsed by default — it is the big one, and
+      the point of this mode is the components above it. */
+  const GroupView = () => (
+    <>
+      <For each={grouped().artists}>
+        {(a) => (
+          <>
+            <div class="tn dir" onClick={() => toggle(`a:${a.name}`)}>
+              <Twisty open={open(`a:${a.name}`, true)} />
+              <span class="tl">{a.name || "(root)"}</span>
+              <span class="tc">
+                {a.comps.length}g · {a.count}
+              </span>
+            </div>
+            <Show when={open(`a:${a.name}`, true)}>
+              <For each={a.comps}>
+                {(c) => (
+                  <>
+                    <div
+                      class="tn grp"
+                      style="padding-left:16px"
+                      onClick={() => toggle(`c:${c.key}`)}
+                      title={`component ${c.id} — mean pairwise CLS cosine ${c.cos ?? "?"}`}
+                    >
+                      <Twisty open={open(`c:${c.key}`)} />
+                      <span class="tl">group {c.id}</span>
+                      <span class="tc">
+                        <Show when={c.cos !== null}>{c.cos!.toFixed(3)} · </Show>
+                        {c.items.length}
+                      </span>
+                    </div>
+                    <Show when={open(`c:${c.key}`)}>
+                      <For each={c.items}>{(it) => <ImageNode it={it} depth={2} withDir />}</For>
+                    </Show>
+                  </>
+                )}
+              </For>
+            </Show>
+          </>
+        )}
+      </For>
+      <Show when={grouped().ungrouped.length}>
+        <div class="tn dir" onClick={() => toggle("ungrouped")}>
+          <Twisty open={open("ungrouped", false)} />
+          <span class="tl">ungrouped</span>
+          <span class="tc">{grouped().ungrouped.length}</span>
+        </div>
+        <Show when={open("ungrouped", false)}>
+          <For each={grouped().ungrouped.slice(0, limitOf("ungrouped"))}>
+            {(it) => <ImageNode it={it} depth={1} withDir />}
+          </For>
+          <More key="ungrouped" total={grouped().ungrouped.length} depth={0} />
         </Show>
       </Show>
     </>
   );
 
-  const ImageNode = (p: { it: DatasetItem; depth: number }) => {
-    const open = () => openImages().has(p.it.rel);
-    const on = (k: NodeKind) => props.sel?.rel === p.it.rel && props.sel.kind === k;
-    const child = (kind: NodeKind, label: string, present: boolean, hint: string) => (
-      <div
-        classList={{ tn: true, cap: true, sel: on(kind), missing: !present }}
-        style={{ "padding-left": `${20 + p.depth * 12}px` }}
-        title={hint}
-        onClick={(e) => {
-          e.stopPropagation();
-          select(p.it.rel, kind);
-        }}
-      >
-        <span class={`dot ${kind}`} />
-        <span class="tl">{label}</span>
-        <Show when={!present}>
-          <span class="tc">—</span>
-        </Show>
-      </div>
-    );
+  /** Everything that can stand between group view and a list of groups: the
+      fetch, a manifest the Groups stage has not written, and one built from a
+      different tree — whose rels join onto nothing, so it would otherwise look
+      like an empty dataset. */
+  const GroupNotice = () => {
+    const g = () => props.groups;
     return (
-      <>
-        <div
-          classList={{ tn: true, img: true, sel: on("image") }}
-          style={{ "padding-left": `${4 + p.depth * 12}px` }}
-          title={p.it.rel}
-          onClick={() => select(p.it.rel, "image")}
+      <Show when={!props.groupsError} fallback={<div class="err pad">{props.groupsError}</div>}>
+        <Show
+          when={g()}
+          fallback={<div class="dim pad">{props.groupsLoading ? "reading…" : ""}</div>}
         >
-          <span
-            class="tw"
-            onClick={(e) => {
-              e.stopPropagation();
-              toggleImage(p.it.rel);
-            }}
-          >
-            {open() ? "▾" : "▸"}
-          </span>
-          <img
-            class="tt"
-            loading="lazy"
-            src={api.thumbUrl(`${props.list?.root}/${p.it.rel}`, 48)}
-            alt=""
-          />
-          <span class="tl">{p.it.name}</span>
-          <span class="flags">
-            <Show when={props.pending?.has(p.it.rel)}>
-              <span class="flag prop" title="the last run proposes a change here">
-                ●
-              </span>
+          {(m) => (
+            <Show
+              when={!m().missing}
+              fallback={
+                <div class="dim pad">
+                  No <code>{m().path}</code> yet — run <b>Groups › Build groups</b> in the dock,
+                  then come back.
+                </div>
+              }
+            >
+              <Show when={m().stale}>
+                <div class="dim pad">
+                  <span class="warn">older manifest</span> — rebuild it to pick up the current
+                  grouping gate.
+                </div>
+              </Show>
+              <Show when={!grouped().artists.length}>
+                <div class="dim pad">
+                  <code>{m().path}</code> clusters nothing in this listing
+                  <Show when={m().source_dir}>
+                    {" "}
+                    — it was built from <code>{m().source_dir}</code>
+                  </Show>
+                  .
+                </div>
+              </Show>
             </Show>
-            <Show when={p.it.mask}>
-              <span class="flag mask" title="has a mask">
-                ◑
-              </span>
-            </Show>
-          </span>
-        </div>
-        <Show when={open()}>
-          {child("master", "master", p.it.master, "image_dataset — the hand-written caption")}
-          {child(
-            "derived",
-            "derived",
-            p.it.derived,
-            "post_image_dataset/resized — the stage output",
           )}
-          {child("variants", "variants", p.it.variants, ".variants.txt — generated, read-only")}
         </Show>
-      </>
+      </Show>
     );
   };
 
   return (
     <aside>
+      <div class="treebar">
+        <div class="modes">
+          <button
+            classList={{ sel: props.mode === "tree" }}
+            title="The folders the dataset is stored in"
+            onClick={() => props.onMode("tree")}
+          >
+            tree
+          </button>
+          <button
+            classList={{ sel: props.mode === "groups" }}
+            title="The near-twin components the Groups stage found"
+            onClick={() => props.onMode("groups")}
+          >
+            groups
+          </button>
+        </div>
+        <span class="sp" />
+        <button title="Rescan the dataset" onClick={props.onRefresh}>
+          ↻
+        </button>
+        <button title="Collapse the sidebar" onClick={props.onCollapse}>
+          ⟨
+        </button>
+      </div>
       <div class="treebar">
         <input
           type="text"
@@ -228,12 +403,6 @@ export function DatasetTree(props: {
           value={props.query}
           onInput={(e) => props.onQuery(e.currentTarget.value)}
         />
-        <button title="Rescan the dataset" onClick={props.onRefresh}>
-          ↻
-        </button>
-        <button title="Collapse the sidebar" onClick={props.onCollapse}>
-          ⟨
-        </button>
       </div>
       <div class="tree">
         <Show when={!props.error} fallback={<div class="err pad">{props.error}</div>}>
@@ -252,7 +421,13 @@ export function DatasetTree(props: {
                 }
               >
                 <Show when={l().total} fallback={<div class="dim pad">No images match.</div>}>
-                  <FolderNode f={tree()} depth={0} />
+                  <Show
+                    when={props.mode === "groups"}
+                    fallback={<FolderNode f={tree()} depth={0} />}
+                  >
+                    <GroupNotice />
+                    <GroupView />
+                  </Show>
                   <Show when={l().truncated}>
                     <div class="dim pad">
                       showing {l().items.length} of {l().total} — narrow it with the filter

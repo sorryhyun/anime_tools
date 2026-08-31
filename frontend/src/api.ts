@@ -1,6 +1,7 @@
 import type {
   CaptionEntry,
   CaptionKind,
+  DatasetGroups,
   DatasetItem,
   DatasetList,
   DatasetRoots,
@@ -74,6 +75,9 @@ export const api = {
     for (const [k, v] of Object.entries(q)) if (v) p.set(k, String(v));
     return req<DatasetList>(`/api/dataset?${p}`);
   },
+  /** The near-twin components the Groups stage wrote -- rels only, joined
+      against the listing above by the sidebar's group view. */
+  groups: () => req<DatasetGroups>("/api/dataset/groups"),
   item: (rel: string) => req<ItemDetail>(`/api/dataset/item?rel=${encodeURIComponent(rel)}`),
   /** Re-stat named sidebar rows -- what a finished job actually touched. */
   items: (rels: string[]) =>

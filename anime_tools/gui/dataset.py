@@ -15,6 +15,13 @@ Only ``master`` and ``derived`` are writable. ``.variants.txt`` is generated
 (``# … do not hand-edit``) and is served read-only; editing a derived caption
 makes its sidecar stale, which :func:`write_caption` reports so the UI can say
 so out loud.
+
+The sidebar has a second way of ordering the same rows — :func:`load_groups`
+reads the grouping stage's ``groups.json`` and hands the client the near-twin
+components, keyed by the same rel. It stays a *listing* of rels, not a second
+listing of rows: group view joins it against the one ``list_items`` payload the
+tree view already has, so a filter, a truncation and the run's pending dots mean
+the same thing in both modes.
 """
 
 from __future__ import annotations
@@ -28,9 +35,11 @@ from pathlib import Path
 from typing import Any
 
 from anime_tools._env import curation_home, resolve_path
+from anime_tools._json import read_json
 from anime_tools._walk import IMAGE_EXTENSIONS, glob_images_pathlib
 from anime_tools.captions.position_clauses import parse_caption
 from anime_tools.captions.variants import read_variants_sidecar, variants_sidecar_path
+from anime_tools.grouping.groups import MANIFEST_VERSION
 from anime_tools.masking._masks import mask_name
 from anime_tools.path_filter import filter_paths_by_glob
 
@@ -41,6 +50,12 @@ DEFAULT_ROOTS: dict[str, str] = {
     "masks": "post_image_dataset/masks",
 }
 CAPTION_KINDS = ("master", "derived")
+GROUPS_SUBPATH = "groups/groups.json"
+"""The grouping manifest's tail under the Settings ``report_root`` — the same
+split ``stages.report_subpath`` makes of ``build_groups``' own ``--out``
+default, so the view reads exactly the file the **Groups** stage writes.
+``tests/test_gui_groups.py`` pins the two together."""
+
 MAX_ITEMS = 20000
 """Hard cap on one listing. The sidebar renders lazily per folder, but the JSON
 still has to cross the wire — past this the answer is ``path_pattern``, not a
@@ -307,6 +322,55 @@ def item_rows(roots: Roots, rels: list[str]) -> list[dict[str, Any]]:
         if not (roots.src / rel).is_file():
             continue
         out.append(_row(roots, rel, rel.name))
+    return out
+
+
+def load_groups(report_root: str) -> dict[str, Any]:
+    """The grouping manifest under ``report_root``, as the sidebar's group view.
+
+    Rels only — the group view draws the *same* rows the tree view does, joined
+    against the one ``/api/dataset`` listing on the client, so a filter or a
+    truncation cannot mean two different things depending on which mode is up.
+
+    A missing manifest is not an error: the **Groups** stage has simply not run
+    yet, and the panel says so and points at it. A manifest built against some
+    other source tree is the one failure worth naming out loud (its rels join
+    onto nothing), so ``source_dir`` rides along for the client to show.
+    """
+    path = under_home(f"{report_root}/{GROUPS_SUBPATH}")
+    out: dict[str, Any] = {
+        "path": rel_to_home(path),
+        "missing": True,
+        "stale": False,
+        "source_dir": "",
+        "groups": [],
+    }
+    if not path.is_file():
+        return out
+    try:
+        data = read_json(path)
+    except (OSError, ValueError) as e:
+        raise DatasetError(f"unreadable grouping manifest {out['path']}: {e}") from e
+    if not isinstance(data, dict):
+        raise DatasetError(f"not a grouping manifest: {out['path']}")
+    src = str(data.get("source_dir") or "")
+    out.update(
+        missing=False,
+        # A v1 manifest still lists usable components; it is the knobs that
+        # moved, so this is a "rebuild me" note, not a reason to show nothing.
+        stale=data.get("version") != MANIFEST_VERSION,
+        source_dir=rel_to_home(Path(src)) if src else "",
+        groups=[
+            {
+                "id": int(g.get("id", i)),
+                "artist": str(g.get("artist") or ""),
+                "mean_cosine": g.get("mean_cosine"),
+                "members": [str(m) for m in (g.get("members") or [])],
+            }
+            for i, g in enumerate(data.get("groups") or [])
+            if isinstance(g, dict)
+        ],
+    )
     return out
 
 

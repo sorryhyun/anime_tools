@@ -26,6 +26,12 @@ const VIEW_LABEL: Record<View, string> = {
 const dims = (i: ImageInfo | null) =>
   i ? `${i.width ?? "?"}×${i.height ?? "?"} · ${(i.bytes / 1024).toFixed(0)} KB` : "";
 
+/** The caption column's width, in px. Kept out of `persisted` for the reason
+    the dock height is: it moves on every pointermove of a drag, so it is saved
+    once on pointerup instead of at frame rate. */
+const CAP_W = "capw";
+const CAP_MIN = 300;
+
 export function ItemView(props: {
   item?: ItemDetail;
   loading: boolean;
@@ -42,6 +48,26 @@ export function ItemView(props: {
   onSaved: (entry: CaptionEntry) => void;
 }) {
   const [view, setView] = createSignal<View>("image");
+  const [capW, setCapW] = createSignal(Number(localStorage.getItem(CAP_W)) || 420);
+  let split!: HTMLDivElement;
+
+  /** Drag the preview|caption boundary. The image and the caption both want the
+      width, and which one wins changes with what you are auditing -- a mask
+      overlay wants the picture, a clause rewrite wants the text. */
+  function grip(e: PointerEvent) {
+    e.preventDefault();
+    const x0 = e.clientX;
+    const w0 = capW();
+    const move = (ev: PointerEvent) =>
+      setCapW(Math.max(CAP_MIN, Math.min(split.clientWidth - 240, w0 + (x0 - ev.clientX))));
+    const up = () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+      localStorage.setItem(CAP_W, String(capW()));
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+  }
   /** Overlay needs a mask and something to draw it over. */
   const base = () => props.item?.image ?? props.item?.resized ?? null;
   const overlayOk = createMemo(() => !!props.item?.mask && !!base());
@@ -102,7 +128,8 @@ export function ItemView(props: {
               <span class="dim">{dims(it().image)}</span>
             </div>
 
-            <div class="split">
+            <div class="split" ref={split} style={{ "--cap-w": `${capW()}px` }}>
+              <div class="splitgrip" onPointerDown={grip} title="Drag to resize" />
               <div class="preview">
                 <div class="tabs sub">
                   <For each={[...FILE_VIEWS, "overlay"] as View[]}>

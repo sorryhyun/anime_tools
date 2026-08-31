@@ -164,6 +164,29 @@ export interface DatasetList {
   items: DatasetItem[];
 }
 
+/** One near-twin component out of the grouping stage's `groups.json`. Rels
+    only: the group view draws the `DatasetItem` rows the listing already has,
+    so both sidebar modes agree on the filter and the truncation. */
+export interface DatasetGroup {
+  id: number;
+  /** The top-level folder grouping is scoped to — components never cross it. */
+  artist: string;
+  mean_cosine: number | null;
+  members: string[];
+}
+
+export interface DatasetGroups {
+  path: string;
+  /** The Groups stage has not run yet — the panel says so and points at it. */
+  missing: boolean;
+  /** Built by an older manifest version; the components still list. */
+  stale: boolean;
+  /** The tree it was built from. Not the `src` root ⇒ the rels join onto
+      nothing, which is the one failure worth saying out loud. */
+  source_dir: string;
+  groups: DatasetGroup[];
+}
+
 export interface RootInfo {
   path: string;
   exists: boolean;

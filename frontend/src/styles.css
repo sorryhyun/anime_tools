@@ -36,9 +36,17 @@ button.link.warn:hover { text-decoration:underline }
 .mono { font-family:var(--font-mono) }
 
 /* ---- sidebar: the image/caption tree ---- */
-aside { grid-column:1; grid-row:2; border-right:1px solid var(--line); background:var(--panel); display:grid; grid-template-rows:auto minmax(0,1fr); overflow:hidden }
-.treebar { display:flex; gap:6px; padding:8px; border-bottom:1px solid var(--line) }
+aside { grid-column:1; grid-row:2; border-right:1px solid var(--line); background:var(--panel); display:grid; grid-template-rows:auto auto minmax(0,1fr); overflow:hidden }
+.treebar { display:flex; align-items:center; gap:6px; padding:8px; border-bottom:1px solid var(--line) }
+.treebar + .treebar { padding-top:6px }
 .treebar input { flex:1 }
+/* The two orderings of the same rows -- the folders the dataset is stored in,
+   and the near-twin components the Groups stage found in them. */
+.modes { display:flex; border:1px solid var(--line); border-radius:5px; overflow:hidden }
+.modes button { border:0; border-radius:0; background:none; color:var(--dim); padding:2px 9px; font-size:12px }
+.modes button + button { border-left:1px solid var(--line) }
+.modes button:hover { color:var(--fg) }
+.modes button.sel { background:var(--sel); color:var(--fg) }
 .tree { overflow:auto; padding-bottom:8px; font-size:13px }
 .tn { display:flex; align-items:center; gap:6px; padding:2px 8px 2px 0; cursor:pointer; user-select:none; white-space:nowrap }
 .tn:hover { background:#ffffff08 }
@@ -48,13 +56,24 @@ aside { grid-column:1; grid-row:2; border-right:1px solid var(--line); backgroun
 .tn .tc { margin-left:auto; color:var(--dim); font-size:11px; font-family:var(--font-mono) }
 .tn.dir .tl { color:#c8cdd6; font-weight:600 }
 .tn.more { color:var(--accent); font-size:12px }
-.tn.cap { font-family:var(--font-mono); font-size:12px; color:#c8cdd6 }
-.tn.cap.missing .tl { color:var(--dim); font-style:italic }
+/* A near-twin component, between its artist folder and its member images. */
+.tn.grp .tl { color:var(--accent) }
+.tn .tl .dim { font-size:inherit }
 .tt { width:22px; height:22px; flex:none; object-fit:cover; border-radius:3px; background:var(--input) }
 .dot { width:7px; height:7px; flex:none; border-radius:50%; background:var(--dim) }
 .dot.master { background:var(--accent) } .dot.derived { background:var(--ok) } .dot.variants { background:var(--warn) }
 .dot.proposal { background:var(--warn) }
-.tn.cap.missing .dot { background:none; box-shadow:inset 0 0 0 1px var(--line) }
+/* An image's three caption files, as a strip on its own row rather than three
+   labelled children under a chevron: filled is a file on disk, hollow is not,
+   and either one is the button that selects it. Three rows per image was the
+   sidebar's whole vertical budget spent on a fact three pixels can carry. */
+.caps { display:flex; gap:5px; flex:none; padding-left:6px }
+.caps .dot { padding:0; border:0; cursor:pointer; width:8px; height:8px; box-shadow:0 0 0 3px transparent }
+.caps .dot.off { background:none; box-shadow:inset 0 0 0 1px var(--line) }
+.caps .dot:hover { box-shadow:0 0 0 3px #ffffff14 }
+.caps .dot.on { box-shadow:0 0 0 2px var(--bg), 0 0 0 3px currentColor }
+.caps .dot.master.on { color:var(--accent) } .caps .dot.derived.on { color:var(--ok) } .caps .dot.variants.on { color:var(--warn) }
+.caps .dot.off.on { box-shadow:inset 0 0 0 1px var(--line), 0 0 0 2px var(--bg), 0 0 0 3px var(--dim) }
 .flags { margin-left:auto; display:flex; gap:4px }
 .flag.mask { color:var(--warn); font-size:11px }
 /* This image is one the last Run wants to change -- so a batch's diff is a
@@ -66,7 +85,14 @@ aside { grid-column:1; grid-row:2; border-right:1px solid var(--line); backgroun
    auto placement would then slide `main` into the zero-wide first column. */
 main { grid-column:2; grid-row:2; display:grid; grid-template-rows:auto minmax(0,1fr); overflow:hidden }
 .crumbs { display:flex; align-items:center; gap:6px; padding:8px 14px; border-bottom:1px solid var(--line) }
-.split { display:grid; grid-template-columns:minmax(240px,38%) minmax(320px,1fr); overflow:hidden }
+/* Preview | captions, with the boundary on a drag handle: the picture and the
+   text both want the width, and which one wins changes with what you are
+   auditing. The caption column is the sized one (a caption has a comfortable
+   width; an image just fits whatever is left), and `--cap-w` is set on the
+   element by ItemView, saved to localStorage on pointerup. */
+.split { position:relative; display:grid; grid-template-columns:minmax(240px,1fr) var(--cap-w,420px); overflow:hidden }
+.splitgrip { position:absolute; top:0; bottom:0; right:calc(var(--cap-w,420px) - 2px); width:5px; cursor:col-resize; z-index:2 }
+.splitgrip:hover { background:var(--accent) }
 .preview { display:grid; grid-template-rows:auto minmax(0,1fr) auto; border-right:1px solid var(--line); overflow:hidden }
 .preview .frame { display:flex; align-items:center; justify-content:center; overflow:auto; padding:12px; min-height:0 }
 .preview .frame img { max-width:100%; max-height:100%; object-fit:contain; border-radius:4px; background:#0006 }
