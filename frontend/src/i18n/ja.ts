@@ -93,6 +93,7 @@ const ja: Dict = {
     variantsHint:
       "correct ステージが生成します — v0 が手を入れていない derived キャプションです。ここでの手編集は上書きされます。",
     noSidecar: "サイドカーなし",
+    zoomHint: "⌘/Ctrl+スクロールで拡大 · ドラッグで移動 · ダブルクリックで元に戻す",
   },
   caption: {
     master: "master",

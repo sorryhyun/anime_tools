@@ -90,6 +90,7 @@ const zh: Dict = {
     readOnly: "只读",
     variantsHint: "由 correct 阶段生成 — v0 是未改动的 derived 标注。在这里手改会被覆盖。",
     noSidecar: "没有伴随文件",
+    zoomHint: "⌘/Ctrl+滚轮放大 · 拖动平移 · 双击恢复",
   },
   caption: {
     master: "master",

@@ -126,8 +126,11 @@ main { grid-column:2; grid-row:2; display:grid; grid-template-rows:auto minmax(0
 .splitgrip { position:absolute; top:0; bottom:0; right:calc(var(--cap-w,420px) - 2px); width:5px; cursor:col-resize; z-index:2 }
 .splitgrip:hover { background:var(--accent) }
 .preview { display:grid; grid-template-rows:auto minmax(0,1fr) auto; border-right:1px solid var(--line); overflow:hidden }
-.preview .frame { display:flex; align-items:center; justify-content:center; overflow:auto; padding:12px; min-height:0 }
+.preview .frame { display:flex; align-items:center; justify-content:center; overflow:hidden; padding:12px; min-height:0 }
+.preview .frame.zoomed { cursor:grab }
+.preview .frame.zoomed:active { cursor:grabbing }
 .preview .frame img { max-width:100%; max-height:100%; object-fit:contain; border-radius:4px; background:#0006 }
+.preview .frame > img, .preview .frame > .overlay { transform-origin:50% 50% }
 /* The overlay view: the L-mode mask screen-blended over the image at 40%, so
    the subject glows and black stays the image -- auditing a mask by flipping
    tabs and comparing from memory is not auditing. Both images contain-fit the

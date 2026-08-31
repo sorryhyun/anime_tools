@@ -91,6 +91,7 @@ const ko: Dict = {
     variantsHint:
       "correct 스테이지가 생성합니다 — v0이 손대지 않은 derived 캡션입니다. 여기서 손으로 고친 내용은 덮어써집니다.",
     noSidecar: "사이드카 없음",
+    zoomHint: "⌘/Ctrl+스크롤로 확대 · 드래그로 이동 · 더블클릭하면 원래 크기",
   },
   caption: {
     master: "master",
