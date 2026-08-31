@@ -1,5 +1,6 @@
 import { batch, createEffect, createSignal, on, type Accessor, type Setter } from "solid-js";
 import { followLog } from "./api";
+import { t } from "./i18n";
 import type { Job, JobStatus } from "./types";
 
 /** A signal mirrored into `localStorage` under `key`.
@@ -70,7 +71,7 @@ export function createJobFollower(opts: {
       () => {
         es = null;
         setRunning(false);
-        setStatus({ text: "log stream closed" });
+        setStatus({ text: t().runner.logClosed });
       },
     );
   };

@@ -1,4 +1,5 @@
 import { createMemo, For, Show } from "solid-js";
+import { t } from "../i18n";
 import type { Clause, Parsed, Proposal } from "../types";
 import { ClauseRow } from "./ClauseRow";
 import { Tag } from "./TagLens";
@@ -39,7 +40,7 @@ function rows(before: Parsed | null, after: Parsed | null) {
   const b = before ?? { flat_tags: [], clauses: [] };
   const a = after ?? { flat_tags: [], clauses: [] };
   const out: { label: string; pos?: boolean; d: TagDelta }[] = [
-    { label: "bag", d: delta(b.flat_tags, a.flat_tags) },
+    { label: t().caption.bag, d: delta(b.flat_tags, a.flat_tags) },
   ];
   const bc = new Map(b.clauses.map((c) => [key(c), c]));
   const ac = new Map(a.clauses.map((c) => [key(c), c]));
@@ -65,19 +66,16 @@ export function CaptionDiff(props: {
     <div classList={{ diff: true, stale: !!props.stale }}>
       <div class="card-h">
         <span class="dot proposal" />
-        <b>proposed</b>
-        <span class="dim">by {props.stage}</span>
+        <b>{t().diff.proposed}</b>
+        <span class="dim">{t().diff.by(props.stage)}</span>
         <span class="sp" />
-        <Show when={props.stale} fallback={<span class="badge">not applied yet</span>}>
-          <span class="badge miss" title="the caption changed since the run — Apply will skip it">
-            stale
+        <Show when={props.stale} fallback={<span class="badge">{t().diff.notApplied}</span>}>
+          <span class="badge miss" title={t().diff.staleHint}>
+            {t().diff.stale}
           </span>
         </Show>
       </div>
-      <Show
-        when={d().length}
-        fallback={<div class="dim hint">same tags, reordered — see the text below.</div>}
-      >
+      <Show when={d().length} fallback={<div class="dim hint">{t().diff.reordered}</div>}>
         <div class="parsed">
           <For each={d()}>
             {(r) => (
