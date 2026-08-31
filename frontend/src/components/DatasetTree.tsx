@@ -62,6 +62,11 @@ export function DatasetTree(props: {
   query: string;
   onQuery: (q: string) => void;
   onRefresh: () => void;
+  /** Rels the last Run wants to change. Marked here so a batch's diff is
+      something you can walk, instead of clicking around looking for it. */
+  pending?: Set<string>;
+  /** Collapse the tree to a rail; the header's ☰ flips it. */
+  onCollapse: () => void;
 }) {
   const tree = createMemo(() => build(props.list?.items ?? []));
   // Folders whose state differs from the default, not folders that are open --
@@ -184,6 +189,11 @@ export function DatasetTree(props: {
           <img class="tt" loading="lazy" src={api.thumbUrl(`${props.list?.root}/${p.it.rel}`, 48)} alt="" />
           <span class="tl">{p.it.name}</span>
           <span class="flags">
+            <Show when={props.pending?.has(p.it.rel)}>
+              <span class="flag prop" title="the last run proposes a change here">
+                ●
+              </span>
+            </Show>
             <Show when={p.it.mask}>
               <span class="flag mask" title="has a mask">
                 ◑
@@ -211,6 +221,9 @@ export function DatasetTree(props: {
         />
         <button title="Rescan the dataset" onClick={props.onRefresh}>
           ↻
+        </button>
+        <button title="Collapse the sidebar" onClick={props.onCollapse}>
+          ⟨
         </button>
       </div>
       <div class="tree">

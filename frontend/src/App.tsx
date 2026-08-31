@@ -13,6 +13,7 @@ import { createStore, reconcile, unwrap } from "solid-js/store";
 import { api, followLog } from "./api";
 import type {
   CaptionEntry,
+  CaptionKind,
   DatasetRoots,
   Field,
   Info,
@@ -44,6 +45,22 @@ const ROOT_HELP: Record<RootName, string> = {
   dst: "resized images + derived captions + .variants.txt",
   masks: "{stem}_mask.png, mirroring the source subdirs",
 };
+
+/** A finished **Run**: the report it wrote, the form and scope it ran at, and
+    the images it wants to change. Apply replays exactly this, so what Apply
+    writes can only be what the caption panel's diff already showed. */
+interface RunResult {
+  jobId: string;
+  report: string;
+  /** The form as it was when the run started; the result is dropped when the
+      form moves on, or the proposals would not be this form's. */
+  values: string;
+  /** The image it was narrowed to, or null for the batch. Apply inherits it. */
+  rel: string | null;
+  /** Which caption the stage writes, so the diff lands on the right card. */
+  kind: CaptionKind;
+  rels: string[];
+}
 
 /** `#rel|kind` — the dataset item is what a GUI link should point at now. */
 function parseHash(): Sel | null {
@@ -159,6 +176,10 @@ export default function App() {
       to where you left it instead of always its first stage. */
   const [lastInPanel, setLastInPanel] = createStore<Record<string, string>>({});
 
+  /** The dataset sidebar. The stage forms and the caption panel both want the
+      width, and which one wins changes by the minute -- so it folds away and
+      the header's toggle brings it back. */
+  const [sidebar, setSidebar] = createSignal(localStorage.getItem("sidebar") !== "0");
   const [dockOpen, setDockOpen] = createSignal(localStorage.getItem("dock") !== "0");
   const [dockH, setDockH] = createSignal(Number(localStorage.getItem("dockh")) || 320);
   /** One global "show the prose" preference, off by default: the stage doc and
@@ -178,16 +199,15 @@ export default function App() {
   const [dlStatus, setDlStatus] = createSignal<{ text: string; state?: string }>({ text: "" });
   const dlBusy = () => dlJob() !== null;
   const [confirmOpen, setConfirmOpen] = createSignal(false);
-  /** What the pending Apply is aimed at: one image's `rel`, or null = the
-      batch the Settings `path_pattern` names. Rebuilt per click so the dialog
-      and the run it starts can never disagree about the scope. */
-  const [applyRel, setApplyRel] = createSignal<string | null>(null);
   const [settingsOpen, setSettingsOpen] = createSignal(false);
-  /** Per stage, the last dry run that finished cleanly: its report, and the
-      form it ran on. Apply replays that report (`--from_report`) instead of
-      re-running the tagger/SAM3 pass that produced it -- but only while the
-      form still says what it said, or the proposals would not be this form's. */
-  const [dry, setDry] = createStore<Record<string, { report: string; values: string }>>({});
+  /** Per stage, the last Run that finished cleanly. Apply replays its report
+      (`--from_report`) instead of re-running the tagger/SAM3 pass that produced
+      it, so it writes exactly the text the diff showed -- and only while the
+      form still says what it said. */
+  const [dry, setDry] = createStore<Record<string, RunResult | undefined>>({});
+  /** Per stage, the last Apply, so Undo has a report to read the before-text
+      out of. Session-local: the jobs themselves live in the server. */
+  const [applied, setApplied] = createStore<Record<string, string | undefined>>({});
   /** `path_pattern` / `tagger_dir`: one value each, from Settings, for every
       stage that takes them. The server fills the flags; this is only the copy
       the run bar and the Settings dialog show. */
@@ -206,20 +226,56 @@ export default function App() {
   const preprocessStage = createMemo(() =>
     (stages() ?? []).find((s) => s.hidden && s.id === "resize"),
   );
-  const [reuse, setReuse] = createSignal(true);
   /** The form as it matters to a replay: everything the stage actually reads,
       minus the managed field itself. */
   const formKey = (v: Values) => {
     const { [REPLAY_FIELD]: _managed, ...rest } = v ?? {};
     return JSON.stringify(rest);
   };
-  /** The dry-run report Apply would replay, or null: no such run, the stage
-      cannot replay, or the form moved on since. */
-  const replayable = createMemo(() => {
+  /** The Run whose proposals are still on the table for the open stage, or
+      null: no such run, the stage cannot replay, or the form moved on since. */
+  const pending = createMemo(() => {
     const s = cur();
     const d = s && dry[s.id];
     if (!s?.replay || !d || d.values !== formKey(values())) return null;
-    return d.report;
+    return d;
+  });
+  const pendingSet = createMemo(() => new Set(pending()?.rels ?? []));
+  /** The selected image's before/after, fetched one at a time: a batch's index
+      is thousands of rels, and only the one on screen needs its text. */
+  const [proposal] = createResource(
+    () => {
+      const p = pending();
+      const rel = sel()?.rel;
+      return p && rel && pendingSet().has(rel) ? ([p.jobId, rel] as const) : false;
+    },
+    ([id, rel]) => api.proposal(id, rel),
+  );
+  /** The proposal to render, or undefined. `createResource` keeps its last
+      value when its source goes falsy, so both guards are repeated here: an
+      image with no proposal must not show the previous image's, and an Apply
+      that consumed the run must not leave its diff on screen. */
+  const shownProposal = createMemo(() => {
+    const p = proposal();
+    return p && pending() && p.rel === sel()?.rel && pendingSet().has(p.rel) ? p : undefined;
+  });
+
+  /** Why Apply is off, or "" when it is on. A replay-capable stage must have a
+      Run to apply: that is what makes Apply a plain write of the shown diff. */
+  const applyBlocked = createMemo(() => {
+    const s = cur();
+    if (!s?.apply) return "this stage has no dry pass — Run writes";
+    if (!s.replay) return "";
+    if (!dry[s.id]) return "Run first — Apply writes what the run proposed";
+    const d = pending();
+    if (!d) return "the form changed since the run — Run again";
+    if (!d.rels.length) return "that run proposed no changes — nothing to write";
+    return "";
+  });
+  const undoBlocked = createMemo(() => {
+    const s = cur();
+    if (!s) return "nothing to undo";
+    return applied[s.id] ? "" : "nothing applied yet — Undo puts back an Apply";
   });
   let es: EventSource | null = null;
   let dlEs: EventSource | null = null;
@@ -239,6 +295,14 @@ export default function App() {
   );
   createEffect(on(curId, (id) => id && localStorage.setItem("stage", id)));
   createEffect(on(dockOpen, (o) => localStorage.setItem("dock", o ? "1" : "0")));
+  // A class on <body>, not a <Show>: the tree keeps its expanded folders and
+  // its scroll position while it is folded away.
+  createEffect(
+    on(sidebar, (v) => {
+      localStorage.setItem("sidebar", v ? "1" : "0");
+      document.body.classList.toggle("nosidebar", !v);
+    }),
+  );
   createEffect(on(help, (h) => localStorage.setItem("help", h ? "1" : "0")));
   createEffect(
     on(info, (i) => {
@@ -314,9 +378,9 @@ export default function App() {
         refetchInfo();
         // A finished download job changed what the Settings rows should say.
         refetchModels();
-        if (job.state === "done") remember(job);
-        // A finished stage rewrote captions/masks under our feet -- but a dry
-        // run of a stage that has an --apply wrote nothing, so nothing to do.
+        if (job.state === "done") void finished(job);
+        // A finished stage rewrote captions/masks under our feet -- but a Run
+        // of a stage that has an --apply wrote nothing, so nothing to do.
         const dryRun = stages()?.find((s) => s.id === job.stage)?.apply && !job.apply;
         if (!dryRun) void reloadTouched(job);
       },
@@ -328,16 +392,44 @@ export default function App() {
     );
   }
 
-  /** File a clean dry run's report so Apply can replay it. Keyed on the form
-      as *this* page sent it, not as the server echoed it back: a snapshot that
-      fails to compare equal would silently stop offering the replay. */
-  const sent = new Map<string, string>();
-  function remember(job: Job) {
+  /** What a job was started with, so a clean finish can be filed against the
+      form as *this* page sent it -- a snapshot that fails to compare equal
+      would silently stop offering the replay. */
+  const sent = new Map<string, { form: string; rel: string | null }>();
+
+  /** File a finished job: a Run becomes the proposals Apply will write and the
+      diff the caption panel shows; an Apply becomes what Undo can put back. */
+  async function finished(job: Job) {
     const s = stages()?.find((x) => x.id === job.stage);
-    const form = sent.get(job.id);
+    const meta = sent.get(job.id);
     sent.delete(job.id);
-    if (!s?.replay || !s.apply || job.apply || !job.report_path || form === undefined) return;
-    setDry(job.stage, { report: job.report_path, values: form });
+    if (!s) return;
+    if (job.apply) {
+      // The proposals are on disk now, so they stop being pending -- and the
+      // report they were written from is exactly what Undo reads back.
+      setDry(job.stage, undefined);
+      if (job.report_path) setApplied(job.stage, job.id);
+      return;
+    }
+    if (!s.replay || !s.apply || !job.report_path || !meta) return;
+    try {
+      const idx = await api.proposals(job.id);
+      setDry(job.stage, {
+        jobId: job.id,
+        report: job.report_path,
+        values: meta.form,
+        rel: meta.rel,
+        kind: idx.kind,
+        rels: idx.rels,
+      });
+      setStatus((st) => ({
+        ...st,
+        text: `${st.text} — ${idx.total} proposal${idx.total === 1 ? "" : "s"}`,
+      }));
+    } catch {
+      // No readable report (a failed or cancelled run): nothing to propose.
+      setDry(job.stage, undefined);
+    }
   }
 
   /** Reload the dataset after a job that wrote. A replay's report names the
@@ -359,37 +451,86 @@ export default function App() {
       refetchItem();
       return;
     }
-    if (touched.length) {
-      const { items } = await api.items(touched);
-      const by = new Map(items.map((i) => [i.rel, i]));
-      mutateList((prev) =>
-        prev ? { ...prev, items: prev.items.map((x) => by.get(x.rel) ?? x) } : prev,
-      );
-      const rel = sel()?.rel;
-      if (rel && by.has(rel)) refetchItem();
-    }
+    await reloadRels(touched);
     setStatus((st) => ({ ...st, text: `${st.text} — ${touched.length} file(s) changed` }));
   }
 
-  /** Start the current stage. `rel` narrows it to that one image; null (the
-      default) runs the batch the Settings `path_pattern` names. */
-  async function run(apply: boolean, rel?: string | null) {
+  /** Re-stat named sidebar rows in place, and the open item if it is one. */
+  async function reloadRels(rels: string[]) {
+    if (!rels.length) return;
+    const { items } = await api.items(rels);
+    const by = new Map(items.map((i) => [i.rel, i]));
+    mutateList((prev) =>
+      prev ? { ...prev, items: prev.items.map((x) => by.get(x.rel) ?? x) } : prev,
+    );
+    const rel = sel()?.rel;
+    if (rel && by.has(rel)) refetchItem();
+  }
+
+  /** **Run** the current stage: compute the proposals and write the report,
+      not the captions. `rel` narrows it to that one image; null runs the batch
+      the Settings `path_pattern` names. A stage with no `--apply` has no dry
+      pass, so for those this *is* the write. */
+  async function run(rel: string | null) {
     const s = cur();
     if (!s) return;
-    // Apply replays the dry run when the form has not moved since it ran. The
-    // field is always rebuilt from that decision, never carried over from the
-    // saved form -- a leftover path would replay an old run behind a Dry run.
-    const report = apply && reuse() ? replayable() : null;
-    const { [REPLAY_FIELD]: _stale, ...rest } = values() ?? {};
-    const v = report ? { ...rest, [REPLAY_FIELD]: report } : rest;
+    // `--from_report` is rebuilt per start and never carried over from the
+    // saved form: a leftover path would quietly turn a Run into a replay.
+    const { [REPLAY_FIELD]: _stale, ...v } = values() ?? {};
     try {
-      const job = await api.start(s.id, v, apply, rel);
-      if (!apply) sent.set(job.id, formKey(values()));
+      const job = await api.start(s.id, v, false, rel);
+      sent.set(job.id, { form: formKey(values()), rel });
       setSettings("values", (prev) => ({ ...(prev ?? {}), [s.id]: job.values }));
       attach(job.id);
     } catch (e) {
       setStatus({ text: (e as Error).message, state: "failed" });
       setDockOpen(true);
+    }
+  }
+
+  /** **Apply**: write what the Run proposed, at the scope the Run ran at.
+      Replaying its report is the whole point -- no model loads, and nothing can
+      be written that the diff did not show. A stage that cannot replay
+      (`audit_apply`) has no report to stand on, so Apply re-runs it for real. */
+  async function apply() {
+    const s = cur();
+    if (!s) return;
+    const d = pending();
+    const { [REPLAY_FIELD]: _stale, ...rest } = values() ?? {};
+    const v = d ? { ...rest, [REPLAY_FIELD]: d.report } : rest;
+    try {
+      const job = await api.start(s.id, v, true, d?.rel ?? null);
+      setSettings("values", (prev) => ({ ...(prev ?? {}), [s.id]: job.values }));
+      attach(job.id);
+    } catch (e) {
+      setStatus({ text: (e as Error).message, state: "failed" });
+      setDockOpen(true);
+    }
+  }
+
+  /** **Undo**: put back the captions the last Apply wrote, from the very report
+      it wrote them out of. A caption edited since is left alone and counted --
+      the run bar says so rather than quietly restoring less than it claims. */
+  async function undo() {
+    const s = cur();
+    const jobId = s && applied[s.id];
+    if (!s || !jobId) return;
+    setStatus({ text: "undoing…", state: "running" });
+    try {
+      const out = await api.undo(jobId);
+      setApplied(s.id, undefined);
+      const skipped = Object.entries(out.skipped)
+        .map(([k, n]) => `${k} ${n}`)
+        .join(", ");
+      setStatus({
+        text:
+          `undone: ${out.restored} restored, ${out.removed} removed` +
+          (skipped ? ` — skipped ${skipped}` : ""),
+        state: "done",
+      });
+      await reloadRels(out.written);
+    } catch (e) {
+      setStatus({ text: (e as Error).message, state: "failed" });
     }
   }
 
@@ -452,6 +593,13 @@ export default function App() {
   return (
     <>
       <header>
+        <button
+          class="link fold"
+          title={sidebar() ? "Hide the dataset sidebar" : "Show the dataset sidebar"}
+          onClick={() => setSidebar(!sidebar())}
+        >
+          ☰
+        </button>
         <b>anime_tools</b>
         <span class="dim mono" title={info()?.home}>{info()?.home}</span>
         <Show when={list()}>
@@ -481,6 +629,8 @@ export default function App() {
         query={query()}
         onQuery={setQuery}
         onRefresh={() => setReload((n) => n + 1)}
+        pending={pendingSet()}
+        onCollapse={() => setSidebar(false)}
       />
 
       <ItemView
@@ -488,6 +638,8 @@ export default function App() {
         loading={item.loading}
         error={item.error ? String(item.error) : undefined}
         kind={sel()?.kind ?? "image"}
+        proposal={shownProposal()}
+        proposalStage={cur()?.title}
         onSaved={onSaved}
       />
 
@@ -535,10 +687,11 @@ export default function App() {
               status={status()}
               rel={sel()?.rel ?? null}
               onRun={run}
-              onApply={(rel) => { setReuse(true); setApplyRel(rel); setConfirmOpen(true); }}
+              onApply={() => setConfirmOpen(true)}
+              applyBlocked={applyBlocked()}
+              onUndo={undo}
+              undoBlocked={undoBlocked()}
               onCancel={() => jobId() && api.cancel(jobId()!)}
-              roots={roots()}
-              defaults={stageDefaults()}
               onSettings={() => setSettingsOpen(true)}
               help={help()}
               onHelp={() => setHelp(!help())}
@@ -547,43 +700,45 @@ export default function App() {
         </Show>
       </div>
 
-      <Dialog open={confirmOpen()} onClose={(v) => { setConfirmOpen(false); if (v === "ok") run(true, applyRel()); }}>
+      <Dialog open={confirmOpen()} onClose={(v) => { setConfirmOpen(false); if (v === "ok") apply(); }}>
         <h3>Apply for real?</h3>
         <p style="max-width:520px">
-          {cur()?.title} will write its changes to{" "}
-          <Show when={applyRel()} fallback={<>every image <code>{stageDefaults().path_pattern || "*"}</code> names</>}>
+          {cur()?.title} will write to{" "}
+          <Show
+            when={pending()?.rel}
+            fallback={<>every image <code>{stageDefaults().path_pattern || "*"}</code> names</>}
+          >
             {(rel) => <code>{rel()}</code>}
+          </Show>
+          <Show when={pending()}>
+            {(d) => <> — <b>{d().rels.length}</b> caption{d().rels.length === 1 ? "" : "s"} change</>}
           </Show>
           .
         </p>
-        {/* Replaying the dry run is the difference between writing text that is
-            already computed and a second full tagger/SAM3 pass, so it is the
-            default whenever one is on file for this exact form. */}
+        {/* Apply is a replay by construction: the run already computed and wrote
+            down every proposal, so this pass loads no model and can only write
+            text the diff showed. A stage with no report to stand on says so. */}
         <Show
-          when={replayable()}
+          when={pending()}
           fallback={
-            <Show when={cur()?.replay}>
-              <p class="dim" style="max-width:520px">
-                No dry run to reuse for this form — Apply runs the models again. Dry run first to
-                see the proposals and make Apply a plain write.
-              </p>
-            </Show>
+            <p class="dim" style="max-width:520px">
+              This stage keeps no replayable report — Apply runs it again with{" "}
+              <code>--apply</code>, so it writes what <em>this</em> pass computes.
+            </p>
           }
         >
-          {(report) => (
-            <label class="reuse">
-              <input type="checkbox" checked={reuse()} onChange={(e) => setReuse(e.currentTarget.checked)} />
-              <span>
-                Write the dry run's proposals ({<code>{report()}</code>}) instead of running the
-                models again. A caption edited since that run is skipped, not overwritten.
-              </span>
-            </label>
+          {(d) => (
+            <p class="dim" style="max-width:520px">
+              Writing the run's proposals (<code>{d().report}</code>) — no model loads. A caption
+              edited since that run is skipped, not overwritten.
+            </p>
           )}
         </Show>
         <p class="dim">
           Caption stages write under <code>post_image_dataset/resized/</code> (autotag <code>missing</code> creates
           masters under <code>image_dataset/</code>). Any caption change must be followed by the trainer's TE
-          re-encode (<code>make preprocess-te</code>).
+          re-encode (<code>make preprocess-te</code>). <b>Undo</b> puts these captions back, from the
+          same report.
         </p>
         <div class="dlg-actions">
           <button value="cancel">Cancel</button>

@@ -182,6 +182,27 @@ def _sibling_image(directory: Path, stem: str) -> Path | None:
     return None
 
 
+def rel_for_image(roots: Roots, image: str) -> str | None:
+    """The dataset rel a stage report's ``image`` names, or ``None``.
+
+    Reports name images relative to the **resized** tree, and the resize step
+    may have re-encoded on the way there (``.jpg`` master → ``.png`` resized),
+    so the join back to the source tree is on directory + stem — the same rule
+    :func:`_sibling_image` uses in the other direction. An image the source tree
+    no longer has is dropped rather than raising: the caller is decorating a
+    listing with what a run proposed, and a row it cannot place is one it should
+    leave out.
+    """
+    try:
+        rel = _rel_key(image)
+    except DatasetError:
+        return None
+    if (roots.src / rel).is_file():
+        return rel.as_posix()
+    p = _sibling_image(roots.src / rel.parent, rel.stem)
+    return p.relative_to(roots.src).as_posix() if p else None
+
+
 def mask_path(roots: Roots, rel: Path) -> Path | None:
     """``masks/<subdir>/{stem}_mask.png``, or the legacy flat one."""
     name = f"{rel.stem}_mask.png"

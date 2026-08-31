@@ -24,6 +24,7 @@ from fastapi.responses import FileResponse, JSONResponse, Response, StreamingRes
 from anime_tools import downloads as DL
 from anime_tools._env import curation_home, models_dir, resolve_path
 from anime_tools.gui import dataset as D
+from anime_tools.gui import proposals as P
 from anime_tools.gui import stages as S
 from anime_tools.gui.jobs import JobManager, Step
 
@@ -301,6 +302,66 @@ def create_app(
         return JSONResponse(
             {"path": str(p), "report": json.loads(p.read_text(encoding="utf-8"))}
         )
+
+    # ---- proposals: a finished Run, read as a per-image diff -------------
+
+    def _report_of(job_id: str) -> tuple[Any, Path]:
+        job = _job(job_id)
+        if not job.report_path:
+            raise HTTPException(404, "stage writes no report")
+        return job, resolve_path(job.report_path)
+
+    @app.get("/api/jobs/{job_id}/proposals")
+    def job_proposals(job_id: str) -> dict[str, Any]:
+        """Which dataset images this run wants to change.
+
+        The index only — rels, the caption kind, and a count. The full before/
+        after text of one image comes from ``/proposal`` as the selection lands
+        on it, so opening a 2000-image batch's diff does not put 2000 captions
+        on the wire.
+        """
+        job, path = _report_of(job_id)
+        try:
+            found = P.read(path, _roots(), job.stage)
+        except P.ProposalError as e:
+            raise HTTPException(400, str(e)) from e
+        return {
+            "stage": job.stage,
+            "apply": job.apply,
+            "kind": P.CAPTION_KIND[P.SHAPES[job.stage].root],
+            "total": len(found),
+            "rels": sorted(found),
+        }
+
+    @app.get("/api/jobs/{job_id}/proposal")
+    def job_proposal(job_id: str, rel: str) -> dict[str, Any]:
+        """One image's pending change, both texts already parsed."""
+        job, path = _report_of(job_id)
+        try:
+            found = P.read(path, _roots(), job.stage)
+        except P.ProposalError as e:
+            raise HTTPException(400, str(e)) from e
+        got = found.get(rel)
+        if got is None:
+            raise HTTPException(404, f"no proposal for {rel}")
+        return got.to_dict()
+
+    @app.post("/api/jobs/{job_id}/undo")
+    def job_undo(job_id: str) -> dict[str, Any]:
+        """Put back the captions this run wrote.
+
+        Refuses a dry run outright — it wrote nothing, so "undo" could only mean
+        undoing some *other* run that happens to share the report shape.
+        """
+        job, path = _report_of(job_id)
+        if not job.apply:
+            raise HTTPException(400, "that run wrote nothing — nothing to undo")
+        try:
+            return P.undo(path, _roots(), job.stage)
+        except P.ProposalError as e:
+            raise HTTPException(400, str(e)) from e
+        except OSError as e:
+            raise HTTPException(500, f"undo failed: {e}") from e
 
     # ---- dataset browsing (the sidebar's image/caption tree) -------------
 

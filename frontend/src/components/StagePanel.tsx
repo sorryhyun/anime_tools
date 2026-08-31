@@ -1,25 +1,28 @@
 import { createMemo, For, Show } from "solid-js";
 import { StageForm } from "./StageForm";
 import { HelpToggle } from "./HelpToggle";
-import type { DatasetRoots, Stage, Values } from "../types";
+import type { Stage, Values } from "../types";
 
 /** The stage runner's body: the run bar + the schema-driven form for the
     current stage. The dock's button strip (in App) picks a *panel*; when that
     panel holds more than one stage the bar leads with a picker for them, which
     is why several CLIs can share one button.
 
-    A stage that takes a `--path_pattern` runs at one of two scopes, and the run
-    bar spells both out rather than hiding a mode behind a toggle:
+    The bar is one loop, spelled out rather than hidden behind a mode toggle:
 
-    * the plain button acts on the **selected image** -- the server narrows the
-      pattern to that one file, so the iteration loop is pick an image, run,
-      look at the caption;
-    * the `batch` button acts on the **Settings `path_pattern`** -- everything
-      the pattern names.
+        Run       →  the selected image. Computes the proposals and shows them
+                     as a diff on the caption card above; writes nothing.
+        Run batch →  the same, over every image the Settings `path_pattern`
+                     names.
+        Apply     →  writes what you just looked at. It replays the run's
+                     report, so it loads no model and can only write text the
+                     diff already showed.
+        Undo      →  puts those captions back, from the same report. While a
+                     job is running this button is Cancel instead — a tagger
+                     pass takes minutes and must stay stoppable.
 
-    Dry run stays batch on purpose: it is the pass that writes the report both
-    Applies replay, so scoping it to one image would leave the batch Apply with
-    nothing to reuse. */
+    A stage with no `--apply` (correct, the mask generators, groups) has no dry
+    pass to look at: its Run *is* the write, and there is nothing to undo. */
 export function StagePanel(props: {
   stages?: Stage[];
   /** Every stage under the open dock button, including the current one: the
@@ -37,25 +40,30 @@ export function StagePanel(props: {
       `busy`, since it can only cancel *this* panel's job. */
   locked?: boolean;
   status: { text: string; state?: string };
-  /** The selected image, or null -- what the per-image buttons act on. */
+  /** The selected image, or null -- what the per-image Run acts on. */
   rel?: string | null;
-  onRun: (apply: boolean, rel?: string | null) => void;
-  onApply: (rel: string | null) => void;
+  /** Run: `rel` narrows it to one image, null runs the batch. */
+  onRun: (rel: string | null) => void;
+  /** Apply: no scope of its own -- it writes whatever the last Run proposed. */
+  onApply: () => void;
+  /** Why Apply is off, or "" when it is on. */
+  applyBlocked: string;
+  onUndo: () => void;
+  /** Why Undo is off, or "" when it is on. */
+  undoBlocked: string;
   onCancel: () => void;
-  roots?: DatasetRoots;
-  defaults?: Record<string, string>;
   onSettings: () => void;
   help: boolean;
   onHelp: () => void;
 }) {
   const cur = createMemo(() => props.stages?.find((s) => s.id === props.curId));
-  /** Per-image buttons need a stage that takes a pattern and an image to aim at. */
+  /** Per-image Run needs a stage that takes a pattern and an image to aim at. */
   const scoped = createMemo(() => !!cur()?.scoped);
   const noImage = createMemo(() => !props.rel);
   const off = createMemo(() => props.busy || !!props.locked || !cur()?.available);
   const aim = () =>
     props.rel ? `just ${props.rel}` : "select an image in the sidebar first";
-  const batchTitle = () => `every image the Settings path_pattern names`;
+  const batchTitle = () => "every image the Settings path_pattern names";
 
   return (
     <div class="stagepanel">
@@ -79,36 +87,53 @@ export function StagePanel(props: {
           <span class="dim mono">{cur()?.module}</span>
           <HelpToggle open={props.help} warn={!!cur()?.notes} onToggle={props.onHelp} />
           <span class="sp" />
-          <Show
-            when={cur()?.apply}
-            fallback={
-              <>
-                <Show when={scoped()}>
-                  <button class="primary" disabled={off() || noImage()} title={aim()} onClick={() => props.onRun(false, props.rel)}>
-                    Run
-                  </button>
-                </Show>
-                <button classList={{ primary: !scoped() }} disabled={off()} title={scoped() ? batchTitle() : undefined} onClick={() => props.onRun(false)}>
-                  {scoped() ? "Run batch" : "Run"}
-                </button>
-              </>
-            }
-          >
-            <button disabled={off()} title={batchTitle()} onClick={() => props.onRun(false)}>
-              Dry run
-            </button>
-            <Show when={scoped()}>
-              <button class="primary" disabled={off() || noImage()} title={aim()} onClick={() => props.onApply(props.rel ?? null)}>
-                Apply
-              </button>
-            </Show>
-            <button classList={{ primary: !scoped() }} disabled={off()} title={scoped() ? batchTitle() : undefined} onClick={() => props.onApply(null)}>
-              {scoped() ? "Apply batch…" : "Apply…"}
+
+          <Show when={scoped()}>
+            <button
+              classList={{ primary: !cur()?.apply }}
+              disabled={off() || noImage()}
+              title={aim()}
+              onClick={() => props.onRun(props.rel ?? null)}
+            >
+              Run
             </button>
           </Show>
-          <button disabled={!props.busy} onClick={props.onCancel}>
-            Cancel
+          <button
+            classList={{ primary: !scoped() && !cur()?.apply }}
+            disabled={off()}
+            title={batchTitle()}
+            onClick={() => props.onRun(null)}
+          >
+            {scoped() ? "Run batch" : "Run"}
           </button>
+          <Show when={cur()?.apply}>
+            <button
+              class="primary"
+              disabled={off() || !!props.applyBlocked}
+              title={props.applyBlocked || "write what the run proposed"}
+              onClick={props.onApply}
+            >
+              Apply
+            </button>
+          </Show>
+
+          {/* One button, two jobs: nothing to undo while something is running,
+              and a long pass has to stay stoppable. */}
+          <Show
+            when={props.busy}
+            fallback={
+              <button
+                disabled={!!props.undoBlocked}
+                title={props.undoBlocked || "put back the captions the last Apply wrote"}
+                onClick={props.onUndo}
+              >
+                Undo
+              </button>
+            }
+          >
+            <button onClick={props.onCancel}>Cancel</button>
+          </Show>
+
           <span class="status" title={props.status.text}>
             <Show when={props.status.state}>
               <span class={`badge ${props.status.state}`}>{props.status.state}</span>{" "}
@@ -134,8 +159,6 @@ export function StagePanel(props: {
                   values={props.values}
                   setValue={props.setValue}
                   reset={props.reset}
-                  roots={props.roots}
-                  defaults={props.defaults}
                   onSettings={props.onSettings}
                   help={props.help}
                   onHelp={props.onHelp}

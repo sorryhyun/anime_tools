@@ -1,7 +1,7 @@
 import { createEffect, createMemo, createSignal, For, Index, on, Show } from "solid-js";
 import { api } from "../api";
 import { CaptionCard } from "./CaptionCard";
-import type { CaptionEntry, ImageInfo, ItemDetail, NodeKind } from "../types";
+import type { CaptionEntry, ImageInfo, ItemDetail, NodeKind, Proposal } from "../types";
 
 type View = "image" | "resized" | "mask";
 const VIEWS: View[] = ["image", "resized", "mask"];
@@ -19,6 +19,11 @@ export function ItemView(props: {
   loading: boolean;
   error?: string;
   kind: NodeKind;
+  /** What the last Run proposed for this image, or undefined. It lands on the
+      caption card of the kind the stage writes -- master or derived. */
+  proposal?: Proposal;
+  /** The stage that proposed it, for the diff's header. */
+  proposalStage?: string;
   onSaved: (entry: CaptionEntry) => void;
 }) {
   const [view, setView] = createSignal<View>("image");
@@ -106,6 +111,10 @@ export function ItemView(props: {
                       rel={it().rel}
                       entry={c()}
                       selected={props.kind === c().kind}
+                      proposal={
+                        props.proposal?.kind === c().kind ? props.proposal : undefined
+                      }
+                      proposalStage={props.proposalStage}
                       onSaved={props.onSaved}
                     />
                   )}

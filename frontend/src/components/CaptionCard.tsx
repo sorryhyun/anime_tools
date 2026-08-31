@@ -1,6 +1,7 @@
 import { createEffect, createResource, createSignal, For, on, Show } from "solid-js";
 import { api } from "../api";
-import type { CaptionEntry, CaptionKind, Parsed } from "../types";
+import { CaptionDiff } from "./CaptionDiff";
+import type { CaptionEntry, CaptionKind, Parsed, Proposal } from "../types";
 
 const LABEL: Record<CaptionKind, string> = { master: "master", derived: "derived" };
 const WHERE: Record<CaptionKind, string> = {
@@ -27,6 +28,11 @@ export function CaptionCard(props: {
   rel: string;
   entry: CaptionEntry;
   selected: boolean;
+  /** What the last Run proposed for *this* caption, or undefined. Shown below
+      the editor until an Apply writes it (or another Run replaces it). */
+  proposal?: Proposal;
+  /** The stage that proposed it, for the diff's header. */
+  proposalStage?: string;
   onSaved: (entry: CaptionEntry) => void;
 }) {
   const [text, setText] = createSignal(props.entry.text);
@@ -109,6 +115,15 @@ export function CaptionCard(props: {
       />
       <Show when={msg()}>
         {(m) => <div classList={{ hint: true, err: !!m().bad, ok: !m().bad }}>{m().text}</div>}
+      </Show>
+      <Show when={props.proposal}>
+        {(p) => (
+          <CaptionDiff
+            proposal={p()}
+            stage={props.proposalStage ?? "the last run"}
+            stale={props.entry.text.trim() !== p().before.trim()}
+          />
+        )}
       </Show>
       <Show when={parsed()} fallback={<div class="dim hint">no caption</div>}>
         {(pp) => (

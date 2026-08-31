@@ -10,8 +10,11 @@ import type {
   Listing,
   ModelCatalog,
   Parsed,
+  Proposal,
+  ProposalIndex,
   Settings,
   Stage,
+  UndoResult,
   Values,
 } from "./types";
 
@@ -50,6 +53,13 @@ export const api = {
     req<Job>("/api/jobs", json("POST", { stage, values, apply, rel: rel ?? "" })),
   cancel: (id: string) => req<{ cancelled: boolean }>(`/api/jobs/${id}/cancel`, { method: "POST" }),
   report: (id: string) => req<{ path: string; report: unknown }>(`/api/jobs/${id}/report`),
+  /** Which images a finished Run wants to change -- the index only. */
+  proposals: (id: string) => req<ProposalIndex>(`/api/jobs/${id}/proposals`),
+  /** One image's before/after, both already parsed server-side. */
+  proposal: (id: string, rel: string) =>
+    req<Proposal>(`/api/jobs/${id}/proposal?rel=${encodeURIComponent(rel)}`),
+  /** Put back the captions an Apply wrote. */
+  undo: (id: string) => req<UndoResult>(`/api/jobs/${id}/undo`, { method: "POST" }),
   ls: (path: string) => req<Listing>(`/api/ls?path=${encodeURIComponent(path)}`),
   fileUrl: (path: string) => `/api/files?path=${encodeURIComponent(path)}`,
   thumbUrl: (path: string, size = 96) =>

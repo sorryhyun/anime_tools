@@ -1,15 +1,15 @@
 import { createMemo, createSignal, For, Show, Switch, Match } from "solid-js";
 import { REPLAY_FIELD } from "../types";
-import type { DatasetRoots, Field, Stage, Values } from "../types";
+import type { Field, Stage, Values } from "../types";
 import { PathPicker } from "./PathPicker";
 
 /** Group fields by argparse group, preserving order. Fields bound to a dataset
     root or to a Settings stage default (`path_pattern`, `tagger_dir`) are left
     out: the server fills them from Settings, so no two forms can disagree about
     them. So is `--device`, which the stage auto-detects. And so are the two the
-    buttons own -- `--apply` (Dry run / Apply) and `--from_report` (the Apply
-    dialog's reuse box): a stale path left in a form field would quietly turn
-    the next Dry run into a replay of an old one. */
+    run bar owns -- `--apply` (Run / Apply) and `--from_report` (how Apply
+    replays the run it is applying): a stale path left in a form field would
+    quietly turn the next Run into a replay of an old one. */
 export function grouped(fields: Field[]): [string, Field[]][] {
   const m = new Map<string, Field[]>();
   for (const f of fields) {
@@ -105,20 +105,17 @@ export function StageForm(props: {
   values: Values;
   setValue: (dest: string, v: unknown) => void;
   reset: () => void;
-  roots?: DatasetRoots;
-  /** The Settings stage defaults (`path_pattern` / `tagger_dir`), for the strip. */
-  defaults?: Record<string, string>;
   onSettings: () => void;
   help: boolean;
   onHelp: () => void;
 }) {
   const [picking, setPicking] = createSignal<string | null>(null);
   const groups = createMemo(() => grouped(props.stage.fields));
-  const bound = createMemo(() => props.stage.fields.filter((f) => f.root || f.setting));
-  /** What the server will actually send for a Settings-bound field: the saved
-      value, or -- when it is blank -- the CLI's own default. */
-  const settingValue = (f: Field) =>
-    (props.defaults?.[f.setting!] ?? "").trim() || (f.default == null ? "—" : String(f.default));
+  /** Does this stage have anything Settings fills in for it? The strip is the
+      link to where those live -- the values themselves are not echoed here:
+      they are the same on every form, and a read-only copy of them was mostly
+      a wide row of text nobody could act on. */
+  const bound = createMemo(() => props.stage.fields.some((f) => f.root || f.setting));
   const value = (f: Field) => props.values[f.dest] ?? f.default;
   const dirty = (f: Field) => {
     const v = props.values[f.dest];
@@ -151,21 +148,8 @@ export function StageForm(props: {
           <div class="notes">⚠ {props.stage.notes}</div>
         </Show>
       </Show>
-      <Show when={bound().length}>
+      <Show when={bound() || props.stage.preprocess}>
         <div class="rootstrip">
-          <For each={bound()}>
-            {(f) => {
-              const info = () => (f.root ? props.roots?.roots[f.root] : undefined);
-              return (
-                <span title={f.help}>
-                  <span class="mono">{f.label || f.flags[0] || f.dest}</span>{" "}
-                  <span classList={{ mono: true, err: info() ? !info()!.exists : false }}>
-                    {f.root ? (info()?.path ?? "…") : settingValue(f)}
-                  </span>
-                </span>
-              );
-            }}
-          </For>
           <Show when={props.stage.preprocess}>
             {(pre) => (
               <span

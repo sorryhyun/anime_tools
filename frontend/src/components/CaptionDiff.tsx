@@ -1,0 +1,96 @@
+import { createMemo, For, Show } from "solid-js";
+import type { Clause, Parsed, Proposal } from "../types";
+
+/** What a finished **Run** proposes for this caption, shown against what is on
+    disk. The Run wrote it down; **Apply** is the plain write of exactly this.
+
+    Both sides arrive already parsed (`/api/jobs/{id}/proposal` runs them
+    through `parse_caption`), so the diff compares *tags and clauses* — the
+    units the grammar actually has — instead of the characters of a line the
+    browser is not allowed to split. */
+
+/** A clause keyed the way the grammar keys it: its header names the position,
+    so two clauses with the same header are the same clause, changed. */
+const key = (c: Clause) => c.header;
+const lower = (ts: string[]) => new Set(ts.map((t) => t.trim().toLowerCase()));
+
+interface TagDelta {
+  added: string[];
+  removed: string[];
+}
+
+function delta(before: string[], after: string[]): TagDelta {
+  const was = lower(before);
+  const now = lower(after);
+  return {
+    added: after.filter((t) => !was.has(t.trim().toLowerCase())),
+    removed: before.filter((t) => !now.has(t.trim().toLowerCase())),
+  };
+}
+
+const empty = (d: TagDelta) => !d.added.length && !d.removed.length;
+
+/** Bag + every clause, as one flat list of labelled deltas. A clause that only
+    exists on one side shows entirely as added or removed, which is exactly what
+    the position rewrite does when it *moves* a bound tag out of the bag. */
+function rows(before: Parsed | null, after: Parsed | null) {
+  const b = before ?? { flat_tags: [], clauses: [] };
+  const a = after ?? { flat_tags: [], clauses: [] };
+  const out: { label: string; pos?: boolean; d: TagDelta }[] = [
+    { label: "bag", d: delta(b.flat_tags, a.flat_tags) },
+  ];
+  const bc = new Map(b.clauses.map((c) => [key(c), c]));
+  const ac = new Map(a.clauses.map((c) => [key(c), c]));
+  for (const k of new Set([...bc.keys(), ...ac.keys()]))
+    out.push({
+      label: k,
+      pos: true,
+      d: delta(bc.get(k)?.tags ?? [], ac.get(k)?.tags ?? []),
+    });
+  return out.filter((r) => !empty(r.d));
+}
+
+export function CaptionDiff(props: {
+  proposal: Proposal;
+  /** The stage that proposed it, for the header ("proposed by Autotag captions"). */
+  stage: string;
+  /** True once the caption on disk no longer matches the Run's before-text —
+      the proposal is then stale and Apply would skip this row. */
+  stale?: boolean;
+}) {
+  const d = createMemo(() => rows(props.proposal.before_parsed, props.proposal.after_parsed));
+  return (
+    <div classList={{ diff: true, stale: !!props.stale }}>
+      <div class="card-h">
+        <span class="dot proposal" />
+        <b>proposed</b>
+        <span class="dim">by {props.stage}</span>
+        <span class="sp" />
+        <Show when={props.stale} fallback={<span class="badge">not applied yet</span>}>
+          <span class="badge miss" title="the caption changed since the run — Apply will skip it">
+            stale
+          </span>
+        </Show>
+      </div>
+      <Show
+        when={d().length}
+        fallback={<div class="dim hint">same tags, reordered — see the text below.</div>}
+      >
+        <div class="parsed">
+          <For each={d()}>
+            {(r) => (
+              <div class="clause">
+                <span classList={{ ck: true, pos: r.pos }}>{r.label}</span>
+                <span class="tags">
+                  <For each={r.d.removed}>{(t) => <span class="tag del">− {t}</span>}</For>
+                  <For each={r.d.added}>{(t) => <span class="tag add">+ {t}</span>}</For>
+                </span>
+              </div>
+            )}
+          </For>
+        </div>
+      </Show>
+      <div class="proposed mono">{props.proposal.after}</div>
+    </div>
+  );
+}

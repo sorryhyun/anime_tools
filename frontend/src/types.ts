@@ -189,6 +189,43 @@ export interface CaptionEntry {
   variants_stale?: boolean;
 }
 
+// ---- proposals (mirrors anime_tools/gui/proposals.py) ----
+
+/** One image's pending change, as a finished Run wrote it down. Both texts
+    arrive already parsed — the browser never splits a caption itself. */
+export interface Proposal {
+  rel: string;
+  image: string;
+  kind: CaptionKind;
+  path: string;
+  before: string;
+  after: string;
+  status: string;
+  before_parsed: Parsed | null;
+  after_parsed: Parsed | null;
+}
+
+/** The index of a Run's proposals: which images it wants to change. The full
+    text of one comes from `api.proposal` as the selection lands on it. */
+export interface ProposalIndex {
+  stage: string;
+  apply: boolean;
+  kind: CaptionKind;
+  total: number;
+  rels: string[];
+}
+
+/** What an Undo actually put back. */
+export interface UndoResult {
+  stage: string;
+  report: string;
+  restored: number;
+  removed: number;
+  skipped: Record<string, number>;
+  /** Dataset rels to re-stat — the same contract as a job's `written`. */
+  written: string[];
+}
+
 export interface ImageInfo {
   path: string;
   bytes: number;
