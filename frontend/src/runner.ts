@@ -1,6 +1,7 @@
 import { createEffect, createMemo, createResource, on, onCleanup } from "solid-js";
 import { createStore } from "solid-js/store";
 import { api, toStatus } from "./api";
+import { t } from "./i18n";
 import { createJobFollower } from "./state";
 import { REPLAY_FIELD, type CaptionKind, type Job, type Values } from "./types";
 import type { Config } from "./config";
@@ -140,29 +141,29 @@ export function createRunner(deps: {
       Run to apply: that is what makes Apply a plain write of the shown diff. */
   const applyBlocked = createMemo(() => {
     const s = stages.cur();
-    if (!s?.apply) return "this stage has no dry pass — Run writes";
+    if (!s?.apply) return t().runner.noDryPass;
     if (!s.replay) return "";
     const { run, fresh } = lastRun();
-    if (!run) return "Run first — Apply writes what the run proposed";
-    if (!fresh) return "the form changed since the run — Run again";
-    if (!run.rels.length) return "that run proposed no changes — nothing to write";
+    if (!run) return t().runner.runFirst;
+    if (!fresh) return t().runner.formChanged;
+    if (!run.rels.length) return t().runner.noChanges;
     return "";
   });
   const undoBlocked = createMemo(() => {
     const s = stages.cur();
-    if (!s) return "nothing to undo";
-    return applied[s.id] ? "" : "nothing applied yet — Undo puts back an Apply";
+    if (!s) return t().runner.nothingToUndo;
+    return applied[s.id] ? "" : t().runner.nothingApplied;
   });
 
   /** Follow a job in the dock, opening it so the status line is visible. */
   function attach(id: string) {
-    run$.follow(id, { text: `running ${id}`, state: "running" });
+    run$.follow(id, { text: t().runner.following(id), state: "running" });
     deps.openDock();
   }
 
   /** A stage job that reached the end of its stream. */
   function onStageDone(job: Job) {
-    setStatus({ text: `exit ${job.exit_code}`, state: job.state });
+    setStatus({ text: t().runner.exit(job.exit_code), state: job.state });
     void config.refetchInfo();
     // A finished download job changed what the Settings rows should say.
     void config.refetchModels();
@@ -203,10 +204,7 @@ export function createRunner(deps: {
         kind: idx.kind,
         rels: idx.rels,
       });
-      setStatus((st) => ({
-        ...st,
-        text: `${st.text} — ${idx.total} proposal${idx.total === 1 ? "" : "s"}`,
-      }));
+      setStatus((st) => ({ ...st, text: `${st.text} — ${t().runner.proposals(idx.total)}` }));
     } catch {
       // No readable report (a failed or cancelled run): nothing to propose.
       setDry(job.stage, undefined);
@@ -229,7 +227,7 @@ export function createRunner(deps: {
     }
     if (!touched) return dataset.reloadAll();
     await dataset.reloadRels(touched);
-    setStatus((st) => ({ ...st, text: `${st.text} — ${touched.length} file(s) changed` }));
+    setStatus((st) => ({ ...st, text: `${st.text} — ${t().runner.changed(touched.length)}` }));
   }
 
   /** Start the open stage and follow it. The one place a start can fail — a
@@ -280,7 +278,7 @@ export function createRunner(deps: {
     const s = stages.cur();
     const id = s && applied[s.id];
     if (!s || !id) return;
-    setStatus({ text: "undoing…", state: "running" });
+    setStatus({ text: t().runner.undoing, state: "running" });
     try {
       const out = await api.undo(id);
       markUndone(id);
@@ -290,8 +288,8 @@ export function createRunner(deps: {
         .join(", ");
       setStatus({
         text:
-          `undone: ${out.restored} restored, ${out.removed} removed` +
-          (skipped ? ` — skipped ${skipped}` : ""),
+          t().runner.undone(out.restored, out.removed) +
+          (skipped ? ` ${t().runner.skipped(skipped)}` : ""),
         state: "done",
       });
       await dataset.reloadRels(out.written);

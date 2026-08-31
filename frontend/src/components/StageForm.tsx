@@ -1,4 +1,5 @@
 import { createMemo, createSignal, For, Show, Switch, Match } from "solid-js";
+import { t } from "../i18n";
 import { REPLAY_FIELD } from "../types";
 import type { Field, Stage, Values } from "../types";
 import { PathPicker } from "./PathPicker";
@@ -67,7 +68,7 @@ export function FieldRow(props: {
         <Match when={f().kind === "list"}>
           <textarea
             classList={cls()}
-            placeholder="one per line"
+            placeholder={t().form.onePerLine}
             value={str(props.value)}
             onInput={(e) =>
               props.setValue(
@@ -96,7 +97,7 @@ export function FieldRow(props: {
               value={str(props.value)}
               onInput={(e) => props.setValue(e.currentTarget.value)}
             />
-            <button type="button" title="Browse (home-relative)" onClick={props.onPick}>
+            <button type="button" title={t().common.browse} onClick={props.onPick}>
               …
             </button>
           </div>
@@ -148,7 +149,7 @@ export function StageForm(props: {
       <For each={groups()}>
         {([g, fs]) => (
           <fieldset>
-            <legend>{g || "options"}</legend>
+            <legend>{g || t().form.options}</legend>
             {/* Two-up: the dock is wide and short, so a single column of knobs
                 scrolled far more than it had to. Same wrapper the Settings
                 preflight block uses. */}
@@ -170,7 +171,7 @@ export function StageForm(props: {
       </For>
       <div style="margin-bottom:8px">
         <button class="link" type="button" onClick={props.reset}>
-          reset to defaults
+          {t().form.reset}
         </button>
       </div>
       <PathPicker

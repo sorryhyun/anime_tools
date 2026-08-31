@@ -3,6 +3,7 @@ import { api } from "./api";
 import { createConfig } from "./config";
 import { createDataset } from "./dataset";
 import { createDownloads, isDownloadJob } from "./downloads";
+import { t } from "./i18n";
 import { createLayout } from "./layout";
 import { createRunner } from "./runner";
 import { createStages } from "./stages";
@@ -93,7 +94,7 @@ export default function App() {
       <Show when={!layout.sidebar()}>
         <button
           class="unfold"
-          title="Show the dataset sidebar"
+          title={t().header.showSidebar}
           onClick={() => layout.setSidebar(true)}
         >
           ⟩

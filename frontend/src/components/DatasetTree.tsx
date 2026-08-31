@@ -1,5 +1,6 @@
 import { createEffect, createMemo, createSignal, For, on, Show } from "solid-js";
 import { api } from "../api";
+import { slots, t } from "../i18n";
 import type { DatasetGroups, DatasetItem, DatasetList, NodeKind, Sel, TreeMode } from "../types";
 
 /** Folders render lazily, but one flat folder can still hold thousands of
@@ -13,10 +14,10 @@ const AUTO_EXPAND_MAX = 400;
     same three, so they are a fixed strip on the row rather than three child
     rows under a chevron: a filled dot is a file on disk, a hollow one is not,
     and clicking either selects it. */
-const CAPS: { kind: NodeKind; label: string; hint: string }[] = [
-  { kind: "master", label: "m", hint: "master — image_dataset, the hand-written caption" },
-  { kind: "derived", label: "d", hint: "derived — post_image_dataset/resized, the stage output" },
-  { kind: "variants", label: "v", hint: "variants — .variants.txt, generated and read-only" },
+const CAPS: { kind: NodeKind; label: string; hint: () => string }[] = [
+  { kind: "master", label: "m", hint: () => t().tree.capMaster },
+  { kind: "derived", label: "d", hint: () => t().tree.capDerived },
+  { kind: "variants", label: "v", hint: () => t().tree.capVariants },
 ];
 
 interface Folder {
@@ -170,7 +171,7 @@ export function DatasetTree(props: {
         style={{ "padding-left": `${16 + p.depth * 12}px` }}
         onClick={() => more(p.key)}
       >
-        + {p.total - limitOf(p.key)} more
+        {t().tree.more(p.total - limitOf(p.key))}
       </div>
     </Show>
   );
@@ -229,17 +230,17 @@ export function DatasetTree(props: {
             of it walks, so a row without one is invisible to them. */}
         <span class="flags">
           <Show when={props.pending?.has(p.it.rel)}>
-            <span class="flag prop" title="the last run proposes a change here">
+            <span class="flag prop" title={t().tree.flagPending}>
               ●
             </span>
           </Show>
           <Show when={p.it.resized}>
-            <span class="flag rz" title="resized — post_image_dataset/resized has this image">
+            <span class="flag rz" title={t().tree.flagResized}>
               r
             </span>
           </Show>
           <Show when={p.it.mask}>
-            <span class="flag mask" title="has a mask">
+            <span class="flag mask" title={t().tree.flagMask}>
               😷
             </span>
           </Show>
@@ -251,7 +252,7 @@ export function DatasetTree(props: {
               return (
                 <button
                   classList={{ dot: true, [c.kind]: true, off: !present(), on: on(c.kind) }}
-                  title={`${c.hint} — ${present() ? "on disk" : "missing"}`}
+                  title={`${c.hint()} — ${present() ? t().tree.onDisk : t().tree.capMissing}`}
                   aria-label={c.label}
                   onClick={(e) => {
                     e.stopPropagation();
@@ -276,7 +277,7 @@ export function DatasetTree(props: {
           <>
             <div class="tn dir" onClick={() => toggle(`a:${a.name}`)}>
               <Twisty open={open(`a:${a.name}`, true)} />
-              <span class="tl">{a.name || "(root)"}</span>
+              <span class="tl">{a.name || t().tree.root}</span>
               <span class="tc">
                 {a.comps.length}g · {a.count}
               </span>
@@ -289,10 +290,10 @@ export function DatasetTree(props: {
                       class="tn grp"
                       style="padding-left:16px"
                       onClick={() => toggle(`c:${c.key}`)}
-                      title={`component ${c.id} — mean pairwise CLS cosine ${c.cos ?? "?"}`}
+                      title={t().tree.groupHint(c.id, c.cos ?? "?")}
                     >
                       <Twisty open={open(`c:${c.key}`)} />
-                      <span class="tl">group {c.id}</span>
+                      <span class="tl">{t().tree.group(c.id)}</span>
                       <span class="tc">
                         <Show when={c.cos !== null}>{c.cos!.toFixed(3)} · </Show>
                         {c.items.length}
@@ -311,7 +312,7 @@ export function DatasetTree(props: {
       <Show when={grouped().ungrouped.length}>
         <div class="tn dir" onClick={() => toggle("ungrouped")}>
           <Twisty open={open("ungrouped", false)} />
-          <span class="tl">ungrouped</span>
+          <span class="tl">{t().tree.ungrouped}</span>
           <span class="tc">{grouped().ungrouped.length}</span>
         </div>
         <Show when={open("ungrouped", false)}>
@@ -334,30 +335,33 @@ export function DatasetTree(props: {
       <Show when={!props.groupsError} fallback={<div class="err pad">{props.groupsError}</div>}>
         <Show
           when={g()}
-          fallback={<div class="dim pad">{props.groupsLoading ? "reading…" : ""}</div>}
+          fallback={<div class="dim pad">{props.groupsLoading ? t().tree.reading : ""}</div>}
         >
           {(m) => (
             <Show
               when={!m().missing}
               fallback={
                 <div class="dim pad">
-                  No <code>{m().path}</code> yet — run <b>Groups › Build groups</b> in the dock,
-                  then come back.
+                  {slots(t().tree.noManifest, (i) =>
+                    i === 0 ? <code>{m().path}</code> : <b>{t().tree.buildGroups}</b>,
+                  )}
                 </div>
               }
             >
               <Show when={m().stale}>
                 <div class="dim pad">
-                  <span class="warn">older manifest</span> — rebuild it to pick up the current
-                  grouping gate.
+                  <span class="warn">{t().tree.staleLabel}</span> {t().tree.staleHint}
                 </div>
               </Show>
               <Show when={!grouped().artists.length}>
                 <div class="dim pad">
-                  <code>{m().path}</code> clusters nothing in this listing
+                  {slots(t().tree.clustersNothing, () => (
+                    <code>{m().path}</code>
+                  ))}
                   <Show when={m().source_dir}>
-                    {" "}
-                    — it was built from <code>{m().source_dir}</code>
+                    {slots(t().tree.builtFrom, () => (
+                      <code>{m().source_dir}</code>
+                    ))}
                   </Show>
                   .
                 </div>
@@ -375,31 +379,31 @@ export function DatasetTree(props: {
         <div class="modes">
           <button
             classList={{ sel: props.mode === "tree" }}
-            title="The folders the dataset is stored in"
+            title={t().tree.modeTreeHint}
             onClick={() => props.onMode("tree")}
           >
-            tree
+            {t().tree.modeTree}
           </button>
           <button
             classList={{ sel: props.mode === "groups" }}
-            title="The near-twin components the Groups stage found"
+            title={t().tree.modeGroupsHint}
             onClick={() => props.onMode("groups")}
           >
-            groups
+            {t().tree.modeGroups}
           </button>
         </div>
         <span class="sp" />
-        <button title="Rescan the dataset" onClick={props.onRefresh}>
+        <button title={t().tree.rescan} onClick={props.onRefresh}>
           ↻
         </button>
-        <button title="Collapse the sidebar" onClick={props.onCollapse}>
+        <button title={t().tree.collapse} onClick={props.onCollapse}>
           ⟨
         </button>
       </div>
       <div class="treebar">
         <input
           type="text"
-          placeholder="filter…"
+          placeholder={t().tree.filter}
           value={props.query}
           onInput={(e) => props.onQuery(e.currentTarget.value)}
         />
@@ -408,19 +412,20 @@ export function DatasetTree(props: {
         <Show when={!props.error} fallback={<div class="err pad">{props.error}</div>}>
           <Show
             when={props.list}
-            fallback={<div class="dim pad">{props.loading ? "scanning…" : ""}</div>}
+            fallback={<div class="dim pad">{props.loading ? t().tree.scanning : ""}</div>}
           >
             {(l) => (
               <Show
                 when={!l().missing}
                 fallback={
                   <div class="dim pad">
-                    No <code>{l().root}</code> under the curation home. Point the roots at your
-                    dataset in ⚙ Settings.
+                    {slots(t().tree.noRoot, () => (
+                      <code>{l().root}</code>
+                    ))}
                   </div>
                 }
               >
-                <Show when={l().total} fallback={<div class="dim pad">No images match.</div>}>
+                <Show when={l().total} fallback={<div class="dim pad">{t().tree.noImages}</div>}>
                   <Show
                     when={props.mode === "groups"}
                     fallback={<FolderNode f={tree()} depth={0} />}
@@ -429,9 +434,7 @@ export function DatasetTree(props: {
                     <GroupView />
                   </Show>
                   <Show when={l().truncated}>
-                    <div class="dim pad">
-                      showing {l().items.length} of {l().total} — narrow it with the filter
-                    </div>
+                    <div class="dim pad">{t().tree.truncated(l().items.length, l().total)}</div>
                   </Show>
                 </Show>
               </Show>

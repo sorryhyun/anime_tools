@@ -1,5 +1,6 @@
 import { createResource, createSignal, For, Show } from "solid-js";
 import { api } from "../api";
+import { t } from "../i18n";
 import { Dialog } from "./Dialog";
 
 /** Home-relative folder/file browser over /api/ls. */
@@ -22,7 +23,7 @@ export function PathPicker(props: { open: boolean; onClose: (path: string | null
       }}
     >
       <div>
-        <b>Choose a path</b> <span class="dim">/{path()}</span>
+        <b>{t().picker.title}</b> <span class="dim">/{path()}</span>
       </div>
       <ul>
         <Show when={path()}>
@@ -48,9 +49,9 @@ export function PathPicker(props: { open: boolean; onClose: (path: string | null
         </For>
       </ul>
       <div class="dlg-actions">
-        <button value="cancel">Cancel</button>
+        <button value="cancel">{t().common.cancel}</button>
         <button value="ok" class="primary">
-          Use this folder
+          {t().picker.use}
         </button>
       </div>
     </Dialog>

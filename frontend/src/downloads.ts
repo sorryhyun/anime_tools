@@ -1,5 +1,6 @@
 import { batch, createSignal, onCleanup } from "solid-js";
 import { api, toStatus } from "./api";
+import { t } from "./i18n";
 import { createJobFollower } from "./state";
 import type { Job } from "./types";
 import type { Config } from "./config";
@@ -24,7 +25,7 @@ export function createDownloads(config: Config) {
     line: (line) => (line.trim() ? { text: line.trim(), state: "running" } : null),
     done: (job) => {
       dl$.setStatus({
-        text: job.state === "done" ? "download finished" : `exit ${job.exit_code}`,
+        text: job.state === "done" ? t().downloads.finished : t().runner.exit(job.exit_code),
         state: job.state,
       });
       void config.refetchInfo();
@@ -43,7 +44,7 @@ export function createDownloads(config: Config) {
   function follow(id: string, want: string[]) {
     batch(() => {
       setIds(want);
-      dl$.follow(id, { text: "starting…", state: "running" });
+      dl$.follow(id, { text: t().downloads.starting, state: "running" });
     });
   }
 

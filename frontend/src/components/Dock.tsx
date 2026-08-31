@@ -1,4 +1,5 @@
 import { For, Show, type JSX } from "solid-js";
+import { t } from "../i18n";
 import type { Stage } from "../types";
 
 /** The bottom dock: one button per panel, a drag handle for its height, and the
@@ -28,7 +29,7 @@ export function Dock(props: {
       style={{ "--dock-h": `${props.height}px` }}
     >
       <Show when={props.open}>
-        <div class="dockgrip" onPointerDown={props.onResize} title="Drag to resize" />
+        <div class="dockgrip" onPointerDown={props.onResize} title={t().common.dragToResize} />
       </Show>
       <div class="tabs stagetabs">
         <For each={props.panels}>
@@ -47,7 +48,7 @@ export function Dock(props: {
         </For>
         <span class="sp" />
         <Show when={props.busy}>
-          <span class="badge running">running</span>
+          <span class="badge running">{t().common.running}</span>
         </Show>
         <button class="link" onClick={props.onToggle}>
           {props.open ? "▾" : "▴"}

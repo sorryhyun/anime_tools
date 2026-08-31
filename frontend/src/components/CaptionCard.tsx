@@ -1,17 +1,14 @@
 import { createEffect, createResource, createSignal, For, on, Show } from "solid-js";
 import { api } from "../api";
+import { t } from "../i18n";
 import { CaptionDiff } from "./CaptionDiff";
 import { ClauseRow } from "./ClauseRow";
 import { Tag } from "./TagLens";
 import type { CaptionEntry, CaptionKind, Parsed, Proposal } from "../types";
 
-const LABEL: Record<CaptionKind, string> = { master: "master", derived: "derived" };
-const WHERE: Record<CaptionKind, string> = {
-  master: "hand-written; the stages only read it",
-  derived: "stage output; overwritten by the next correct/position run",
-};
-
-const count = (n: number, noun: string) => `${n} ${noun}${n === 1 ? "" : "s"}`;
+const label = (k: CaptionKind) => t().caption[k];
+const where = (k: CaptionKind) =>
+  k === "master" ? t().caption.whereMaster : t().caption.whereDerived;
 
 /** Debounce the live parse so a keystroke isn't a request. */
 function debounced<T>(source: () => T, ms: number) {
@@ -90,11 +87,7 @@ export function CaptionCard(props: {
     try {
       const saved = await api.saveCaption(props.rel, props.entry.kind, text());
       props.onSaved(saved);
-      setMsg({
-        text: saved.variants_stale
-          ? "saved — .variants.txt is now stale; re-run correct + the trainer's TE re-encode"
-          : "saved — follow with the trainer's TE re-encode",
-      });
+      setMsg({ text: saved.variants_stale ? t().caption.savedStale : t().caption.saved });
     } catch (e) {
       setMsg({ text: (e as Error).message, bad: true });
     } finally {
@@ -106,27 +99,32 @@ export function CaptionCard(props: {
     <div classList={{ card: true, sel: props.selected }} ref={card}>
       <div class="card-h">
         <span class={`dot ${props.entry.kind}`} />
-        <b>{LABEL[props.entry.kind]}</b>
+        <b>{label(props.entry.kind)}</b>
         <span class="dim path" title={props.entry.path}>
           {root()}
         </span>
         <Show when={!props.entry.exists}>
-          <span class="badge">new</span>
+          <span class="badge">{t().caption.new}</span>
         </Show>
         <span class="sp" />
         <button disabled={!dirty() || busy()} onClick={() => setText(props.entry.text)}>
-          Revert
+          {t().caption.revert}
         </button>
-        <button class="primary" disabled={!dirty() || busy()} title="⌘/Ctrl+Enter" onClick={save}>
-          Save
+        <button
+          class="primary"
+          disabled={!dirty() || busy()}
+          title={t().caption.saveHint}
+          onClick={save}
+        >
+          {t().caption.save}
         </button>
       </div>
-      <div class="dim hint">{WHERE[props.entry.kind]}</div>
+      <div class="dim hint">{where(props.entry.kind)}</div>
       <textarea
         classList={{ cap: true, dirty: dirty() }}
         spellcheck={false}
         value={text()}
-        placeholder={props.entry.exists ? "" : "no caption file yet — type one and save"}
+        placeholder={props.entry.exists ? "" : t().caption.empty}
         onInput={(e) => setText(e.currentTarget.value)}
         onKeyDown={(e) => {
           // The core loop is typing in here; saving must not need the mouse.
@@ -144,24 +142,22 @@ export function CaptionCard(props: {
         {(p) => (
           <CaptionDiff
             proposal={p()}
-            stage={props.proposalStage ?? "the last run"}
+            stage={props.proposalStage ?? t().diff.lastRun}
             stale={props.entry.text.trim() !== p().before.trim()}
           />
         )}
       </Show>
       <Show when={!props.proposal && props.dropped}>
-        <div class="dim hint">
-          diff dropped — the form changed since the run; Run again to recompute
-        </div>
+        <div class="dim hint">{t().caption.dropped}</div>
       </Show>
-      <Show when={parsed()} fallback={<div class="dim hint">no caption</div>}>
+      <Show when={parsed()} fallback={<div class="dim hint">{t().caption.noCaption}</div>}>
         {(pp) => (
           <div class="parsed">
             <div class="dim hint">
-              {count(pp().flat_tags.length, "tag")} · {count(pp().clauses.length, "clause")}
-              <Show when={dirty()}> · unsaved preview</Show>
+              {t().caption.tags(pp().flat_tags.length)} · {t().caption.clauses(pp().clauses.length)}
+              <Show when={dirty()}> · {t().caption.unsaved}</Show>
             </div>
-            <ClauseRow label="bag">
+            <ClauseRow label={t().caption.bag}>
               <For each={pp().flat_tags}>{(t) => <Tag tag={t} />}</For>
             </ClauseRow>
             <For each={pp().clauses}>

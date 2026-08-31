@@ -1,4 +1,5 @@
 import { Show } from "solid-js";
+import { t } from "../i18n";
 import type { DatasetList, Info } from "../types";
 import { HeaderMenu } from "./HeaderMenu";
 import type { SettingsTab } from "./SettingsDialog";
@@ -30,11 +31,7 @@ export function Header(props: {
         {props.info?.home}
       </span>
       <Show when={props.list}>
-        {(l) => (
-          <span class="dim">
-            {l().total} image{l().total === 1 ? "" : "s"} in {l().root}
-          </span>
-        )}
+        {(l) => <span class="dim">{t().header.images(l().total, l().root)}</span>}
       </Show>
       <span class="sp" />
       {/* A set token is a menu row; a missing one is a blocker, so it stays in
@@ -42,14 +39,14 @@ export function Header(props: {
       <Show when={!props.info?.hf_token}>
         <button
           class="link warn"
-          title="The tagger backbone and SAM3 are gated on the Hub — set a token in Settings"
+          title={t().header.noTokenHint}
           onClick={() => props.onSettings("models")}
         >
-          ⚠ no HF token
+          {t().header.noToken}
         </button>
       </Show>
       <Show when={props.downloading}>
-        <span class="badge running">downloading</span>
+        <span class="badge running">{t().common.downloading}</span>
       </Show>
     </header>
   );

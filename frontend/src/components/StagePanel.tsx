@@ -1,4 +1,5 @@
 import { createMemo, For, Show } from "solid-js";
+import { t } from "../i18n";
 import { StageForm } from "./StageForm";
 import { HelpToggle } from "./HelpToggle";
 import { StatusLine } from "./StatusLine";
@@ -66,8 +67,7 @@ export function StagePanel(props: {
   const scoped = createMemo(() => !!cur()?.scoped);
   const noImage = createMemo(() => !props.rel);
   const off = createMemo(() => props.busy || !!props.locked || !cur()?.available);
-  const aim = () => (props.rel ? `just ${props.rel}` : "select an image in the sidebar first");
-  const batchTitle = () => "every image the Settings path_pattern names";
+  const aim = () => (props.rel ? t().stage.aim(props.rel) : t().stage.noImage);
 
   return (
     <div class="stagepanel">
@@ -91,14 +91,10 @@ export function StagePanel(props: {
           <Show when={props.missingModels?.length}>
             <button
               class="link warn"
-              title={
-                `Not downloaded yet: ${props.missingModels!.join(", ")}. ` +
-                "The first Run fetches them itself — this only moves the wait to a moment you pick."
-              }
+              title={t().stage.missingModelsHint(props.missingModels!.join(", "))}
               onClick={props.onSettings}
             >
-              ↓ {props.missingModels!.length} model{props.missingModels!.length === 1 ? "" : "s"}{" "}
-              missing
+              {t().stage.missingModels(props.missingModels!.length)}
             </button>
           </Show>
           <HelpToggle open={props.help} warn={!!cur()?.notes} onToggle={props.onHelp} />
@@ -111,25 +107,25 @@ export function StagePanel(props: {
               title={aim()}
               onClick={() => props.onRun(props.rel ?? null)}
             >
-              Run
+              {t().stage.run}
             </button>
           </Show>
           <button
             classList={{ primary: !scoped() && !cur()?.apply }}
             disabled={off()}
-            title={batchTitle()}
+            title={t().stage.batchHint}
             onClick={() => props.onRun(null)}
           >
-            {scoped() ? "Run batch" : "Run"}
+            {scoped() ? t().stage.runBatch : t().stage.run}
           </button>
           <Show when={cur()?.apply}>
             <button
               class="primary"
               disabled={off() || !!props.applyBlocked}
-              title={props.applyBlocked || "write what the run proposed"}
+              title={props.applyBlocked || t().stage.applyHint}
               onClick={props.onApply}
             >
-              Apply
+              {t().stage.apply}
             </button>
           </Show>
 
@@ -140,30 +136,28 @@ export function StagePanel(props: {
             fallback={
               <button
                 disabled={!!props.undoBlocked}
-                title={props.undoBlocked || "put back the captions the last Apply wrote"}
+                title={props.undoBlocked || t().stage.undoHint}
                 onClick={props.onUndo}
               >
-                Undo
+                {t().stage.undo}
               </button>
             }
           >
-            <button onClick={props.onCancel}>Cancel</button>
+            <button onClick={props.onCancel}>{t().stage.cancel}</button>
           </Show>
 
           <StatusLine status={props.status} />
         </div>
 
         <div class="stageform">
-          <Show when={cur()} fallback={<div class="dim pad">No stages.</div>}>
+          <Show when={cur()} fallback={<div class="dim pad">{t().stage.noStages}</div>}>
             {(s) => (
               <Show
                 when={s().available}
                 fallback={
                   <div class="doc">
-                    {s().title} is unavailable: {s().error}
-                    {
-                      '\n\nReinstall:  uv tool install --force "anime-tools @ git+https://github.com/sorryhyun/anime_tools"'
-                    }
+                    {t().stage.unavailable(s().title, s().error ?? "")}
+                    {`\n\n${t().stage.reinstall}  uv tool install --force "anime-tools @ git+https://github.com/sorryhyun/anime_tools"`}
                   </div>
                 }
               >

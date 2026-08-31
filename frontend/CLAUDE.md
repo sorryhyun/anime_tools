@@ -57,11 +57,25 @@ Plus **`downloads.ts`** (a weights fetch: the same job slot, but it reports into
 the Settings dialog rather than the dock) and **`state.ts`**, the two primitives
 that outlive a render: `persisted` and `createJobFollower`.
 
+**`i18n.ts`** is the GUI's own text, in `en` / `ko` / `ja` / `zh`. `en` is the
+schema (`type Dict = typeof en`), so every other locale is checked key-for-key
+and arity-for-arity by `tsc` — a missing string is a build error, never a blank
+label. `t()` reads the locale signal, which is why `t().…` inside JSX re-renders
+on a switch and why it is never hoisted into a `const` outside a component. A
+message with markup in the middle of it (a `<code>`, a link) stays one string
+with `{0}` slots and is rendered through `slots()`, so translators never see a
+tag and word order is theirs; every locale must spell the same slots.
+
 `api.ts` is the only place a URL is spelled; `types.ts` mirrors the server's
 dicts and says which module writes each one.
 
 ## Conventions
 
+- **Every user-facing string comes from `i18n.ts`.** A literal in a component
+  ships as English to four languages. Server-owned text is the exception and is
+  *not* re-typed here either: stage titles, field labels, argparse help and the
+  model catalog's rows are rendered as they arrive, and captions, tags and paths
+  are data.
 - **Never split a caption in the browser.** Clause structure comes from the
   server (`/api/dataset/item`, `/api/dataset/parse`) — the grammar has one
   implementation, in `anime_tools/captions/`. No `split(",")`, ever.

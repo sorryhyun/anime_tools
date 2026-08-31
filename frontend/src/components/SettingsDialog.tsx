@@ -1,5 +1,6 @@
 import { createEffect, createMemo, createSignal, For, on, Show } from "solid-js";
 import { createStore, reconcile, unwrap } from "solid-js/store";
+import { slots, t } from "../i18n";
 import { REPORT_SETTING } from "../types";
 import type {
   DatasetRoots,
@@ -20,13 +21,7 @@ import { StatusLine } from "./StatusLine";
 /** The dataset trees, in the order the dialog lists them: input, then the three
     the workspace owns, then the tree Export publishes to. */
 export const ROOT_NAMES: RootName[] = ["src", "master", "dst", "masks", "out"];
-const ROOT_HELP: Record<RootName, string> = {
-  src: "input — source images + hand-written master captions; never written",
-  master: "workspace — revised master captions",
-  dst: "workspace — resized images + derived captions + .variants.txt",
-  masks: "workspace — {stem}_mask.png, mirroring the source subdirs",
-  out: "output — where Export publishes; the tree the trainer reads",
-};
+const rootHelp = (n: RootName) => t().settings.rootHelp[n];
 
 /** One `label / input / hint` row of a `.kv` grid.
  *
@@ -57,7 +52,7 @@ function SettingRow(props: {
         <div classList={{ pathrow: !!props.onPick }}>
           <input type="text" ref={props.ref} value={props.value} placeholder={props.placeholder} />
           <Show when={props.onPick}>
-            <button type="button" title="Browse (home-relative)" onClick={() => props.onPick!()}>
+            <button type="button" title={t().common.browse} onClick={() => props.onPick!()}>
               …
             </button>
           </Show>
@@ -70,12 +65,8 @@ function SettingRow(props: {
 
 /** The Settings dialog's panels. One flat form was getting long enough that the
     roots you edit once a year sat above the download buttons you press weekly. */
-export const SETTINGS_TABS = [
-  ["general", "General"],
-  ["advanced", "Advanced"],
-  ["models", "Models"],
-] as const;
-export type SettingsTab = (typeof SETTINGS_TABS)[number][0];
+export const SETTINGS_TABS = ["general", "advanced", "models"] as const;
+export type SettingsTab = (typeof SETTINGS_TABS)[number];
 
 export interface SettingsOut {
   token: string | null;
@@ -152,7 +143,8 @@ export function SettingsDialog(props: {
         open={props.open}
         class="settings"
         onClose={(v) => {
-          const t = tokenEl.value.trim();
+          // Not `t`: that is the message table, which this callback is inside.
+          const token = tokenEl.value.trim();
           tokenEl.value = "";
           if (v !== "ok") return props.onClose(null);
           const picked = Object.fromEntries(
@@ -166,7 +158,7 @@ export function SettingsDialog(props: {
           const defChanged = defKeys.some((k) => defaults[k] !== (props.defaults[k] ?? ""));
           const preChanged = JSON.stringify(unwrap(pre)) !== JSON.stringify(props.preprocessValues);
           props.onClose({
-            token: t || null,
+            token: token || null,
             roots: changed ? picked : null,
             defaults: defChanged ? defaults : null,
             preprocess: preChanged ? { ...unwrap(pre) } : null,
@@ -179,10 +171,15 @@ export function SettingsDialog(props: {
           submits the <form method="dialog"> and closes it, which is exactly
           what the x wants, so it is a plain `value="cancel"` submitter. */}
         <h3 class="dlgh">
-          Settings
+          {t().settings.title}
           <HelpToggle open={props.help} onToggle={props.onHelp} />
           <span class="sp" />
-          <button value="cancel" class="dlgx" title="Close" aria-label="Close">
+          <button
+            value="cancel"
+            class="dlgx"
+            title={t().common.close}
+            aria-label={t().common.close}
+          >
             ×
           </button>
         </h3>
@@ -191,9 +188,9 @@ export function SettingsDialog(props: {
           their refs on Save, so a hidden panel still has to be there to read. */}
         <nav class="dlg-tabs">
           <For each={SETTINGS_TABS}>
-            {([id, label]) => (
+            {(id) => (
               <button type="button" classList={{ on: tab() === id }} onClick={() => setTab(id)}>
-                {label}
+                {t().settings.tabs[id]}
                 <Show when={id === "models" && missing().length}>
                   <span class="badge miss">{missing().length}</span>
                 </Show>
@@ -204,17 +201,18 @@ export function SettingsDialog(props: {
 
         <div classList={{ spane: true, hide: tab() !== "general" }}>
           <div class="kv">
-            <b>Home</b>
+            <b>{t().settings.home}</b>
             <span class="mono">{props.info?.home}</span>
-            <b>Models dir</b>
+            <b>{t().settings.modelsDir}</b>
             <span class="mono">{props.info?.models_dir}</span>
           </div>
 
-          <h4>Dataset roots</h4>
+          <h4>{t().settings.roots}</h4>
           <Show when={props.help}>
             <p class="dim" style="margin:0 0 8px">
-              Relative to the curation home; the trees are joined by the same relative path. The
-              tools only ever write the workspace — <code>out</code> is Export's alone.
+              {slots(t().settings.rootsHelp, () => (
+                <code>out</code>
+              ))}
             </p>
           </Show>
           <div class="kv">
@@ -228,7 +226,7 @@ export function SettingsDialog(props: {
                     value={current(n)?.path ?? props.roots?.defaults[n] ?? ""}
                     placeholder={props.roots?.defaults[n]}
                     err={gone()}
-                    hint={(gone() ? "missing — " : "") + ROOT_HELP[n]}
+                    hint={(gone() ? t().settings.rootMissing : "") + rootHelp(n)}
                     onPick={() => setPicking(n)}
                   />
                 );
@@ -238,16 +236,14 @@ export function SettingsDialog(props: {
         </div>
 
         <div classList={{ spane: true, hide: tab() !== "advanced" }}>
-          <h4>Stage defaults</h4>
+          <h4>{t().settings.stageDefaults}</h4>
           <Show when={props.help}>
             <p class="dim" style="margin:0 0 8px">
-              Filled into every stage that takes them, so no stage form re-asks. Leave one blank for
-              the CLI's own default. <code>--device</code> is not here on purpose: each stage
-              auto-detects it. <code>report_root</code> is the one knob with no flag of its own:
-              each stage keeps its own directory under it (<code>captions/autotag</code>,{" "}
-              <code>groups/groups.json</code>), so moving the root moves them all without ever
-              pointing two stages at one report — and the curated audit apply reads the audit's
-              report back out of it.
+              {slots(t().settings.stageDefaultsHelp, (i) => (
+                <code>
+                  {["--device", "report_root", "captions/autotag", "groups/groups.json"][i]}
+                </code>
+              ))}
             </p>
           </Show>
           <div class="kv">
@@ -267,7 +263,7 @@ export function SettingsDialog(props: {
               ref={(el) => (defEls[REPORT_SETTING] = el)}
               value={props.defaults[REPORT_SETTING] ?? ""}
               placeholder={props.roots?.report_root}
-              hint="where every stage's report.json lands — blank = beside the dst root"
+              hint={t().settings.reportRootHint}
             />
           </div>
 
@@ -277,9 +273,10 @@ export function SettingsDialog(props: {
                 <h4>{pre_().title}</h4>
                 <Show when={props.help}>
                   <p class="dim" style="margin:0 0 8px">
-                    {pre_().notes} Runs over the same images the stage does, so a per-image Apply
-                    resizes just that image. Already-current images are skipped, so a re-run is
-                    near-free. Tiers must match the trainer's <code>target_res</code>.
+                    {pre_().notes}{" "}
+                    {slots(t().settings.preprocessHelp, () => (
+                      <code>target_res</code>
+                    ))}
                   </p>
                 </Show>
                 <div class="twoup">
@@ -302,32 +299,27 @@ export function SettingsDialog(props: {
         </div>
 
         <div classList={{ spane: true, hide: tab() !== "models" }}>
-          <h4>Hugging Face</h4>
+          <h4>{t().settings.hf}</h4>
           <div class="kv">
-            <b>Token</b>
+            <b>{t().settings.token}</b>
             <span>
-              {props.info?.hf_token ? "present" : "missing"}
+              {props.info?.hf_token ? t().common.present : t().common.missing}
               <input
                 ref={tokenEl}
                 type="password"
-                placeholder="hf_… (stored by huggingface_hub, never shown again)"
+                placeholder={t().settings.tokenPlaceholder}
                 style="margin-top:4px"
               />
               <Show when={props.help}>
-                <span class="dim">
-                  The tagger backbone and SAM3 weights are gated on the Hub — a token with read
-                  access is needed on first run.
-                </span>
+                <span class="dim">{t().settings.tokenHelp}</span>
               </Show>
             </span>
           </div>
 
-          <h4>Models</h4>
+          <h4>{t().settings.models}</h4>
           <Show when={props.help}>
             <p class="dim" style="margin:0 0 8px">
-              Every stage fetches what it needs on first use — these buttons only move the wait, and
-              any gated-repo refusal, to a moment you picked. A download runs as a job: one at a
-              time, and it reports here, not in the stage bar, so this dialog can stay open over it.
+              {t().settings.modelsHelp}
             </p>
           </Show>
           <div class="models">
@@ -349,12 +341,12 @@ export function SettingsDialog(props: {
               onClick={() => props.onDownload([])}
             >
               {missing().length
-                ? `Download all ${missing().length} missing`
-                : "Every model is installed"}
+                ? t().settings.downloadAll(missing().length)
+                : t().settings.allInstalled}
             </button>
             <Show when={props.downloading}>
               <button type="button" onClick={props.onCancelDownload}>
-                Cancel
+                {t().common.cancel}
               </button>
             </Show>
             <Show when={props.progress.text}>
@@ -365,7 +357,7 @@ export function SettingsDialog(props: {
 
         <div class="dlg-actions">
           <button value="ok" class="primary">
-            Save
+            {t().common.save}
           </button>
         </div>
       </Dialog>
@@ -406,7 +398,11 @@ function ModelRow(props: {
               miss: !props.active && !props.m.installed,
             }}
           >
-            {props.active ? "downloading" : props.m.installed ? "installed" : "missing"}
+            {props.active
+              ? t().common.downloading
+              : props.m.installed
+                ? t().common.installed
+                : t().common.missing}
           </span>
         </span>
         <span class="dim mono" title={props.m.location}>
@@ -420,16 +416,20 @@ function ModelRow(props: {
         </Show>
         <Show when={props.m.gated}>
           <span class="dim wrap">
-            Gated —{" "}
-            <a href={props.m.gated} target="_blank" rel="noreferrer">
-              accept the terms
-            </a>{" "}
-            with the same account as the token above.
+            {slots(t().settings.gated, () => (
+              <a href={props.m.gated} target="_blank" rel="noreferrer">
+                {t().settings.gatedLink}
+              </a>
+            ))}
           </span>
         </Show>
       </div>
       <button type="button" disabled={props.busy} onClick={() => props.onDownload([props.m.id])}>
-        {props.active ? "downloading…" : props.m.installed ? "Re-download" : "Download"}
+        {props.active
+          ? t().settings.downloadingRow
+          : props.m.installed
+            ? t().settings.redownload
+            : t().settings.download}
       </button>
     </div>
   );

@@ -1,4 +1,5 @@
-import { createSignal, onCleanup, onMount, Show } from "solid-js";
+import { createSignal, For, onCleanup, onMount, Show } from "solid-js";
+import { locale, localeName, LOCALES, setLocale, t } from "../i18n";
 import type { SettingsTab } from "./SettingsDialog";
 
 /** The ☰ menu: everything that is about the app rather than about the dataset
@@ -44,24 +45,44 @@ export function HeaderMenu(props: {
 
   return (
     <div class="hmenu">
-      <button class="link fold" title="Settings and status" onClick={() => setOpen(!open())}>
+      <button class="link fold" title={t().menu.open} onClick={() => setOpen(!open())}>
         ☰
       </button>
       <Show when={open()}>
         <div class="hmenu-pop" role="menu">
-          <button onClick={pick(() => props.onSettings("general"))}>⚙ Settings…</button>
-          <button onClick={pick(() => props.onSettings("advanced"))}>Advanced</button>
-          <button onClick={pick(() => props.onSettings("models"))}>Models &amp; weights</button>
+          <button onClick={pick(() => props.onSettings("general"))}>{t().menu.settings}</button>
+          <button onClick={pick(() => props.onSettings("advanced"))}>{t().menu.advanced}</button>
+          <button onClick={pick(() => props.onSettings("models"))}>{t().menu.models}</button>
           <hr />
           <button onClick={pick(() => props.onSettings("models"))}>
-            <span>HF token</span>
-            <span class={props.hasToken ? "ok" : "warn"}>{props.hasToken ? "✓" : "⚠ not set"}</span>
+            <span>{t().menu.hfToken}</span>
+            <span class={props.hasToken ? "ok" : "warn"}>
+              {props.hasToken ? "✓" : t().menu.notSet}
+            </span>
           </button>
           <hr />
           <button onClick={pick(props.onHelp)}>
-            <span>Show explanations</span>
-            <span class={props.help ? "ok" : "dim"}>{props.help ? "on" : "off"}</span>
+            <span>{t().menu.showHelp}</span>
+            <span class={props.help ? "ok" : "dim"}>
+              {props.help ? t().common.on : t().common.off}
+            </span>
           </button>
+          <hr />
+          {/* The one row that is not a command: the language buttons switch in
+              place and deliberately leave the menu open, so the label you just
+              picked can be read in its own language before it closes. */}
+          <div class="hmenu-lang">
+            <span>{t().menu.language}</span>
+            <span>
+              <For each={LOCALES}>
+                {(l) => (
+                  <button classList={{ on: locale() === l }} lang={l} onClick={() => setLocale(l)}>
+                    {localeName(l)}
+                  </button>
+                )}
+              </For>
+            </span>
+          </div>
         </div>
       </Show>
     </div>

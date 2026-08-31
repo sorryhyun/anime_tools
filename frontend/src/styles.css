@@ -10,8 +10,14 @@
 }
 
 /* Pretendard leads; the subset stops at Hangul, so Han (JA/ZH) and emoji fall
-   back to the system families -- the same cascade anima_lora's Qt theme uses. */
-:root { --font-ui:Pretendard,"Apple SD Gothic Neo","Malgun Gothic","Noto Sans CJK KR",system-ui,sans-serif,"Apple Color Emoji","Segoe UI Emoji","Noto Color Emoji"; --font-mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; --bg:#14161a; --panel:#1c1f25; --line:#2a2e36; --fg:#e6e6e6; --dim:#8b919c; --accent:#7aa2f7; --ok:#9ece6a; --warn:#e0af68; --err:#f7768e; --sel:#262b35; --input:#0f1115; }
+   back to the system families -- the same cascade anima_lora's Qt theme uses.
+   The UI itself is translated (src/i18n.ts), so the JA and ZH faces are named
+   here rather than left to `sans-serif`: without them a Windows browser draws
+   the interface in whatever sans it happens to have, which may carry no kana
+   at all. Hangul first, then Japanese, then Simplified Chinese -- one stack,
+   not a rule per language, because a single page mixes them (a Korean UI over
+   a Japanese path). */
+:root { --font-ui:Pretendard,"Apple SD Gothic Neo","Malgun Gothic","Noto Sans CJK KR","Hiragino Sans","Yu Gothic UI","Meiryo","Noto Sans CJK JP","PingFang SC","Microsoft YaHei","Noto Sans CJK SC",system-ui,sans-serif,"Apple Color Emoji","Segoe UI Emoji","Noto Color Emoji"; --font-mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; --bg:#14161a; --panel:#1c1f25; --line:#2a2e36; --fg:#e6e6e6; --dim:#8b919c; --accent:#7aa2f7; --ok:#9ece6a; --warn:#e0af68; --err:#f7768e; --sel:#262b35; --input:#0f1115; }
 * { box-sizing:border-box }
 body { margin:0; font:14px/1.45 var(--font-ui); background:var(--bg); color:var(--fg); height:100vh; overflow:hidden }
 /* Dataset first: sidebar tree | item view, with the stage runner docked below
@@ -30,6 +36,14 @@ header button.fold:hover { color:var(--fg) }
 .hmenu-pop button { display:flex; align-items:center; justify-content:space-between; gap:14px; background:none; border:0; border-radius:5px; padding:6px 9px; font-size:13px }
 .hmenu-pop button:hover { background:var(--sel) }
 .hmenu-pop hr { border:0; border-top:1px solid var(--line); margin:4px 2px; width:100% }
+/* The language row is the one menu item that is not a command: its buttons
+   switch in place, so they are a chip strip inside the row rather than four
+   more rows that each close the menu. */
+.hmenu-lang { display:flex; flex-direction:column; align-items:stretch; gap:5px; padding:6px 9px; font-size:13px }
+.hmenu-lang > span:last-child { display:flex; flex-wrap:wrap; gap:3px }
+.hmenu-lang button { background:none; border:0; border-radius:5px; padding:3px 6px; font-size:12px; color:var(--dim); white-space:nowrap }
+.hmenu-lang button:hover { background:var(--sel); color:var(--fg) }
+.hmenu-lang button.on { color:var(--accent); background:var(--sel) }
 body.nosidebar #root { grid-template-columns:0 1fr }
 body.nosidebar aside { display:none }
 /* The other half of the fold: the tree's own ⟨ closes it, this rail button on
@@ -128,6 +142,10 @@ main { grid-column:2; grid-row:2; display:grid; grid-template-rows:auto minmax(0
 .card.sel { border-color:var(--accent) }
 .card-h { display:flex; align-items:center; gap:8px }
 .card-h .path { font-family:var(--font-mono); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:34ch }
+/* The path is the only part of a card header that may shrink: the badge and
+   the two buttons carry translated words (「元に戻す」, "되돌리기"), which flex
+   would otherwise break onto a second line one character at a time. */
+.card-h .badge, .card-h button { flex:none; white-space:nowrap }
 .hint { font-size:12px; margin:4px 0 }
 textarea.cap { min-height:78px; font:13px/1.5 var(--font-mono); margin-top:6px }
 .parsed { margin-top:6px }

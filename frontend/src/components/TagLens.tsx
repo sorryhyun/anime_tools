@@ -1,5 +1,6 @@
 import { createResource, createSignal, onCleanup, onMount, Show } from "solid-js";
 import { api } from "../api";
+import { t } from "../i18n";
 
 /** Click a tag chip anywhere -- the caption's bag, a clause, a proposed diff --
     and ask the Danbooru KB what it means. The trainer's Qt GUI answers this
@@ -16,7 +17,7 @@ export function Tag(props: { tag: string; class?: string; prefix?: string }) {
     <button
       type="button"
       class={`tag${props.class ? " " + props.class : ""}`}
-      title={`What is "${props.tag}"?`}
+      title={t().tag.what(props.tag)}
       onClick={(e) => {
         const r = e.currentTarget.getBoundingClientRect();
         setTarget({ tag: props.tag, x: r.left, y: r.bottom });
@@ -72,53 +73,45 @@ export function TagLens(props: { onInstall: () => void }) {
 
   return (
     <Show when={target()}>
-      {(t) => (
+      {(tgt) => (
         <div class="taglens" style={pos()}>
           <div class="card-h">
-            <b class="mono">{info()?.name ?? t().tag}</b>
+            <b class="mono">{info()?.name ?? tgt().tag}</b>
             <Show when={info()?.kind}>
               <span class="badge">{info()!.kind}</span>
             </Show>
             <Show when={info()?.post_count}>
-              <span class="dim">{info()!.post_count!.toLocaleString()} posts</span>
+              <span class="dim">{t().tag.posts(info()!.post_count!.toLocaleString())}</span>
             </Show>
             <span class="sp" />
-            <button type="button" class="link" title="Close (Esc)" onClick={close}>
+            <button type="button" class="link" title={t().tag.close} onClick={close}>
               ✕
             </button>
           </div>
-          <Show when={!info.loading} fallback={<div class="dim hint">looking it up…</div>}>
+          <Show when={!info.loading} fallback={<div class="dim hint">{t().tag.looking}</div>}>
             <Show
               when={info()?.installed}
               fallback={
                 <div class="hint">
-                  The Danbooru tag KB is not downloaded. It is what caption correction types tags
-                  against — and what this panel reads.{" "}
+                  {t().tag.notInstalled}{" "}
                   <button type="button" class="link" onClick={props.onInstall}>
-                    Get it in Settings › Models
+                    {t().tag.getIt}
                   </button>
                 </div>
               }
             >
-              <Show
-                when={info()?.known}
-                fallback={
-                  <div class="dim hint">
-                    not a Danbooru tag — an Anima quality tag, a position phrase, or a typo.
-                  </div>
-                }
-              >
+              <Show when={info()?.known} fallback={<div class="dim hint">{t().tag.unknown}</div>}>
                 <Show when={info()?.category_path}>
                   <div class="tlcat">[{info()!.category_path}]</div>
                 </Show>
                 <Show
                   when={info()?.description}
-                  fallback={<div class="dim hint">no wiki description for this tag.</div>}
+                  fallback={<div class="dim hint">{t().tag.noDescription}</div>}
                 >
                   <div class="tlbody">{info()!.description}</div>
                 </Show>
                 <Show when={info()?.exact === false}>
-                  <div class="dim hint">matched as “{info()!.name}”.</div>
+                  <div class="dim hint">{t().tag.matchedAs(info()!.name ?? "")}</div>
                 </Show>
               </Show>
             </Show>

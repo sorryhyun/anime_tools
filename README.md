@@ -81,6 +81,12 @@ Download button that runs `python -m anime_tools.downloads` as an ordinary job
 (so it shares the one slot with the stages and streams into the same bar).
 Nothing has to be pre-fetched — every loader still fetches on first use; the
 buttons only move the wait, and any gated-repo refusal, to a moment you picked.
+The panel speaks **English, Korean, Japanese and Chinese**: the ☰ menu's
+*Language* row switches it in place, and a first visit follows the browser's own
+language list. Only the GUI's own chrome is translated — a stage's title, its
+form fields and their help text come from that CLI's `--help` and stay in
+English, and captions, tags and paths are data, never translated.
+
 FastAPI + uvicorn are plain dependencies; the trainer's own PySide6 GUI remains
 the rich editor.
 
