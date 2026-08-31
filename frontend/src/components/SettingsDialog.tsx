@@ -151,12 +151,18 @@ export function SettingsDialog(props: {
         });
       }}
     >
-      {/* `type=button`, like the model rows: every other button in here submits
-          the <form method="dialog"> and closes it. */}
+      {/* The (?) sits against the title, because it explains *this* dialog; the
+          x is pushed to the far corner, because it leaves it. HelpToggle is
+          `type=button`, like the model rows -- every other button in here
+          submits the <form method="dialog"> and closes it, which is exactly
+          what the x wants, so it is a plain `value="cancel"` submitter. */}
       <h3 class="dlgh">
         Settings
-        <span class="sp" />
         <HelpToggle open={props.help} onToggle={props.onHelp} />
+        <span class="sp" />
+        <button value="cancel" class="dlgx" title="Close" aria-label="Close">
+          ×
+        </button>
       </h3>
 
       {/* Every panel stays mounted -- the inputs are uncontrolled and read off
@@ -332,7 +338,6 @@ export function SettingsDialog(props: {
       </div>
 
       <div class="dlg-actions">
-        <button value="cancel">Close</button>
         <button value="ok" class="primary">
           Save
         </button>

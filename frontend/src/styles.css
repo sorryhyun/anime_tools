@@ -171,6 +171,12 @@ button.help.on { color:var(--fg); border-color:var(--accent) }
 button.help.warn { color:var(--warn); border-color:var(--warn) }
 button.help.warn:hover { border-color:var(--accent) }
 .dlgh { display:flex; align-items:center; gap:8px }
+/* The dialog's x: a borderless glyph in the corner, so it reads as chrome
+   rather than as one more button competing with Save. It carries the error hue
+   -- muted at rest so the corner stays quiet, full --err under the pointer --
+   because leaving is the one thing in here that drops what you typed. */
+.dlgx { width:24px; height:24px; flex:none; padding:0; background:none; border:0; border-radius:5px; color:#a35c69; font-size:18px; line-height:1 }
+.dlgx:hover { background:#f7768e1f; color:var(--err) }
 .reuse { display:flex; gap:8px; align-items:flex-start; max-width:520px; margin:0 0 10px; font-size:12px; color:var(--dim) }
 .reuse input { margin-top:2px; flex:none }
 .reuse code { color:var(--fg) }
