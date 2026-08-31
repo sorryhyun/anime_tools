@@ -1,6 +1,7 @@
 # Workspace + Export
 
-Status: **Phases 1, 3 and 5 done**, 2026-08-31. Phases 4 and 2 pending, in that order. Reframes the curation side around a
+Status: **Phases 1, 3 and 5 done**, 2026-08-31. Phases 4 and 2 pending, in that order.
+Reframes the curation side around a
 **workspace** the tools own, and an explicit **Export** that publishes from it.
 
 ## The idea

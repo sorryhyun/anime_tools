@@ -8,5 +8,7 @@ index.html
 # table and design/boards can quote line-for-line. Prettier expands it 5x.
 src/styles.css
 
-# Hand-wrapped prose; prettier normalises emphasis markers (*x* -> _x_) for no gain.
+# `scripts/wrap_md.py` owns markdown instead (pre-commit runs it): prettier's
+# `proseWrap` is a greedy fill, so editing one sentence re-wraps every line after
+# it, and it renames emphasis markers (*x* -> _x_) for no gain. See CLAUDE.md.
 *.md

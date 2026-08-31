@@ -1,15 +1,16 @@
 #!/usr/bin/env sh
-# Format what is about to be committed: ruff for Python, prettier for the frontend.
+# Format what is about to be committed: ruff for Python, prettier for the
+# frontend, scripts/wrap_md.py for markdown prose.
 #
 # Installed by pointing git at this directory (`make hooks` -> core.hooksPath), so
 # it is versioned with the repo rather than copied into .git/hooks. Bypass one
 # commit with `git commit --no-verify`.
 #
 # Only *staged* files are touched, and the hook never blocks a commit over
-# formatting: `ruff format` and prettier are semantics-preserving rewrites, so
-# whatever they change is re-staged for you. The one case worth reading the
-# output for is a file that also had *unstaged* edits -- re-staging it puts
-# those edits in the commit too, so the hook names them on the way past.
+# formatting: `ruff format`, prettier and wrap_md are semantics-preserving
+# rewrites, so whatever they change is re-staged for you. The one case worth
+# reading the output for is a file that also had *unstaged* edits -- re-staging
+# it puts those edits in the commit too, so the hook names them on the way past.
 set -eu
 
 cd "$(git rev-parse --show-toplevel)"
@@ -19,10 +20,11 @@ staged=$(git -c core.quotePath=false diff --cached --name-only --diff-filter=ACM
 
 py=$(printf '%s\n' "$staged" | grep -E '\.py$' || true)
 fe=$(printf '%s\n' "$staged" | grep -E '^frontend/.*\.(ts|tsx|js|jsx|mjs|cjs|css|json|html)$' || true)
-[ -n "$py$fe" ] || exit 0
+md=$(printf '%s\n' "$staged" | grep -E '\.md$' | grep -v '^frontend/node_modules/' || true)
+[ -n "$py$fe$md" ] || exit 0
 
 # Fingerprint every candidate now; whatever changes hash is what a formatter rewrote.
-targets=$(printf '%s\n' "$py" "$fe" | grep -v '^$' || true)
+targets=$(printf '%s\n' "$py" "$fe" "$md" | grep -v '^$' || true)
 before=$(printf '%s\n' "$targets" | while IFS= read -r f; do
 	printf '%s %s\n' "$(git hash-object -- "$f")" "$f"
 done)
@@ -70,6 +72,25 @@ if [ -n "$fe" ]; then
 '; set -f; set -- $rel; IFS=$oldifs; set +f
 		# shellcheck disable=SC2086
 		(cd frontend && "$BUN" run --silent prettier --write --log-level warn -- "$@") || fail=1
+	fi
+fi
+
+if [ -n "$md" ]; then
+	# Prose only: the wrapper splits a line over the cap at a sentence or clause
+	# boundary and never joins two, so it leaves fenced code, tables and anything
+	# already short exactly as found. `tests/test_doc_width.py` is the same call.
+	if [ -x .venv/bin/python ]; then PY=.venv/bin/python
+	elif [ -x .venv/Scripts/python.exe ]; then PY=.venv/Scripts/python.exe
+	elif command -v python3 >/dev/null 2>&1; then PY=python3
+	else PY=""; fi
+
+	if [ -z "$PY" ]; then
+		echo "pre-commit: no python found, skipping markdown wrapping" >&2
+	else
+		oldifs=$IFS; IFS='
+'; set -f; set -- $md; IFS=$oldifs; set +f
+		# shellcheck disable=SC2086
+		$PY scripts/wrap_md.py -- "$@" >/dev/null || fail=1
 	fi
 fi
 

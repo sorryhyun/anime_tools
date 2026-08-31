@@ -1,8 +1,10 @@
 # frontend/CLAUDE.md
 
 Guidance for Claude Code when working in `frontend/` — the source of the GUI's
-single committed bundle. The server half is `anime_tools/gui/`; the root
-`CLAUDE.md` describes how the two meet.
+single committed bundle. The server half is `anime_tools/gui/`, and the split is
+also how these two files divide: the root `CLAUDE.md` owns the **seam** (what
+the server sends, which routes exist, what is bound where), and everything about
+how the browser half is built is here and not repeated there.
 
 ## What this is
 
@@ -57,8 +59,11 @@ Plus **`downloads.ts`** (a weights fetch: the same job slot, but it reports into
 the Settings dialog rather than the dock) and **`state.ts`**, the two primitives
 that outlive a render: `persisted` and `createJobFollower`.
 
-**`i18n.ts`** is the GUI's own text, in `en` / `ko` / `ja` / `zh`. `en` is the
-schema (`type Dict = typeof en`), so every other locale is checked key-for-key
+**`i18n/`** is the GUI's own text, one file per language — `en.ts` / `ko.ts` /
+`ja.ts` / `zh.ts`, with `index.ts` holding the locale signal, `t()` and
+`slots()` and nothing else, so a translator edits one table and touches no
+machinery. `en.ts` is the schema (`type Dict = typeof en`, exported from there
+and imported by the other three), so every other locale is checked key-for-key
 and arity-for-arity by `tsc` — a missing string is a build error, never a blank
 label. `t()` reads the locale signal, which is why `t().…` inside JSX re-renders
 on a switch and why it is never hoisted into a `const` outside a component. A
@@ -71,7 +76,7 @@ dicts and says which module writes each one.
 
 ## Conventions
 
-- **Every user-facing string comes from `i18n.ts`.** A literal in a component
+- **Every user-facing string comes from `i18n/`.** A literal in a component
   ships as English to four languages. Server-owned text is the exception and is
   *not* re-typed here either: stage titles, field labels, argparse help and the
   model catalog's rows are rendered as they arrive, and captions, tags and paths

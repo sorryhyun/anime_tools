@@ -29,7 +29,8 @@ Windows (PowerShell)
 irm https://github.com/sorryhyun/anime_tools/releases/latest/download/install.ps1 | iex
 ```
 
-`ANIME_TOOLS_VERSION=v0.2.0` pins a tag, `TORCH_INDEX=https://download.pytorch.org/whl/cu130` picks a torch
+`ANIME_TOOLS_VERSION=v0.2.0` pins a tag, `TORCH_INDEX=https://download.pytorch.org/whl/cu130` picks
+a torch
 index (PyPI's Linux wheel is already CUDA; Windows defaults to CPU). Update
 with `uv tool upgrade anime-tools`.
 
@@ -113,10 +114,14 @@ home: `ANIME_TOOLS_HOME` → `ANIMA_HOME` → current directory
 
 ## Docs
 
-- [`docs/contract.md`](docs/contract.md) — the `anime_tools` ↔ `anima_lora` contract (dependency direction, file formats, grammar, seams).
-- [`docs/anima_tagger.md`](docs/anima_tagger.md) — the tagger: vocab build, dbv4 backend, sidecar head, calibration.
-- [`comfyui/anima_tagger/`](comfyui/anima_tagger/) — the Anima Tagger ComfyUI node (loader + captioner; link the directory into `custom_nodes/`).
-- [`docs/position_captions.md`](docs/position_captions.md) — position-clause grammar, rewrite rules, gates and knobs.
+- [`docs/contract.md`](docs/contract.md) — the `anime_tools` ↔ `anima_lora` contract (dependency
+  direction, file formats, grammar, seams).
+- [`docs/anima_tagger.md`](docs/anima_tagger.md) — the tagger: vocab build, dbv4 backend,
+  sidecar head, calibration.
+- [`comfyui/anima_tagger/`](comfyui/anima_tagger/) — the Anima Tagger ComfyUI node (loader +
+  captioner; link the directory into `custom_nodes/`).
+- [`docs/position_captions.md`](docs/position_captions.md) — position-clause grammar, rewrite rules,
+  gates and knobs.
 - [`docs/multiview_audit.md`](docs/multiview_audit.md) — multi-view / multi-panel caption audit.
 - `.claude/skills/captions/` — the Claude Code skill for the caption pipeline.
 
