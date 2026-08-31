@@ -23,7 +23,11 @@ One line, no checkout — installs [uv](https://astral.sh/uv) if missing, then
 curl -fsSL https://github.com/sorryhyun/anime_tools/releases/latest/download/install.sh | sh
 ```
 
-Windows (PowerShell): `irm https://github.com/sorryhyun/anime_tools/releases/latest/download/install.ps1 | iex`
+Windows (PowerShell) 
+
+```
+irm https://github.com/sorryhyun/anime_tools/releases/latest/download/install.ps1 | iex
+```
 
 `ANIME_TOOLS_VERSION=v0.2.0` pins a tag, `TORCH_INDEX=https://download.pytorch.org/whl/cu130` picks a torch
 index (PyPI's Linux wheel is already CUDA; Windows defaults to CPU). Update
