@@ -1,8 +1,6 @@
 # `anime_tools` ↔ `anima_lora` contract
 
-Status: **Phase 0 (2026-08-30)** — frozen in-tree before any code moves; lands in
-`anime_tools/docs/contract.md` at Phase 1. Companion to
-[`curation_repo_split.md`](curation_repo_split.md). Both repos' tests pin every
+Status: **frozen** — current as of 2026-08-31. Both repos' tests pin every
 row below; a change to any row is a two-PR change by design.
 
 ## 1. Dependency direction
