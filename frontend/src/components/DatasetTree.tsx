@@ -1,5 +1,4 @@
 import { createEffect, createMemo, createSignal, For, on, Show } from "solid-js";
-import { api } from "../api";
 import { slots, t } from "../i18n";
 import type { DatasetGroups, DatasetItem, DatasetList, NodeKind, Sel, TreeMode } from "../types";
 
@@ -212,12 +211,6 @@ export function DatasetTree(props: {
         title={p.it.rel}
         onClick={() => select(p.it.rel, "image")}
       >
-        <img
-          class="tt"
-          loading="lazy"
-          src={api.thumbUrl(`${props.list?.root}/${p.it.rel}`, 48)}
-          alt=""
-        />
         <span class="tl">
           <Show when={p.withDir && p.it.dir}>
             <span class="dim">{p.it.dir}/</span>

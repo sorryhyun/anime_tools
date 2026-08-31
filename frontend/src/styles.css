@@ -86,7 +86,6 @@ aside { grid-column:1; grid-row:2/4; border-right:1px solid var(--line); backgro
 /* A near-twin component, between its artist folder and its member images. */
 .tn.grp .tl { color:var(--accent) }
 .tn .tl .dim { font-size:inherit }
-.tt { width:22px; height:22px; flex:none; object-fit:cover; border-radius:3px; background:var(--input) }
 .dot { width:7px; height:7px; flex:none; border-radius:50%; background:var(--dim) }
 .dot.master { background:var(--accent) } .dot.derived { background:var(--ok) } .dot.variants { background:var(--warn) }
 .dot.proposal { background:var(--warn) }
