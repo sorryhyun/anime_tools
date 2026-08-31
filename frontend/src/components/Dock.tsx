@@ -13,7 +13,6 @@ import type { Stage } from "../types";
 export function Dock(props: {
   open: boolean;
   height: number;
-  /** The panels, in registry order, with the stages under each. */
   panels: [string, Stage[]][];
   curPanel: string;
   busy: boolean;

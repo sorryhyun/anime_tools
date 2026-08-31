@@ -1,7 +1,6 @@
 """Score SAM3 prompts (text or learned) against MIT labels on the text holdout.
 
-The "can SAM3 replace MIT" gate from `sam3_soft_prompt_expansion.md`:
-**MIT recall ≥ 0.9 at ≤ 0.1 FP/img**. Both are box-level (IoU ≥ 0.5 against
+The "can SAM3 replace MIT" gate: **MIT recall ≥ 0.9 at ≤ 0.1 FP/img**. Both are box-level (IoU ≥ 0.5 against
 the CTD-block targets from `build_text_targets.py`); FP counts survivors on
 holdout images that match no target, negatives included. Because the actual
 consumer is a training-ignore mask, the pixel view is reported too: recall

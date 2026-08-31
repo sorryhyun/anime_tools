@@ -11,23 +11,12 @@ import type { JobStatus, Stage, Values } from "../types";
     is why several CLIs can share one button.
 
     The bar is one loop, spelled out rather than hidden behind a mode toggle:
-
-        Run       →  the selected image. Computes the proposals and shows them
-                     as a diff on the caption card above; writes nothing.
-        Run batch →  the same, over every image the Settings `path_pattern`
-                     names.
-        Apply     →  writes what you just looked at. It replays the run's
-                     report, so it loads no model and can only write text the
-                     diff already showed.
-        Undo      →  puts those captions back, from the same report. While a
-                     job is running this button is Cancel instead — a tagger
-                     pass takes minutes and must stay stoppable.
-
-    A stage with no `--apply` (correct, the mask generators, groups) has no dry
-    pass to look at: its Run *is* the write, and there is nothing to undo. */
+    **Run** the selected image, **Run batch** every image the Settings
+    `path_pattern` names, **Apply** the diff those wrote down, **Undo** it again
+    out of the same report. A stage with no `--apply` (correct, the mask
+    generators, groups) has no dry pass to look at: its Run *is* the write, and
+    there is nothing to undo. */
 export function StagePanel(props: {
-  /** The open stage, already resolved. The panel used to take the whole stage
-      list plus an id and re-find it five times. */
   cur?: Stage;
   /** Every stage under the open dock button, including the current one: the
       bar picks between them when the panel holds more than one. */

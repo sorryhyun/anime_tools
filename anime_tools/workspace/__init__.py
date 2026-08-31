@@ -1,13 +1,7 @@
 """The workspace layout: where the tools write, and where Export publishes to.
 
-Curation used to write straight at the trainer's paths — the clause rewrite into
-``post_image_dataset/resized/``, the mask generators into
-``post_image_dataset/masks/``, autotag and the multiview audit into the caption
-master under ``image_dataset/``. There was no moment at which curation was
-*done*: an ``--apply`` was a publish, and the only thing between a half-finished
-run and the trainer was that you had not started the trainer yet.
-
-The workspace makes that moment explicit::
+The workspace is what makes "curation is done" an explicit moment rather than a
+side effect of the last ``--apply``::
 
     <home>/
       image_dataset/                  INPUT -- read-only for the tools
@@ -37,8 +31,7 @@ from __future__ import annotations
 
 WORKSPACE = "workspace"
 """The workspace directory, home-relative. ``_env.workspace_dir()`` resolves it
-(and honours ``ANIME_TOOLS_WORKSPACE``); this is the spelling that goes into the
-default roots below, which are home-relative by contract."""
+and honours ``ANIME_TOOLS_WORKSPACE``."""
 
 SOURCE_ROOT = "image_dataset"
 """The input tree. Read-only for the tools from the workspace phase onward."""
@@ -48,8 +41,7 @@ EXPORT_ROOT = "post_image_dataset"
 Written only by Export."""
 
 DEFAULT_ROOTS: dict[str, str] = {
-    # Listed input -> workspace -> output, which is the order the ⚙ Settings
-    # dialog shows them in.
+    # input -> workspace -> output, the order ⚙ Settings shows them in.
     "src": SOURCE_ROOT,
     "master": f"{WORKSPACE}/master",
     "dst": f"{WORKSPACE}/resized",
@@ -58,36 +50,32 @@ DEFAULT_ROOTS: dict[str, str] = {
 }
 """The five dataset roots, home-relative.
 
-``src`` / ``dst`` / ``masks`` keep the names they have always had — the three
-trees the sidebar joins by the same relative path, and the names
-``gui.stages.ROOT_FIELDS`` binds stage flags to — so only their *defaults* moved
-under the workspace. ``master`` (the revised-master overlay) and ``out`` (the
-export destination) are additive.
+``src`` / ``dst`` / ``masks`` are the three trees the sidebar joins by the same
+relative path, and the names ``gui.stages.ROOT_FIELDS`` binds stage flags to.
+``master`` (the revised-master overlay) and ``out`` (the export destination) are
+additive.
 """
 
 OUTPUT_ROOTS = frozenset({"master", "dst", "masks"})
-"""The roots a stage run may create on the way past.
-
-Everything a stage writes, and nothing else: not ``src``, which is input, and
-not ``out``, which only Export writes and which mkdirs its own destination.
+"""The roots a stage run may create on the way past — not ``src`` (input) and
+not ``out`` (Export-only, and it mkdirs its own destination).
 ``gui.server.make_output_dirs`` intersects a stage's bound roots with this.
 """
 
 EXPORT_ROOTS = frozenset({"out"})
 """Roots only Export writes, and which nothing else may create on its behalf.
 
-The mirror of :data:`OUTPUT_ROOTS`, and the reason ⚙ Settings' "make my roots"
-gesture stops short of one root: an export tree that exists should mean an
-export happened. Export makes its own destination.
+The mirror of :data:`OUTPUT_ROOTS`, and why ⚙ Settings' "make my roots" gesture
+stops short of one root: an export tree that exists should mean an export
+happened.
 """
 
 REPORTS_SUBDIR = "captions"
 """The workspace subdirectory the stage reports land in, as the tail of every
 CLI's ``--report_dir`` default (``captions/autotag``, ``captions/position``, …).
 
-Not spelled out anywhere else: ``gui.server.report_root`` derives the root from
-the parent of ``dst``, which *is* the workspace, and each stage keeps its own
-tail. This constant exists so the migrate CLI knows what to move.
+``gui.server.report_root`` derives the root from the parent of ``dst``; this
+constant exists so the migrate CLI knows what to move.
 """
 
 RESIZED = DEFAULT_ROOTS["dst"]
@@ -96,27 +84,24 @@ REPORTS = f"{WORKSPACE}/{REPORTS_SUBDIR}"
 GROUPS = f"{WORKSPACE}/groups"
 """The three workspace paths the CLI defaults are written in terms of.
 
-Every ``--dst`` / ``--report_dir`` / ``--out`` default in the package is one of
-these plus the stage's own tail, so the CLI half of the workspace and the GUI
-half cannot disagree — and so ``gui.stages.report_subpath``, which drops the
-first component of a report default to get that tail, keeps seeing exactly one
-component in front of it.
+Every ``--dst`` / ``--report_dir`` / ``--out`` default is one of these plus the
+stage's own tail, so the CLI and GUI halves cannot disagree — and
+``gui.stages.report_subpath``, which drops the first component of a report
+default to get that tail, keeps seeing exactly one component in front of it.
 """
 
 LEGACY_ROOTS: dict[str, str] = {
-    # root name -> where its default used to point, before the workspace.
+    # root name -> where its default pointed before the workspace.
     "dst": f"{EXPORT_ROOT}/resized",
     "masks": f"{EXPORT_ROOT}/masks",
 }
 """Pre-workspace defaults for the two roots that moved.
 
 An install with explicit roots saved in ⚙ Settings is unaffected by the change
-of defaults — which is exactly why the migrate CLI has to *warn* about one
-rather than silently move the tree out from under it.
+of defaults — which is why the migrate CLI *warns* about one rather than
+silently moving the tree out from under it.
 """
 
 LEGACY_DIRS: tuple[str, ...] = (REPORTS_SUBDIR, "groups")
-"""Workspace subdirectories that used to sit under :data:`EXPORT_ROOT` and are
-not roots, so nothing in Settings names them: the stage reports and the grouping
-manifest. Both follow ``dst``'s parent today, so moving the tree is all it takes.
-"""
+"""Workspace subdirectories that are not roots, so nothing in Settings names
+them. Both follow ``dst``'s parent, so moving the tree is all it takes."""

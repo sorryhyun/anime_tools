@@ -30,7 +30,6 @@ export function CaptionCard(props: {
   /** What the last Run proposed for *this* caption, or undefined. Shown below
       the editor until an Apply writes it (or another Run replaces it). */
   proposal?: Proposal;
-  /** The stage that proposed it, for the diff's header. */
   proposalStage?: string;
   /** The run's diff for this caption was dropped (the form changed since); say
       so where it stood instead of letting it vanish silently. */

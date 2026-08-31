@@ -63,4 +63,4 @@ Where things are written matters, and since 2026-08-31 there is **one answer**: 
 
 ## Working on captions
 
-Load the `captions` skill (`.claude/skills/captions/`) before parsing/editing captions or touching `captions/` / `stages/` code — it carries the grammar rules, autotag modes, and the position-clause move rules/gates in detail. Docs: `docs/anima_tagger.md`, `docs/position_captions.md`, `docs/multiview_audit.md`, `docs/tagger_caformer_backend.md`.
+Load the `captions` skill (`.claude/skills/captions/`) before parsing/editing captions or touching `captions/` / `stages/` code — it carries the grammar rules, autotag modes, and the position-clause move rules/gates in detail. Docs: `docs/anima_tagger.md`, `docs/position_captions.md`, `docs/multiview_audit.md`.

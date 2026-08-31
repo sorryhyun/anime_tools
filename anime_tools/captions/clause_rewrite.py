@@ -1,15 +1,13 @@
-"""v2's move rules: which flat-bag tags a clause has earned the right to take.
+"""Move rules: which flat-bag tags a clause has earned the right to take.
 
-The rewrite half of the position-clause pipeline. v1 was additive (a tag stayed
-in the bag *and* appeared in its clause); v2 **moves** an attributable tag so
-each attribute is asserted exactly once — the hand-written convention. This
-module owns the five rules that bound a move and the report of what they
-blocked; :mod:`anime_tools.captions.clause_vocabulary` decides what may enter a
-clause in the first place, and
-:mod:`anime_tools.stages.position_captions` drives both over the dataset.
+The rewrite half of the position-clause pipeline. An attributable tag is
+**moved** out of the bag so each attribute is asserted exactly once — the
+hand-written convention. This module owns the five rules that bound a move and
+the report of what they blocked; :mod:`anime_tools.captions.clause_vocabulary`
+decides what may enter a clause in the first place.
 
 Text and scores only — no pixels, no model. Per-rule evidence lives in
-``docs/experimental/position_captions.md``.
+``docs/position_captions.md``.
 """
 
 from __future__ import annotations
@@ -25,8 +23,7 @@ from anime_tools.captions.taxonomy import normalize_tag
 class MovedTag:
     """One flat-bag tag the rewrite bound to a position and removed from the bag.
 
-    ``margin`` is the relative slack the move cleared (``1 - rival/winner``),
-    same scale as ``attribution_margin``.
+    ``margin`` is the slack the move cleared (``1 - rival/winner``).
     """
 
     tag: str
@@ -49,12 +46,9 @@ class RemovalPlan:
 def _cmp_key(tag: str) -> str:
     """Comparison key for matching a bag tag against a clause/tagger tag.
 
-    :func:`~anime_tools.captions.taxonomy.normalize_tag`, named locally because
-    that is what this module means by it: the tagger (and thus every clause it
-    proposes, plus ``kept``/``scores`` keys and the vocabulary's group map)
-    emits the canonical space form, while a caption may hold the underscore
-    form (``speech_bubble``). Keys only — what gets written back into the
-    caption is always the original tag text.
+    The tagger emits the canonical space form while a caption may hold the
+    underscore form (``speech_bubble``). Keys only — what gets written back into
+    the caption is always the original tag text.
     """
     return normalize_tag(tag)
 
@@ -64,9 +58,9 @@ def _score_of(
 ) -> float:
     """This crop's probability for ``tag``.
 
-    ``scores`` (whole-vocabulary) is what the margin needs, since the runner-up's
-    probability matters even below its keep threshold. Falls back to ``kept``
-    (0.0 if absent) when a caller supplies no ``scores`` (unit-test stubs only).
+    The margin needs whole-vocabulary ``scores``, since the runner-up's
+    probability matters even below its keep threshold; falls back to ``kept``
+    when a caller supplies none (unit-test stubs only).
     """
     if tag in scores:
         return float(scores[tag])
@@ -97,7 +91,7 @@ def plan_bag_removals(
     absolute, since per-tag thresholds span ~0.05-0.85).
 
     Failing any rule is not an error — the tag stays in the bag *and* in its
-    clause, i.e. v1's additive behaviour for that one tag.
+    clause (additive behaviour for that one tag).
     """
     cfg = vocabulary.clause_groups
     bag: dict[str, str] = {}

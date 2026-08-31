@@ -73,4 +73,4 @@ Also wired as a **preprocess stage**: `caption_position_clauses` (off by default
 
 ## References
 
-Per-rule evidence, the knob table, and the measured-and-declined guards (refinement collapse, containment suppression, mask-fragment gates) live in `docs/experimental/position_captions.md` — read it before retuning a rule or re-proposing one of those; it also carries the two owed gates (dry-run spot-check, training A/B). The design proposal is retired at `_archive/proposals/position_captions.md`.
+The rules, gates and knob table live in `docs/position_captions.md` — read it before retuning a rule.

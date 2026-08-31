@@ -1,26 +1,10 @@
-"""CLI entry — argparse + mode dispatcher.
+"""CLI entry — argparse + ``--mode`` dispatcher (``build_vocab`` / ``predict`` /
+``scan_role_markers`` / ``derive_groups``).
 
-External-corpus paths are resolved via the ``CAPTION_CORPUS_DIR`` env var
-(typically set in ``anima_lora/.env``). The corpus directory is expected to
-contain ``retrieved/`` (raw caption pool), ``selected/`` (curated subset),
-``tag_rules.yaml`` (caption normalization rules), and ``.tag_cache.json``
-(per-tag Booru-style category cache, indexed under ``retrieved/``). All of
-these can be overridden individually by CLI flags.
-
-Modes (selected by ``--mode``):
-
-* ``build_vocab``    — scan caption sources, intersect with the tag-taxonomy
-                       cache, snapshot ``tag_rules.yaml``, emit ``vocab.json``
-                       (label space) plus a per-stem ``dataset.json`` manifest
-                       that carries the fixed train/val split.
-* ``predict``        — single-image debug entry (any backend).
-* ``scan_role_markers`` / ``derive_groups`` — vocab curation helpers.
-
-The PE-head training modes (``build_features`` / ``train`` / ``calibrate`` /
-``embed_tags``) were archived 2026-08-27 with the dbv4 backend migration —
-see ``_archive/anima_tagger_training/`` and
-``docs/experimental/anima_tagger.md``. Sidecar training is
-``anime_tools/tagger/cli/train_sidecar.py``.
+Corpus paths default to subpaths of ``$CAPTION_CORPUS_DIR`` (typically set in
+``anima_lora/.env``): ``retrieved/`` and ``selected/`` caption pools,
+``tag_rules.yaml``, ``.tag_cache.json``. Every one is overridable by flag.
+Sidecar training lives in ``anime_tools/tagger/cli/train_sidecar.py``.
 """
 
 from __future__ import annotations
@@ -35,8 +19,7 @@ from anime_tools._env import (
     setup_logging,
 )
 
-# Pull CAPTION_CORPUS_DIR from anima_lora/.env before argparse builds defaults;
-# CLI flags still win over env values.
+# Before argparse builds defaults; CLI flags still win over env values.
 load_dotenv()
 
 setup_logging()
@@ -58,10 +41,9 @@ def _corpus_default(rel: str):
 def _default_tag_cache():
     """Default tag-taxonomy source for ``--tag_cache``.
 
-    Prefers the corpus JSON when ``$CAPTION_CORPUS_DIR`` is set; otherwise falls
-    back to the publicly downloadable ``models/danbooru_tags_classified.csv`` KB
-    (``make download-danbooru-tags``), so the vocab build works without the
-    private crawl. Returns ``None`` only when neither is resolvable.
+    Prefers the corpus JSON, else the downloadable
+    ``models/danbooru_tags_classified.csv`` KB so the vocab build works without
+    the private crawl. ``None`` only when neither is resolvable.
     """
     corpus = _corpus_default("retrieved/.tag_cache.json")
     if corpus:
@@ -148,8 +130,6 @@ def parse_args() -> argparse.Namespace:
         help="Predict mode: number of top kept tags to show with --show_scores.",
     )
 
-    # scan_role_markers: high solo co-occurrence ratio → likely a class marker
-    # mis-typed as character.
     p.add_argument(
         "--min_solo",
         type=int,
@@ -201,8 +181,6 @@ def parse_args() -> argparse.Namespace:
         "candidate groups.yaml.",
     )
 
-    # derive_groups: bucket general vocab by danbooru 소분류 taxonomy → group
-    # candidates; co-occurrence on solo images picks softmax vs multilabel.
     p.add_argument(
         "--min_group_size",
         type=int,
@@ -273,8 +251,7 @@ def parse_args() -> argparse.Namespace:
         "preserved verbatim and claim their tags first (no regression).",
     )
 
-    # --out_dir holds the checkpoint + vocab (build_vocab writes here, the
-    # other modes read from it).
+    # build_vocab writes the checkpoint here; the other modes read from it.
     p.add_argument(
         "--out_dir",
         default="models/captioners/anima-tagger-dbv4",

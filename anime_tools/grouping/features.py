@@ -1,24 +1,17 @@
 """PE-Spatial image-feature extraction + per-image cache (library primitive).
 
-Promoted out of the near-twin miner engine so any dataset-level tool — near-twin
-pair mining, dataset grouping/clustering, dedup — can share one PE-Spatial
-embedding path and one on-disk feature cache. Each image is encoded at PE's
-native 512x512 bucket → a global CLS descriptor + a 32x32 patch grid pooled to
-16x16 (both L2-normed), cached per-image as ``.npz`` under ``$NEAR_TWIN_CACHE``
-(default ``~/.cache/near_twin/``), keyed by parent-dir hash + stem and stamped
-with the source's ``(size, mtime_ns)`` + :data:`FEATURE_CACHE_VER`. The key is
-addressed by *location*, so it does not move when the pixels under it are
-rewritten — the stamp is what turns that into a miss rather than a stale hit,
-which is what lets stages read the regenerated ``workspace/resized/`` tree. The
-cache key is encoder-agnostic in name but the features are PE-Spatial-B16-512
-specific — consumers that change the encoder must use a fresh cache root.
+One PE-Spatial embedding path and one on-disk feature cache, shared by near-twin
+mining, grouping and dedup. Each image is encoded at PE's native 512x512 bucket →
+a global CLS descriptor + a 32x32 patch grid pooled to 16x16 (both L2-normed),
+cached per-image as ``.npz`` under ``$NEAR_TWIN_CACHE`` (default
+``~/.cache/near_twin/``), keyed by parent-dir hash + stem and stamped with the
+source's ``(size, mtime_ns)`` + :data:`FEATURE_CACHE_VER` — see
+:func:`_source_stamp` for why the stamp is what makes a rewritten tree a miss.
 
-The encoder is passed in as an :class:`Embedder` (``.device`` / ``.dtype`` +
-``__call__(batch) -> (cls, grid16)``); the trainer's PE-Spatial implementation
-is ``anime_tools.grouping.embedder.pe_spatial_embedder``. This module never
-owns the model lifetime and never imports the PE loader (curation side of the
-``anime_tools`` split). ``easycontrol_adapters.tools.near_twins.engine``
-re-exports these names for backward compatibility.
+The encoder is passed in as an :class:`Embedder`; this module never owns the
+model lifetime and never imports the PE loader.
+``easycontrol_adapters.tools.near_twins.engine`` re-exports these names, so they
+are not free to rename.
 """
 
 from __future__ import annotations
@@ -43,11 +36,8 @@ from anime_tools.captions.taxonomy import normalize_tag
 CACHE_ROOT = Path(
     os.environ.get("NEAR_TWIN_CACHE", Path.home() / ".cache" / "near_twin")
 )
-# The curation walker's extension list, lowercased and deduped. Derived rather
-# than retyped: this module used to carry its own tuple that disagreed with
-# ``_walk`` in both directions (no ``.bmp``; ``.jxl``/``.avif`` unconditionally,
-# even with no Pillow plugin to decode them), so grouping saw a different image
-# pool from the stages and the GUI browsing the same tree.
+# Derived from the curation walker rather than retyped, so grouping sees the
+# same image pool as the stages and the GUI browsing the same tree.
 IMAGE_EXTS: tuple[str, ...] = tuple(sorted({e.lower() for e in IMAGE_EXTENSIONS}))
 PE_NATIVE = 512  # PE-Spatial-B16-512 square bucket → 32x32 patch grid
 GRID_NATIVE = 32
@@ -58,11 +48,9 @@ FEATURE_CACHE_VER = 1  # bump to invalidate every cached .npz when the schema ch
 def read_tags(txt_path: Path) -> set[str]:
     """Read a ``.txt`` caption sidecar → set of normalized flat tags ("" → empty).
 
-    Parsed through the caption grammar (``position_clauses.parse_caption``), not
-    a hand ``split(",")`` — the period is the clause delimiter, so a naive split
-    would glue a clause header onto the previous tag (``"white socks. On the
-    left"``) and leak it into the tag set. Position-clause tags are excluded:
-    this is the *flat bag* as a normalized set.
+    Parsed through the caption grammar, never a hand ``split(",")``: the period
+    is the clause delimiter, so a naive split would glue a clause header onto the
+    previous tag. Clause tags are excluded — this is the flat bag.
     """
     if not txt_path.is_file():
         return set()
@@ -97,11 +85,8 @@ def _image_size(path: Path) -> tuple[int, int]:
 
 
 def iter_images(root: Path) -> list[Path]:
-    """Every image file under ``root`` (recursive), sorted.
-
-    The shared curation glob (``_walk.glob_images_pathlib``), so a grouping run
-    sees the same image pool the stages process and the GUI browses.
-    """
+    """Every image file under ``root`` (recursive), sorted — the shared curation
+    glob, so grouping sees the pool the stages process and the GUI browses."""
     if not root.is_dir():
         return []
     return glob_images_pathlib(root, recursive=True)
@@ -112,10 +97,9 @@ def gather_members(
 ) -> dict[str, list[Member]]:
     """Walk ``<dir>/<artist>/<stem>.<ext>`` trees → ``artist -> [Member]``.
 
-    Scope is ``union`` across all ``image_dirs`` (a twin can straddle the
-    curated cut). A ``(artist, stem)`` seen in more than one dir is kept once;
-    the first dir listed wins (so put your preferred source — e.g. the curated
-    ``selected`` PNGs — first if it matters for the export symlink target).
+    Scope is ``union`` across all ``image_dirs`` (a twin can straddle the curated
+    cut). A ``(artist, stem)`` seen in more than one dir is kept once, first dir
+    listed winning, so list the preferred source first.
     """
     seen: dict[tuple[str, str], Member] = {}
     for d in image_dirs:
@@ -146,8 +130,6 @@ def keep_size_cohabiting(members: list[Member]) -> list[Member]:
 
     The same-size gate's pre-embedding half: a unique canvas size within an
     artist has nothing to pair against, so embedding it would be wasted work.
-    Kept here as a generic ``Member`` filter; the miner's tag-pivot prune
-    (``prune_for_pairing``) lives in the near-twin engine.
     """
     sizes = Counter(m.wh for m in members)
     return [m for m in members if m.wh != (0, 0) and sizes[m.wh] >= 2]
@@ -164,13 +146,11 @@ def _cache_path(member: Member) -> Path:
 def _source_stamp(path: Path) -> tuple[int, int]:
     """``(size, mtime_ns)`` of the source image; ``(-1, -1)`` if unreadable.
 
-    The cache key is content-addressed by *location* (parent-dir hash + stem),
-    not by content, so nothing in the key changes when the pixels underneath it
-    are rewritten — which is exactly what happens when a stage reads the
-    regenerated ``workspace/resized/`` tree. The stamp is what makes a rewrite
-    visible: same key, different bytes, so the entry is a miss instead of a
-    silent stale hit. ``(-1, -1)`` never matches a real stat, so an unreadable
-    source recomputes rather than trusting whatever was cached for it.
+    The cache key addresses a *location* (parent-dir hash + stem), so nothing in
+    it changes when the pixels underneath are rewritten — which is what a
+    regenerated ``workspace/resized/`` does. The stamp is what makes that a miss
+    instead of a silent stale hit. ``(-1, -1)`` never matches a real stat, so an
+    unreadable source recomputes rather than trusting what was cached.
     """
     try:
         st = path.stat()
@@ -288,21 +268,16 @@ def embed_members(
 ) -> dict[str, Feature]:
     """Load cached features; embed + cache any misses once via ``embedder``.
 
-    Misses are streamed through a ``DataLoader``: worker processes decode +
-    resize the next batches while the GPU runs the current forward, the batch is
-    copied to the device with pinned-memory async H2D, and the ``.npz`` cache
-    writes are handed to a thread pool — so CPU I/O, the host→device copy, and
-    the GPU forward overlap instead of running serially.
+    Misses stream through a ``DataLoader`` with pinned-memory async H2D and a
+    thread pool for the ``.npz`` writes, so decode, copy and forward overlap.
 
     With ``root`` given, the returned dict is keyed by each member's image path
     relative to it (POSIX string) — pass the tree's source dir whenever members
     can span subfolders, since nothing enforces unique stems tree-wide and two
     subfolders' ``1.webp`` would otherwise silently share one entry. Without
-    ``root`` the key is the bare ``stem`` (legacy — only safe when the caller's
-    member scope guarantees unique stems, e.g. one flat artist dir). A member
-    whose image fails to decode is omitted. The on-disk cache is unaffected:
-    it is already keyed by parent-dir hash + stem, and stamped with each
-    source's ``(size, mtime_ns)`` so a rewritten image re-embeds.
+    ``root`` the key is the bare ``stem``, which is only safe when the caller's
+    member scope guarantees unique stems. A member whose image fails to decode is
+    omitted; the on-disk cache is keyed and stamped independently of this.
     """
 
     def _key(m: Member) -> str:

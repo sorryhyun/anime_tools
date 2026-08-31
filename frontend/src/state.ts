@@ -3,12 +3,8 @@ import { followLog } from "./api";
 import { t } from "./i18n";
 import type { Job, JobStatus } from "./types";
 
-/** A signal mirrored into `localStorage` under `key`.
- *
- * Read once at creation, written on every change. Four view preferences (the
- * open stage, the sidebar, the dock, the help toggle) were a `createSignal`
- * with an inline `getItem` beside a `createEffect(on(…, setItem))` — the same
- * four lines each, with four slightly different ways of spelling "1"/"0".
+/** A signal mirrored into `localStorage` under `key`: read once at creation,
+ * written on every change.
  *
  * The dock *height* deliberately does not use this: it changes on every
  * pointermove of a drag, and writing `localStorage` at frame rate is not free,
@@ -34,10 +30,9 @@ export const fromFlag = (v: boolean) => (v ? "1" : "0");
  * newest line as a status.
  *
  * There are two of these — the stage runner in the dock and the weights
- * download inside the Settings dialog — and they used to be twin functions
- * over mirrored signal trios, each re-spelling the same three transitions:
- * close any previous stream, take the new job, and clear the stream on done or
- * error. Only what to *say* differs, which is what the callbacks are for.
+ * download inside the Settings dialog — and they are the same three
+ * transitions (close any previous stream, take the new job, clear it on done or
+ * error); only what to *say* differs, which is what the callbacks are for.
  */
 export function createJobFollower(opts: {
   /** The newest line as a status, or null to leave the current one standing. */

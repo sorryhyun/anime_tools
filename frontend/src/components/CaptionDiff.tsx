@@ -5,7 +5,7 @@ import { ClauseRow } from "./ClauseRow";
 import { Tag } from "./TagLens";
 
 /** What a finished **Run** proposes for this caption, shown against what is on
-    disk. The Run wrote it down; **Apply** is the plain write of exactly this.
+    disk.
 
     Both sides arrive already parsed (`/api/jobs/{id}/proposal` runs them
     through `parse_caption`), so the diff compares *tags and clauses* — the

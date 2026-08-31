@@ -1,13 +1,9 @@
 """Typed tag-group routing for the Anima Tagger — ``GroupRouter`` + grouped loss.
 
-Promoted out of the archived PE-head trainer (``_archive/anima_tagger_training/
-scripts/train_common.py``, 2026-08-27) because the router outlives it: the
-dbv4 backend's inference rule (``anime_tools/tagger/cli/eval_metrics.py``), the
-threshold calibrator, and ``bench/tagger_external`` all resolve softmax groups
-through it. ``compute_grouped_loss`` stays with it so the sentinel / escape /
-inactive-negative semantics remain testable (``tests/test_tagger_sentinel_groups.py``,
-``tests/test_grouped_loss_negweight.py``) even though no shipped trainer calls
-it today.
+The dbv4 backend's inference rule, the threshold calibrator and
+``bench/tagger_external`` all resolve softmax groups through the router;
+``compute_grouped_loss`` lives beside it so the sentinel / escape /
+inactive-negative semantics stay testable, though no shipped trainer calls it.
 
 A vocab built without ``--groups`` produces an empty router: BCE applies
 everywhere.
@@ -34,9 +30,9 @@ __all__ = [
 def maxsup_term(logits: torch.Tensor) -> torch.Tensor:
     """MaxSup regularizer (arXiv:2502.15798): batch-mean of ``z_max − mean(z)``.
 
-    Added as ``ε · maxsup_term(logits)`` on top of *hard* CE, in place of
-    ``label_smoothing=ε`` — same regularization pressure as LS on correct
-    predictions, without LS's error-amplification term on misclassified ones.
+    Added as ``ε · maxsup_term(logits)`` on top of *hard* CE in place of
+    ``label_smoothing=ε`` — same pressure as LS on correct predictions, without
+    LS's error-amplification term on misclassified ones.
     """
     return (logits.max(dim=1).values - logits.mean(dim=1)).mean()
 
@@ -57,9 +53,7 @@ class _SoftmaxGroup:
     tag_indices: torch.Tensor  # LongTensor [K_g] (includes sentinel when present)
     escape_indices: torch.Tensor  # LongTensor [E_g]
     # Local position of the group's synthetic "none of these" class inside
-    # ``tag_indices``, or None for legacy exactly-one groups. With a sentinel,
-    # CE fires on every applicable sample (target = sentinel when no member
-    # label), instead of only on samples carrying a member label.
+    # ``tag_indices``, or None for exactly-one groups.
     sentinel_local: int | None = None
 
 
@@ -67,24 +61,18 @@ class _SoftmaxGroup:
 class GroupRouter:
     """Per-batch loss routing for typed tag groups.
 
-    Built once at trainer init from ``vocab.json[groups]``. Maintains:
+    Built once at trainer init from ``vocab.json[groups]``:
 
-    * ``bce_pos_weight`` — full ``[n_tags]`` pos-weight, same as the
-      pre-grouping trainer. BCE applies to all tags by default; the
-      :func:`compute_grouped_loss` helper masks out (sample, tag)
+    * ``bce_pos_weight`` — full ``[n_tags]`` pos-weight. BCE applies to all tags
+      by default; :func:`compute_grouped_loss` masks out the (sample, tag)
       positions where CE fires for that sample-group pair.
     * ``softmax_groups`` — per-group ``(mode, tag_indices, escape_indices)``;
       CE applies on these, gated by solo/escape for ``softmax_when_solo``.
-    * ``softmax_member_indices`` — union of all softmax-group tag indices.
-      Used by the calibrator + the inference rule to skip those tags
-      from sigmoid-threshold F1 / threshold sweep (they're argmax-only at
-      inference, so per-tag thresholds don't apply).
+    * ``softmax_member_indices`` — union of all softmax-group tag indices. The
+      calibrator and the inference rule skip those tags from the
+      sigmoid-threshold sweep (argmax-only at inference).
     * ``solo_indices`` / ``multi_indices`` — vocab indices used to detect
       single-subject samples at runtime from ``multi_hot``.
-
-    A vocab built without ``--groups`` produces an empty router: BCE
-    applies everywhere and behavior matches the pre-grouping trainer
-    exactly.
     """
 
     n_tags: int
@@ -96,10 +84,9 @@ class GroupRouter:
     sentinel_indices: torch.Tensor | None = None  # LongTensor [S]
     solo_indices: torch.Tensor | None = None  # LongTensor [s]
     multi_indices: torch.Tensor | None = None  # LongTensor [m]
-    # Per-tag group id over ALL groups (any mode), for group-conditional
-    # negative weighting (:func:`compute_grouped_loss` ``inactive_neg_weight``).
-    # Value in ``[0, n_group_slots)``; the sentinel ``n_group_slots`` marks an
-    # ungrouped tag (never down-weighted). ``None`` when the vocab has no groups.
+    # Per-tag group id over ALL groups, for ``inactive_neg_weight``. Value in
+    # ``[0, n_group_slots)``; ``n_group_slots`` itself marks an ungrouped tag
+    # (never down-weighted). ``None`` when the vocab has no groups.
     group_of_tag: torch.Tensor | None = None  # LongTensor [n_tags]
     n_group_slots: int = 0
 
@@ -112,11 +99,9 @@ class GroupRouter:
     ) -> GroupRouter:
         """Build the router from a vocab dict + the train split's multi_hot.
 
-        The vocab's ``groups`` are read back through
-        :func:`~anime_tools.captions.vocab_io.resolved_groups`, so the schema of
-        a snapshotted group lives with the writer that produced it
-        (``tag_groups.resolved_to_dict``) and this method only moves the
-        surviving indices onto ``device``.
+        ``groups`` are revived by :func:`vocab_io.resolved_groups`, so the
+        snapshot schema stays with its writer (``tag_groups.resolved_to_dict``)
+        and this method only moves the surviving indices onto ``device``.
         """
         n_tags = int(train_multi_hot.shape[1])
         groups = resolved_groups(vocab_dict)
@@ -153,8 +138,8 @@ class GroupRouter:
             else None
         )
 
-        # Full-vocab pos-weight (matches pre-grouping trainer); per-batch
-        # masking knocks out the (sample, group_tag) positions CE supervises.
+        # Full-vocab pos-weight; per-batch masking knocks out the
+        # (sample, group_tag) positions CE supervises.
         bce_pos_weight = pos_weight_sqrt(train_multi_hot).to(device)
 
         solo_idx, multi_idx = solo_multi_indices(vocab_dict.get("tags", []))
@@ -169,9 +154,8 @@ class GroupRouter:
             else None
         )
 
-        # Per-tag group id over ALL groups (any mode, incl. multilabel) — drives
-        # group-conditional negative weighting. tag_to_group is ≤1 group/tag so
-        # no collision. Ungrouped tags get the sentinel ``n_group_slots``.
+        # tag_to_group is ≤1 group/tag, so no collision. Ungrouped tags get
+        # the sentinel ``n_group_slots``.
         n_group_slots = len(groups)
         group_of_tag: torch.Tensor | None = None
         if n_group_slots > 0:
@@ -203,11 +187,9 @@ class GroupRouter:
     def solo_mask(self, multi_hot: torch.Tensor) -> torch.Tensor:
         """``[B] bool`` — True when sample is single-subject.
 
-        Single-subject = at least one of ``solo``/``1girl``/``1boy``/``1other``
-        fires AND no other count tag (``2+girls``, ``multiple_*``, …)
-        fires. When the vocab carries no count tags at all (degenerate),
-        every sample is treated as solo so the trainer doesn't silently
-        skip every CE update.
+        One of ``solo``/``1girl``/``1boy``/``1other`` fires AND no other count
+        tag does. A vocab with no count tags at all treats every sample as solo,
+        so the trainer doesn't silently skip every CE update.
         """
         B = multi_hot.shape[0]
         if self.solo_indices is None:
@@ -230,66 +212,48 @@ def compute_grouped_loss(
 ) -> tuple[torch.Tensor, dict[str, float]]:
     """Return ``(total_tag_loss, per_group_metrics_for_logging)``.
 
-    BCE applies element-wise across all (sample, tag) positions. For
-    each softmax group, samples where (gating allows AND a group label
-    fires) get K-way CE on the group's logits — and BCE for those
-    (sample, group_tag) positions is masked out so we don't double-count
-    supervision. Samples without that gate (multi-subject, escape, no
-    in-group label) keep BCE on the group's tags as a fallback.
+    BCE applies element-wise across all (sample, tag) positions. For each
+    softmax group, samples where gating allows AND a group label fires get
+    K-way CE on the group's logits, and BCE for those (sample, group_tag)
+    positions is masked out so supervision is never double-counted. Ungated
+    samples keep BCE on the group's tags as a fallback.
 
-    Groups carrying a sentinel slot (``sentinel_local`` set) relax the
-    exactly-one assumption to at-most-one: CE fires on *every* applicable
-    sample, targeting the sentinel class when no member label is present.
-    Sentinel cells are excluded from BCE unconditionally — they are CE-only.
+    A sentinel slot (``sentinel_local`` set) relaxes exactly-one to at-most-one:
+    CE fires on *every* applicable sample, targeting the sentinel class when no
+    member label is present. Sentinel cells are CE-only, never in BCE.
 
-    ``label_smooth`` (ε ∈ [0, 1)) applies classic label smoothing as a
-    train-time regularizer against the overconfidence that blows up the
-    memorized-train / held-out gap on this head. The per-tag BCE targets
-    soften symmetrically to ``[ε/2, 1−ε/2]`` (the binary special case of
-    redistributing ε mass over the two classes), and the same ε feeds the
-    softmax-group ``cross_entropy`` so both tag objectives smooth
-    consistently. Pass ``0.0`` (default) on the val/metric path so reported
-    loss stays the true unsmoothed objective and is comparable across ε.
+    ``label_smooth`` (ε ∈ [0, 1)) softens BCE targets to ``[ε/2, 1−ε/2]`` and
+    feeds the softmax-group ``cross_entropy``. Pass ``0.0`` (default) on the
+    val/metric path so reported loss stays comparable across ε.
 
-    ``ce_maxsup`` swaps the softmax-group regularizer from label smoothing
-    to MaxSup (arXiv:2502.15798): hard CE plus ``ε·(z_max − mean(z))`` over
-    the group logits. Same regularization term as LS when the prediction is
-    correct, but drops LS's error-amplification term (LS penalizes z_gt even
-    when a *larger* wrong logit exists, reinforcing confident mistakes —
-    common in genuinely ambiguous exclusive groups like hair/eye color).
-    BCE targets keep the binary smoothing above: per-tag sigmoid has no
-    competing-logit structure, so the MaxSup analysis doesn't apply there
-    (its binary degenerate form is a global |z| penalty ≈ Logit Penalty,
-    which the paper itself shows harms representations). ε=0 is inert either
-    way, so the unsmoothed val/metric path is unaffected by this flag.
+    ``ce_maxsup`` swaps the softmax-group regularizer to MaxSup
+    (arXiv:2502.15798): hard CE plus ``ε·(z_max − mean(z))``, dropping LS's
+    error-amplification term (LS penalizes z_gt even when a *larger* wrong logit
+    exists, reinforcing confident mistakes — common in ambiguous exclusive
+    groups like hair color). BCE targets keep the binary smoothing: per-tag
+    sigmoid has no competing-logit structure. ε=0 is inert either way.
 
-    ``inactive_neg_weight`` (λ ∈ (0, 1]) implements group-conditional negative
-    weighting: a negative (sample, tag) cell whose group is *inactive* for that
-    sample (no tag in the group fired → the annotator likely never attended to
-    the category, so the negative may be a missing label) gets its BCE
-    contribution scaled by λ. Positives, active-group negatives, and ungrouped
-    tags are untouched. λ=1.0 (default) is bit-identical to the un-weighted
-    path. Phase-0 gold-check (_archive/bench/tagger_groups) found inactive-group
-    negatives only *mildly* less reliable than active-group ones, so a gentle
-    λ≈0.6–0.75 is the intended operating range — masking (λ→0) would trade away
-    too much precision.
+    ``inactive_neg_weight`` (λ ∈ (0, 1]) scales the BCE contribution of a
+    negative cell whose group is *inactive* for that sample — nothing in the
+    group fired, so the annotator likely never attended to the category and the
+    negative may be a missing label. Positives, active-group negatives and
+    ungrouped tags are untouched; λ=1.0 is bit-identical to the un-weighted
+    path. Such negatives measured only *mildly* less reliable, so λ≈0.6–0.75 is
+    the intended range — masking (λ→0) trades away too much precision.
 
-    Returned metrics: ``"bce"`` (mean of unmasked BCE entries) plus
-    ``f"ce_{group_name}"`` for each softmax group; loss curves stay
-    separable in TensorBoard.
+    Returned metrics: ``"bce"`` plus ``f"ce_{group_name}"`` per softmax group.
     """
     B, n_tags = tag_logits.shape
     metrics: dict[str, float] = {}
 
     # Label-smoothed BCE targets: 1 → 1−ε/2, 0 → ε/2 (ε=0 leaves multi_hot
-    # untouched — bit-identical to the un-smoothed path).
+    # untouched).
     bce_target = (
         multi_hot * (1.0 - label_smooth) + 0.5 * label_smooth
         if label_smooth > 0.0
         else multi_hot
     )
 
-    # Element-wise BCE-with-logits — we'll mask and reduce manually.
     bce_per_elem = F.binary_cross_entropy_with_logits(
         tag_logits,
         bce_target,
@@ -321,10 +285,9 @@ def compute_grouped_loss(
             group_logits = tag_logits.index_select(1, g.tag_indices)  # [B, K_g]
             group_target = multi_hot.index_select(1, g.tag_indices)  # [B, K_g]
             has_label = group_target.sum(dim=1) > 0
-            # Sentinel groups supervise every applicable sample — no member
-            # label means the CE target IS the sentinel class ("none of
-            # these"), which is also what lets decode reject instead of
-            # always emitting an argmax winner.
+            # Sentinel groups supervise every applicable sample: no member
+            # label means the CE target IS the sentinel class, which is what
+            # lets decode reject instead of always emitting an argmax winner.
             if g.sentinel_local is not None:
                 ce_samples = applicable
             else:
@@ -353,14 +316,13 @@ def compute_grouped_loss(
             metrics[f"ce_{g.name}"] = float(l_ce.detach().item())
 
             # Mask BCE for the supervised (sample, group_tag) cells; broadcast
-            # indexing touches the cartesian product.
+            # indexing hits the cartesian product.
             ce_idx = ce_samples.nonzero(as_tuple=False).squeeze(1)
             bce_mask[ce_idx[:, None], g.tag_indices[None, :]] = False
 
-    # Weighted mean over surviving (un-CE-masked) cells. ``cell_w`` is 1.0
-    # everywhere except inactive-group negatives, which get λ — so both the
-    # numerator and the denominator shrink consistently (a proper weighted
-    # mean, not a magnitude rescale).
+    # Weighted mean over surviving (un-CE-masked) cells. Numerator and
+    # denominator shrink together, so this is a weighted mean rather than a
+    # magnitude rescale.
     cell_w = bce_mask.float()
     if inactive_neg_weight != 1.0 and router.group_of_tag is not None:
         G = router.n_group_slots

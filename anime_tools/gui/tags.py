@@ -1,23 +1,16 @@
 """The Danbooru tag KB behind the caption panel's click-a-tag panel.
 
-One question, asked one tag at a time: *what is this tag?* The answer comes out
-of ``danbooru_tags_classified.csv`` — the same table
-:mod:`anime_tools.captions.correction` types tags against when it corrects a
-caption, so the panel explains a tag with the very rows that decide its bucket.
-It is the ``danbooru_tags`` row of :mod:`anime_tools.downloads`; without it this
-module answers "not installed" and the UI points at Settings › Models rather
-than at nothing.
+The answer comes out of ``danbooru_tags_classified.csv``, the same table
+:mod:`anime_tools.captions.correction` types tags against; without it this
+module answers "not installed" and the UI points at Settings › Models.
 
-Two files, one view. The base CSV carries the tag taxonomy (name, kind,
-category path, post count) with **Korean** descriptions; the optional
-``.en.csv`` sibling (``danbooru_tags_en``) carries English ones for the same
-names and nothing else. So the base file is the KB and the English descriptions
-are merged over it — never the other way round, or a tag missing from the wiki
-mirror (half of them) would lose its category and count as well.
+Two files, one view. The base CSV carries the taxonomy with **Korean**
+descriptions; the optional ``.en.csv`` sibling carries English ones and nothing
+else, so English is merged *over* the base — never the other way round, or a tag
+missing from the wiki mirror (half of them) would lose its category and count.
 
-Torch-free like the rest of ``anime_tools.gui``: this is stdlib csv over a
-16 MB table, loaded lazily on the first click and re-read only when the file's
-mtime moves.
+Torch-free like the rest of ``anime_tools.gui``: stdlib csv over a 16 MB table,
+loaded lazily and re-read only when the file's mtime moves.
 """
 
 from __future__ import annotations

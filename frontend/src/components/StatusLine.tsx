@@ -1,9 +1,9 @@
 import { Show } from "solid-js";
 import type { JobStatus } from "../types";
 
-/** The one status line: an optional state badge, then the text. The run bar and
-    the Settings download bar both end in this, and they were the same markup
-    twice. `title` carries the full text, since the line clips. */
+/** The one status line, shared by the run bar and the Settings download bar:
+    an optional state badge, then the text. `title` carries the full text,
+    since the line clips. */
 export function StatusLine(props: { status: JobStatus }) {
   return (
     <span class="status" title={props.status.text}>

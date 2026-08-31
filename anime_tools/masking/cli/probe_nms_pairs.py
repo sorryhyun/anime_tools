@@ -1,21 +1,14 @@
 """How often does NMS keep the worse mask? Sizes the mask-quality tie-break.
 
-`dedupe_detections` ranks duplicates on score alone. On `ama_mitsuki/5847152` that
-kept a proposal with 0.077 box-fill over one with 0.560 because it scored 0.035
-higher (see `docs/experimental/multiview_audit.md`). One data point is not a
-margin, so this walks a corpus, replays the same greedy NMS, and records every
-suppression: the two scores, the two mask fills, and their IoU.
+`dedupe_detections` ranks duplicates on score alone, which can keep a 0.077
+box-fill proposal over a 0.560 one for 0.035 of score. This walks a corpus,
+replays the same greedy NMS, and records every suppression: the two scores, the
+two mask fills, and their IoU. See `docs/multiview_audit.md`.
 
-Read-only. Prints the distribution needed to answer three things: how often
-suppression fires at all, how often the survivor is the *worse* mask, and what
-score margin those inversions sit at.
-
-Two requirements are served by one grounding pass per image: the NMS replay
-runs at every floor in ``--floors`` (the score gate is a pure re-filter on top
-of the shared proposal set, so extra floors are free), and every proposal's box
-fill + area fraction is recorded. Both were consumed by the corpus measurement
-that fixed the shipped ratio at 2.0 and refuted the degenerate-proposal guard
-(`docs/experimental/multiview_audit.md` §5.4).
+Read-only. Prints how often suppression fires, how often the survivor is the
+*worse* mask, and what score margin those inversions sit at. One grounding pass
+per image serves every floor in ``--floors``, since the score gate is a pure
+re-filter over the shared proposal set.
 """
 
 from __future__ import annotations
@@ -59,9 +52,7 @@ def parse_args() -> argparse.Namespace:
         default=DEFAULT_SUBJECT_PROMPT_EMBED,
         help="soft prompt .safetensors replacing --prompt (default: shipped; `none` = text)",
     )
-    # Every floor gets its own NMS replay off one shared detection pass; the
-    # lowest one is what SAM3 is actually asked for. 0.5 = primary pipeline
-    # floor, 0.35 = the floor the audit's retry reaches.
+    # 0.5 = primary pipeline floor, 0.35 = the floor the audit's retry reaches.
     p.add_argument(
         "--floors",
         type=lambda s: sorted((float(x) for x in s.split(",")), reverse=True),
@@ -177,9 +168,9 @@ def main() -> None:
         summary[f"floor_{floor}"] = {
             "suppressions": len(frows),
             "images_with_suppression": len({r["image"] for r in frows}),
-            # NMS kept the mask that claims less of its own box than the one it dropped.
+            # NMS kept the mask claiming less of its own box than the one it dropped
             "fill_inversions": len(inversions),
-            # ...and the subset where the survivor is degenerate, not merely smaller.
+            # ...and the subset where the survivor is degenerate, not just smaller
             "degenerate_survivor": len(bad),
             "degenerate_images": sorted({r["image"] for r in bad}),
             "inversion_margins": sorted(r["margin"] for r in inversions),

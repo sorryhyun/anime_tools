@@ -1,20 +1,14 @@
 """Caption-variant generation + on-disk variant sidecars (torch-free).
 
-Two concerns live here, both deliberately free of any torch / model import so the
-caption-correction step and the GUI can reuse them without dragging the heavy
-deps into their process:
+Torch-free so the caption-correction step and the GUI can reuse all three:
 
 * :func:`generate_caption_variants` — the stochastic shuffle / tag-dropout /
-  identity-randomize expansion used for train-time caption sampling. Extracted
-  from ``text.py`` (which still re-exports it for backward-compat) so the
-  preprocess *caption* step can materialize variants as text **before** the TE
-  encoder is ever loaded.
+  identity-randomize expansion for train-time caption sampling, materialized as
+  text **before** the TE encoder is ever loaded.
 * :func:`build_erasure_token_pool` — the dual-single erasure pool the
-  identity-randomize axis draws from. Takes the two tokenizers as plain
-  arguments (no torch), so the caption step can build it from a tokenizer-only
-  load.
-* the ``{stem}.variants.txt`` sidecar read/write pair — the combined,
-  human-readable file that makes the generated variants the single source of
+  identity-randomize axis draws from; takes the two tokenizers as plain
+  arguments.
+* the ``{stem}.variants.txt`` sidecar read/write pair — the single source of
   truth: the caption step writes it, the TE step encodes exactly its lines, and
   the GUI previews it.
 """
@@ -51,19 +45,16 @@ def build_erasure_token_pool(
     meaningless. Distinct from tag-dropout (which removes the slot).
 
     **Dual-single** is the load-bearing constraint. Anima tokenizes captions
-    twice — Qwen3 for the text encoder (``prompt_embeds``) *and* T5 for the LLM
-    adapter's target ids (``crossattn_emb``). A filler must therefore be exactly
-    one token in *both* vocabularies; otherwise it shreds into junk subword
-    pieces on whichever side fragments it (random ASCII fragments in Qwen3; rare
-    foreign tokens are clean in Qwen3 but explode in T5's English-centric
-    sentencepiece). We pick lowercase ascii alphabetic words and keep only those
-    that survive as a single token in both. ``exclude`` (the dataset's real tags)
-    drops any word that is itself a genuine tag, so a filler is never mistakable
-    for a true concept. Returns bare words (no leading space).
+    twice — Qwen3 for the text encoder and T5 for the LLM adapter's target ids
+    — so a filler must be exactly one token in *both* vocabularies, else it
+    shreds into junk subword pieces on whichever side fragments it. We keep
+    lowercase ascii alphabetic words that survive as a single token in both;
+    ``exclude`` (the dataset's real tags) drops any word that is itself a
+    genuine tag. Returns bare words (no leading space).
 
     Selection keys off the ``Ġ`` (leading-space) Qwen3 vocab form — exact for
-    this token class (verified: heuristic == round-trip), so no Qwen3 re-encode
-    is needed; only the T5 single-token property is checked at runtime.
+    this token class, so no Qwen3 re-encode is needed; only the T5 single-token
+    property is checked at runtime.
     """
     excl = {t.lower() for t in exclude} if exclude else set()
     try:
@@ -71,7 +62,7 @@ def build_erasure_token_pool(
     except (AttributeError, TypeError):
         # Duck-typed tokenizer without the expected API — no pool, no variants.
         return []
-    # Qwen3-single candidates (cheap, pure vocab): leading-space lowercase ascii.
+    # Qwen3-single candidates: leading-space lowercase ascii.
     candidates = sorted(
         sym[1:]
         for sym in vocab
@@ -108,8 +99,7 @@ def _perturb_tags(
     """Apply the presence (dropout) then identity (randomize) axes to ``tags``.
 
     ``split_idx`` is the @artist-prefix boundary: both axes leave ``tags`` up to
-    it untouched. Shared by the flat tag bag and — with ``split_idx=0`` — the
-    body of each surviving position clause.
+    it untouched. ``split_idx=0`` is how a clause body is perturbed.
     """
     if tag_dropout_rate > 0.0 and len(tags) > split_idx:
         kept = list(tags[:split_idx])
@@ -151,37 +141,23 @@ def generate_caption_variants(
     v0 = pristine original caption. v1..v{N-1} are smart-shuffled (preserving
     the @artist prefix and section anchors), then every tag *after* the prefix
     is independently dropped with probability ``tag_dropout_rate``, then every
-    surviving tag *after the prefix* has its identity erased (replaced by a fresh
-    vocab token drawn from ``erasure_pool``) with probability
-    ``tag_randomize_rate``. The ``@no-artist`` sentinel participates in the
-    boundary but is stripped from every variant (including v0) before it is
-    written.
+    survivor has its identity erased (replaced by a fresh token from
+    ``erasure_pool``) with probability ``tag_randomize_rate``. The
+    ``@no-artist`` sentinel participates in the boundary but is stripped from
+    every variant, v0 included.
 
-    ``protect_fn`` (when given) marks tags that must survive tag-dropout *and*
-    tag-randomization: a tag for which it returns True is always kept verbatim
-    even past the @artist prefix. It is still subject to shuffling. Used by the
-    colorize prep to keep copyright tags present/intact in every variant.
+    Both axes are **prefix-protected**: neither touches the @artist prefix, so
+    the trigger tag stays intact. Clause headers and the sentinel are never
+    randomized either. ``protect_fn`` marks tags that must survive both axes
+    verbatim even past the prefix (still shuffled).
 
-    Both axes are **prefix-protected**: tag-dropout is the *presence* axis and
-    tag-randomize is the *identity* axis, and neither touches the @artist prefix
-    (the trigger tag stays intact, only tags *after* ``split_idx`` are
-    randomized). Section headers (``On the …`` / ``In the …``) and the sentinel
-    are never randomized either.
+    ``erasure_pool`` (see :func:`build_erasure_token_pool`) is **required**
+    whenever ``tag_randomize_rate > 0`` — there is no random-ASCII fallback.
 
-    ``erasure_pool`` (see :func:`build_erasure_token_pool`) is the source of
-    erasure symbols: each randomized slot draws a fresh dual-single vocab token
-    (clean one-token in both Qwen3 and T5). It is **required** whenever
-    ``tag_randomize_rate > 0`` (no random-ASCII fallback); ignored otherwise.
-
-    **Position clauses are atomic.** A caption carrying the ``…, white socks.
-    On the left, blonde hair.`` convention is parsed into its flat bag plus its
-    clauses (:mod:`anime_tools.captions.position_clauses`) and each clause is kept
-    or dropped *whole* at ``clause_dropout_rate`` (default: ``tag_dropout_rate``),
-    with its tags shuffled inside. Per-tag dropout inside a clause would leave a
-    half-described position, and — worse — the naive comma split glues the header
-    onto the preceding tag (``"white socks. On the left"``), which is what used
-    to scatter clause attributes across the whole caption and reassign them to
-    the wrong subject.
+    **Position clauses are atomic**: each clause is kept or dropped *whole* at
+    ``clause_dropout_rate`` (default: ``tag_dropout_rate``), with its tags
+    shuffled inside. Per-tag dropout inside a clause would leave a
+    half-described position.
     """
     from anime_tools.captions import shuffle as anima_train_utils
     from anime_tools.captions.position_clauses import (
@@ -261,8 +237,8 @@ def generate_caption_variants(
 def variants_sidecar_path(image_or_caption_path: Path) -> Path:
     """``{stem}.variants.txt`` next to a resized image (or its ``.txt`` caption).
 
-    Uses ``with_name`` (not ``with_suffix``) so a multi-dot stem is preserved and
-    the marker double-suffix lands cleanly: ``a.b.png`` → ``a.b.variants.txt``.
+    ``with_name``, not ``with_suffix``, so a multi-dot stem is preserved:
+    ``a.b.png`` → ``a.b.variants.txt``.
     """
     p = image_or_caption_path
     stem = p.name[: -len(p.suffix)] if p.suffix else p.name
@@ -273,10 +249,9 @@ def write_variants_sidecar(path: Path, variants: list[tuple[str, str]]) -> None:
     """Write a combined variant sidecar — one ``label\\ttext`` line per variant.
 
     ``variants`` is an ordered ``(label, text)`` list (``v0``, ``v1`` …, then
-    ``r1`` …). v0 is the pristine/corrected caption that also lives in
-    ``{stem}.txt``; the rest are the shuffled / dropped / randomized draws the TE
-    step encodes verbatim. Tab-delimited because captions are comma-separated and
-    never contain tabs, so the split is unambiguous.
+    ``r1`` …); v0 is the pristine/corrected caption that also lives in
+    ``{stem}.txt``. Tab-delimited because captions are comma-separated and never
+    contain tabs, so the split is unambiguous.
     """
     lines = [_SIDECAR_HEADER]
     for label, text in variants:
@@ -288,7 +263,7 @@ def write_variants_sidecar(path: Path, variants: list[tuple[str, str]]) -> None:
 def read_variants_sidecar(path: Path) -> list[tuple[str, str]]:
     """Parse a ``{stem}.variants.txt`` into an ordered ``(label, text)`` list.
 
-    Comment (``#``) and blank lines are skipped; a line without a tab is ignored
+    Comment and blank lines are skipped; a line without a tab is ignored
     (defensive against hand-edits). Order is preserved so the TE writer can map
     ``v*``/``r*`` labels straight onto its flat cache layout.
     """

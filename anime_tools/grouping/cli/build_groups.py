@@ -1,15 +1,13 @@
 """Group dataset images by PE-Spatial visual similarity → groups.json manifest.
 
 A curation tool (not a preprocess/training step): clusters near-identical /
-same-concept images per artist so the GUI Dataset tab can filter by group and
-near-duplicates are easy to spot. Walks ``workspace/resized/`` by default, like
-every other stage that opens an image — one decode substrate, one geometry, so a
-group is drawn over the pixels the rest of the pipeline (and training) sees. Uses the **same near-twin grid gate as the
-miner** — two images group when ``match_frac >= --match-frac-min`` at per-cell
-floor ``--cell-match-min``. Argparse shell over
-``anime_tools.grouping.groups.build_groups``; driven by ``make curate-group``
-(paths resolved from the config chain). Reuses the shared PE-Spatial feature
-cache, so a re-run — or a re-run at different thresholds — is cheap.
+same-concept images per artist so the GUI Dataset tab can filter by group.
+Walks ``workspace/resized/`` by default, like every other stage that opens an
+image, so a group is drawn over the pixels the rest of the pipeline sees. Uses
+the **same near-twin grid gate as the miner** — two images group when
+``match_frac >= --match-frac-min`` at per-cell floor ``--cell-match-min``.
+Reuses the shared PE-Spatial feature cache, so a re-run — or a re-run at
+different thresholds — is cheap.
 """
 
 import argparse
@@ -26,9 +24,8 @@ from anime_tools.grouping.groups import (
     build_groups,
 )
 
-# Default embedder: the package's own PE-Spatial-B16-512 (``anime_tools.vision.pe``),
-# referenced by string so the CLI stays importable without torch. ``--embedder``
-# swaps in any other ``module:callable(device=…)`` factory.
+# By string so the CLI stays importable without torch; ``--embedder`` swaps in
+# any other ``module:callable(device=…)`` factory.
 DEFAULT_EMBEDDER = "anime_tools.grouping.embedder:pe_spatial_embedder"
 
 

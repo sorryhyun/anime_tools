@@ -1,10 +1,8 @@
 """Resize the caption master into the bucket-resolution tree every stage reads.
 
-``autotag`` / ``position`` / ``correct`` all walk ``--dst`` (the resized tree),
-because the tagger should see the pixels training sees. So an image that only
-exists under ``image_dataset/`` is invisible to them — it is listed in the GUI
-sidebar, but a run scoped to it matches nothing and writes nothing. This stage
-is what puts it there.
+Every other stage walks ``--dst`` (the resized tree), so an image that only
+exists under ``image_dataset/`` is invisible to them: a run scoped to it matches
+nothing and writes nothing. This stage is what puts it there.
 
 Free-fit geometry: each image lands in the ``--target_res`` tier that resizes it
 the least, keeping its native aspect inside that tier's token band, so the crop
@@ -12,9 +10,8 @@ is under one 16px patch. Identical to the trainer's ``make preprocess-resize``
 (same tier, same solver, same ``anima_resize_*`` PNG keys), so whichever side
 runs first, the other one skips.
 
-Always writes — there is no dry run, because the pass is idempotent: an output
-already at its target bucket is skipped without a re-decode, so a re-run is
-near-free and only a tier change re-resizes.
+Always writes — no dry run, because the pass is idempotent: an output already at
+its target bucket is skipped without a re-decode.
 
     python -m anime_tools.stages.cli.resize_images
     python -m anime_tools.stages.cli.resize_images --target_res 1024 1536
@@ -170,8 +167,8 @@ def main() -> None:
         copy_captions=bool(args.copy_captions),
         overwrite=bool(args.overwrite),
         workers=int(args.workers),
-        # Every line: the pass is per-image work with no per-image output to
-        # read afterwards, so the log is the only progress there is.
+        # Every line: no per-image output to read afterwards, so the log is the
+        # only progress there is.
         progress=make_progress(1),
     )
 
@@ -207,8 +204,8 @@ def main() -> None:
     )
     for line in stats.failures:
         print(f"  fail: {line}")
-    # Every stage walks the resized tree, so a skip here is not "left out of
-    # training", it is "invisible to the rest of the pipeline". Name them.
+    # A skip here is not "left out of training" but "invisible to the rest of
+    # the pipeline", so name them.
     for line in stats.too_small:
         print(f"  too small: {line}")
     if stats.buckets:

@@ -44,9 +44,9 @@ def _resolve_n_rand(num_variants: int, tag_randomize_rate: float) -> int:
     """Size of the identity-randomized r-family that rides alongside v0..v{N-1}.
 
     Mirrors the TE writer: the r-family shares v0 as its anchor, so it carries
-    ``N-1`` entries (r1..r{N-1}) and only exists with >=2 variants. Keeping this
-    identical here is what lets the TE step encode the sidecar lines verbatim and
-    land them on the same ``prompt_embeds_r*`` keys the loader expects.
+    ``N-1`` entries (r1..r{N-1}) and only exists with >=2 variants. Must stay
+    identical, or the TE step's sidecar lines miss the ``prompt_embeds_r*`` keys
+    the loader expects.
     """
     return (num_variants - 1) if (tag_randomize_rate > 0.0 and num_variants >= 2) else 0
 
@@ -62,8 +62,8 @@ def _build_variant_rows(
 ) -> list[tuple[str, str]]:
     """``(label, text)`` rows for one image: v0..v{N-1} then r1..r{n_rand}.
 
-    v0 is the *corrected* caption (the pristine anchor that also lives in
-    ``{stem}.txt``). The r-family drops its own v0 since it equals the shared v0.
+    v0 is the *corrected* caption (the anchor that also lives in ``{stem}.txt``);
+    the r-family drops its own v0 since it equals that shared anchor.
     """
     rows: list[tuple[str, str]] = []
     v_variants = generate_caption_variants(
@@ -93,21 +93,17 @@ def _build_variant_rows(
 def _reattach_clauses(corrected: str, existing: str) -> str:
     """Put ``existing``'s position clauses back onto a freshly corrected caption.
 
-    Position clauses live in the *derived* layer: ``make caption-position``
-    writes them next to the resized image and leaves the hand-written master
-    alone (see :mod:`anime_tools.stages.position_captions`). A plain mirror would
-    therefore drop them on the next preprocess — the master has no clauses, so
-    the corrected caption has none either.
+    Position clauses live in the *derived* layer, so a plain mirror would drop
+    them on the next preprocess — the master has no clauses, so the corrected
+    caption has none either.
 
-    The v2 rewrite *moves* a bound tag out of the flat bag, so restoring the
+    The clause rewrite *moves* a bound tag out of the flat bag, so restoring the
     clauses alone would re-assert every moved attribute twice. The moved set is
     recoverable from the destination caption itself — a tag its clauses carry
-    that its own bag does not — so it is removed from the corrected bag again and
-    each attribute stays asserted exactly once.
+    that its own bag does not — so it is removed from the corrected bag again.
 
-    A clause the master itself carries (the hand-written convention) survives the
-    correction pass on its own; this only fires when the destination has clauses
-    and the source does not.
+    A clause the master itself carries survives the correction pass on its own;
+    this only fires when the destination has clauses and the source does not.
     """
     prev = parse_caption(existing)
     prev_bag = {t.strip().lower() for t in prev.flat_tags}
@@ -129,10 +125,8 @@ def _sidecar_is_current(
     """True iff an on-disk variant sidecar already matches what we'd generate.
 
     The variant draws are stochastic, so rewriting them every run would bump the
-    sidecar mtime and force a needless TE re-encode. We treat a sidecar as
-    current when its pristine v0 equals the current corrected caption *and* it
-    carries the expected v/r counts — so an unchanged caption with unchanged
-    variant settings is left byte-stable across reruns.
+    sidecar mtime and force a needless TE re-encode. Current means: pristine v0
+    equals the corrected caption *and* the v/r counts match.
     """
     if not path.exists():
         return False
@@ -168,40 +162,28 @@ def write_corrected_preprocess_captions(
     """Write ``.txt`` captions next to already-resized images.
 
     The source captions are never modified. The resized image tree is the
-    authority because it already reflects low-res filtering, curation decisions,
-    path_scope, and path_pattern from the resize stage.
+    authority because it already reflects the resize stage's filtering and
+    scoping. Clauses already on a destination caption are **preserved** — see
+    :func:`_reattach_clauses`.
 
-    Position clauses already on a destination caption are **preserved**: they are
-    generated into this tree by ``make caption-position`` and never written back
-    to the master, so a mirror that ignored them would drop them on every
-    preprocess (see :func:`_reattach_clauses`).
+    ``correct`` (default True) bucket-reorders each caption; ``correct=False``
+    mirrors the raw source caption verbatim. Either way v0 lands in
+    ``{stem}.txt`` and anchors the variant sidecar.
 
-    ``correct`` (default True) bucket-reorders each caption via
-    :func:`correct_caption`; pass ``correct=False`` to mirror the raw source
-    caption verbatim as v0 (the variant-only path, where the user wants shuffle
-    sidecars without reordering). Either way v0 is what lands in ``{stem}.txt``
-    and anchors the variant sidecar.
-
-    When ``num_variants > 0`` each image also gets a combined ``{stem}.variants.txt``
-    sidecar holding the shuffle / tag-dropout / identity-randomize draws the TE
-    step encodes verbatim — making the visible text the single source of truth
-    for what trains. v0 is the corrected caption itself; v1..v{N-1} are shuffled
-    (+ tag-dropped at ``tag_dropout_rate``); when ``tag_randomize_rate > 0`` an
-    r-family (r1..r{N-1}) rides alongside with per-tag identity erasure.
-
-    Identity-randomize needs the dual-single erasure pool, which is built from the
-    two tokenizers (``qwen3_tokenizer`` + ``t5_tokenizer``, loaded tokenizer-only
-    by the caller) excluding this dataset's real tags. Passing
-    ``tag_randomize_rate > 0`` without both tokenizers is an error.
+    With ``num_variants > 0`` each image also gets a ``{stem}.variants.txt``
+    sidecar the TE step encodes verbatim: v0 the corrected caption, v1..v{N-1}
+    shuffled (+ tag-dropped at ``tag_dropout_rate``), and under
+    ``tag_randomize_rate > 0`` an r-family with per-tag identity erasure — which
+    needs the dual-single erasure pool built from both tokenizers, so passing it
+    without them is an error.
     """
 
     stats = PreprocessCaptionStats()
     images = walk_images(resized_dir, recursive=recursive, pattern=path_pattern)
     stats.seen = len(images)
 
-    # First pass: resolve each image's source/destination + corrected caption.
-    # Collected up front (captions are tiny) so the erasure pool can exclude the
-    # full real-tag set before any variant is drawn.
+    # First pass, collected up front (captions are tiny) so the erasure pool can
+    # exclude the full real-tag set before any variant is drawn.
     @dataclass
     class _Entry:
         src: Path
@@ -258,7 +240,6 @@ def write_corrected_preprocess_captions(
                 "(tokenizers lack the expected API or no qualifying tokens)."
             )
 
-    # Second pass: write the corrected caption + (optionally) the variant sidecar.
     for e in entries:
         if e.dst.exists() and e.dst.read_text(encoding="utf-8") == e.corrected:
             stats.unchanged += 1

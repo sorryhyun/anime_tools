@@ -1,37 +1,22 @@
 """Find images that draw one character several times but are captioned ``1girl``.
 
-The blind spot this closes: :func:`anime_tools.captions.caption_layout.is_candidate`
-skips any caption whose girls-count is 1 and which carries no ``LAYOUT_TAGS``
-member, so a sheet that *is* ``multiple views`` but was never tagged as one never
-reaches detection at all. Worse, if it did, the missing layout tag would flip
-:func:`is_repeated_subject_layout` to ``False`` and the clause writer would bind
-the character's name and view-invariant traits per view — asserting the same girl
-as two girls.
+Audits the complement of the clause pipeline: every image ``caption-position``
+throws away as ``single-subject`` (girls-count <= 1 and no layout tag), which is
+exactly the population a mis-tagged view sheet hides in. Two boxes where the
+caption claims one girl is the finding; three signals then argue about what it
+means, and a verdict needs two of them before ``--apply`` will write it:
+identity agreement across the crops (the only one that separates "one girl drawn
+twice" from "a character the caption never counted", but silent on a headless
+close-up), the whole-image ``multiple views`` head, and the people-count head
+insisting on ``1girl`` while the geometry sees several bodies.
 
-So this is an audit over the complement set: every image ``caption-position``
-throws away as ``single-subject``. Two boxes where the caption claims one girl is
-the finding; three signals then argue about what it means, and a verdict needs
-two of them to agree before ``--apply`` will write it:
+Detection forces its escalation target to ``min_instances`` (2) rather than the
+caption's count, so the low-threshold retry and the body-part fallback actually
+fire; gating on the caption's ``expected=1`` would stop the search at the first
+box, on precisely the image we are trying to catch.
 
-1. **Identity agreement** across the per-instance crops (hair / eye / hairstyle,
-   plus the character name). Agreeing crops are one girl drawn twice; disagreeing
-   crops are a character the caption never counted. This is the only signal that
-   separates those two answers — but it goes silent on a headless close-up, which
-   is why it can't be the only one.
-2. **The whole-image ``multiple views`` head**, which needs no crop to be legible
-   and is the fallback when (1) has nothing to say.
-3. **The people-count head** insisting on ``1girl`` while the geometry sees
-   several bodies — the view-sheet signature stated from the other direction.
-
-Detection differs from the clause pipeline in one deliberate way: the escalation
-target is forced to ``min_instances`` (2) rather than the caption's count, so the
-low-threshold retry and the body-part fallback actually fire. Gating them on the
-caption's ``expected=1`` would stop the search the moment one box was found,
-which is precisely the image we are trying to catch. Signal (2) also runs on
-every audited image, so a sheet whose views SAM merged into a single box still
-surfaces — flagged ``tagger-only`` and never better than ``weak``.
-
-Read-only apart from :func:`apply_findings`.
+Read-only apart from :func:`apply_findings`. Full rationale in
+``docs/multiview_audit.md``.
 """
 
 from __future__ import annotations
@@ -65,38 +50,32 @@ from ._walk_captions import iter_captions
 from .position_captions import PositionCaptionOptions, detect_subjects
 from .replay import apply_one
 
-# The audit population, named by `is_candidate`'s own reason string. Keeping the
-# link explicit means the two can't drift apart: whatever that function starts
-# skipping for this reason is what we start auditing.
+# The audit population, named by `is_candidate`'s own reason string, so the two
+# cannot drift apart.
 AUDIT_SKIP_REASON = "single-subject"
 
-# Verdicts.
 MULTIPLE_VIEWS = "multiple views"
 EXTRA_CHARACTER = "extra-character"
 UNSURE = "unsure"
 # Not a finding: the caption's own girls+boys counts already cover every box.
 COUNT_EXPLAINED = "count-explained"
 
-# How much of the identity evidence has to agree before two boxes are called the
-# same character. Set at "all comparable groups but one" so a single misread eye
-# colour on a mask-blanked crop doesn't split a genuine view pair.
+# How much identity evidence must agree before two boxes are called the same
+# character: "all comparable groups but one", so a single misread eye colour on
+# a mask-blanked crop doesn't split a genuine view pair.
 _SAME_CHARACTER_AGREEMENT = 0.66
-# ...and how little agreement forces the opposite call. Between the two lies
-# `unsure`, which the report keeps but never proposes an edit for.
+# ...and how little forces the opposite call. Between the two lies `unsure`,
+# which the report keeps but never proposes an edit for.
 _DIFFERENT_CHARACTER_AGREEMENT = 0.34
-# Identity groups needed before the agreement ratio is trusted at all. One group
-# is a coin flip: two crops of one girl agreeing only on `brown hair` says
-# nothing, and half the corpus is brown-haired.
+# Groups needed before the agreement ratio is trusted at all. One is a coin
+# flip: two crops agreeing only on `brown hair` says nothing.
 _MIN_COMPARABLE_GROUPS = 2
-# P(multiple views) from the whole-image tagger at which it counts as a witness —
-# both as the fallback when the crops carry no identity evidence, and on its own
-# for an image where detection found only one box.
+# P(multiple views) from the whole-image tagger at which it counts as a witness.
 DEFAULT_MULTIVIEW_PROB = 0.5
-# Probability an identity-group winner needs before it is believed. High on
-# purpose, and measured rather than picked: on the crops of this audit's founding
-# example a legible face scored 0.978-1.000 on hair/eye colour, while the
-# headless backside panel's invented `blonde hair` / `blue eyes` scored 0.54 /
-# 0.63. Anything in that gap is the head guessing from an empty crop.
+# Probability an identity-group winner needs before it is believed. Measured
+# rather than picked: a legible face scores 0.978-1.000 on hair/eye colour,
+# while a headless panel's invented values land at 0.54-0.63. Anything in that
+# gap is the head guessing from an empty crop.
 DEFAULT_IDENTITY_CONFIDENCE = 0.9
 
 # Which detector produced the finding.
@@ -111,19 +90,17 @@ class CropIdentity:
     GOTCHA: ``groups`` holds only the values that cleared
     ``DEFAULT_IDENTITY_CONFIDENCE`` **on the raw probability**. The group heads
     are an argmax over a softmax, so they name a hair colour for a headless
-    backside crop as confidently as for a portrait — and, being softmax winners,
-    they are emitted into ``kept`` by argmax rather than by their own sigmoid
-    threshold, so filtering on ``kept`` membership does nothing at all. Reading
-    them ungated made the very image this audit exists for (a bent-over close-up
-    beside its own full-body view) come out as two girls with different hair.
+    crop as confidently as for a portrait, and they land in ``kept`` by that
+    argmax rather than by a sigmoid threshold — so filtering on ``kept``
+    membership does nothing at all.
     """
 
     box: tuple[float, float, float, float]
     score: float
     position: str = ""
     source: str = "subject"
-    # Did this box clear the detector's own confidence floor, or was it recovered
-    # by the retry escalation? Only a reliable box's identity gets a vote.
+    # Cleared the detector's own confidence floor, rather than being recovered
+    # by the retry escalation. Only a reliable box's identity gets a vote.
     reliable: bool = True
     groups: dict[str, str] = field(default_factory=dict)
     # What the ungated argmax said, and how sure it was — so a reviewer can see
@@ -144,8 +121,7 @@ class MultiviewFinding:
     boys: int | None
     # Whether the geometry or the whole-image tagger raised this one.
     source: str = SOURCE_DETECTION
-    # Whole-image corroboration, independent of the geometry: the tagger's own
-    # probability for the tag we suspect is missing, and its people-count head.
+    # Whole-image corroboration, independent of the geometry.
     tagger_multiple_views: float | None = None
     people_count: str | None = None
     identity_agreement: float | None = None
@@ -176,10 +152,9 @@ class MultiviewAuditStats:
 def is_audit_target(caption: str) -> tuple[bool, str]:
     """Is this one of the captions ``caption-position`` never looks at?
 
-    True exactly when :func:`is_candidate` rejects it as ``single-subject`` —
-    i.e. no clauses, no layout tag, and a girls-count of 0 or 1. A count of 0
-    (scenery, ``1boy``, an uncounted caption) stays in: the ``girl`` prompt
-    finding two subjects there is just as much a caption bug.
+    True exactly when :func:`is_candidate` rejects it as ``single-subject``. A
+    girls-count of 0 stays in: the ``girl`` prompt finding two subjects on
+    scenery or a ``1boy`` caption is just as much a caption bug.
     """
     ok, reason = is_candidate(caption)
     if ok:
@@ -193,8 +168,8 @@ def _girls_count(caption: str) -> int | None:
     """The exact ``Ngirls`` the caption claims, or ``None`` if it claims none.
 
     Unlike :func:`~anime_tools.captions.taxonomy.count_of`, "unknown" (a bare
-    ``multiple girls``) and "absent" collapse to one ``None`` here: this feeds a
-    *suggestion*, and both cases mean there is no number to compare against.
+    ``multiple girls``) and "absent" collapse to one ``None``: both mean there
+    is no number to compare against.
     """
     return count_of(flat_tag_set(caption), "girl") or None
 
@@ -207,16 +182,14 @@ def identity_agreement(
     Two things are excluded from the vote:
 
     * A crop the detector was **not confident about** (``reliable=False``, i.e.
-      recovered only by the retry escalation below ``score_threshold``). Those are
-      where the instance mask comes out shredded, and mask-blanking then hands the
-      tagger a near-white canvas that it reads a hair colour off *at 0.99* — a
-      confident answer to a question it cannot see, which the probability gate
-      therefore cannot catch. Detection score is the signal that does separate
-      these; mask fill measurably does not (see the settled negative in
-      ``docs/experimental/position_captions.md``).
-    * Any group not *every* surviving crop resolved — a headless panel reports no
-      eye colour, and scoring that as disagreement would call every close-up a
-      second character.
+      recovered only by the retry escalation). Its mask comes out shredded, and
+      mask-blanking then hands the tagger a near-white canvas it reads a hair
+      colour off *at 0.99* — which the probability gate cannot catch. Detection
+      score separates these; mask fill measurably does not
+      (``docs/position_captions.md``).
+    * Any group not *every* surviving crop resolved — a headless panel reports
+      no eye colour, and scoring that as disagreement would call every close-up
+      a second character.
     """
     usable = [c for c in crops if c.reliable]
     if len(usable) < 2:
@@ -242,11 +215,9 @@ def _verdict(
 ) -> tuple[str, float | None, int]:
     """Same character in every box, or a character the caption never counted?
 
-    Identity first, because it is the only signal that distinguishes the two
-    answers. When the crops can't supply it — a headless close-up panel resolves
-    no gated identity group at all — the whole-image ``multiple views`` head is
-    the fallback: it is weaker evidence, but it is evidence *for* the same-girl
-    reading specifically, and its absence leaves ``unsure`` rather than a guess.
+    Identity first, as the only signal that distinguishes the two. When the
+    crops can't supply it, the whole-image ``multiple views`` head is the
+    fallback, and its absence leaves ``unsure`` rather than a guess.
     """
     agreement, comparable = identity_agreement(crops)
     names = {c.name for c in crops if c.name and c.reliable}
@@ -274,15 +245,11 @@ def suggest_tag(
 ) -> str | None:
     """The tag the caption is missing, or ``None`` when we won't guess.
 
-    ``multiple views`` is count-agnostic — it says "these boxes are one girl" —
-    so it needs no arithmetic and is always safe to propose.
-
-    The extra-character case is **report-only by default**. Detection counts
-    *subjects*, not girls: the ``girl`` prompt does not reliably exclude males
-    (which is why the clause pipeline's count gate accepts a range rather than an
-    equality), so an ``Ngirls`` proposal is wrong whenever the extra body is a
-    boy. Opt in with ``suggest_counts`` and read the people-count head in the
-    report before applying any of it.
+    ``multiple views`` is count-agnostic, so it needs no arithmetic and is
+    always safe to propose. The extra-character case is **report-only by default**: detection counts
+    *subjects*, not girls (the ``girl`` prompt does not reliably exclude males),
+    so an ``Ngirls`` proposal is wrong whenever the extra body is a boy. Opt in
+    with ``suggest_counts``.
     """
     if verdict == MULTIPLE_VIEWS:
         return MULTIPLE_VIEWS
@@ -301,13 +268,11 @@ def propose_caption(caption: str, tag: str) -> str:
 
     "End of the bag", not end of the *text*: position clauses have to stay
     trailing or the grammar stops parsing them, so the splice goes through
-    :func:`compose_caption` rather than a string concat. On a clause-free caption
-    the two are the same thing.
+    :func:`compose_caption` rather than a string concat.
 
-    Deliberately a minimal splice rather than a re-correction — the ordering pass
-    (``make preprocess-captions``) is what buckets tags properly. An ``Ngirls``
-    suggestion is the exception: it *replaces* the stale count in place, since
-    two girls-counts in one bag contradict each other.
+    A minimal splice, not a re-correction — the ordering pass buckets tags
+    properly. An ``Ngirls`` suggestion is the exception: it *replaces* the stale
+    count in place, since two girls-counts in one bag contradict each other.
     """
     parsed = parse_caption(caption)
     flat = [t for t in parsed.flat_tags if t.strip()]
@@ -341,8 +306,8 @@ def audit_image(
 ) -> MultiviewFinding:
     """Detect, and when more than one subject lands, ask the tagger who they are.
 
-    Returns a finding whose ``verdict`` is ``UNSURE`` and ``instances < 2`` for an
-    image with nothing to report — the caller filters.
+    An image with nothing to report comes back ``UNSURE`` with ``instances < 2``;
+    the caller filters.
     """
     girls = _girls_count(caption)
     finding = MultiviewFinding(
@@ -354,9 +319,8 @@ def audit_image(
         caption=caption.strip(),
     )
 
-    # The whole-image pass runs unconditionally, before the geometry decides
-    # anything: it is one extra forward, and it is the only thing that can flag a
-    # sheet whose views SAM merged into a single box.
+    # Unconditional, before the geometry decides anything: one extra forward,
+    # and the only thing that can flag a sheet SAM merged into a single box.
     whole = tag_fn(image)
     scores = whole.get("scores") or {}
     finding.tagger_multiple_views = float(scores.get(MULTIPLE_VIEWS, 0.0))
@@ -371,17 +335,14 @@ def audit_image(
     finding.instances = len(dets)
 
     # A caption whose counts already cover every detected body has nothing wrong
-    # with it. `1girl, 1boy` lands in this audit only because the *girls*-count is
-    # one, and the `girl` prompt does not exclude males — so the second box is the
-    # boy the caption already named, not a missing tag. Same range the clause
+    # with it: `1girl, 1boy` lands in this audit only because the *girls*-count
+    # is one, and the `girl` prompt does not exclude males. Same range the clause
     # pipeline's count gate uses; an unknown boy count (None) is unbounded.
     counted = None if finding.boys is None else (girls or 0) + finding.boys
     explained = counted is None or counted >= len(dets)
 
     if explained or len(dets) < max(2, options.min_instances):
-        # Nothing for the geometry to report. The tagger alone can still raise the
-        # image — a sheet whose views SAM merged into one box, or one whose second
-        # view the caption's boy-count coincidentally covers — but it is a single
+        # The tagger alone can still raise the image, but it is a single
         # witness by construction, so it never rises above `weak`.
         if finding.tagger_multiple_views >= multiview_threshold:
             finding.source = SOURCE_TAGGER
@@ -456,9 +417,9 @@ def audit_image(
     if finding.suggested_tag:
         finding.proposed = propose_caption(caption, finding.suggested_tag)
 
-    # Independent witnesses to "this is one girl drawn twice". Detection alone is
-    # never enough — it cannot tell two views from two girls — so `strong` means
-    # at least two of the three agreed, and that is the tier `--apply` writes.
+    # Independent witnesses to "one girl drawn twice". Detection alone cannot
+    # tell two views from two girls, so `strong` means at least two of the three
+    # agreed — the tier `--apply` writes.
     witnesses: list[str] = []
     if comparable >= _MIN_COMPARABLE_GROUPS and (agreement or 0.0) >= (
         _SAME_CHARACTER_AGREEMENT
@@ -466,13 +427,11 @@ def audit_image(
         witnesses.append("identity-agreement")
     if (finding.tagger_multiple_views or 0.0) >= multiview_threshold:
         witnesses.append("tagger-multiple-views")
-    # The people-count head insisting on one girl while the geometry sees several
-    # bodies is exactly the signature of a view sheet.
     if finding.people_count == "1girl":
         witnesses.append("people-count-1girl")
     if verdict == EXTRA_CHARACTER:
-        # Different question, different witnesses: what makes an extra character
-        # credible is the identity evidence splitting, not the view head firing.
+        # Different question, different witnesses: an extra character is made
+        # credible by the identity evidence splitting, not the view head firing.
         witnesses = []
         if len({c.name for c in finding.crops if c.name and c.reliable}) > 1:
             witnesses.append("distinct-names")
@@ -506,10 +465,8 @@ def run_multiview_audit(
 ) -> tuple[list[MultiviewFinding], MultiviewAuditStats]:
     """Walk the resized tree and report every under-counted caption.
 
-    Shares :func:`anime_tools.stages._walk_captions.iter_captions` with
-    ``run_position_captions`` — derived caption first, master as the fallback
-    for an unmirrored image — but ``caption_path`` is reported relative so the
-    caller can decide which tree to edit. Nothing here writes.
+    ``caption_path`` is reported relative so the caller can decide which tree to
+    edit. Nothing here writes.
     """
     options = options or PositionCaptionOptions()
     stats = MultiviewAuditStats()
@@ -524,10 +481,9 @@ def run_multiview_audit(
             continue
         stats.audited += 1
 
-        # The sheet needs the exact crops the tagger read, so when sheets are on
-        # we tee them into memory as they are produced (one image's worth at a
-        # time) rather than re-cropping from the boxes afterwards — a plain bbox
-        # re-crop would show different pixels than the mask-blanked ones scored.
+        # The sheet needs the exact crops the tagger read, so they are teed into
+        # memory as produced (one image's worth) rather than re-cropped from the
+        # boxes: a plain bbox re-crop shows different pixels than were scored.
         held: list[Image.Image] = []
         save_crop = None
         if crops_dir is not None:
@@ -535,8 +491,8 @@ def run_multiview_audit(
 
             save_crop = _crop_sink(crops_dir, rel)
 
-        # ``held``/``save_crop`` are rebuilt per image, and the sink is consumed
-        # inside this iteration — bound as defaults so that stays true by
+        # ``held``/``save_crop`` are rebuilt per image and the sink is consumed
+        # inside this iteration; bound as defaults so that holds by
         # construction rather than by reading the call order.
         def crop_sink(
             i: int,
@@ -565,7 +521,7 @@ def run_multiview_audit(
             suggest_counts=suggest_counts,
         )
         # Only the tagger can raise an image the geometry had nothing to say
-        # about — too few boxes, or a caption that already counts them all.
+        # about: too few boxes, or a caption that already counts them all.
         if finding.source != SOURCE_TAGGER:
             if finding.verdict == COUNT_EXPLAINED:
                 stats.skip(COUNT_EXPLAINED)
@@ -599,21 +555,17 @@ def apply_findings(
 ) -> tuple[list[tuple[str, str, str]], Counter]:
     """Write proposed captions into the **master** tree.
 
-    Returns ``(written, skipped)``: the ``(rel, before, after)`` triples that
-    were written, and a count per :func:`~anime_tools.stages.replay.apply_one`
-    status for the gated rows that were not. Every write goes through
-    ``apply_one``, so this shares one drift ladder with the replay path — a
-    master caption edited since the audit is reported ``drifted`` and left
-    alone, and a row whose text is already in place is ``already-applied``
-    rather than a silent no-op.
+    Returns ``(written, skipped)``: the ``(rel, before, after)`` triples written
+    and a count per :func:`~anime_tools.stages.replay.apply_one` status for the
+    gated rows that were not, so a master edited since the audit is ``drifted``
+    and left alone.
 
     The master is the right target here, unlike the clause rewrite: a missing
-    ``multiple views`` is a fact about the picture, not a derived re-phrasing, and
-    every later stage (mirror, correction, TE) reads down from it.
+    ``multiple views`` is a fact about the picture, not a derived re-phrasing,
+    and every later stage reads down from it.
 
     GOTCHA: ``image_dataset/`` is gitignored, so this is not git-recoverable —
-    the caller is expected to have kept the report, whose ``caption`` field is
-    the verbatim before-text.
+    the report's ``caption`` field is the only verbatim before-text.
     """
     written: list[tuple[str, str, str]] = []
     skipped: Counter = Counter()
@@ -639,12 +591,10 @@ def apply_findings(
 def curated_proposal(row: dict) -> tuple[str, str] | None:
     """(tag, proposed caption) for a hand-accepted report row.
 
-    Derives what the audit run didn't propose: an accepted ``unsure`` means the
-    reviewer judged the sheet a view layout (same splice as ``multiple views``),
-    and an accepted ``extra-character`` means the body count is real (the
-    ``suggest_counts`` semantics — ``{instances}girls`` replacing the stale
-    count). Returns ``None`` when no edit applies (count not derivable, or the
-    tag is already present).
+    An accepted ``unsure`` means the reviewer judged the sheet a view layout; an
+    accepted ``extra-character`` means the body count is real
+    (``{instances}girls`` replacing the stale count). ``None`` when no edit
+    applies.
     """
     caption = row["caption"]
     if row["verdict"] == EXTRA_CHARACTER:
@@ -675,11 +625,10 @@ def apply_curated(
 ) -> tuple[list[dict], list[str]]:
     """Apply a reviewer-curated accept list of report rows to the caption master.
 
-    Returns ``(manifest, unmatched)``: one manifest entry per accepted row with
-    the verbatim before/after (the revert record — ``image_dataset/`` is
-    gitignored, so this manifest is the only undo), and any accepted image the
-    report has no finding for. Same drift guard as :func:`apply_findings`: a
-    master caption that moved since the audit is skipped, never overwritten.
+    Returns ``(manifest, unmatched)``: one entry per accepted row with the
+    verbatim before/after (the only undo — ``image_dataset/`` is gitignored) and
+    any accepted image with no finding. Same drift guard as
+    :func:`apply_findings`.
     """
     by_image = {r["image"]: r for r in rows if r.get("verdict")}
     unmatched = sorted(accepted - set(by_image))
@@ -718,9 +667,8 @@ def revert_curated(
     source_dir: Path,
     apply: bool,
 ) -> list[dict]:
-    """Undo :func:`apply_curated` from its manifest. Restores ``before`` only
-    where the master still holds exactly ``after`` — a caption edited since the
-    apply is reported as drifted and left alone."""
+    """Undo :func:`apply_curated` from its manifest, restoring ``before`` only
+    where the master still holds exactly ``after``."""
     results: list[dict] = []
     for entry in manifest:
         outcome = {"image": entry["image"], "status": "skipped"}
@@ -730,9 +678,8 @@ def revert_curated(
         if not entry.get("after"):
             outcome["status"] = f"no-edit ({entry.get('status')})"
             continue
-        # A revert is an apply with the two texts swapped, so it reuses the
-        # same ladder; only the names of the two success-adjacent outcomes
-        # differ (``already-applied`` means "already back to before").
+        # A revert is an apply with the two texts swapped; only the names of the
+        # success-adjacent outcomes differ.
         status = apply_one(
             source_dir / entry["caption_path"],
             entry["after"],

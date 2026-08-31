@@ -1,33 +1,19 @@
 """Derive ``tag_groups.yaml`` candidates from the danbooru taxonomy KB.
 
-Reads the kept ``vocab.json`` (general tags only), looks each up in
-``danbooru_tags_classified.csv`` to recover its ``[대분류 > 소분류]`` taxonomy
-path, and buckets the general vocab into candidate groups — one per distinct
-taxonomy ``소분류``. Each candidate's **mode** (``softmax_when_solo`` vs
-``multilabel``) is decided by measuring how often two members of the group
-co-occur on a *single-subject* image: a family whose members almost never
-share a solo image (eye color, hair length) is mutually exclusive →
-``softmax_when_solo``; a family whose members routinely stack (accessories,
-clothing details) → ``multilabel``.
+Buckets the general vocab into one candidate group per taxonomy ``소분류``, then
+picks each group's mode by measuring how often two members co-occur on a
+*single-subject* image: members that almost never share a solo image (eye color,
+hair length) are mutually exclusive → ``softmax_when_solo``; members that
+routinely stack (accessories) → ``multilabel``.
 
-The output is a **candidate** ``groups.yaml`` for human review, not a drop-in
-file: group keys are slugged from the (Korean) taxonomy and want renaming,
-``softmax`` groups want an ``escape:`` list curated, and low-support groups are
-flagged. Nothing in ``--out_dir`` is mutated.
+The output is a **candidate** for human review, not a drop-in file — keys are
+slugged from the Korean taxonomy and want renaming, ``softmax`` groups want a
+curated ``escape:`` list. Read-only: nothing in ``--out_dir`` is mutated.
 
-Name matching honors the custom ``tag_rules.yaml``: vocab names are already
-post-rule, and any tag the rules *renamed* away from its danbooru form is
-recovered via the inverse replacement map before it's logged as unmatched.
-The co-occurrence scan reads captions through :func:`tag_rules.parse_caption`
-(same normalization the trainer saw), or the prebuilt ``dataset.json`` manifest
-when present.
-
-Read-only. Usage::
-
-    python -m anime_tools.tagger.cli.main --mode derive_groups \\
-        --out_dir models/captioners/anima-tagger-dbv4 \\
-        --tag_cache models/danbooru_tags_classified.csv \\
-        --out_yaml /tmp/groups.candidate.yaml --report
+Vocab names are already post-rule, so a tag the rules renamed away from its
+danbooru form is recovered via the inverse replacement map before being logged
+as unmatched. Co-occurrence reads the ``dataset.json`` manifest when present,
+else scans captions through the same rules.
 """
 
 from __future__ import annotations
@@ -42,9 +28,8 @@ import yaml
 
 from anime_tools.captions.correction import load_tag_knowledge_base
 
-# The single-subject predicate, on space-form tag *names* (captions, not vocab
-# indices). ``role_markers`` and the trainer's ``GroupRouter`` gate on the same
-# rule over indices — see ``taxonomy.solo_multi_indices``.
+# Single-subject predicate on space-form tag *names*; ``role_markers`` and the
+# trainer's ``GroupRouter`` gate on the same rule over indices.
 from anime_tools.captions.taxonomy import is_solo_names as _is_solo
 from anime_tools.tagger.data import TaggerCheckpoint
 
@@ -54,18 +39,14 @@ logger = logging.getLogger(__name__)
 def _slug(path: str) -> str:
     """Slug a ``대분류 > 소분류`` path into a YAML-key-safe token.
 
-    Uses the ``소분류`` (last segment) for readability, keeps unicode word
-    characters, and collapses separators to ``_``. Collisions are resolved by
-    the caller (it prefixes the ``대분류`` segment).
+    Uses the last segment for readability; collisions are resolved by the caller.
     """
     leaf = path.split(">")[-1].strip()
     leaf = re.sub(r"[\\s/]+", "_", leaf)
     return re.sub(r"_+", "_", leaf).strip("_") or "group"
 
 
-# --------------------------------------------------------------------------- #
 # Co-occurrence sources — manifest (fast, index-based) or caption scan.
-# --------------------------------------------------------------------------- #
 
 
 def _solo_sets_from_manifest(ckpt: TaggerCheckpoint) -> list[set[str]]:
@@ -82,8 +63,7 @@ def _solo_sets_from_manifest(ckpt: TaggerCheckpoint) -> list[set[str]]:
 def solo_sets_from_index(index) -> list[set[str]]:
     """Solo tag-name sets from a ``build_caption_index`` result.
 
-    ``index`` maps ``stem → (caption_path, image_path, parsed_tags)``. Lets
-    ``build_vocab`` derive groups from the scan it already did — no second pass.
+    Lets ``build_vocab`` derive groups from the scan it already did.
     """
     out: list[set[str]] = []
     for _cap, _img, tags in index.values():
@@ -100,11 +80,6 @@ def _solo_sets_from_captions(caption_roots: Sequence[Path], rules) -> list[set[s
     paths = find_caption_files([Path(r) for r in caption_roots])
     index = build_caption_index(paths, rules)
     return solo_sets_from_index(index)
-
-
-# --------------------------------------------------------------------------- #
-# Group derivation.
-# --------------------------------------------------------------------------- #
 
 
 def build_groups(
@@ -178,13 +153,9 @@ def decide_mode(
     Three tiers, because danbooru's hierarchical double-tagging (``long hair`` +
     ``very long hair``) and 'mixed' members (``two-tone hair``) inflate the
     multi-rate of genuinely attribute-like families above a strict exclusivity
-    cut. The YAML mode stays conservative (only the confident tier becomes
-    ``softmax_when_solo``); the borderline tier is emitted ``multilabel`` but
-    loudly flagged so the curator can promote it with an ``escape:`` list.
-
-    * ``confident`` (rate ≤ softmax_cooc_max)         → ``softmax_when_solo``
-    * ``borderline`` (≤ borderline_cooc_max)          → ``multilabel`` (PROMOTE?)
-    * ``multilabel`` (otherwise)                      → ``multilabel``
+    cut. Only the ``confident`` tier (rate ≤ softmax_cooc_max) becomes
+    ``softmax_when_solo``; ``borderline`` (≤ borderline_cooc_max) is emitted
+    ``multilabel`` but flagged so the curator can promote it with an ``escape:``.
     """
     if n_any < min_support:
         return (
@@ -215,11 +186,6 @@ def decide_mode(
     )
 
 
-# --------------------------------------------------------------------------- #
-# Emit.
-# --------------------------------------------------------------------------- #
-
-
 def _unique_key(path: str, used: set[str]) -> str:
     key = _slug(path)
     if key in used:
@@ -236,12 +202,8 @@ def _unique_key(path: str, used: set[str]) -> str:
 
 
 def emit_yaml(rows: list[dict]) -> str:
-    """Build a valid ``groups.yaml`` candidate with per-group review comments.
-
-    Each group block is dumped via :func:`yaml.safe_dump` (guaranteed-valid,
-    unicode-preserving) and preceded by a ``# REVIEW`` comment carrying the
-    stats and the rationale for the chosen mode.
-    """
+    """Build a ``groups.yaml`` candidate, each block preceded by a ``# REVIEW``
+    comment carrying the stats and the rationale for the chosen mode."""
     out: list[str] = [
         "# Auto-derived tag-group candidates — REVIEW before use.",
         "# Keys are slugged from the danbooru 소분류 taxonomy; rename to English.",
@@ -296,8 +258,8 @@ def derive_rows(
     """Bucket general vocab by taxonomy, score co-occurrence, decide mode.
 
     The shared core of ``--mode derive_groups`` and ``build_vocab
-    --derive_groups``. Returns ``(rows, unmatched)`` where each row carries the
-    members, support stats, mode, tier and escape hints for one taxonomy bucket.
+    --derive_groups``. Each row carries one taxonomy bucket's members, support
+    stats, mode, tier and escape hints.
     """
     rename_recovery = {tgt: src for src, tgt in rules.replacements}
     groups, unmatched = build_groups(
@@ -334,15 +296,10 @@ def derive_rows(
     return rows, unmatched
 
 
-# --------------------------------------------------------------------------- #
 # --apply: merge derived groups into a curated, English-keyed groups.yaml.
-#
-# Curation table — Korean taxonomy path → English group key. Where a derived
-# key collides with a group the preserved groups.yaml already defines (eye_color
-# / hair_color / hair_length), the preserved hand-curated group wins and the
-# derived one is dropped — see merge_apply. With nothing to preserve, those
-# attribute families are emitted as derived softmax groups instead.
-# --------------------------------------------------------------------------- #
+# Korean taxonomy path → English group key. On a key collision the preserved
+# hand-curated group wins and the derived one is dropped (see merge_apply); with
+# nothing to preserve, those families are emitted as derived softmax groups.
 
 _EN_KEY: dict[str, str] = {
     "얼굴/눈 > 눈 색상": "eye_color",
@@ -405,21 +362,15 @@ _EN_KEY: dict[str, str] = {
     "인물 > 성별": "gender",
 }
 
-# Groups to emit as softmax_when_solo: the confident, conceptually exclusive
-# attribute families. eye_shape is deliberately NOT here — the data shows shape
-# tags co-occur (closed eyes + tsurime), so forcing a single pick would be wrong
-# supervision; it stays multilabel. The eye/hair-color/length entries only fire
-# when there is no preserved groups.yaml to defer to.
-#
-# Two tiers by measured solo multi-rate (P(≥2 members | ≥1 member) on solo
-# images, recorded in each group's description at derive time):
-#   ≤2%  — truly exclusive (the original set).
-#   ≤~17% — the borderline tier, promoted 2026-07-04: near-exclusive families
-#   where the residual co-fires are rare stacks, not routine ones. All
-#   promoted groups now carry a sentinel class (see merge_apply), which
-#   relaxes supervision/decode from "exactly one" to "at most one" — without
-#   it, decode would stamp an argmax winner on every applicable image even
-#   when the family is absent (the old lighting/age hallucination).
+# Groups to emit as softmax_when_solo, in two tiers by measured solo multi-rate
+# (P(≥2 members | ≥1 member) on solo images): ≤2% truly exclusive, ≤~17% the
+# borderline tier where the residual co-fires are rare stacks. eye_shape is
+# deliberately NOT here — shape tags do co-occur (closed eyes + tsurime), so a
+# forced single pick would be wrong supervision. The eye/hair entries only fire
+# when there is no preserved groups.yaml to defer to. Every promoted group
+# carries a sentinel class (see merge_apply), relaxing supervision/decode from
+# "exactly one" to "at most one"; without it decode stamps an argmax winner on
+# every applicable image even when the family is absent.
 _PROMOTE_SOFTMAX = {
     "얼굴/눈 > 눈 색상",
     "머리카락 > 머리 색상",
@@ -494,9 +445,8 @@ def merge_apply(
         if mode == "softmax_when_solo" and escape:
             body["escape"] = escape
         if mode == "softmax_when_solo":
-            # Derived families never have guaranteed presence — the sentinel
-            # ("none of these") class lets CE supervise absence and decode
-            # reject, instead of always emitting an argmax winner.
+            # Derived families have no guaranteed presence: the sentinel ("none of
+            # these") class lets CE supervise absence and decode reject.
             body["sentinel"] = True
         body["description"] = (
             f"[{path}] {r['multi_rate']:.0%} solo multi-rate, n={r['n_any']}"
@@ -529,7 +479,7 @@ def cmd_derive_groups(args: argparse.Namespace) -> None:
 
     kb = load_tag_knowledge_base(args.tag_cache)
 
-    # Rules: drive caption co-occurrence + build the inverse rename map.
+    # Rules drive caption co-occurrence and the inverse rename map.
     from anime_tools.captions import tag_rules as tr
 
     rules = (
@@ -537,8 +487,7 @@ def cmd_derive_groups(args: argparse.Namespace) -> None:
         if args.rules and Path(args.rules).exists()
         else tr.TagRules((), frozenset(), {}, {}, ())
     )
-    # Co-occurrence source: prefer the manifest (trainer's exact view), else
-    # scan captions through the same rules.
+    # Prefer the manifest (the trainer's exact view) over a caption scan.
     if ckpt.dataset is not None:
         solo_sets = _solo_sets_from_manifest(ckpt)
         source = "manifest (dataset.json)"
@@ -580,9 +529,7 @@ def cmd_derive_groups(args: argparse.Namespace) -> None:
         preserve = Path(args.preserve_groups) if args.preserve_groups else None
         text, notes = merge_apply(rows, preserve, min_group_size=args.min_group_size)
         dest = Path(args.out_yaml) if args.out_yaml else out_dir / "groups.yaml"
-        # Back up an existing destination before overwriting (merge_apply has
-        # already read --preserve_groups into memory, so this is safe even when
-        # dest == preserve).
+        # Safe even when dest == preserve: merge_apply already read it into memory.
         if dest.exists():
             backup = dest.with_suffix(dest.suffix + ".bak")
             backup.write_text(dest.read_text(), encoding="utf-8")

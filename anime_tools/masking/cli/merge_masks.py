@@ -2,8 +2,7 @@
 
 Walks each input mask directory recursively and keys merges by
 ``(rel_dir, name)`` so masks at the same relative path across inputs collide.
-The output preserves the same nested layout under ``--output-dir``. Flat
-layouts (no subdirs) collapse to flat output as before.
+The output preserves the same nested layout under ``--output-dir``.
 """
 
 import argparse
@@ -51,7 +50,7 @@ def main() -> None:
         if len(sources) == 1:
             arr = np.array(Image.open(sources[0]))
         else:
-            # Pixel-wise minimum: lower alpha = more masking
+            # lower alpha = more masking
             arr = np.array(Image.open(sources[0]))
             for src in sources[1:]:
                 other = np.array(

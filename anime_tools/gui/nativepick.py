@@ -1,13 +1,10 @@
 """The host's own folder/file chooser, behind the ``…`` on a path field.
 
-The panel is a local tool: the browser and the dataset are on the same machine,
-so the honest way to answer "which directory?" is the desktop's own chooser —
-it opens anywhere, knows the places sidebar and the recent list, and types
-nothing. :mod:`~anime_tools.gui.server`'s ``/api/ls`` browser stays as the
-fallback for the two cases no native dialog can serve — a headless host, and a
-browser on another machine — which is why :func:`pick` reports *no chooser
-here* (``available=False``) rather than raising: the caller falls back to the
-in-page one instead of showing an error.
+The panel is a local tool: the browser and the dataset are on one machine, so
+the desktop's own chooser is the honest answer to "which directory?". The
+``/api/ls`` browser is the fallback for the two hosts no native dialog serves —
+headless, or a browser elsewhere — which is why :func:`pick` reports *no chooser
+here* (``available=False``) rather than raising.
 
 The dialog runs in a **subprocess**, never in this process: each toolkit here
 wants the main thread, and a chooser the user leaves open must not hold a
@@ -26,9 +23,8 @@ from dataclasses import dataclass
 from pathlib import Path
 
 TIMEOUT_S = 300
-"""How long a chooser may stay open before the request gives up on it. A user
-browsing for a folder is slow; an abandoned dialog on a forgotten desktop is
-forever, and it would hold a thread and a socket for exactly that long."""
+"""How long a chooser may stay open before the request gives up on it: an
+abandoned dialog would otherwise hold a thread and a socket forever."""
 
 MAX_TITLE = 80
 """The window title is client text (the panel's own translated string), so it

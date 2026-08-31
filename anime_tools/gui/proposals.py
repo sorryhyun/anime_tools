@@ -1,26 +1,18 @@
 """A stage report read as per-image caption proposals — and put back again.
 
-The dry pass the GUI's **Run** button starts already writes down everything a
-diff needs: per image, the caption path it would write, the text that was on
-disk when it ran, and the text it proposes. This module turns that report into
-rows keyed by *dataset rel* (what the sidebar selects), so the caption panel can
-show the proposal next to the caption it would replace, and **Apply** is the
-plain write of what you just looked at.
-
-:func:`undo` is the same reading in reverse: an ``--apply`` run's report records
-the before-text of every caption it wrote, so restoring them needs no snapshot
-directory — only the guard that the file still holds what the run put there.
-
-Torch-free, like the rest of :mod:`anime_tools.gui`.
+Keys a report's rows by *dataset rel* (what the sidebar selects) so the caption
+panel can show a proposal beside the caption it would replace. :func:`undo` is
+the same reading in reverse, guarded on the file still holding what the run put
+there. Torch-free, like the rest of :mod:`anime_tools.gui`.
 
 The report *shapes* below are a copy of each stage CLI's ``REPLAY_SPEC`` rather
 than an import: those live next to ``build_tag_fn`` / the SAM3 loaders, and
 importing one would pull torch into the server process (``test_boundary`` pins
-that it stays out). Only the three instances are copied — the
-:class:`~anime_tools.stages.replay.ReplaySpec` class itself, the report reader
-and the drift ladder come from :mod:`anime_tools.stages.replay`, which is
-torch-free by construction. ``tests/test_gui_proposals.py`` compares the copies
-against the originals field for field.
+that it stays out). Only the instances are copied — the ``ReplaySpec`` class,
+the report reader and the drift ladder come from
+:mod:`anime_tools.stages.replay`, which is torch-free by construction.
+``tests/test_gui_proposals.py`` compares the copies against the originals field
+for field.
 """
 
 from __future__ import annotations
@@ -42,8 +34,8 @@ from anime_tools.stages.replay import (
     report_rows,
 )
 
-# Statuses a replayed row carries (``stages.replay.ReplayRow``), as opposed to
-# the source stage's own vocabulary. Both mean "this row is a real proposal".
+# Statuses a replayed row carries (``stages.replay.ReplayRow``); both mean
+# "this row is a real proposal".
 _REPLAY_OK = ("written", "would-write")
 
 
@@ -113,9 +105,8 @@ class Proposal:
     def to_dict(self) -> dict[str, Any]:
         return {
             **vars(self),
-            # Parsed here and never in the browser: the caption grammar has one
-            # implementation, and a diff that split on commas would disagree
-            # with it about every position clause.
+            # Parsed here and never in the browser: a diff that split on commas
+            # would disagree with the grammar about every position clause.
             "before_parsed": D.parsed_caption(self.before) if self.before else None,
             "after_parsed": D.parsed_caption(self.after) if self.after else None,
         }
@@ -137,12 +128,9 @@ def _rows(report: Mapping[str, Any], shape: ReplaySpec) -> list[Mapping[str, Any
 
 
 def _texts(row: Mapping[str, Any], shape: ReplaySpec) -> tuple[str, str]:
-    """``(before, after)``, from either report dialect.
-
-    A stage's own report names them per its ``ReplaySpec``; the report a *replay*
-    writes (``stages.replay.ReplayRow``) always calls them ``before``/``after``,
-    and Apply is a replay, so both shapes reach here.
-    """
+    """``(before, after)``, from either report dialect: a stage's own report
+    names them per its ``ReplaySpec``, while a replay's always says
+    ``before``/``after`` — and Apply is a replay, so both reach here."""
     before, after = row.get(shape.before_field), row.get(shape.after_field)
     if before is None and after is None:
         before, after = row.get("before"), row.get("after")
@@ -170,12 +158,9 @@ def _walk(
 
 
 def read(report_path: Path, roots: D.Roots, stage: str) -> dict[str, Proposal]:
-    """The proposals in ``report_path``, keyed by dataset rel.
-
-    Cached on (path, mtime) — the caption panel asks for one image at a time as
-    the selection moves, and a batch report is not something to re-parse per
-    click.
-    """
+    """The proposals in ``report_path``, keyed by dataset rel. Cached on
+    (path, mtime), since the panel asks one image at a time as the selection
+    moves."""
     shape = SHAPES.get(stage)
     if shape is None:
         raise ProposalError(f"{stage} does not propose captions")
@@ -212,27 +197,20 @@ def _cached(path: str, mtime: float, roots: D.Roots, stage: str) -> dict[str, Pr
 EXPORT_STAGE = "export"
 """The one stage whose report is not a caption diff.
 
-Its rows are file copies, so it is read back by
-:mod:`anime_tools.stages.export_workspace` rather than by the drift ladder — but
-it reaches the server through the same route and answers in the same shape, so
-the branch lives at the top of :func:`undo` instead of the route growing a
-second entry point.
+Its rows are file copies, read back by
+:mod:`anime_tools.stages.export_workspace` rather than by the drift ladder, but
+it reaches the server through the same route and answers in the same shape — so
+the branch lives at the top of :func:`undo`, not in a second entry point.
 """
 
 
 def _undo_export(report_path: Path, roots: D.Roots) -> dict[str, Any]:
-    """Unpublish an export: delete what it created, put back what it overwrote.
-
-    Imported here rather than at module scope only to keep this module's own
-    story ("a stage report read as caption proposals") from opening with an
-    exception to it; the stage module is torch-free either way.
-    """
+    """Unpublish an export: delete what it created, put back what it overwrote."""
     from anime_tools.stages.export_workspace import revert_export, rows_from_report
 
     rows, stats = revert_export(rows_from_report(load(report_path)), apply=True)
-    # The rel an export row carries is relative to the *resized* tree, where a
-    # jpg master may have become a png — so it goes back through the same
-    # sibling lookup a report's ``image`` does before the sidebar sees it.
+    # An export row's rel is relative to the *resized* tree, so it goes back
+    # through the same sibling lookup a report's ``image`` does.
     touched = [
         D.rel_for_image(roots, r.rel)
         for r in rows
@@ -252,17 +230,8 @@ def undo(report_path: Path, roots: D.Roots, stage: str) -> dict[str, Any]:
     """Put back what the ``--apply`` run in ``report_path`` wrote.
 
     Only rows the file still agrees with are touched: a caption edited since the
-    apply reads as ``drifted`` and is left alone, one already back at its
-    before-text is ``already-undone``. A row whose before-text was *empty* was a
-    file the run created (autotag ``missing`` mode), so its inverse is a delete,
-    not a write of nothing.
-
-    An **export** report is not a caption diff at all — its rows are file
-    copies — so it is handed to :func:`_undo_export`, which answers in this
-    same shape.
-
-    Returns the images restored — which is what the caller reloads — plus a
-    count per skip reason, so the run bar can say what it could not put back.
+    apply reads as ``drifted`` and is left alone. Returns the images restored —
+    what the caller reloads — plus a count per skip reason.
     """
     if stage == EXPORT_STAGE:
         return _undo_export(report_path, roots)
@@ -290,11 +259,10 @@ def undo(report_path: Path, roots: D.Roots, stage: str) -> dict[str, Any]:
             continue
         image = str(row.get("image") or "")
         if before:
-            # An undo is an apply with the two texts swapped, so it is the same
-            # drift ladder (``already-applied`` now means "already back") and
-            # the same write — including dropping the variants sidecar, which
-            # wins over the caption at encode time and is just as stale against
-            # the text we are putting back.
+            # An undo is an apply with the two texts swapped — same drift
+            # ladder, same write, and the same drop of the variants sidecar,
+            # which wins over the caption at encode time and is just as stale
+            # against the text being put back.
             status = apply_one(
                 target,
                 after,
@@ -333,7 +301,6 @@ def undo(report_path: Path, roots: D.Roots, stage: str) -> dict[str, Any]:
         "restored": len(restored),
         "removed": len(removed),
         "skipped": dict(skipped.most_common()),
-        # The dataset rels the sidebar should re-stat, same contract as a job's
-        # ``written`` list.
+        # The rels the sidebar should re-stat, like a job's ``written`` list.
         "written": [r for r in (D.rel_for_image(roots, i) for i in images) if r],
     }

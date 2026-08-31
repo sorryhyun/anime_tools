@@ -1,13 +1,10 @@
 """Publish the workspace to the paths the trainer reads.
 
-The workspace is where every stage writes; this is the one thing that leaves it.
-Until it runs, a curation pass is a proposal — the resized pixels, the masks, the
-derived captions and the revised masters all sit under ``workspace/`` and the
-trainer sees none of them. That is the whole point of the split: ``--apply`` is
-no longer a publish, and publishing is a thing you decide to do.
+The workspace is where every stage writes; this is the one thing that leaves it,
+so until it runs a curation pass is a proposal the trainer cannot see.
 
 Six artifact kinds, and where each lands (``docs/contract.md`` §2 is the
-destination side of this table, unchanged by the workspace):
+destination side of this table):
 
 ``image``     ``workspace/resized/<rel>``           → ``post_image_dataset/resized/<rel>``
 ``caption``   ``workspace/resized/<rel>.txt``       → ``post_image_dataset/resized/<rel>.txt``
@@ -16,21 +13,19 @@ destination side of this table, unchanged by the workspace):
 ``master``    ``workspace/master/<rel>.txt``        → ``image_dataset/<rel>.txt``
 ``index``     ``workspace/captions/caption_index.json`` → ``post_image_dataset/captions/…``
 
-``master`` is the odd one: a revised caption master publishes back over the
-*input* tree, because that is where the contract says the master lives. It is
-the only row that writes outside ``--out``, and the only one that can overwrite
-something a human hand-wrote — which is why it is copied only when the overlay
-actually holds a revision, and why its previous text is recorded for the revert.
+``master`` is the odd one: it publishes back over the *input* tree, because
+that is where the contract says the master lives. The only row that writes
+outside ``--out`` and the only one that can overwrite something a human
+hand-wrote — hence copied only when the overlay holds a revision, with its
+previous text recorded for the revert.
 
-**Always copies.** Not a link: the export tree is independent bytes, so editing
-one side cannot silently change the other, and the tree survives the workspace
-being cleared. Re-exporting is cheap anyway — a file already identical at the
-destination is skipped, and :func:`shutil.copy2` preserves mtime, so the second
-export of an unchanged dataset is a walk and a stat apiece.
+**Always copies**, never links, so the export tree is independent bytes that
+survive the workspace being cleared. Re-exporting is cheap anyway: an identical
+destination is skipped and :func:`shutil.copy2` preserves mtime, so a second
+export is a walk and a stat apiece.
 
-Rows are per *artifact*, not per image: one image contributes up to five, and
-each is decided on its own, so a caption that changed publishes without
-recopying the pixels beside it.
+Rows are per *artifact*, not per image, each decided on its own — so a caption
+that changed publishes without recopying the pixels beside it.
 
 Torch-free.
 """
@@ -53,10 +48,9 @@ KINDS = ("image", "caption", "variants", "mask", "master", "index")
 TEXT_KINDS = frozenset({"caption", "variants", "master", "index"})
 """Kinds compared (and reverted) by content rather than by stat.
 
-Captions are small and a byte compare is exact; the pixel kinds are compared by
-``(size, mtime_ns)`` instead, because hashing a resized tree on every dry run
-would make the cheap pass expensive for no more certainty than ``copy2``
-already gives.
+Captions are small and a byte compare is exact; pixels go by ``(size,
+mtime_ns)``, because hashing a resized tree on every dry run would cost more
+than ``copy2`` already gives in certainty.
 """
 
 
@@ -64,10 +58,9 @@ already gives.
 class ExportPaths:
     """The six directories one export reads from and writes to.
 
-    ``src`` and ``out`` are destinations here, not sources — this is the one
-    stage that runs the pipeline backwards, so the names keep meaning what they
-    mean everywhere else (``src`` is the caption master tree, ``out`` is the
-    export root) rather than what they do in this file.
+    ``src`` and ``out`` are destinations here, not sources: this stage runs the
+    pipeline backwards, but the names keep the meaning they have everywhere else
+    (``src`` the caption master tree, ``out`` the export root).
     """
 
     resized: Path
@@ -119,10 +112,9 @@ class ExportStats:
 def _same(src: Path, dst: Path, *, text: bool) -> bool:
     """Is the destination already this file?
 
-    Text is compared byte for byte. Pixels are compared by ``(size, mtime_ns)``,
-    which is exactly what :func:`shutil.copy2` makes true again on every copy —
-    so an unchanged image compares equal on the next export without either side
-    being read.
+    Pixels are compared by ``(size, mtime_ns)``, which :func:`shutil.copy2`
+    makes true again on every copy — so an unchanged image compares equal on the
+    next export without either side being read.
     """
     try:
         if text:
@@ -160,9 +152,8 @@ def _row(rel: Path, kind: str, src: Path, dst: Path) -> ExportRow:
 def _mask_source(paths: ExportPaths, image: Path, rel: Path) -> Path:
     """The mask for ``rel``: the mirrored layout, or the legacy flat one.
 
-    Same two-step lookup ``gui.dataset.mask_path`` does — the generators have
-    mirrored the source subdir since they grew ``--recursive``, but a mask tree
-    made before that is still a valid one to publish.
+    Same two-step lookup ``gui.dataset.mask_path`` does — a flat mask tree is
+    still a valid one to publish.
     """
     nested = mask_path_for(image, paths.resized, paths.masks)
     if nested.is_file():
@@ -175,17 +166,13 @@ def plan_export(
 ) -> list[ExportRow]:
     """Every artifact this export would publish, decided against disk.
 
-    Enumerates the *resized* tree, because that is the set of images curation
-    actually produced: an image only in the caption master was never resized,
-    has no derived caption and no mask, and publishing it would mean publishing
-    a copy of the input.
+    Enumerates the *resized* tree, because that is what curation produced: an
+    image only in the caption master was never resized, and publishing it would
+    just re-publish the input.
 
-    An artifact absent from the workspace contributes no row at all rather than
-    a ``missing-source`` one — there is nothing to publish and nothing wrong.
-    An image with no derived caption, or a master with no revision, is the
-    normal case, not a finding. ``missing-source`` is left for the report's own
-    replay, where a file that vanished between the plan and the apply is worth
-    saying out loud.
+    An artifact absent from the workspace contributes no row rather than a
+    ``missing-source`` one, which is left for the report's own replay — where a
+    file that vanished between the plan and the apply is worth saying aloud.
     """
     rows: list[ExportRow] = []
     for image in walk_images(paths.resized, recursive=True, pattern=path_pattern):
@@ -231,10 +218,8 @@ def plan_export(
 def export_one(row: ExportRow, *, apply: bool) -> str:
     """Copy one artifact, or say what copying it would do.
 
-    Re-decides against disk first: on a plain run that is the same answer
-    :func:`plan_export` just gave, but on an ``--apply`` of a report written
-    minutes ago it is the guard that a destination edited since is reported
-    rather than clobbered blind.
+    Re-decides against disk first, which on an ``--apply`` of an older report is
+    the guard that a destination edited since is reported, not clobbered blind.
     """
     _decide(row)
     if row.status in ("identical", "missing-source"):
@@ -304,9 +289,8 @@ class RevertStats:
 
 
 _REVERT = {"created": "remove", "overwrote": "restore"}
-"""Apply status → what putting that row back means. Anything else (an
-``identical`` row, a ``missing-source`` one) published nothing and so has
-nothing to undo."""
+"""Apply status → what putting that row back means. Anything else published
+nothing and so has nothing to undo."""
 
 ROW_FIELDS = ("rel", "kind", "src", "dst", "status", "before")
 
@@ -327,14 +311,13 @@ def revert_export(
     """Unpublish what an ``--apply`` export wrote.
 
     A row it *created* is deleted; a text row it *overwrote* is put back to the
-    text recorded at the time. Both are guarded the way the caption stages' undo
-    is: the destination must still hold what the export put there, or it has
-    been edited since and is left alone as ``drifted``.
+    text recorded at the time. Both are guarded: the destination must still hold
+    what the export put there, or it is left alone as ``drifted``.
 
     A **pixel** row it overwrote cannot be put back — the previous bytes were
     not kept, and keeping them would mean snapshotting the resized tree for an
-    operation whose source is still sitting in the workspace. Those report
-    ``not-undoable``: re-exporting is the way back, and it is idempotent.
+    operation whose source still sits in the workspace. Those report
+    ``not-undoable``; re-exporting is the idempotent way back.
     """
     stats = RevertStats(rows=len(rows))
     for row in rows:
@@ -345,7 +328,6 @@ def revert_export(
         elif not dst.exists():
             row.status = "already-undone"
         elif not _same(src, dst, text=row.kind in TEXT_KINDS):
-            # The destination no longer holds what this export put there.
             row.status = "drifted"
         elif verb == "restore" and row.kind not in TEXT_KINDS:
             row.status = "not-undoable"

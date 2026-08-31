@@ -101,7 +101,6 @@ export function createStages(config: Config) {
     shown,
     panels,
     curPanel,
-    /** Every stage under the open dock button, the current one included. */
     siblings: createMemo(() => panels().find(([p]) => p === curPanel())?.[1] ?? []),
     lastInPanel,
     setLastInPanel,

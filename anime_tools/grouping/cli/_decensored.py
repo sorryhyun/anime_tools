@@ -1,11 +1,8 @@
 """Where the sincos decensor pass reads and writes.
 
 ``match_decensored`` produces the manifest and ``apply_decensored`` consumes it,
-so the two agree on six paths or neither works. They were declared twice — the
-matcher writing ``OUT_DIR / "matches.csv"`` and the applier reading it back from
-its own copy of the same expression. One home instead, resolved off
-:func:`~anime_tools._env.curation_home` at import like the rest of the curation
-CLIs.
+so the two agree on six paths or neither works — hence one home, resolved off
+:func:`~anime_tools._env.curation_home` at import.
 
 The tree is fixed rather than flagged on purpose: this is a one-off cleanup pass
 over one artist directory, not a stage.

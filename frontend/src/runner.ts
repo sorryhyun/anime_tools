@@ -9,8 +9,7 @@ import type { Dataset } from "./dataset";
 import type { Stages } from "./stages";
 
 /** A finished **Run**: the report it wrote, the form and scope it ran at, and
-    the images it wants to change. Apply replays exactly this, so what Apply
-    writes can only be what the caption panel's diff already showed. */
+    the images it wants to change. */
 export interface RunResult {
   jobId: string;
   report: string;
@@ -56,16 +55,13 @@ export function createRunner(deps: {
 }) {
   const { config, stages, dataset } = deps;
 
-  /** The stage runner: the dock's job, its "running" badge and its status line.
-      No log panel yet, so the newest line *is* the status. */
+  /** No log panel yet, so the newest line *is* the dock's status. */
   const run$ = createJobFollower({ done: (job) => onStageDone(job) });
   const { id: jobId, running: busy, status, setStatus } = run$;
   onCleanup(() => run$.close());
 
-  /** Per stage, the last Run that finished cleanly. Apply replays its report
-      (`--from_report`) instead of re-running the tagger/SAM3 pass that produced
-      it, so it writes exactly the text the diff showed -- and only while the
-      form still says what it said. */
+  /** Per stage, the last Run that finished cleanly -- and only for as long as
+      the form still says what it said. */
   const [dry, setDry] = createStore<Record<string, RunResult | undefined>>({});
   /** Per stage, the last Apply, so Undo has a report to read the before-text
       out of. Seeded from the server's job list on load (the jobs outlive this
@@ -97,10 +93,8 @@ export function createRunner(deps: {
   );
 
   /** The open stage's last Run, and whether the form still says what it said.
-      Both halves matter and they were derived three times with the polarity
-      flipped: Apply wants the fresh one, its refusal message wants "there is a
-      run but it is stale", and the caption card wants to explain the diff that
-      staleness took away. */
+      Both halves matter: Apply wants the fresh one, while its refusal message
+      and the caption card both need to know a stale run existed at all. */
   const lastRun = createMemo(() => {
     const s = stages.cur();
     const run = s?.replay ? dry[s.id] : undefined;
@@ -137,8 +131,7 @@ export function createRunner(deps: {
     return run.rels.includes(rel) ? run.kind : undefined;
   });
 
-  /** Why Apply is off, or "" when it is on. A replay-capable stage must have a
-      Run to apply: that is what makes Apply a plain write of the shown diff. */
+  /** Why Apply is off, or "" when it is on. */
   const applyBlocked = createMemo(() => {
     const s = stages.cur();
     if (!s?.apply) return t().runner.noDryPass;
@@ -161,7 +154,6 @@ export function createRunner(deps: {
     deps.openDock();
   }
 
-  /** A stage job that reached the end of its stream. */
   function onStageDone(job: Job) {
     setStatus({ text: t().runner.exit(job.exit_code), state: job.state });
     void config.refetchInfo();
@@ -250,8 +242,7 @@ export function createRunner(deps: {
 
   /** **Run** the current stage: compute the proposals and write the report,
       not the captions. `rel` narrows it to that one image; null runs the batch
-      the Settings `path_pattern` names. A stage with no `--apply` has no dry
-      pass, so for those this *is* the write. */
+      the Settings `path_pattern` names. */
   async function run(rel: string | null) {
     // `--from_report` is rebuilt per start and never carried over from the
     // saved form: a leftover path would quietly turn a Run into a replay.
@@ -260,10 +251,9 @@ export function createRunner(deps: {
     if (job) sent.set(job.id, { form: stages.formKey(stages.values()), rel });
   }
 
-  /** **Apply**: write what the Run proposed, at the scope the Run ran at.
-      Replaying its report is the whole point -- no model loads, and nothing can
-      be written that the diff did not show. A stage that cannot replay
-      (`audit_apply`) has no report to stand on, so Apply re-runs it for real. */
+  /** **Apply**: write what the Run proposed, at the scope the Run ran at. A
+      stage that cannot replay (`audit_apply`) has no report to stand on, so
+      Apply re-runs it for real. */
   async function apply() {
     const d = pending();
     const { [REPLAY_FIELD]: _stale, ...rest } = stages.values() ?? {};

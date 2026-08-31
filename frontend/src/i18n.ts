@@ -1,13 +1,11 @@
 import { createSignal, type JSX } from "solid-js";
 
-/** The GUI's own strings, in the four languages the tools are used in.
+/** The GUI's own chrome, in the four languages the tools are used in.
  *
- * Only the *chrome* lives here. Everything a stage says about itself — its
- * title, its doc, the label and help of every field — comes from the CLI's own
- * argparse (`gui/stages.py` dumps it), and the model catalog's rows come from
- * `downloads.py`; both are Python-side text and stay in English, because
- * re-typing them in the browser is exactly what `frontend/CLAUDE.md` forbids.
- * A caption, a path and a tag are data and are never translated either.
+ * Stage titles, argparse labels and help, and the model catalog's rows are
+ * Python-side text and stay as they arrive — re-typing them here is what
+ * `frontend/CLAUDE.md` forbids; a caption, a path and a tag are data and are
+ * never translated either.
  *
  * `en` is the schema: every other locale is declared `: Dict`, so a missing or
  * misspelled key is a type error rather than a blank label at runtime.

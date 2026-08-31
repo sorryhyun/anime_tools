@@ -1,17 +1,12 @@
 """Bounded, fail-fast HuggingFace downloads.
 
-Auto-fetching a missing model (PE vision tower, Anima tagger, resume state)
-must never wedge the job queue: a stalled connection inside ``hf_hub_download``
-blocks the whole training/preprocess subprocess, which the daemon then can't
-distinguish from real work — the "I clicked Train and it spins forever" hang.
+A stalled connection inside ``hf_hub_download`` blocks the whole subprocess,
+which the daemon cannot distinguish from real work. Two guards:
 
-Two guards:
-  * pin an explicit socket timeout so a dead/stalled connection raises in
-    seconds instead of hanging (a slow *trickle* is still caught by the daemon
-    stall watchdog, the backstop for the residual case a socket timeout can't
-    see);
-  * translate network failures into a clear, actionable error that names the
-    missing asset and the recovery command, instead of a raw urllib traceback.
+  * pin an explicit socket timeout so a dead connection raises in seconds
+    instead of hanging (a slow *trickle* is still the stall watchdog's job);
+  * translate network failures into an error that names the missing asset and
+    the recovery command, instead of a raw urllib traceback.
 """
 
 from __future__ import annotations
@@ -27,9 +22,8 @@ def ensure_hf_timeouts() -> None:
     """Pin huggingface_hub's socket timeouts unless the user set them.
 
     ``HF_HUB_DOWNLOAD_TIMEOUT`` bounds the streaming file-download read;
-    ``HF_HUB_ETAG_TIMEOUT`` bounds the metadata HEAD/list call. Recent hub
-    releases default both to 10s, but we set them explicitly so behavior is
-    pinned regardless of the installed version and tunable in one place.
+    ``HF_HUB_ETAG_TIMEOUT`` the metadata HEAD/list call. Set explicitly so
+    behaviour is pinned regardless of the installed hub version.
     """
     os.environ.setdefault("HF_HUB_DOWNLOAD_TIMEOUT", _DEFAULT_TIMEOUT)
     os.environ.setdefault("HF_HUB_ETAG_TIMEOUT", _DEFAULT_TIMEOUT)
@@ -73,9 +67,7 @@ def hf_download(*, what: str, hint: str = "python -m anime_tools.downloads", **k
         return hf_hub_download(**kwargs)
     except GatedRepoError as exc:
         # A gated repo answers 401/403 fast — not a hang, but the raw hub
-        # traceback says nothing about *how* to get access. Name the asset
-        # and the recovery (token + accept-terms) the same way we do for
-        # network failures.
+        # traceback says nothing about *how* to get access.
         repo = kwargs.get("repo_id", "?")
         raise FileNotFoundError(
             f"{what}: {repo} is a gated HuggingFace repo and this token cannot "
@@ -95,11 +87,10 @@ def hf_download(*, what: str, hint: str = "python -m anime_tools.downloads", **k
 def hf_file_cached(repo_id: str, filename: str, revision: str | None = None) -> bool:
     """True when ``filename`` from ``repo_id`` is already in the local hub cache.
 
-    A pure presence check — never touches the network, so it is safe to call
-    from UI code. Needed because not every model we depend on lands under
-    ``models/``: assets fetched through plain ``hf_hub_download`` (the gated
-    dbv4 tagger backbone) live in the hub cache, so a path check against the
-    repo tree would report them missing forever.
+    A pure presence check — never touches the network, so it is safe from UI
+    code. Needed because assets fetched through plain ``hf_hub_download`` (the
+    gated dbv4 backbone) never land under ``models/``, so a path check against
+    the repo tree would report them missing forever.
     """
     try:
         from huggingface_hub import try_to_load_from_cache
@@ -111,6 +102,6 @@ def hf_file_cached(repo_id: str, filename: str, revision: str | None = None) -> 
         )
     except Exception:  # noqa: BLE001 — a broken/unreadable cache is just "missing"
         return False
-    # Returns the path on a hit, ``None`` when absent, and a sentinel object
-    # when the cache remembers a 404 — only the path counts as installed.
+    # A hit is the path; ``None`` is absent and a sentinel object is a
+    # remembered 404 — only the path counts as installed.
     return isinstance(hit, str)

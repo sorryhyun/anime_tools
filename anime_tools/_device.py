@@ -1,11 +1,9 @@
 """Torch device selection, in one place.
 
-Every stage CLI's ``--device`` defaults to ``None`` = *auto*: the GUI does not
-expose the flag at all (it is a torch-free process and has no business guessing
-what hardware the child will find), so the child has to decide for itself.
-
-Kept import-light on purpose — ``torch`` is imported inside the function, so
-``anime_tools.gui`` and the other torch-free callers can import this module.
+Every stage CLI's ``--device`` defaults to ``None`` = *auto*: the GUI is a
+torch-free process and does not expose the flag, so the child decides for
+itself. ``torch`` is imported inside the function, so torch-free callers can
+still import this module.
 """
 
 from __future__ import annotations

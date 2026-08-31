@@ -1,10 +1,8 @@
 """Curation-side dataset walking (pure ``pathlib`` / ``os``; torch-free).
 
-Deliberate ≤50-line duplicates of the trainer's ``library.datasets.image_utils``
-(``IMAGE_EXTENSIONS`` / ``glob_images_pathlib`` / ``_assert_unique_stems``),
-``library.preprocess._dataset.walk_images``, ``library.io.walk.safe_walk`` and
-``library.io.cache.caption_key`` — the curation package must not import those
-trainer modules, and both sides walk the same caption master.
+Deliberate small duplicates of the trainer's ``image_utils`` / ``walk_images``
+/ ``safe_walk`` / ``caption_key``: this package must not import trainer modules,
+and both sides walk the same caption master.
 ``tests/test_curation_walk_parity.py`` pins the two copies to identical
 behaviour.
 """

@@ -58,11 +58,8 @@ def _within(p: Path) -> bool:
 def _start_dir(path: str) -> Path | None:
     """Where the host's chooser should open, given whatever the field holds.
 
-    The field is a path that may be relative (anchored under the home, like
-    every other one), may name a file, and may not exist yet -- a root the user
-    is about to create is the ordinary case. Walking up to the first directory
-    that *is* there beats opening on the home every time someone browses from a
-    typo, and ``None`` (let the desktop decide) beats a path that isn't real.
+    The field may be relative, may name a file, and may not exist yet, so walk
+    up to the first directory that *is* there; ``None`` lets the desktop decide.
     """
     try:
         p = resolve_path(path) if path.strip() else curation_home()
@@ -83,47 +80,23 @@ def _hf_token_present() -> bool:
         return False
 
 
-# --------------------------------------------------------------------------- #
-# Settings-derived values, as pure functions
-#
+# ---- settings-derived values, as pure functions ---------------------------- #
 # Each takes the settings mapping rather than reading it, so one request reads
-# the file once and everything it derives agrees. ``POST /api/jobs`` used to
-# re-read it about seven times on the way through — through ``_roots``,
-# ``_stage_defaults``, ``_root_paths``, ``_make_output_dirs`` and
-# ``_preprocess_steps`` — with nothing making those reads consistent with each
-# other. They live out here rather than inside ``create_app`` because none of
-# them needs the app, the job manager or the schema store to do its job.
-#
-# ``D.DatasetError`` is left to propagate: the app turns it into a 400 (see
-# ``create_app``), and the routes that want a 404 instead say so at the one call
-# that can produce theirs.
-# --------------------------------------------------------------------------- #
+# the file once and everything it derives agrees. ``D.DatasetError`` propagates
+# to the app-wide 400 handler in ``create_app``.
 
 
 def roots_for(settings: Mapping[str, Any], **overrides: str) -> D.Roots:
-    """The dataset roots for this request.
-
-    Per-request overrides (query params, or the body of the two POSTs) win;
-    anything blank falls back to the saved roots, then to
-    :data:`D.DEFAULT_ROOTS`. Keyword-only and named after the roots themselves,
-    so the callers that pass only the three browsable trees say so, and adding
-    ``master`` / ``out`` to a route is a keyword rather than a fourth
-    positional.
-    """
+    """The dataset roots for this request: overrides win, blanks fall back to
+    the saved roots, then to :data:`D.DEFAULT_ROOTS`."""
     saved = settings.get(D.SETTINGS_KEY) or {}
     merged = {**saved, **{k: v for k, v in overrides.items() if v}}
     return D.resolve_roots(merged)
 
 
 def stage_defaults(settings: Mapping[str, Any]) -> dict[str, str]:
-    """The Settings dialog's stage defaults, for the fields bound to them
-    (``S.SETTING_FIELDS``): ``path_pattern``, ``tagger_dir``, ``checkpoint`` and
-    ``prompt_embed`` mean the same thing in every stage that takes them, so they
-    are set once, not nine times.
-
-    Blanks are dropped, so an emptied field means "the CLI's own default", not
-    an empty pattern.
-    """
+    """The Settings dialog's stage defaults (``S.SETTING_FIELDS``). Blanks are
+    dropped, so an emptied field means "the CLI's own default"."""
     got = settings.get(S.SETTINGS_KEY) or {}
     return {
         k: str(got[k]).strip()
@@ -133,26 +106,17 @@ def stage_defaults(settings: Mapping[str, Any]) -> dict[str, str]:
 
 
 def report_root(settings: Mapping[str, Any], roots: D.Roots) -> str:
-    """Where every stage's report lands, home-relative — the root only.
-
-    Each stage appends its own tail (``S.Field.report``), so one setting moves
-    the whole set without ever giving two stages the same ``--report_dir``.
-
-    Blank in Settings — the default — means *beside the* ``dst`` *root*, which
-    under the default layout is the workspace itself: ``workspace/resized``'s
-    parent is ``workspace``, so the diffs land at ``workspace/captions/<stage>/``
-    and the grouping manifest at ``workspace/groups/`` without either being
-    named here. The reports describe the resized tree, so they follow it; every
-    stage CLI defaults to a literal ``post_image_dataset/…`` instead, which is
-    the right answer only while the dataset sits where the default says it does.
-    """
+    """Where every stage's report lands, home-relative — the root only; each
+    stage appends its own tail (``S.Field.report``), so no two share a
+    ``--report_dir``. Blank means *beside the* ``dst`` *root*, so reports follow
+    the resized tree they describe wherever the dataset moves."""
     got = str((settings.get(S.SETTINGS_KEY) or {}).get(S.REPORT_SETTING) or "").strip()
     return got or PurePosixPath(D.rel_to_home(roots.dst)).parent.as_posix()
 
 
 def root_paths(roots: D.Roots) -> dict[str, str]:
-    """The dataset roots, home-relative, for the stage fields bound to them
-    (``S.ROOT_FIELDS``): one setting, no per-stage src/dst to disagree."""
+    """The dataset roots, home-relative, for the fields bound to them
+    (``S.ROOT_FIELDS``)."""
     return {k: v["path"] for k, v in roots.as_dict().items()}
 
 
@@ -160,17 +124,11 @@ def make_output_dirs(stage: S.Stage, report: str | None, roots: D.Roots) -> None
     """Create the directories this run *writes* to, so a fresh home does not
     need a mkdir tour before the first job.
 
-    Outputs only, and only the ones the GUI itself chose:
-
-    * the workspace roots this stage binds (``D.OUTPUT_ROOTS`` ∩
-      ``S.ROOT_FIELDS``) — they come from Settings, not from the stage form.
-    * the report directory, from ``S.report_path``.
-
-    Never ``src``, and never a free-text path off the stage form: an empty tree
-    conjured behind a mistyped ``--source`` hides the typo, where the stage's
-    own "no images found" does not. Never ``out`` either — only Export writes
-    there, and it makes its own destination, so an export tree that exists is
-    an export that happened.
+    Only the outputs the GUI itself chose: the workspace roots this stage binds
+    (``D.OUTPUT_ROOTS`` ∩ ``S.ROOT_FIELDS``) and the report directory. Never
+    ``src``, and never a free-text path off the stage form — an empty tree
+    conjured behind a mistyped ``--source`` hides the typo. Never ``out``
+    either, so an export tree that exists means an export happened.
     """
     for name in set(S.ROOT_FIELDS.get(stage.id, {}).values()) & D.OUTPUT_ROOTS:
         D.ensure_output_dir(getattr(roots, name))
@@ -189,10 +147,9 @@ def preprocess_steps(
     """The resize preflight for ``stage``, or nothing.
 
     It runs with the *same* ``defaults`` the stage got, so a per-image Apply
-    resizes exactly that image and a batch resizes the batch. Its own knobs come
-    from the Settings ``preprocess`` block, since it has no panel to carry a
-    form. A stage whose preflight is unavailable (a schema that failed to load)
-    runs alone rather than failing — resize is a convenience, not a gate.
+    resizes exactly that image and a batch resizes the batch; its own knobs come
+    from the Settings ``preprocess`` block. A stage whose preflight is
+    unavailable runs alone — resize is a convenience, not a gate.
     """
     pre_id = S.preprocess_for(stage.id)
     pre = S.BY_ID.get(pre_id or "")
@@ -216,12 +173,10 @@ def preprocess_steps(
 class Schemas:
     """The stage form schemas, kept off the startup path.
 
-    Collecting them means a child interpreter (one stage CLI imports torch at
-    module level, and this process must stay torch-free — ``test_boundary``
-    pins that), which costs seconds on a cache miss. Binding the port must not
-    wait for it: the loader runs on a background thread and only the two
-    endpoints that actually need a schema block on it. A failing dump surfaces
-    as a 500 on those endpoints instead of killing the process.
+    Collecting them means a child interpreter (this process must stay
+    torch-free — ``test_boundary`` pins that), which costs seconds on a cache
+    miss, so the loader runs on a background thread and only the endpoints that
+    need a schema block on it. A failing dump is a 500 there, not a dead server.
     """
 
     TIMEOUT = 60.0
@@ -249,8 +204,7 @@ class Schemas:
 
     def get(self, timeout: float | None = None) -> dict[str, Any]:
         """Block until the dump lands. 503 while it is still running (the
-        frontend resource-loads ``/api/stages``, so that is a spinner), 500 if
-        it failed."""
+        frontend shows that as a spinner), 500 if it failed."""
         if not self._ready.wait(self.TIMEOUT if timeout is None else timeout):
             raise HTTPException(503, "stage schemas are still loading")
         if self._error is not None:
@@ -264,9 +218,7 @@ def create_app(
     # Job logs are curation output like everything else, so they live in the
     # workspace rather than in the tree Export publishes to.
     mgr = jobs or JobManager(log_dir=workspace_dir() / "gui_logs")
-    # Schemas come from a child interpreter (see Schemas): passing them in
-    # short-circuits the thread entirely, otherwise it starts right here and the
-    # app is returned without waiting for it.
+    # Passing schemas in short-circuits the background loader (see Schemas).
     store = Schemas(schemas)
 
     @asynccontextmanager
@@ -278,11 +230,8 @@ def create_app(
     app.state.jobs = mgr
     app.state.schemas = store
 
-    # A refused path, root or report is a bad request, not a crash, and it was
-    # spelled out as `except … raise HTTPException(400, str(e))` at nine call
-    # sites. Registered once instead; the handful of routes that owe a *404*
-    # (an image that is not in the dataset, a file that is not there) still say
-    # so at the one call that can produce theirs.
+    # A refused path, root or report is a bad request, not a crash. The routes
+    # that owe a *404* instead say so at the one call that can produce theirs.
     @app.exception_handler(D.DatasetError)
     @app.exception_handler(P.ProposalError)
     async def _bad_request(_request: Request, exc: Exception) -> JSONResponse:
@@ -329,7 +278,7 @@ def create_app(
     @app.get("/api/models")
     def list_models() -> dict[str, Any]:
         """The download catalog, re-probed per request: a job may have just
-        installed one, and the probe is filesystem/hub-cache only."""
+        installed one."""
         return {
             "models": [a.to_dict() for a in DL.catalog()],
             "models_dir": str(models_dir()),
@@ -337,9 +286,8 @@ def create_app(
 
     @app.post("/api/models/download")
     async def download_models(request: Request) -> dict[str, Any]:
-        """Fetch weights as a normal job, so downloads and stages share the one
-        slot (a 3 GB pull must not run under a stage) and the same log stream.
-        Empty ``ids`` means every missing model."""
+        """Fetch weights as a normal job, so a 3 GB pull cannot run under a
+        stage. Empty ``ids`` means every missing model."""
         body = await request.json()
         ids = [str(i) for i in (body.get("ids") or [])]
         unknown = [i for i in ids if i not in DL.by_id()]
@@ -359,10 +307,8 @@ def create_app(
     async def start_job(request: Request) -> dict[str, Any]:
         """Start a stage.
 
-        ``rel`` scopes the run to one dataset image: the stage's own
-        ``--path_pattern`` is narrowed to that file (``D.item_pattern``), which
-        is what the run bar's per-image button sends. Without it the run uses
-        the pattern from Settings — the batch.
+        ``rel`` scopes the run to one dataset image by narrowing the stage's
+        ``--path_pattern``; without it the run uses the Settings pattern.
         """
         body = await request.json()
         stage = S.BY_ID.get(body.get("stage", ""))
@@ -485,22 +431,17 @@ def create_app(
 
     def _proposals(job_id: str) -> tuple[Any, dict[str, P.Proposal]]:
         """A finished run and what it proposes, keyed by dataset rel.
-
-        Both proposal endpoints want exactly this pair, and ``P.read`` is
-        report-mtime cached, so asking twice for one selection costs a dict
-        lookup.
-        """
+        ``P.read`` is report-mtime cached, so a second ask is a dict lookup."""
         job, path = _report_of(job_id)
         return job, P.read(path, roots_for(load_settings()), job.stage)
 
     @app.get("/api/jobs/{job_id}/proposals")
     def job_proposals(job_id: str) -> dict[str, Any]:
-        """Which dataset images this run wants to change.
+        """Which dataset images this run wants to change — the index only.
 
-        The index only — rels, the caption kind, and a count. The full before/
-        after text of one image comes from ``/proposal`` as the selection lands
-        on it, so opening a 2000-image batch's diff does not put 2000 captions
-        on the wire.
+        The before/after text of one image comes from ``/proposal`` as the
+        selection lands on it, so opening a 2000-image batch's diff does not put
+        2000 captions on the wire.
         """
         job, found = _proposals(job_id)
         return {
@@ -525,7 +466,7 @@ def create_app(
         """Put back the captions this run wrote.
 
         Refuses a dry run outright — it wrote nothing, so "undo" could only mean
-        undoing some *other* run that happens to share the report shape.
+        undoing some *other* run sharing the report shape.
         """
         job, path = _report_of(job_id)
         if not job.apply:
@@ -543,8 +484,7 @@ def create_app(
         return {
             "roots": roots_for(settings).as_dict(),
             "defaults": D.DEFAULT_ROOTS,
-            # What a blank `report_root` resolves to, so Settings can show it as
-            # the placeholder rather than re-deriving "beside dst" in TS.
+            # What a blank `report_root` resolves to, as Settings' placeholder.
             "report_root": report_root({}, roots_for(settings)),
         }
 
@@ -553,10 +493,9 @@ def create_app(
         body = await request.json()
         picked = {k: str(body.get(k) or "").strip() for k in D.DEFAULT_ROOTS}
         roots = D.resolve_roots(picked, trusted=True)
-        # Saving Settings is the one explicit "these are my roots" gesture, so
-        # it makes them real -- and it is the only ``trusted`` resolve, because
-        # it is what *defines* the trees the panel may read (``dataset_bases``).
-        # A root outside the home is therefore set here or nowhere.
+        # The only ``trusted`` resolve: saving Settings is what *defines* the
+        # trees the panel may read (``dataset_bases``), so a root outside the
+        # home is set here or nowhere.
         try:
             created = D.ensure_roots(roots)
         except OSError as e:
@@ -591,22 +530,18 @@ def create_app(
     def dataset_groups() -> dict[str, Any]:
         """The near-twin components the **Groups** stage wrote, rels only.
 
-        The sidebar's second ordering of the same listing: the client joins
-        these rels onto the ``/api/dataset`` rows it already has, so one filter
-        and one truncation serve both modes. The path is derived exactly like a
-        stage's report — ``report_root`` plus the stage's own tail — so the view
-        reads the file the Groups panel writes, wherever Settings points it.
+        The client joins them onto the ``/api/dataset`` rows it already has, so
+        one filter and one truncation serve both sidebar orderings. The path is
+        derived exactly like a stage's report, so the view reads the file the
+        Groups panel writes wherever Settings points it.
         """
         settings = load_settings()
         return D.load_groups(report_root(settings, roots_for(settings)))
 
     @app.post("/api/dataset/items")
     async def dataset_items(request: Request) -> dict[str, Any]:
-        """Refresh named sidebar rows, for reloading exactly what a job touched.
-
-        A finished stage's report names the images it wrote (``written``); the
-        listing then only has to re-stat those, not re-walk the source root.
-        """
+        """Refresh named sidebar rows: re-stat what a job wrote rather than
+        re-walking the source root."""
         body = await request.json()
         rels = [str(r) for r in (body.get("rels") or [])][: D.MAX_ITEMS]
         roots = roots_for(
@@ -646,9 +581,8 @@ def create_app(
     async def dataset_parse(request: Request) -> dict[str, Any]:
         """Parse an *unsaved* caption for the editor's live clause preview.
 
-        The grammar has exactly one implementation and it is
-        ``captions.position_clauses`` — the browser must never hand-split a
-        caption on commas, so it asks instead.
+        The grammar has exactly one implementation (``position_clauses``) — the
+        browser must never hand-split a caption on commas, so it asks instead.
         """
         body = await request.json()
         return D.parsed_caption(str(body.get("text") or ""))
@@ -658,8 +592,7 @@ def create_app(
         """What one Danbooru tag means — the caption panel's click-a-tag panel.
 
         Answers even when the KB is not downloaded (``installed: false``), so
-        the panel can point at Settings > Models instead of erroring; the first
-        call parses the table and later ones are dictionary lookups.
+        the panel can point at Settings > Models instead of erroring.
         """
         tag = tag.strip()
         if not tag:
@@ -699,15 +632,13 @@ def create_app(
 
         The dialog opens on the machine running this server, so it is offered
         only to a browser on that same machine: from anywhere else it would be
-        a window nobody can see, holding the request until it times out. Both
-        that refusal and a host with no chooser at all come back as
-        ``available: false``, which is the panel's cue to fall back to the
-        in-page ``/api/ls`` browser rather than to show an error.
+        a window nobody can see, holding the request until it times out. That
+        refusal and a host with no chooser both come back as
+        ``available: false``, the panel's cue to fall back to ``/api/ls``.
 
-        The answer is written the way the settings file wants it — relative to
-        the curation home when it is under it (:func:`~anime_tools.gui.dataset.
-        rel_to_home`), absolute when it is not. A root outside the home is
-        still refused, but by the save that means it, not by the browse.
+        The answer is home-relative when it is under the home, absolute when it
+        is not. A root outside the home is still refused, but by the save that
+        means it, not by the browse.
         """
         if not _is_loopback(request):
             return {"available": False, "path": None}
@@ -730,14 +661,12 @@ def create_app(
     def ls(request: Request, path: str = "") -> dict[str, Any]:
         """Directory listing for the fallback path browser.
 
-        The fallback has to be able to reach the same places the host's own
-        chooser can, or a host without one could never point a root at a
-        sibling tree — so for a browser on *this* machine it walks anywhere,
-        the way that machine's file manager would, and ``parent`` is how it
-        goes up (the client joins names but never takes a path apart). From
-        anywhere else it stays inside :func:`~anime_tools.gui.dataset.
-        dataset_bases`, which is the same tree the file and thumbnail routes
-        serve.
+        The fallback has to reach the same places the host's own chooser can,
+        or a host without one could never point a root at a sibling tree — so
+        for a browser on *this* machine it walks anywhere, and ``parent`` is how
+        it goes up (the client joins names but never takes a path apart). From
+        anywhere else it stays inside ``D.dataset_bases``, the same tree the
+        file and thumbnail routes serve.
         """
         try:
             p = (
@@ -814,10 +743,8 @@ _CHROMIUM_BINARIES = {
 
 
 def _chromium_binary() -> str | None:
-    """First Chromium-family browser on this machine, or ``None``.
-
-    Only Chromium understands ``--app=URL``; anything else gets a plain tab.
-    """
+    """First Chromium-family browser on this machine, or ``None`` — only
+    Chromium understands ``--app=URL``."""
     import shutil
     import sys
 
@@ -833,11 +760,8 @@ def _chromium_binary() -> str | None:
 def _open_app_window(url: str) -> None:
     """Open ``url`` as a chromeless app window, falling back to a browser tab.
 
-    ``--app=`` drops the tab strip and the omnibox, so the GUI reads as its own
-    window rather than one tab among thirty. It reuses the running browser and
-    its default profile (the process just hands the URL to the existing one and
-    exits), so there is no second session and no extra login. If no Chromium is
-    installed -- or launching one fails -- this is a normal ``webbrowser.open``.
+    ``--app=`` reuses the running browser's default profile, so there is no
+    second session and no extra login.
     """
     import subprocess
 
@@ -856,13 +780,8 @@ def _open_app_window(url: str) -> None:
 
 
 def _open_when_ready(host: str, port: int, url: str, *, timeout: float = 60.0) -> None:
-    """Open ``url`` once the server actually accepts connections.
-
-    A fixed delay races app startup and the browser then lands on a connection
-    error that only a manual refresh clears. Since the stage schemas moved off
-    the startup path (see :class:`Schemas`) this fires within a fraction of a
-    second; the page loads and fills its stage dock when ``/api/stages`` lands.
-    """
+    """Open ``url`` once the server accepts connections: a fixed delay races
+    startup and lands the browser on an error only a refresh clears."""
     import socket
     import time
 

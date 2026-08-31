@@ -1,16 +1,10 @@
 """The SAM3 detection flag block, and the options it builds.
 
-``position_captions`` and ``audit_multiview`` run the *same* detector — the
-audit imports ``build_detect_fn`` from the position CLI and hands it its own
-namespace — so they have always shared the argparse contract without sharing
-its declaration. The audit's copy had already drifted: it lost every
-``--foo-bar`` long-form alias and most of the help text, and (until the fix
-that preceded this refactor) a whole option field.
-
-Both halves live here: :func:`add_detection_args` declares the flags,
-:func:`detection_options` reads the resulting namespace back into the
-detection half of :class:`~anime_tools.stages.position_captions.PositionCaptionOptions`.
-Declaring one without the other is what let them disagree.
+``position_captions`` and ``audit_multiview`` run the *same* detector, so both
+halves are declared together — :func:`add_detection_args` declares the flags,
+:func:`detection_options` reads the namespace back into the detection half of
+:class:`~anime_tools.stages.position_captions.PositionCaptionOptions`.
+Declaring one without the other is what lets them disagree.
 """
 
 from __future__ import annotations
@@ -19,10 +13,9 @@ import argparse
 
 from anime_tools.stages.instance_detection import DEFAULT_SUBJECT_PROMPT_EMBED
 
-# Flags a stage may leave out because it pins the value itself: the audit
-# always wants ``min_instances=2``, never blanks its crops and has no strict
-# count to relax. :func:`detection_options` reads them only when declared, so
-# an omitted flag falls through to the dataclass default.
+# Flags a stage may leave out because it pins the value itself (the audit always
+# wants ``min_instances=2``). :func:`detection_options` reads them only when
+# declared, so an omitted flag falls through to the dataclass default.
 OPTIONAL_FLAGS = ("blank_crops", "min_instances", "strict_count")
 
 
@@ -38,10 +31,10 @@ def add_detection_args(
 ) -> None:
     """The ``detection`` argument group both SAM3 stages run under.
 
-    The four booleans add a flag the *other* stage does not take, in the slot
-    it occupied before this was shared, so each parser's field order — and
-    therefore the GUI form — is unchanged. ``name_confidence`` is the audit's
-    only extra; the clause stage declares its own under clause composition.
+    The four booleans add a flag the *other* stage does not take, in the slot it
+    occupies in that parser's field order — and therefore in the GUI form.
+    ``name_confidence`` is the audit's only extra; the clause stage declares its
+    own under clause composition.
     """
     g = p.add_argument_group("detection")
     g.add_argument("--prompt", default="girl", help="SAM3 text prompt for a subject")
@@ -119,7 +112,7 @@ def add_detection_args(
         type=float,
         default=2.0,
         help="Mask-quality tie-break inside an NMS-matched pair; 0 = off "
-        "(score-only survivor). See docs/experimental/multiview_audit.md §5.",
+        "(score-only survivor). See docs/multiview_audit.md.",
     )
     g.add_argument(
         "--min_area_frac",
@@ -165,18 +158,15 @@ def add_detection_args(
 def detection_options(args: argparse.Namespace, **overrides) -> dict[str, object]:
     """The detection half of ``PositionCaptionOptions``, as keyword arguments.
 
-    The audit used to rebuild this inline and had already lost a field to
-    drift, which is why it is one function: pass the extras
-    (``detection_options(args, min_instances=2)``) rather than retyping the
-    common ones. Flags in :data:`OPTIONAL_FLAGS` are read only when the parser
-    declared them, so a stage that pins the value simply does not ask.
+    Pass the extras (``detection_options(args, min_instances=2)``) rather than
+    retyping the common ones. Flags in :data:`OPTIONAL_FLAGS` are read only when
+    the parser declared them, so a stage that pins the value does not ask.
     """
     opts: dict[str, object] = {
         "prompt": args.prompt,
         "score_threshold": args.score_threshold,
         "retry_score_threshold": args.retry_score_threshold,
-        # The one flag that is not a straight copy: a comma string on the CLI,
-        # a tuple in the options.
+        # Not a straight copy: a comma string on the CLI, a tuple in options.
         "part_prompts": tuple(
             t.strip() for t in args.part_prompts.split(",") if t.strip()
         ),

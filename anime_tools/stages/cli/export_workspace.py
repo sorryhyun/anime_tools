@@ -4,17 +4,14 @@
     python -m anime_tools.stages.cli.export_workspace --apply   # publish it
     python -m anime_tools.stages.cli.export_workspace --undo workspace/captions/export/report.json --apply
 
-Dry-run by default like every other stage, and for the same reason: the export
-is the one operation in the package that writes outside ``workspace/``, so it
-should be something you read before you run. Unlike the caption stages it loads
-no model either way, which is why it has no ``--from_report`` replay — an Apply
-simply runs the pass again for real, and re-decides every row against disk on
-the way, so a destination edited since the dry run is reported rather than
-clobbered.
+Dry-run by default: this is the one operation in the package that writes outside
+``workspace/``. It loads no model, hence no ``--from_report`` replay — an Apply
+runs the pass again and re-decides every row against disk, so a destination
+edited since the dry run is reported rather than clobbered.
 
-See :mod:`anime_tools.stages.export_workspace` for the six artifact kinds and
-where each lands. ``--undo`` reads an ``--apply`` run's report back: the files
-it created are deleted, the captions it overwrote are put back.
+See :mod:`anime_tools.stages.export_workspace` for the six artifact kinds.
+``--undo`` reads an ``--apply`` run's report back: the files it created are
+deleted, the captions it overwrote are put back.
 """
 
 from __future__ import annotations
@@ -47,10 +44,8 @@ DEFAULT_INDEX = f"{WS.REPORTS}/caption_index.json"
 
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(description=__doc__)
-    # --src and --dst keep their package-wide meanings (caption master tree,
-    # resized tree); this is simply the one stage that reads the second and
-    # writes the first, so the help says so rather than the names being
-    # rewritten for one CLI.
+    # --src and --dst keep their package-wide meanings; this is just the one
+    # stage that reads the resized tree and writes the master.
     add_dataset_args(
         p,
         src_help="Caption master dir — where a revised master publishes back to",

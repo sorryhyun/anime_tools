@@ -50,9 +50,8 @@ def _load_gray(path: Path, size: int) -> np.ndarray | None:
     return np.asarray(im, dtype=np.float32)
 
 
-# tags that mean "this image is censored" (so replacing it is meaningful).
-# substring 'censor' catches bar/heart/mosaic/blur/hair/steam/novelty/pointless censor,
-# but 'uncensored'/'decensored' mean the opposite and must NOT trigger.
+# Substring 'censor' catches bar/heart/mosaic/blur/hair/steam censor, but
+# 'uncensored'/'decensored' mean the opposite and must NOT trigger.
 _NOT_CENSOR = {"uncensored", "decensored"}
 _CENSOR_EXTRA = {"convenient hair"}  # hair censor without the word 'censor'
 
@@ -116,15 +115,13 @@ def _worker(path_str: str):
 def build(dir_path: Path, label: str) -> dict[str, dict]:
     """``filename -> descriptor`` for every image in ``dir_path``, cached whole.
 
-    The walk is the shared curation glob, not a ``.webp`` filter: a censored
-    original saved as ``.png`` used to be invisible here and so could never be
-    paired. Descriptors are keyed by filename (extension included), so a mixed
-    directory is fine.
+    The walk is the shared curation glob, not a ``.webp`` filter, so a censored
+    original saved as ``.png`` is pairable too; descriptors are keyed by filename
+    (extension included), so a mixed directory is fine.
 
     One ``.npz`` for the whole directory, stamped with ``(newest mtime, count,
-    CACHE_VER)`` — unlike the PE feature cache next door, which is per image and
-    content-addressed. Anything wrong with the stamp, or with the file itself,
-    means "recompute", never an error.
+    CACHE_VER)`` — unlike the per-image PE feature cache next door. Anything
+    wrong with the stamp or the file means "recompute", never an error.
     """
     files = glob_images_pathlib(dir_path, recursive=False)
     cache = OUT_DIR / f"_desc_{label}.npz"
@@ -196,12 +193,10 @@ def main() -> None:
             }
         )
 
-    # Tier by hamming (the reliable near-duplicate signal). Two hard gates force a
-    # match to 'skip' regardless of visual score:
-    #   - no censor tag in the sidecar  -> nothing to decensor
-    #   - matched decensored is animated -> would inject animation into training
-    # The decensored set also doesn't cover every sincos image, so a tail of genuine
-    # non-matches is expected and skipped (left censored), not force-replaced.
+    # Tier by hamming. Two hard gates force 'skip' regardless of visual score:
+    # no censor tag in the sidecar (nothing to decensor), and an animated match
+    # (would inject animation into training). The decensored set does not cover
+    # every sincos image, so a tail of genuine non-matches is expected.
     for r in rows:
         h = r["hamming"]
         stem = Path(r["sincos"]).stem

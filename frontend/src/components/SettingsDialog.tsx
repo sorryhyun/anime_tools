@@ -23,13 +23,10 @@ import { StatusLine } from "./StatusLine";
 export const ROOT_NAMES: RootName[] = ["src", "master", "dst", "masks", "out"];
 const rootHelp = (n: RootName) => t().settings.rootHelp[n];
 
-/** One `label / input / hint` row of a `.kv` grid.
- *
- * The roots block and the stage-defaults block are the same row twice: a bold
- * name, an uncontrolled input whose value is read off its ref on Save, and a
- * dim line of prose under it. `ref` is how the caller gets the element back —
- * these are deliberately uncontrolled, so nothing is stored per keystroke and
- * Cancel is free.
+/** One `label / input / hint` row of a `.kv` grid — the roots block and the
+ * stage-defaults block are the same row twice. The input is deliberately
+ * uncontrolled and read off its `ref` on Save, so nothing is stored per
+ * keystroke and Cancel is free.
  */
 function SettingRow(props: {
   label: string;
@@ -71,8 +68,7 @@ export type SettingsTab = (typeof SETTINGS_TABS)[number];
 export interface SettingsOut {
   token: string | null;
   roots: Record<string, string> | null;
-  /** The stage defaults (`path_pattern` / `tagger_dir` / `checkpoint` /
-      `prompt_embed` / `report_root`), or null if untouched. */
+  /** The stage defaults, or null if untouched. */
   defaults: Record<string, string> | null;
   /** The preflight stage's form values, or null if untouched. */
   preprocess: Record<string, unknown> | null;
@@ -113,8 +109,8 @@ export function SettingsDialog(props: {
   const [pre, setPre] = createStore<Record<string, unknown>>({});
   const [tab, setTab] = createSignal<SettingsTab>("general");
   /** Which root row's fallback browser is open -- only the hosts with no
-      chooser of their own get here. The root inputs are uncontrolled, so a pick
-      is written straight onto the element the way typing would be. */
+      chooser of their own get here. A pick is written straight onto the
+      (uncontrolled) input, the way typing would be. */
   const [picking, setPicking] = createSignal<RootName | null>(null);
   createEffect(
     on(
@@ -384,12 +380,9 @@ export function SettingsDialog(props: {
   );
 }
 
-/** One catalog row. The button is `type=button` on purpose: every other button
-    in the dialog submits the <form method="dialog"> and closes it. */
 function ModelRow(props: {
   m: ModelAsset;
   busy: boolean;
-  /** This row is part of the running pull. */
   active: boolean;
   onDownload: (ids: string[]) => void;
 }) {

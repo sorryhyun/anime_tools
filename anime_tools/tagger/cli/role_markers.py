@@ -1,41 +1,21 @@
 """Role-marker scan — find character-typed tags that behave like copyrights.
 
-Reads ``vocab.json`` + ``dataset.json`` from a tagger checkpoint dir and
-ranks every ``category=='character'`` tag by its conditional co-occurrence
-with *another* character tag on **solo** training samples, then auto-buckets
-each candidate into one of four classes via a string-prefix heuristic over
-the partner list.
+Ranks every ``category=='character'`` tag in a checkpoint's ``vocab.json`` +
+``dataset.json`` by its conditional co-occurrence with *another* character tag
+on **solo** samples, then buckets each candidate by a prefix heuristic over the
+partner list:
 
-Buckets
-~~~~~~~
+* **A_costume** — candidate and a top partner share the name prefix before the
+  first ``(``; the longer-parenthetical name is the variant. Curate via
+  ``tag_rules.yaml`` dedup blocks so the variant wins whenever both fire.
+* **D_role** — broad partner pool: an affiliation marker (``sensei (blue
+  archive)``). Curate via ``tag_rules.yaml`` ``remove:``.
+* **C_pair** — narrow pool dominated by one partner: a genuine couple/sibling
+  pair. Leave alone; the data is correct.
+* **B_review** — everything else. Likely aliases or noisy edge cases.
 
-* **A_costume** — candidate and a top partner share the same name prefix
-  (everything before the first ``(``). The longer-parenthetical name is
-  the variant; the shorter one is the base. Curate via ``tag_rules.yaml``
-  dedup blocks (``base: [variant1, variant2, ...]``) so the variant wins
-  whenever both fire.
-* **D_role** — broad partner pool (``≥ min_role_partners`` distinct
-  partners across solo co-occurrences). Tag is acting as an affiliation
-  marker (``sensei (blue archive)``, ``producer (idolmaster)``,
-  ``doctor (arknights)``). Curate via ``tag_rules.yaml`` ``remove:``.
-* **C_pair** — narrow partner pool (top-1 partner accounts for ≥60% of
-  co-occurrences, no costume-variant prefix match). Genuine couple/
-  sibling tag pairs (``kousaka kyousuke ↔ kirino``,
-  ``takasu ryuuji ↔ aisaka taiga``). Leave alone — the data is correct,
-  the flat character softmax just absorbs the loss on these.
-* **B_review** — everything else. Likely aliases (``smithee a. haysaca`` ↔
-  ``hayasaka ai``, traveler/protagonist split) or noisy edge cases.
-  Eyeball the ~20 rows that land here and decide per-row.
-
-Output is a printed table (with a ``bucket`` column) and an optional YAML
-stub split into pasteable sections — A bucket as dedup blocks, D bucket
-under ``remove:``, B and C as commented hints. No files in the
-checkpoint dir are mutated — this mode is read-only.
-
-The "solo" predicate matches the trainer's :class:`GroupRouter` logic
-exactly: at least one of ``solo``/``1girl``/``1boy``/``1other`` fires and
-nothing matching the multi-count regex (``2girls``, ``multiple_girls``…)
-fires.
+Read-only: prints a table and optionally writes a pasteable YAML stub. The
+"solo" predicate matches the trainer's :class:`GroupRouter` logic exactly.
 """
 
 from __future__ import annotations
@@ -51,25 +31,19 @@ logger = logging.getLogger(__name__)
 
 
 def _name_prefix(name: str) -> str:
-    """Everything before the first ``(``, stripped. Used for costume detection.
+    """Everything before the first ``(``, stripped — costume detection.
 
-    ``"toki (bunny) (blue archive)"`` → ``"toki"``;
-    ``"gawr gura"``                   → ``"gawr gura"``.
+    ``"toki (bunny) (blue archive)"`` → ``"toki"``.
     """
     return name.split("(", 1)[0].strip()
 
 
 def _name_prefix_no_first_token(name: str) -> str:
-    """Like :func:`_name_prefix` but additionally strips the first space token.
+    """Like :func:`_name_prefix` but also strips the first space token.
 
-    Catches "adjective + base" costume patterns the bare prefix misses:
-
-    * ``"cool mita (miside)"``       → ``"mita"`` (matches base ``"mita (miside)"``)
-    * ``"male rover (wuthering waves)"`` → ``"rover"``
-    * ``"the herta (honkai: star rail)"`` → ``"herta"``
-
-    Returns an empty string when the prefix has only one token (no
-    adjective to drop) — callers should treat empty as "no match".
+    Catches "adjective + base" costume patterns the bare prefix misses
+    (``"cool mita (miside)"`` → ``"mita"``). Empty when the prefix has only one
+    token — callers treat that as "no match".
     """
     pre = _name_prefix(name)
     parts = pre.split()
@@ -85,18 +59,13 @@ def classify(
     min_role_partners: int,
     pair_dominance: float,
 ) -> tuple[str, str]:
-    """Bucket a candidate based on its full partner distribution.
+    """Bucket a candidate on its full partner distribution.
 
-    Returns ``(bucket, base_or_top_partner)`` where ``bucket`` is one of
-    ``A_costume`` / ``C_pair`` / ``D_role`` / ``B_review``. The second
-    element is the partner whose name should be paired with the candidate
-    in the output: the prefix-matching base for A, the top partner for C
-    and B, and an empty string for D (D is broad-pool by definition, no
-    single base).
-
-    Order of checks matters: A wins over D when both could apply (a
-    popular character with both a costume variant and many other partners
-    is still primarily a costume-variant case from the dedup standpoint).
+    Returns ``(bucket, base_or_top_partner)``: the prefix-matching base for A,
+    the top partner for C and B, an empty string for D (broad-pool by
+    definition). Order of checks matters — D is tested before A so a popular
+    character with both a costume variant and many partners lands under
+    ``remove:`` rather than in a dedup row.
     """
     if not partners_full or n_co == 0:
         return "B_review", ""
@@ -105,15 +74,13 @@ def classify(
     top_name, top_count = partners_full[0]
     top_share = top_count / n_co
 
-    # D — role marker: broad partner pool wins over A, regardless of any
-    # incidental prefix overlap, so it lands under `remove:` not a dedup row.
+    # D — role marker: broad partner pool wins over A.
     if n_distinct >= min_role_partners:
         return "D_role", ""
 
-    # A — costume/version variant: prefix-before-paren matches a partner,
-    # OR drop-first-token matches ("cool mita ↔ mita", "the herta ↔ herta").
-    # Matched partner is the *base* if the candidate is more specific; else
-    # the candidate is the base and the row is informational (A_base).
+    # A — costume/version variant: prefix-before-paren or drop-first-token
+    # matches a partner. That partner is the *base* when the candidate is the
+    # more specific one; otherwise the row is informational (A_base).
     cand_prefix = _name_prefix(name)
     cand_prefix_drop1 = _name_prefix_no_first_token(name)
     matched_partner = None
@@ -136,9 +103,8 @@ def classify(
             return "A_costume", matched_partner
         return "A_base", matched_partner
 
-    # C — couple/sibling pair: narrow pool dominated by top partner, but only
-    # at ≥2 distinct partners. n_distinct==1 is ambiguous (alias vs. couple)
-    # and gets pushed to B_review for an eyeball decision.
+    # C — couple/sibling pair: narrow pool dominated by the top partner, but only
+    # at ≥2 distinct partners; n_distinct==1 is ambiguous (alias vs. couple).
     if top_share >= pair_dominance and n_distinct >= 2:
         return "C_pair", top_name
 
@@ -148,9 +114,8 @@ def classify(
 def _is_more_specific(a: str, b: str) -> bool:
     """True if ``a`` is the more-specific (variant) form of ``b``.
 
-    Heuristic: the name with more parenthetical groups is the variant; on
-    a tie, the longer string is the variant. Used to pick the dedup
-    direction so we emit ``base: [variant]`` and not the reverse.
+    More parenthetical groups wins, longer string breaks the tie. Picks the
+    dedup direction so we emit ``base: [variant]`` and not the reverse.
     """
     a_paren = a.count("(")
     b_paren = b.count("(")
@@ -177,10 +142,10 @@ def scan(
           "index": 620,
           "freq": 130,
           "n_solo": 142,                  # solo samples where this tag fires
-          "n_co": 138,                    # of those, how many also have another char
+          "n_co": 138,                    # of those, how many have another char
           "ratio": 0.971,
           "partners": [(name, count), ...],  # top-K partner chars by count
-          "n_distinct_partners": 47,       # full pool breadth
+          "n_distinct_partners": 47,
           "bucket": "D_role",
           "base": "",                      # the variant base (A) or top pair-mate
         }
@@ -253,14 +218,10 @@ def scan(
 def _yaml_safe(s: str) -> str:
     """Return ``s`` in a YAML-safe form for use as a sequence item or key.
 
-    Single-quotes the string when it contains characters that would confuse
-    a YAML parser at this position: ``": "`` (key/value separator —
-    `trailblazer (honkai: star rail)` would otherwise parse as a mapping),
-    a trailing ``":"``, a leading reserved indicator (``@``, ``-``, ``?``,
-    etc.), or an internal apostrophe (which gets doubled inside the quotes
-    per YAML 1.2 § 7.3.2).
-
-    Bare strings are preferred for readability — only quote when needed.
+    Quotes only when needed (bare is more readable): a ``": "`` would make
+    `trailblazer (honkai: star rail)` parse as a mapping, and a leading reserved
+    indicator or internal apostrophe is likewise ambiguous. Apostrophes are
+    doubled inside the quotes per YAML 1.2 § 7.3.2.
     """
     needs_quote = (
         ": " in s
@@ -274,7 +235,6 @@ def _yaml_safe(s: str) -> str:
 
 
 def _format_table(rows: list[dict], limit: int) -> str:
-    """Render the candidate table as fixed-width text."""
     if not rows:
         return "(no candidates above threshold)"
     head = (
@@ -296,16 +256,11 @@ def _format_table(rows: list[dict], limit: int) -> str:
 
 
 def _emit_yaml_stub(rows: list[dict], min_solo: int, min_ratio: float) -> str:
-    """Build a single yaml-shaped string with three pasteable sections.
+    """Build a yaml-shaped string with pasteable per-bucket sections.
 
-    The output is **not** a single valid YAML document — it's a working
-    file the curator copies snippets out of. Sections:
-
-    * ``# A_costume`` — dedup blocks (``base: [variants]``) ready to paste
-      under top-level keys in ``tag_rules.yaml``.
-    * ``# D_role``   — items ready to paste under ``remove:``.
-    * ``# B_review`` / ``# C_pair`` — commented hints; nothing to paste
-      verbatim, but useful for triage decisions.
+    The output is **not** a single valid YAML document — it is a working file
+    the curator copies snippets out of: A_costume as dedup blocks, D_role as
+    ``remove:`` items, B_review/C_pair as commented triage hints.
     """
     by_bucket: dict[str, list[dict]] = {}
     for r in rows:

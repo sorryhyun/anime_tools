@@ -1,21 +1,11 @@
-"""Build a dbv4-backed AnimaTagger checkpoint dir from an existing PE checkpoint.
+"""Build a dbv4-backed AnimaTagger checkpoint dir from an existing checkpoint.
 
 The new dir carries **only our data** — vocab / rules / groups / dataset split
-copied from the source checkpoint, ``config.json`` naming the upstream dbv4
-repo, and a ``thresholds.safetensors`` seeded from the card's per-tag
-``best_threshold`` (tags dbv4 cannot emit get a never-fire threshold until a
-sidecar head is trained for them; see ``train_sidecar.py``). No weights are
-copied or downloaded here: the GPL-3.0 dbv4 weights come from HF under the
-user's own token at first ``AnimaTagger`` use.
-
-::
-
-    uv run python -m anime_tools.tagger.cli.build_dbv4_ckpt \\
-        --src _archive/anima_tagger_training/checkpoints/anima-tagger-v5 \\
-        --out models/captioners/anima-tagger-dbv4
-
-Then ``AnimaTagger("models/captioners/anima-tagger-dbv4")`` works anywhere a
-``--tagger_dir`` is accepted.
+copied from ``--src``, a ``config.json`` naming the upstream dbv4 repo, and a
+``thresholds.safetensors`` seeded from the card's per-tag ``best_threshold``
+(tags dbv4 cannot emit get a never-fire threshold until ``train_sidecar.py``
+gives them a score source). No weights are copied or downloaded: the GPL-3.0
+dbv4 weights come from HF under the user's own token at first use.
 """
 
 from __future__ import annotations

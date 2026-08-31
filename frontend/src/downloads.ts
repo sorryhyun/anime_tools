@@ -56,8 +56,6 @@ export function createDownloads(config: Config) {
     config.openSettings("models");
   }
 
-  /** Start a weights download; it reports into the Settings dialog that started
-      it, which stays open over it. */
   async function start(want: string[]) {
     try {
       const job = await api.downloadModels(want);

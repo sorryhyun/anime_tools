@@ -1,15 +1,9 @@
 """What every mask generator does around the model: flags, plan, write, read.
 
-``masking/`` had no non-CLI module, so the skeleton either side of the actual
-detector — the same seven flags, the same walk-mirror-skip plan, the same
-invert-and-save tail — was retyped once per generator. These are those pieces,
-with one definition each.
-
 Declaration *order* is part of the argparse contract (``gui.stages.fields_of``
 walks ``parser._actions`` in order and the form follows it), which is why the
-flag helpers come in the small contiguous blocks the two generators already
-interleave their own flags between, rather than one all-or-nothing call — the
-same rule ``stages/cli/_args.py`` states for the caption stages.
+flag helpers come in small contiguous blocks the generators interleave their own
+flags between rather than one all-or-nothing call.
 """
 
 from __future__ import annotations
@@ -23,9 +17,8 @@ from PIL import Image
 from anime_tools._walk import walk_images
 
 MASK_SUFFIX = "_mask.png"
-"""What a mask is named after its image: ``{stem}_mask.png``. The whole
-contract between the generators, ``merge_masks`` and the GUI's mask lookup is
-this string plus "mirror the source subdir"."""
+"""The whole contract between the generators, ``merge_masks`` and the GUI's mask
+lookup is this string plus "mirror the source subdir"."""
 
 WALK_HELP = (
     "Walk subfolders under --image-dir. Mask output mirrors the source "
@@ -39,7 +32,6 @@ PATTERN_HELP = (
 
 
 def mask_name(stem: str) -> str:
-    """``{stem}_mask.png`` — the mask file for an image with this stem."""
     return f"{stem}{MASK_SUFFIX}"
 
 
@@ -47,20 +39,16 @@ def mask_name(stem: str) -> str:
 
 
 def add_mask_dir_args(p: argparse.ArgumentParser) -> None:
-    """``--image-dir`` / ``--mask-dir``: the two roots every generator takes."""
     p.add_argument("--image-dir", type=str, required=True, help="Image directory")
     p.add_argument("--mask-dir", type=str, required=True, help="Output mask directory")
 
 
 def add_force_arg(p: argparse.ArgumentParser) -> None:
-    """``--force`` — regenerate masks that already exist."""
     p.add_argument("--force", action="store_true", help="Regenerate existing masks")
 
 
 def add_device_arg(p: argparse.ArgumentParser) -> None:
-    """``--device``, defaulting to ``None`` so the CLI resolves it in-process.
-
-    Same reason as ``stages/cli/_args.add_model_args``: the dest is in
+    """``--device``, ``None`` so the CLI resolves it in-process: the dest is in
     :data:`anime_tools.gui.stages.AUTO_FIELDS`, never shown and never sent.
     """
     p.add_argument("--device", type=str, default=None, help="cuda|cpu (default: auto)")
@@ -69,15 +57,13 @@ def add_device_arg(p: argparse.ArgumentParser) -> None:
 def add_workers_arg(
     p: argparse.ArgumentParser, *, help: str = "I/O workers (default: 4)"
 ) -> None:
-    """``--workers`` — the load/save thread pool size."""
     p.add_argument("--workers", type=int, default=4, help=help)
 
 
 def add_walk_args(p: argparse.ArgumentParser, *, pattern_help: str = "") -> None:
     """``--recursive`` / ``--path-pattern``: which images get masked at all.
 
-    ``pattern_help`` appends a stage-specific sentence to :data:`PATTERN_HELP`
-    (the SAM3 generator also reads a pattern out of its YAML, and says so).
+    ``pattern_help`` appends a stage-specific sentence to :data:`PATTERN_HELP`.
     """
     p.add_argument("--recursive", action="store_true", help=WALK_HELP)
     p.add_argument(
@@ -115,12 +101,10 @@ def plan_mask_jobs(
 ) -> list[tuple[Path, Path]]:
     """``[(image_path, mask_path)]`` for the masks still to write.
 
-    Walks ``image_dir`` (``walk_images`` raises on same-stem collisions *within*
-    one folder, which would have the two images overwrite each other's mask;
-    the same stem across folders is fine — the mirrored layout disambiguates
-    it), mirrors each image onto its mask path, drops the ones already on disk
-    unless ``force``, and creates the output directories for the rest, so the
-    caller's write loop can be a plain save.
+    ``walk_images`` raises on same-stem collisions *within* one folder, which
+    would have the two images overwrite each other's mask; the same stem across
+    folders is fine, since the mirrored layout disambiguates it. Output
+    directories are created here, so the caller's write loop is a plain save.
     """
     jobs: list[tuple[Path, Path]] = []
     for image_path in walk_images(image_dir, recursive=recursive, pattern=pattern):
@@ -133,7 +117,7 @@ def plan_mask_jobs(
 
 
 def save_mask(path: Path, alpha_mask: np.ndarray) -> None:
-    """Write an 8-bit ``L`` mask. Thread-safe enough for the I/O pool."""
+    """Thread-safe enough for the I/O pool."""
     Image.fromarray(alpha_mask, mode="L").save(path)
 
 
@@ -154,8 +138,7 @@ def write_ignore_mask(path: Path, detected: np.ndarray, *, pool=None):
     """Save the *inverse* of a detection mask, the polarity the trainer reads.
 
     detected=1 → alpha=0 (ignored in the loss), no detection → alpha=255
-    (trained on). This is the one home for that inversion: text and speech
-    bubbles are what the detector finds and exactly what training must skip.
+    (trained on). The one home for that inversion.
     """
     return write_mask(path, 1 - np.asarray(detected), pool=pool)
 

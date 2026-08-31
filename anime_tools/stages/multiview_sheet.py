@@ -1,15 +1,12 @@
 """Render one contact sheet per finding so a human can judge it at a glance.
 
-The audit's verdict rests on evidence a reviewer cannot see from ``report.json``
-alone: *which* two boxes SAM drew, and what the tagger read off each one. A sheet
-puts all of it on a single page — the full image with the boxes overlaid, the
-crops the tagger actually saw (colour-matched to their box), the identity it read
-from each, and the caption edit being proposed — so accepting or rejecting a row
-is one look rather than a cross-reference.
+``report.json`` cannot show which boxes SAM drew or what the tagger read off
+each. A sheet puts that on one page: the full image with the boxes overlaid, the
+crops the tagger saw (colour-matched to their box), the identity read from each,
+and the proposed caption edit.
 
-Deliberately one file per finding rather than one grid for the run: a page per
-image can be flipped through, deleted as it is cleared, and named after the
-image it judges.
+One file per finding rather than one grid for the run, so a page can be flipped
+through, deleted as it is cleared, and named after the image it judges.
 """
 
 from __future__ import annotations
@@ -40,14 +37,14 @@ _DIM = (150, 150, 158)
 _PANEL_BG = (36, 36, 42)
 
 # Per-verdict accent, and a per-instance palette so a crop tile's border matches
-# the box it came from — the whole point of the sheet is that pairing.
+# the box it came from — that pairing is the point of the sheet.
 _VERDICT_COLOR = {
     MULTIPLE_VIEWS: (80, 200, 120),
     EXTRA_CHARACTER: (240, 160, 60),
 }
 _UNSURE_COLOR = (140, 150, 170)
-# Public, and the only copy: the review and A/B sheets import it so a numbered
-# box and its crop card read as the same subject across all three surfaces.
+# The only copy: the review and A/B sheets import it, so a numbered box and its
+# crop card read as the same subject on all three surfaces.
 BOX_COLORS = [
     (255, 90, 90),
     (90, 170, 255),
@@ -68,8 +65,7 @@ _FONT_CANDIDATES = (
 def _font(size: int, bold: bool = False) -> ImageFont.ImageFont:
     """A real TTF if the system or matplotlib has one, else PIL's bitmap default.
 
-    Falls back rather than raising: a sheet with an ugly font is still a usable
-    sheet, and this runs on whatever box the dataset lives on.
+    Falls back rather than raising: a sheet with an ugly font is still usable.
     """
     names = list(_FONT_CANDIDATES)
     try:
@@ -80,8 +76,7 @@ def _font(size: int, bold: bool = False) -> ImageFont.ImageFont:
             0, str(mpl / ("DejaVuSans-Bold.ttf" if bold else "DejaVuSans.ttf"))
         )
     except (ImportError, AttributeError, TypeError):
-        # No matplotlib, or one installed as a namespace package with no
-        # ``__file__`` to hang the bundled DejaVu off.
+        # No matplotlib, or one with no ``__file__`` to find its DejaVu under.
         pass
     if bold:
         names.insert(0, "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf")
@@ -89,7 +84,6 @@ def _font(size: int, bold: bool = False) -> ImageFont.ImageFont:
         try:
             return ImageFont.truetype(name, size)
         except OSError:
-            # Not there, or not a font PIL can parse — try the next candidate.
             continue
     return ImageFont.load_default()
 
@@ -115,10 +109,10 @@ def _text(
 def _identity_line(finding_crop) -> str:
     """The identity the verdict used — or why it was thrown away.
 
-    Both discard paths are spelled out rather than shown as a blank, because the
-    reviewer's next question after "why wasn't this a view pair" is always which
-    of the two fired: a low-score box (mask usually shredded, so whatever the
-    tagger read is noise) or a crop with no legible identity in it.
+    Both discard paths are spelled out rather than shown as a blank: after "why
+    wasn't this a view pair" the reviewer's next question is which of the two
+    fired — a low-score box (shredded mask, so the read is noise) or a crop with
+    no legible identity in it.
     """
     read = ", ".join(v for _, v in sorted(finding_crop.raw_groups.items()))
     if not finding_crop.reliable:
@@ -158,8 +152,7 @@ def render_contact_sheet(
         marks.rectangle([x1, y1, x1 + 26, y1 + 26], fill=color)
         marks.text((x1 + 8, y1 + 4), label, font=head_font, fill=(20, 20, 24))
 
-    # Crops sit in a column beside the original; the sheet grows to fit whichever
-    # of the two is taller.
+    # Crops column beside the original; the sheet grows to fit the taller.
     crop_column_x = _MARGIN + preview.width + 24
     crop_width = SHEET_WIDTH - crop_column_x - _MARGIN
     tile = min(_CROP_TILE, crop_width - 200)
@@ -260,9 +253,8 @@ def render_contact_sheet(
 def sheet_path(sheets_dir: Path, finding: MultiviewFinding) -> Path:
     """Mirror the dataset layout, prefixed so a directory listing sorts by verdict.
 
-    Reviewing goes verdict-first — clear all the confident view sheets, then argue
-    about the rest — and a filename prefix is the only sort key a plain image
-    viewer offers.
+    Reviewing goes verdict-first, and a filename prefix is the only sort key a
+    plain image viewer offers.
     """
     rel = Path(finding.image)
     stem = f"{finding.verdict.replace(' ', '-')}_{finding.confidence}_{rel.stem}.png"

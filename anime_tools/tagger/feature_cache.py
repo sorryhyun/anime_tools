@@ -7,11 +7,6 @@ can be retrained (and the calibration probe re-run) without touching a GPU
 again. The stem list the cache was built for rides in the safetensors metadata
 under ``stems`` — a cache built for a different manifest is not merely stale,
 it is misaligned row-for-row, so every reader checks it.
-
-The module used to hold only path helpers for the archived PE dual-encoder
-token caches (``tokens-<encoder>/`` — reclaimed 2026-08-27 with that trainer)
-while claiming "change the layout here, propagate everywhere"; the two live
-readers each hardcoded the dbv4 path template instead. Now they don't.
 """
 
 from __future__ import annotations
@@ -35,9 +30,8 @@ __all__ = [
 ]
 
 # Decoupled from the checkpoint dir on purpose: the cache is dataset-derived and
-# bulky, so it lives with the other dataset caches and is shared across
-# checkpoints built over the same corpus. Dataset-derived means the workspace:
-# it is something the tools produced, not something Export ships.
+# bulky, so it lives in the workspace with the other dataset caches and is
+# shared across checkpoints built over the same corpus.
 DBV4_CACHE_DIR = Path(WS.WORKSPACE) / "anima_tagger" / "dbv4"
 
 

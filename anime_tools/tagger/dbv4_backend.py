@@ -1,33 +1,20 @@
-"""dbv4 backend for :class:`AnimaTagger` — an off-the-shelf danbooru tagger
-behind the Anima tagger contract.
+"""dbv4 backend for :class:`AnimaTagger` — the off-the-shelf
+``animetimm/*.dbv4-full`` danbooru tagger behind the Anima tagger contract.
 
-The ``animetimm/*.dbv4-full`` family (caformer_b36 / convnextv2_huge, …) is a
-full backbone fine-tuned on all of danbooru (12,476 tags). Measured on our own
-held-out split it is 2–2.5× better than the in-house frozen-PE linear probe on
-every slice (``bench/tagger_external/``, 2026-08-26), so the tagger's
-*inference contract* stays and the model behind it is swapped.
-
-What this module provides:
-
-* :func:`load_dbv4_card` — the repo's ``selected_tags.csv`` (name / category /
-  ``best_threshold``) and ``meta.json`` (timm arch kwargs), fetched through
-  the repo-wide ``hf_download`` helper. **The weights are GPL-3.0 and gated**:
-  they are never vendored or bundled; the user's own HF token (which implies
-  accepting the repo terms) is what downloads them.
+* :func:`load_dbv4_card` — the repo's ``selected_tags.csv`` + ``meta.json``.
+  **The weights are GPL-3.0 and gated**: never vendored, only ever fetched
+  under the user's own HF token (which implies accepting the repo terms).
 * :func:`align_vocab` — the single join point between dbv4's snake_case names
   and our space-separated vocab (``rules.yaml`` renames recovered through
   ``rename_recovery``). Everything downstream indexes by *our* vocab index.
 * :class:`Dbv4Backend` — image → ``(probs over dbv4 tags, MLP-head hidden
-  feature)``. The hidden feature (post ``fc1 → act → norm``, 3072-d on
-  caformer_b36) is what the sidecar head consumes.
-* :class:`SidecarHead` — a linear head over that hidden feature that emits
-  **only** what dbv4 cannot say: copyright, dataset-only characters, and the
-  8-way people-count bucket. ``@artist`` is deliberately not part of it
-  (2026-08-27 decision: artist attribution is not a tagger goal any more).
+  feature)``; the hidden feature is what the sidecar consumes.
+* :class:`SidecarHead` — a linear head emitting **only** what dbv4 cannot say:
+  copyright, dataset-only characters, the 8-way people-count bucket.
+  ``@artist`` is deliberately not part of it.
 
-Categories in dbv4's card: 0 general, 4 character, 9 rating — no copyright,
-no artist. Rating names are danbooru's (``general``/``questionable``) and are
-mapped onto Anima's ``safe``/``nsfw`` here.
+dbv4 card categories: 0 general, 4 character, 9 rating — no copyright, no
+artist. Its danbooru rating names are mapped onto Anima's here.
 """
 
 from __future__ import annotations
@@ -73,9 +60,7 @@ SIDECAR_WEIGHTS = "sidecar.safetensors"
 SIDECAR_META = "sidecar.json"
 
 
-# --------------------------------------------------------------------------- #
-# Card (tag list + thresholds) and vocab alignment
-# --------------------------------------------------------------------------- #
+# Card (tag list + thresholds) and vocab alignment.
 
 
 @dataclass
@@ -190,10 +175,8 @@ def rename_recovery_from_rules(rules) -> dict[str, str]:
     return {tgt: src for src, tgt in rules.replacements}
 
 
-# --------------------------------------------------------------------------- #
-# Image preprocessing (matches the card's preprocess.json: pad-white square →
-# bicubic resize → ImageNet normalisation)
-# --------------------------------------------------------------------------- #
+# Image preprocessing — matches the card's preprocess.json: pad-white square →
+# bicubic resize → ImageNet normalisation.
 
 
 def pad_square_white(im: Image.Image) -> Image.Image:
@@ -212,9 +195,7 @@ def preprocess_dbv4(im: Image.Image, size: int) -> torch.Tensor:
     return torch.from_numpy(np.asarray(im, dtype=np.float32) / 255.0).permute(2, 0, 1)
 
 
-# --------------------------------------------------------------------------- #
-# Backend
-# --------------------------------------------------------------------------- #
+# Backend.
 
 
 @dataclass
@@ -339,9 +320,7 @@ class Dbv4Backend:
         return self.forward_tensor(x)
 
 
-# --------------------------------------------------------------------------- #
-# Sidecar head — what dbv4 cannot say
-# --------------------------------------------------------------------------- #
+# Sidecar head — what dbv4 cannot say.
 
 
 class SidecarHead(nn.Module):

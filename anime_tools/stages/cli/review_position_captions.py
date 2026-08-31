@@ -1,20 +1,15 @@
 """Contact sheet for an applied `caption-position` run: image / SAM segment / caption before-after.
 
-`ab_position_captions.py` answers "does rule A differ from rule B". This answers
-the other question — "what did the run that already landed actually do to my
-captions, and did the detector see what I think it saw". One row per image:
-the detection overlay, the mask-blanked crops the tagger was handed, and the
-master caption next to the derived one now on disk, with every clause tag
-marked as moved / novel / duplicated.
+What an already-landed run did to the captions, and whether the detector saw
+what you think it saw. One row per image: the detection overlay, the
+mask-blanked crops, and the master caption next to the derived one now on disk,
+every clause tag marked moved / novel / duplicated.
 
 The **after** side is read from disk (`--dst`), not re-proposed, so the sheet
-shows what actually trains. Detection is re-run only to recover the crops and
-boxes (they are review artifacts and nothing persists them), proposing from the
-master under `--src` the way the A/B sheet does — after one `--apply` the
-derived caption carries clauses and `is_candidate` would reject the corpus as
-`already-has-clauses`. When that fresh proposal disagrees with what is on disk
-the row is flagged `drift` — the run used different flags, or the caption was
-edited since.
+shows what actually trains. Detection is re-run only to recover the (unpersisted)
+crops and boxes, proposing from the master under `--src` — after one `--apply`
+the derived caption carries clauses and `is_candidate` would reject the corpus.
+A fresh proposal that disagrees with disk flags the row `drift`.
 
 Read-only: writes only under `--out`, never a caption.
 
@@ -49,13 +44,10 @@ CROP = 320
 class PositionPalette:
     """One color per position phrase, allocated per row in first-seen order.
 
-    Every surface of a row — overlay box, crop card, clause header — looks its
-    color up here by the *position name*, so "top left" is the same color
-    everywhere. Index-based coloring (the old scheme) desynced: the overlay
-    numbered boxes in detection order while the clauses sat in caption order.
-    A drifted after-caption whose position no longer exists ("bottom" from an
-    older naming run) simply allocates the next color — visibly matching
-    nothing, which is the honest rendering.
+    Keyed by the *position name*, not an index: the overlay numbers boxes in
+    detection order while the clauses sit in caption order. A drifted
+    after-caption whose position no longer exists allocates the next color and
+    visibly matches nothing, which is the honest rendering.
     """
 
     def __init__(self) -> None:
@@ -110,10 +102,9 @@ def flat_key_set(caption: str) -> set[str]:
 def classify(tag: str, before_bag: set[str], after_bag: set[str]) -> str:
     """How a clause tag got there — read off the two captions, not the proposal.
 
-    Deriving this from the on-disk text rather than ``proposal.moved`` keeps the
-    verdict true even when the re-derivation drifts: ``moved`` is the v2 rewrite
-    (the bag gave the tag up), ``novel`` is a crop invention the master never
-    carried, ``duplicated`` is the v1 shape where it stayed flat as well.
+    On-disk text rather than ``proposal.moved`` keeps the verdict true when the
+    re-derivation drifts: ``moved`` = the bag gave it up, ``novel`` = a crop
+    invention the master never carried, ``duplicated`` = still flat as well.
     """
     key = tag.strip().lower()
     if key not in before_bag:
@@ -148,11 +139,9 @@ def caption_html(
 ) -> str:
     """Render one caption, marking what each clause tag did to the flat bag.
 
-    Clause colors are the box colors: a position the palette knows (the fresh
-    instances seeded it) matches by name; otherwise the i-th clause takes the
-    i-th box's color from ``fallback_colors`` — a drifted after-caption still
-    lists its clauses in the reading order of the run that wrote it, so order
-    is the next-best identity when the names have since changed.
+    Clause colors are the box colors, matched by position name; when the palette
+    does not know it, the i-th clause takes the i-th box's color, since a drifted
+    caption still lists clauses in the reading order of the run that wrote it.
     """
     if not caption:
         return "<span class=dim>(empty)</span>"
@@ -348,11 +337,9 @@ def main() -> None:
         else:
             status = f"skip:{reason}"
 
-        # One color per position name, shared by every surface of the row —
-        # overlay box, crop card, clause header. Instances (reading order,
-        # matching the crop sink) carry the positions; a gate-rejected image
-        # has none, so its raw detections take synthetic keys that clause
-        # coloring can never collide with.
+        # Instances (reading order, matching the crop sink) carry the positions;
+        # a gate-rejected image has none, so its raw detections take synthetic
+        # keys that clause coloring can never collide with.
         palette = PositionPalette()
         if proposal is not None and proposal.instances:
             boxes = [inst.box for inst in proposal.instances]
@@ -389,8 +376,7 @@ def main() -> None:
                 "drift": drift,
                 "has_clauses": has_clauses,
                 # After first: its clause positions match the fresh instances,
-                # so they reuse the box colors — by name when possible, by
-                # clause order when the on-disk names predate a naming change.
+                # so they reuse the box colors.
                 "after": caption_html(
                     after, before_bag, after_bag, palette, box_colors
                 ),

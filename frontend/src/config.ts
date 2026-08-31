@@ -24,10 +24,9 @@ export function createConfig() {
     setSettings(s);
     return s;
   });
-  /** `path_pattern` / `tagger_dir` / `checkpoint` / `prompt_embed` /
-      `report_root`: one value each, from Settings, for every stage that takes
-      them. The server fills the flags; this is only the copy the run bar and
-      the Settings dialog show. */
+  /** One value each, from Settings, for every stage that takes them. The
+      server fills the flags; this is only the copy the run bar and the Settings
+      dialog show. */
   const stageDefaults = () => settings.stage_defaults ?? {};
 
   const [settingsOpen, setSettingsOpen] = createSignal(false);

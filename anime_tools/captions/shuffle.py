@@ -1,9 +1,5 @@
-"""Caption shuffle grammar — ``@artist`` prefix boundary, ``@no-artist`` sentinel,
-section-aware tag shuffle.
-
-Torch-free. Lives on the curation side (destined for ``anime_tools.captions``);
-the trainer re-exports these names from ``library.anima.training`` so existing
-callers keep working. Never import trainer modules from here.
+"""Caption shuffle grammar — ``@artist`` prefix boundary, ``@no-artist``
+sentinel, section-aware tag shuffle. Torch-free.
 """
 
 from __future__ import annotations
@@ -14,23 +10,18 @@ from anime_tools.captions.position_clauses import is_clause_header
 from anime_tools.captions.taxonomy import is_artist_tag
 
 # Sentinel users can drop into captions that lack a real artist tag, so the
-# shuffle/drop boundary keeps working. Stripped from caption variants before
-# they reach the tokenizer (see _generate_caption_variants in
-# scripts/preprocess/cache_text_embeddings.py). Callers of anima_smart_shuffle_caption
-# that feed the result to a tokenizer must strip it themselves — kept inside
-# the shuffle so the boundary index stays consistent with the input.
+# shuffle/drop boundary keeps working. Callers that feed a shuffle result to a
+# tokenizer must strip it themselves — it is kept inside the shuffle so the
+# boundary index stays consistent with the input.
 NO_ARTIST_SENTINEL = "@no-artist"
 
 
 def find_anima_prefix_end(tags: list[str]) -> int:
     """Index one past the trailing artist-handle in the leading run.
 
-    Walks ``tags`` accepting any non-artist tags up front, then any consecutive
-    artist tags, and stops at the first non-artist tag that follows an artist.
-    Returns 0 if no artist tag is present anywhere (the no-artist case the
-    ``@no-artist`` sentinel exists to fix). Multi-artist captions
-    (e.g. ``@artist1, @artist2, …``) protect the full handle run, not just the
-    first handle.
+    Returns 0 if no artist tag is present anywhere (the case the ``@no-artist``
+    sentinel exists to fix). Multi-artist captions protect the full handle run,
+    not just the first handle.
     """
     split_idx = 0
     saw_artist = False
@@ -65,8 +56,8 @@ def anima_smart_shuffle_caption(flex_tokens: list[str]) -> list[str]:
     prefix = flex_tokens[:split_idx]
     suffix = flex_tokens[split_idx:]
 
-    # Split suffix into sections delimited by "On the ..." clause headers — the
-    # grammar's own predicate, so a new header form is one edit, not three.
+    # Sections delimited by clause headers, via the grammar's own predicate so a
+    # new header form is one edit, not three.
     sections: list[list[str]] = [[]]
     for tag in suffix:
         if is_clause_header(tag):

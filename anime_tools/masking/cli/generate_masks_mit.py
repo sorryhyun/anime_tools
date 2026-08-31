@@ -4,12 +4,10 @@ Model: https://huggingface.co/a-b-c-x-y-z/Manga-Text-Segmentation-2025
 
 By default each mask is gated by comictextdetector's text-BLOCK head (--ctd-gate):
 only UNet++ mask components overlapping a detected text block survive. The UNet++
-alone has a small but systematic false-positive habit on decorative line art
-(measured 2026-07-04: 0.07-0.63% of pixels on halo/ornament-only images — i.e. it
-excludes exactly the decorative elements a style LoRA should train on), while its
-real-text recall is solid. The blk head supplies the precision; the UNet++ supplies
-the stroke-accurate mask. Trade-off: sfx text the blk head misses is no longer
-masked — use --no-ctd-gate to restore raw UNet++ behavior.
+alone systematically false-positives on decorative line art — exactly the elements
+a style LoRA should train on — while its real-text recall is solid, so the blk head
+supplies the precision and the UNet++ the stroke-accurate mask. Trade-off: sfx text
+the blk head misses is no longer masked; --no-ctd-gate restores raw UNet++ output.
 """
 
 from __future__ import annotations
@@ -30,8 +28,8 @@ if TYPE_CHECKING:
 
 from anime_tools._device import resolve_device
 
-# The repo/filename live in the download catalog so the GUI can pre-fetch this
-# net; the loader below reads it straight out of the hub cache either way.
+# In the download catalog so the GUI can pre-fetch this net; the loader below
+# reads it out of the hub cache either way.
 from anime_tools.downloads import MIT_TEXT_FILENAME as _HF_FILENAME
 from anime_tools.downloads import MIT_TEXT_REPO as _HF_REPO
 from anime_tools.masking._masks import (
@@ -72,9 +70,8 @@ def _convert_batchnorm_to_groupnorm(module: nn.Module) -> None:
 
 
 def _load_model(model_path: str | None = None, device: str = "cuda") -> nn.Module:
-    # segmentation_models_pytorch costs ~2s to import (it pulls timm + torchvision
-    # eagerly). Only the weight-loading path needs it, and `--help` / the GUI's
-    # schema dump import this module just for its parser -- keep it out of both.
+    # smp costs ~2s to import (timm + torchvision eagerly), and `--help` / the
+    # GUI schema dump import this module just for its parser.
     import segmentation_models_pytorch as smp
     import torch
 
@@ -156,8 +153,7 @@ def _load_ctd(onnx_path: str, device: str = "cuda"):
     """Return forward(canvas_1024_rgb) -> raw output list.
 
     onnxruntime CUDAExecutionProvider when available (~17 ms/forward vs seconds
-    on cv2.dnn CPU — same lever as project/finished/sr/scripts/detect_text_boxes.py), cv2.dnn
-    CPU as fallback.
+    on cv2.dnn CPU), cv2.dnn CPU as fallback.
     """
     if device != "cpu":
         try:
@@ -201,8 +197,8 @@ def _ctd_text_boxes(
 ) -> list[tuple[int, int, int, int]]:
     """Text-block boxes (yolo blk head + stroke-coverage cross-check) in img coords.
 
-    Mirrors project/finished/sr/scripts/detect_text_boxes.py::_detect — see there for why the blk
-    head is required (the seg head alone false-positives on halos/ornaments).
+    The blk head is required: the seg head alone false-positives on halos and
+    ornaments.
     """
     h0, w0 = img.shape[:2]
     r = min(1024 / h0, 1024 / w0)

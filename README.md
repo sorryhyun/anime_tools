@@ -112,7 +112,7 @@ home: `ANIME_TOOLS_HOME` → `ANIMA_HOME` → current directory
 - [`docs/contract.md`](docs/contract.md) — the `anime_tools` ↔ `anima_lora` contract (dependency direction, file formats, grammar, seams).
 - [`docs/anima_tagger.md`](docs/anima_tagger.md) — the tagger: vocab build, dbv4 backend, sidecar head, calibration.
 - [`comfyui/anima_tagger/`](comfyui/anima_tagger/) — the Anima Tagger ComfyUI node (loader + captioner; link the directory into `custom_nodes/`).
-- [`docs/position_captions.md`](docs/position_captions.md) — position-clause grammar, v2 rewrite rules and gates, evidence.
+- [`docs/position_captions.md`](docs/position_captions.md) — position-clause grammar, rewrite rules, gates and knobs.
 - [`docs/multiview_audit.md`](docs/multiview_audit.md) — multi-view / multi-panel caption audit.
 - `.claude/skills/captions/` — the Claude Code skill for the caption pipeline.
 

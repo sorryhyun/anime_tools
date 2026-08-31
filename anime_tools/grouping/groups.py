@@ -1,31 +1,23 @@
 """Dataset image grouping — connected-components clustering on PE-Spatial grids.
 
-A *curation* primitive (distinct from ``library/preprocess``, which makes data
-training-ready): group visually near-identical / same-concept images so the GUI
-dataset browser can filter by group, dedup is easy to spot, and subsets are easy
-to balance. The grouping edge is the **same near-twin gate the miner uses**
+The grouping edge is the **same near-twin gate the miner uses**
 (:mod:`anime_tools.grouping.matching`): two images are connected when a large
 *fraction* of their pooled PE-Spatial patch cells find a distinctive mutual
 nearest neighbour. A cheap unit-norm CLS-cosine prefilter (``sim_min``) prunes
-obviously-unrelated pairs before the dense grid match so the per-artist pass
-stays ``O(candidate pairs)`` rather than ``O(n^2)`` grids.
+obviously-unrelated pairs first, so the per-artist pass stays ``O(candidate
+pairs)`` rather than ``O(n^2)`` grids.
 
-Why grid match, not CLS cosine: a single global CLS descriptor collapses an
-image to one vector, so a tight threshold misses near-duplicates that differ in
-one region (an edit, a speech bubble) while a loose one merges unrelated images
-that share a palette. The cell-level gate (``cell_match_min`` per cell,
-``match_frac_min`` fraction of cells) tracks *spatial* overlap, which is what
-"these are the same picture" actually means.
+Why grid match, not CLS cosine: a single global descriptor collapses an image to
+one vector, so a tight threshold misses near-duplicates that differ in one region
+while a loose one merges unrelated images sharing a palette. The cell-level gate
+tracks *spatial* overlap, which is what "the same picture" means.
 
 Scope is **per-artist**: components are computed independently within each
-top-level folder under the source dir (the artist bucket), so two different
-artists never merge into one group. The result is a JSON manifest the GUI reads
-(plain JSON — no torch — so the GUI stays torch-free).
+top-level folder under the source dir, so two artists never merge into one group.
 
-``connected_components`` is pure (union-find over a precomputed edge list).
-``build_groups`` lazily imports the torch-backed embedding + matching
-primitives, so importing this module for the pure clustering / manifest schema
-stays torch-free.
+``connected_components`` is pure (union-find over a precomputed edge list) and
+``build_groups`` imports the torch-backed primitives lazily, so importing this
+module for the clustering / manifest schema stays torch-free.
 """
 
 from __future__ import annotations
@@ -108,11 +100,8 @@ def _grid_match_edges(
 ) -> list[tuple[int, int]]:
     """Near-twin edges within one artist bucket (Stage-A prefilter → Stage-B grid).
 
-    Runs on ``device`` (the embedding GPU when available): pool every image's
-    patch grid **once**, prefilter pairs by CLS cosine ``>= sim_min``, then score
-    the surviving pairs with the batched grid gate, keeping an edge where the
-    inlier fraction reaches ``match_frac_min``. Pooling and the pair match are
-    chunked so peak memory is bounded regardless of bucket size.
+    Runs on ``device`` (the embedding GPU when available). Pooling and the pair
+    match are chunked so peak memory is bounded regardless of bucket size.
     """
     import torch
 
@@ -161,18 +150,13 @@ def build_groups(
 ) -> dict:
     """Embed every image under ``source_dir``, cluster per-artist, write a manifest.
 
-    ``embedder`` is a :class:`anime_tools.grouping.features.Embedder` (the trainer
-    supplies ``anime_tools.grouping.embedder.pe_spatial_embedder()``); its
+    ``embedder`` is a :class:`anime_tools.grouping.features.Embedder`; its
     ``.device`` also hosts the grid-match pass. Grouping never loads an encoder
-    itself — curation side of the ``anime_tools`` split.
+    itself.
 
-    Groups are connected components over the near-twin grid gate
-    (:func:`anime_tools.grouping.matching.match_grids`): two images share a group
-    when ``match_frac >= match_frac_min`` at per-cell floor ``cell_match_min``.
-    Reuses the shared feature cache (``anime_tools.grouping.features``),
-    so a re-run after the near-twin miner — or a re-run with different
-    thresholds — is just the (cached) matching pass. Returns the manifest dict
-    (also written to ``out_path`` as JSON).
+    Reuses the shared feature cache, so a re-run — or a re-run at different
+    thresholds — is just the matching pass. Returns the manifest dict (also
+    written to ``out_path`` as JSON).
     """
     # Lazy torch-backed imports so the pure helpers above import without torch.
     import sys
@@ -230,8 +214,8 @@ def build_groups(
     groups: list[dict] = []
     gid = 0
     n_grouped = 0
-    # tqdm to stderr (GUI bar) — covers the matching pass, the only progress
-    # signal on a cached re-run where embedding is skipped.
+    # tqdm to stderr (GUI bar): the only progress signal on a cached re-run,
+    # where embedding is skipped.
     for artist in tqdm(
         sorted(by_artist), desc="grouping", unit="artist", file=sys.stderr
     ):

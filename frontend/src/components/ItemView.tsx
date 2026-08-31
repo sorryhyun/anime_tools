@@ -36,10 +36,9 @@ export function ItemView(props: {
   /** What the last Run proposed for this image, or undefined. It lands on the
       caption card of the kind the stage writes -- master or derived. */
   proposal?: Proposal;
-  /** The stage that proposed it, for the diff's header. */
   proposalStage?: string;
-  /** The caption kind whose diff was dropped (the form changed since the run)
-      — its card says so where the diff stood, instead of vanishing silently. */
+  /** The caption kind whose diff was dropped, because the form changed since
+      the run. */
   droppedKind?: CaptionKind;
   onSaved: (entry: CaptionEntry) => void;
 }) {

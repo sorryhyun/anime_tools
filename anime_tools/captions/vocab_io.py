@@ -1,12 +1,7 @@
 """Read side of the tagger checkpoint's ``vocab.json`` (torch-free).
 
-``vocab.json`` is written by ``anime_tools/tagger/cli/vocab.py`` and read by
-four unrelated consumers — the caption index's copyright heuristic, the clause
-vocabulary, the inference wrapper, and the trainer's group router. Each of them
-used to open the file and walk ``vocab["tags"]`` by hand, so the schema was
-spelled out four times and each copy knew a slightly different subset of it.
-
-The schema, in one place:
+``vocab.json`` is written by ``anime_tools/tagger/cli/vocab.py``; this is the
+one reader, so its four consumers share one copy of the schema:
 
 ``tags``
     ``[{name, index, category, freq, median_pos}, …]`` — one row per kept tag,

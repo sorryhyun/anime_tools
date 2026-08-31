@@ -1,15 +1,9 @@
 """What a caption claims about its own layout — counts, panels, candidacy.
 
-The text-only prefilter for the position-clause pipeline
-(:mod:`anime_tools.stages.position_captions`) and the multiview audit: how many
-bindable subjects the caption claims, whether it describes one character drawn
-several times (``multiple views`` / a comic page), and whether it is worth
-running a detector over at all.
-
-Kept apart from :mod:`anime_tools.captions.position_clauses` (pure grammar) and
-:mod:`anime_tools.captions.clause_vocabulary` (tag-group taxonomy) because this is
-a third thing: a small *vocabulary* of count and layout tags read off the flat
-bag. Pure stdlib — no model, no pixels.
+The text-only prefilter for the position-clause pipeline and the multiview
+audit: how many bindable subjects the caption claims, whether it describes one
+character drawn several times (``multiple views`` / a comic page), and whether
+it is worth running a detector over at all. Pure stdlib — no model, no pixels.
 """
 
 from __future__ import annotations
@@ -30,8 +24,8 @@ MULTI_VIEW_TAGS = frozenset({"multiple views", "multiple_views"})
 # prefilter as `single-subject`.
 #
 # `page number` is deliberately EXCLUDED: it marks a scanned art-book page, not
-# a layout (checked — every image it catches is a single illustration with a
-# margin number), so it's a false signal, not a weak one.
+# a layout (every image it catches is a single illustration with a margin
+# number), so it's a false signal, not a weak one.
 PANEL_LAYOUT_TAGS = frozenset(
     {
         "comic",
@@ -60,10 +54,8 @@ def caption_subject_count(caption: str) -> int | None:
     A layout tag (:data:`LAYOUT_TAGS`) always forces ``None`` even alongside a
     girls-count, because that count tags *characters* while each view/panel is
     its own bindable subject (``1girl, multiple views`` is routinely four).
-    ``multiple girls`` / open-ended ``N+girls`` are ``None`` too — an exact
-    match against "six or more" can only fail; that part is
-    :func:`~anime_tools.captions.taxonomy.count_of`'s rule, shared with the
-    boys count and the panel ceiling below.
+    ``multiple girls`` / open-ended ``N+girls`` are ``None`` too — an exact match
+    against "six or more" can only fail.
     """
     tags = flat_tag_set(caption)
     if tags & LAYOUT_TAGS:
@@ -111,15 +103,12 @@ def caption_boy_count(caption: str) -> int | None:
 def is_repeated_subject_layout(caption: str) -> bool:
     """Is this one character drawn several times, rather than several characters?
 
-    Any :data:`LAYOUT_TAGS` member says yes — an ``Nkoma``/``comic`` page is the
-    same situation as ``multiple views`` panel-by-panel: the girl in panel 3 is
-    the girl in panel 1, so whatever belongs to *her* discriminates nothing
-    between panels.
-    :meth:`anime_tools.captions.clause_vocabulary.ClauseVocabulary.select` drops
-    the whole class (``view_invariant``). A comic can introduce a new character
-    mid-page, which only makes a bound trait *sometimes* wrong instead of never
-    — the bag keeps every suppressed tag regardless, so only the per-panel
-    binding is lost.
+    Any :data:`LAYOUT_TAGS` member says yes: the girl in panel 3 is the girl in
+    panel 1, so whatever belongs to *her* discriminates nothing between panels,
+    and ``ClauseVocabulary.select`` drops the whole class (``view_invariant``).
+    A comic can introduce a new character mid-page, which only makes a bound
+    trait *sometimes* wrong instead of never — the bag keeps every suppressed
+    tag regardless, so only the per-panel binding is lost.
     """
     return bool(flat_tag_set(caption) & LAYOUT_TAGS)
 

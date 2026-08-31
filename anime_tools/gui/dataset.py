@@ -1,12 +1,7 @@
 """Dataset browsing for the web GUI: the image/caption tree behind the sidebar.
 
-Torch-free and Qt-free like the rest of ``anime_tools.gui`` — it only walks
-paths and calls into the (torch-free) caption grammar, so the server process
-stays light enough for ``tests/test_boundary.py``.
-
-The trees it joins are keyed by the *same relative path* in each — three of
-them today, and the two the workspace phase added beside them
-(:mod:`anime_tools.workspace` is where the layout is written down):
+Torch-free like the rest of ``anime_tools.gui``. The trees it joins are keyed by
+the *same relative path* in each (:mod:`anime_tools.workspace` owns the layout):
 
 ``src``     ``image_dataset/<rel>``            source image + hand-written master caption
 ``master``  ``workspace/master/<rel>``         the revised master overlay (empty until Phase 2 fills it)
@@ -14,17 +9,9 @@ them today, and the two the workspace phase added beside them
 ``masks``   ``workspace/masks/<rel>``          ``{stem}_mask.png`` (nested; flat is the legacy fallback)
 ``out``     ``post_image_dataset/``            the export destination -- browsed by nothing, written by Export
 
-Only ``master`` and ``derived`` are writable. ``.variants.txt`` is generated
-(``# … do not hand-edit``) and is served read-only; editing a derived caption
-makes its sidecar stale, which :func:`write_caption` reports so the UI can say
-so out loud.
-
-The sidebar has a second way of ordering the same rows — :func:`load_groups`
-reads the grouping stage's ``groups.json`` and hands the client the near-twin
-components, keyed by the same rel. It stays a *listing* of rels, not a second
-listing of rows: group view joins it against the one ``list_items`` payload the
-tree view already has, so a filter, a truncation and the run's pending dots mean
-the same thing in both modes.
+Only ``master`` and ``derived`` are writable. ``.variants.txt`` is generated and
+served read-only; editing a derived caption makes its sidecar stale, which
+:func:`write_caption` reports so the UI can say so out loud.
 """
 
 from __future__ import annotations
@@ -52,25 +39,19 @@ SETTINGS_KEY = "dataset"
 DEFAULT_ROOTS = WS.DEFAULT_ROOTS
 OUTPUT_ROOTS = WS.OUTPUT_ROOTS
 EXPORT_ROOTS = WS.EXPORT_ROOTS
-"""The layout, imported rather than restated: :mod:`anime_tools.workspace` is
-the one place the default paths are written, so the GUI and the migrate CLI
-cannot drift about where the workspace is."""
+"""Imported rather than restated, so the GUI and the migrate CLI cannot drift
+about where the workspace is."""
 CAPTION_KINDS = ("master", "derived")
 GROUPS_SUBPATH = "groups/groups.json"
 """The grouping manifest's tail under the Settings ``report_root`` — the same
 split ``stages.report_subpath`` makes of ``build_groups``' own ``--out``
-default, so the view reads exactly the file the **Groups** stage writes.
-``tests/test_gui_groups.py`` pins the two together."""
+default, pinned to it by ``tests/test_gui_groups.py``."""
 
 MAX_ITEMS = 20000
 """Hard cap on one listing, and the default: a listing shows the whole dataset.
 
-The sidebar renders lazily per folder, but the JSON still has to cross the wire
-— past this the answer is ``path_pattern``, not a bigger payload. It used to sit
-behind a 2000 default that nothing overrode, which made the cap unreachable and
-truncated any real dataset silently. It is one number because the tree and the
-group orderings draw the *same* listing (see the module docstring): a cap that
-differed between them would make "truncated" mean two things.
+Past this the answer is ``path_pattern``, not a bigger payload. One number for
+both sidebar orderings, since they draw the *same* listing.
 """
 
 
@@ -82,10 +63,8 @@ class DatasetError(ValueError):
 class Roots:
     """The five dataset roots of one request, resolved and containment-checked.
 
-    Field order is :data:`DEFAULT_ROOTS`' order (input, workspace, output),
-    which is also the order ⚙ Settings lists them in. :meth:`items` walks that
-    mapping rather than a hand-written tuple, so a sixth root would only have
-    to be declared once.
+    Field order is :data:`DEFAULT_ROOTS`' order, which :meth:`items` walks, so a
+    sixth root would only have to be declared once.
     """
 
     src: Path
@@ -108,10 +87,9 @@ def lexical(path: str | Path) -> Path:
     """``resolve_path`` with ``..`` collapsed, and nothing else.
 
     Lexical (``normpath``), not ``resolve()``: a dataset root is routinely a
-    symlink to where the images actually live, and following it would report
-    the tree under a name the user never typed — and would defeat the
-    containment test below, which compares the path the user gave against the
-    trees they said they use.
+    symlink, and following it would report the tree under a name the user never
+    typed — and defeat the containment test below, which compares the path given
+    against the trees the user said they use.
     """
     return Path(os.path.normpath(resolve_path(path)))
 
@@ -120,13 +98,9 @@ def dataset_bases() -> tuple[Path, ...]:
     """Every tree this panel may reach: the curation home, plus any dataset root
     the **saved** settings pin outside it.
 
-    The home alone was the rule until roots were allowed out of it, and it was
-    only ever a proxy for the real one: what the panel may list, thumbnail and
-    serve is *the dataset it is showing*. A curation home beside the trainer's
-    checkout (``anime_tools/`` next to ``anima_lora/``) makes
-    ``../anima_lora/image_dataset`` the ordinary answer for ``src``, and there
-    is no home that contains both without swallowing everything else beside
-    them.
+    What the panel may list, thumbnail and serve is *the dataset it is showing*,
+    and no home contains both a curation tree and a sibling checkout's
+    ``image_dataset`` without swallowing everything beside them.
 
     **Saved**, never a request's own root overrides: a root outside the home
     widens what may be read, so only the explicit Settings save that means it
@@ -168,15 +142,14 @@ def rel_to_home(p: Path) -> str:
 def resolve_roots(
     values: dict[str, Any] | None = None, *, trusted: bool = False
 ) -> Roots:
-    """Roots from ``values`` (a ``settings["dataset"]`` blob or query params),
-    falling back to :data:`DEFAULT_ROOTS`. Blank strings fall back too, so an
-    emptied form field means "default", not "the home directory".
+    """Roots from ``values``, falling back to :data:`DEFAULT_ROOTS`. Blank
+    strings fall back too, so an emptied field means "default".
 
     ``trusted`` is the Settings **save** and nothing else: that request is what
-    *defines* :func:`dataset_bases`, so it cannot be checked against them —
-    a root outside the home could never be set a first time. Every other
-    caller (every read request, through ``server.roots_for``) is checked, which
-    is what keeps a query param from pointing the listing at a stranger's tree.
+    *defines* :func:`dataset_bases`, so it cannot be checked against them — a
+    root outside the home could never be set a first time. Every other caller is
+    checked, which keeps a query param from pointing the listing at a stranger's
+    tree.
     """
     got = values or {}
     check = lexical if trusted else reachable
@@ -190,11 +163,10 @@ def resolve_roots(
 def owned(p: Path) -> bool:
     """Is this a directory the panel may *create*?
 
-    The panel reads the trees you point it at and creates only what is under
-    its own home. A root outside the home is one that already exists — a
-    sibling checkout's ``image_dataset`` — and a typo in one is a missing root
-    the Settings row says is missing, not a new empty directory somewhere out
-    in the filesystem.
+    The panel reads the trees you point it at and creates only what is under its
+    own home. A root outside the home already exists, and a typo in one is a
+    missing root the Settings row reports as missing, not a new empty directory
+    out in the filesystem.
     """
     return p.is_relative_to(curation_home())
 
@@ -203,14 +175,12 @@ def ensure_roots(roots: Roots) -> list[str]:
     """Create the root directories, returning the names actually made.
 
     Every root but :data:`EXPORT_ROOTS`' — an ``out`` tree that exists should
-    mean an export happened, and Export makes its own destination — and only
-    the ones this panel :func:`owned`.
+    mean an export happened — and only the ones this panel :func:`owned`.
 
-    Only ever called from an *explicit write* — saving the Settings dialog —
+    Only ever called from an *explicit write* (saving the Settings dialog),
     never from :func:`resolve_roots`, which every read request goes through: a
-    listing must keep reporting a missing root as missing (``list_items`` says
-    ``missing: True``) instead of quietly conjuring an empty tree behind a
-    typo.
+    listing must keep reporting a missing root as missing instead of quietly
+    conjuring an empty tree behind a typo.
     """
     made = []
     for name, p in roots.items():
@@ -225,9 +195,8 @@ def ensure_roots(roots: Roots) -> list[str]:
 def ensure_output_dir(path: str | Path) -> Path | None:
     """Best-effort mkdir for a directory a job is about to *write* to.
 
-    Returns the path when it exists afterwards, ``None`` when it is not one the
-    panel :func:`owned` or could not be created — a stage that mkdirs its own
-    output (most do) or fails loudly is a better error than a 500 from here.
+    ``None`` when the path is not one the panel :func:`owned` or could not be
+    created — the stage's own mkdir or its loud failure beats a 500 from here.
     """
     try:
         p = reachable(path)
@@ -243,8 +212,8 @@ def _rel_key(rel: str) -> Path:
     """Validate a client-supplied relative image path.
 
     Rejects absolute paths and any ``..`` segment before it is ever joined to a
-    root — ``reachable`` catches escapes too, but only after the join, and a
-    root can itself sit deep enough that ``..`` stays inside the home.
+    root — ``reachable`` only catches escapes after the join, and a root can sit
+    deep enough that ``..`` stays inside the home.
     """
     p = Path(str(rel).replace("\\", "/"))
     if p.is_absolute() or any(part == ".." for part in p.parts) or not p.parts:
@@ -255,21 +224,16 @@ def _rel_key(rel: str) -> Path:
 def item_pattern(rel: str) -> str:
     """A ``path_pattern`` matching exactly the one dataset image ``rel``.
 
-    This is how the GUI runs a stage on the selected image: the stages have no
-    "just this file" flag, and they should not grow one — narrowing the glob
-    they already take means a one-image run and a batch run take the identical
-    code path (a replay included, see ``stages.replay._keep_by_pattern``).
+    Narrowing the glob the stages already take keeps a one-image run and a batch
+    run on the identical code path, a replay included. ``<dir>/<stem>.*``, not
+    the full filename, because the stage matches against the *resized* tree
+    where the extension may differ (:func:`_sibling_image`); that cannot widen
+    the match, since ``_walk.assert_unique_stems`` refuses two images sharing a
+    stem in one folder.
 
-    ``<dir>/<stem>.*``, not the full filename: a stage matches the pattern
-    against the *resized* tree and the resize step may re-encode (``.jpg``
-    master → ``.png`` resized), so the extension has to be a wildcard. That
-    cannot widen the match — :func:`~anime_tools._walk.assert_unique_stems`
-    already refuses two images sharing a stem in one folder.
-
-    fnmatch metacharacters in the path are escaped, so a literal ``[`` in a
-    filename stays a ``[``; a literal ``|`` cannot be, because ``|`` is the
-    pattern's own alternative separator, so such a name is refused outright
-    rather than silently selecting nothing.
+    fnmatch metacharacters are escaped; ``|`` cannot be, since it separates the
+    pattern's own alternatives, so such a name is refused outright rather than
+    silently selecting nothing.
     """
     p = _rel_key(rel)
     if "|" in p.as_posix():
@@ -281,11 +245,9 @@ def item_pattern(rel: str) -> str:
 
 
 def _sibling_image(directory: Path, stem: str) -> Path | None:
-    """The image named ``stem`` in ``directory``, whatever its extension.
-
-    The resize step may re-encode (``.jpg`` master → ``.png`` resized), so the
-    derived tree is matched on stem, not on the full relative path.
-    """
+    """The image named ``stem`` in ``directory``, whatever its extension: the
+    resize step may re-encode (``.jpg`` master → ``.png`` resized), so the
+    derived tree is matched on stem, not on the full relative path."""
     for ext in IMAGE_EXTENSIONS:
         p = directory / f"{stem}{ext}"
         if p.is_file():
@@ -296,13 +258,9 @@ def _sibling_image(directory: Path, stem: str) -> Path | None:
 def rel_for_image(roots: Roots, image: str) -> str | None:
     """The dataset rel a stage report's ``image`` names, or ``None``.
 
-    Reports name images relative to the **resized** tree, and the resize step
-    may have re-encoded on the way there (``.jpg`` master → ``.png`` resized),
-    so the join back to the source tree is on directory + stem — the same rule
-    :func:`_sibling_image` uses in the other direction. An image the source tree
-    no longer has is dropped rather than raising: the caller is decorating a
-    listing with what a run proposed, and a row it cannot place is one it should
-    leave out.
+    Reports name images relative to the **resized** tree, so the join back is on
+    directory + stem (:func:`_sibling_image`). An image the source tree no longer
+    has is dropped rather than raising.
     """
     try:
         rel = _rel_key(image)
@@ -317,11 +275,9 @@ def rel_for_image(roots: Roots, image: str) -> str | None:
 def mask_path(roots: Roots, rel: Path) -> Path | None:
     """``masks/<subdir>/{stem}_mask.png``, or the legacy flat one.
 
-    The name comes from :func:`anime_tools.masking._masks.mask_name`, the same
-    one the generators write, so the two sides cannot drift. The flat fallback
-    is this reader's alone: the generators have mirrored the source subdir
-    since they grew ``--recursive``, but a mask tree made before that is still
-    a valid one to browse.
+    The name comes from ``masking._masks.mask_name``, the one the generators
+    write. The flat fallback is this reader's alone: generators mirror the
+    source subdir now, but an older mask tree is still browsable.
     """
     name = mask_name(rel.stem)
     nested = roots.masks / rel.parent / name
@@ -352,7 +308,7 @@ def list_items(
 
     Enumerates the *source* tree — the master is the dataset. Unlike
     ``_walk.walk_images`` this tolerates same-stem collisions: a browser must
-    still show a tree the stages would refuse to run on.
+    show a tree the stages would refuse to run on.
     """
     if not roots.src.is_dir():
         return {
@@ -391,12 +347,9 @@ def list_items(
 def _row(roots: Roots, rel: Path, name: str) -> dict[str, Any]:
     """One sidebar row: the image plus which of its siblings exist.
 
-    ``resized`` is matched on *stem* through :func:`_sibling_image`, like every
-    other read of the derived tree — resize may re-encode a ``.jpg`` master to a
-    ``.png``, so the rel that names the row is not the name of its own output.
-    It is a row flag rather than a caption dot because it is an image, not a
-    caption: nothing selects it, it only says whether the stages downstream of
-    resize can see this image at all.
+    ``resized`` is matched on *stem* (:func:`_sibling_image`) and is a row flag
+    rather than a caption dot: nothing selects it, it only says whether the
+    stages downstream of resize can see this image.
     """
     caps = caption_paths(roots, rel)
     parent = rel.parent.as_posix()
@@ -414,13 +367,9 @@ def _row(roots: Roots, rel: Path, name: str) -> dict[str, Any]:
 
 
 def item_rows(roots: Roots, rels: list[str]) -> list[dict[str, Any]]:
-    """:func:`list_items` rows for named images only.
-
-    A stage that just wrote 40 captions changed 40 of the sidebar's rows, not
-    the tree; re-walking the whole source root to learn that is the wrong shape.
-    An unreadable or vanished rel is dropped rather than raising — the caller is
-    patching a listing, and a row it cannot refresh is one it should leave be.
-    """
+    """:func:`list_items` rows for named images only, so a run that touched 40
+    captions costs 40 stats rather than a walk of the source root. An unreadable
+    or vanished rel is dropped rather than raising."""
     out = []
     for raw in rels:
         try:
@@ -436,14 +385,10 @@ def item_rows(roots: Roots, rels: list[str]) -> list[dict[str, Any]]:
 def load_groups(report_root: str) -> dict[str, Any]:
     """The grouping manifest under ``report_root``, as the sidebar's group view.
 
-    Rels only — the group view draws the *same* rows the tree view does, joined
-    against the one ``/api/dataset`` listing on the client, so a filter or a
-    truncation cannot mean two different things depending on which mode is up.
-
-    A missing manifest is not an error: the **Groups** stage has simply not run
-    yet, and the panel says so and points at it. A manifest built against some
-    other source tree is the one failure worth naming out loud (its rels join
-    onto nothing), so ``source_dir`` rides along for the client to show.
+    Rels only: the group view joins them against the one ``/api/dataset``
+    listing the tree view already has. A missing manifest is not an error — the
+    **Groups** stage has simply not run yet — but one built against another
+    source tree joins onto nothing, so ``source_dir`` rides along to say so.
     """
     path = reachable(f"{report_root}/{GROUPS_SUBPATH}")
     out: dict[str, Any] = {
@@ -492,8 +437,8 @@ def _image_info(p: Path | None) -> dict[str, Any] | None:
         with Image.open(p) as im:  # lazy: reads the header, not the pixels
             info["width"], info["height"] = im.size
     except (OSError, ValueError):
-        # A corrupt or unsupported file still belongs in the tree; it just has
-        # no dimensions to report. The keys stay so the shape never varies.
+        # A corrupt file still belongs in the tree; the keys stay so the shape
+        # never varies.
         info["width"] = info["height"] = None
     return info
 
@@ -568,9 +513,9 @@ def item_detail(roots: Roots, rel_str: str) -> dict[str, Any]:
 def write_caption(roots: Roots, rel_str: str, kind: str, text: str) -> dict[str, Any]:
     """Write one caption file. ``master`` and ``derived`` only.
 
-    A caption is a single line by contract, so any newline the textarea picked
-    up is folded to a space. An empty body is refused rather than treated as a
-    delete — losing a caption should take more than a stray select-all.
+    A caption is a single line by contract, so newlines fold to spaces. An empty
+    body is refused rather than treated as a delete — losing a caption should
+    take more than a stray select-all.
     """
     if kind not in CAPTION_KINDS:
         raise DatasetError(f"not an editable caption: {kind!r}")
@@ -586,8 +531,8 @@ def write_caption(roots: Roots, rel_str: str, kind: str, text: str) -> dict[str,
     p.write_text(body, encoding="utf-8")
 
     entry = _caption_entry(kind, p)
-    # The sidecar was generated from the previous derived text, so v0 no longer
-    # matches what the TE step would encode.
+    # The sidecar was generated from the previous derived text, so its v0 no
+    # longer matches what the TE step would encode.
     sidecar = caption_paths(roots, rel)["variants"]
     entry["variants_stale"] = kind == "derived" and sidecar.is_file()
     return entry

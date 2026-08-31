@@ -61,7 +61,6 @@ export const api = {
   /** One image's before/after, both already parsed server-side. */
   proposal: (id: string, rel: string) =>
     req<Proposal>(`/api/jobs/${id}/proposal?rel=${encodeURIComponent(rel)}`),
-  /** Put back the captions an Apply wrote. */
   undo: (id: string) => req<UndoResult>(`/api/jobs/${id}/undo`, { method: "POST" }),
   ls: (path: string) => req<Listing>(`/api/ls?path=${encodeURIComponent(path)}`),
   /** Ask the host to open its own chooser, starting from `path`. Localhost
@@ -84,25 +83,22 @@ export const api = {
       against the listing above by the sidebar's group view. */
   groups: () => req<DatasetGroups>("/api/dataset/groups"),
   item: (rel: string) => req<ItemDetail>(`/api/dataset/item?rel=${encodeURIComponent(rel)}`),
-  /** Re-stat named sidebar rows -- what a finished job actually touched. */
   items: (rels: string[]) =>
     req<{ items: DatasetItem[] }>("/api/dataset/items", json("POST", { rels })),
   /** Parse an unsaved caption server-side; the grammar has one implementation. */
   parse: (text: string) => req<Parsed>("/api/dataset/parse", json("POST", { text })),
-  /** What one tag means, out of the Danbooru KB. */
   describeTag: (tag: string) => req<TagInfo>(`/api/tags/describe?tag=${encodeURIComponent(tag)}`),
   saveCaption: (rel: string, kind: CaptionKind, text: string) =>
     req<CaptionEntry>("/api/dataset/item", json("PUT", { rel, kind, text })),
 };
 
-/** Any thrown error as a failed status line — the four call sites that start
-    or undo a job all did this by hand. */
+/** Any thrown error as a failed status line. */
 export const toStatus = (e: unknown): JobStatus => ({
   text: e instanceof Error ? e.message : String(e),
   state: "failed",
 });
 
-/** Follow a job's stdout. Resolves with the final job dict; `onLine` per line. */
+/** Follow a job's stdout over SSE; `onDone` gets the final job dict. */
 export function followLog(
   id: string,
   onLine: (line: string) => void,

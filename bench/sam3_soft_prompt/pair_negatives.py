@@ -1,7 +1,6 @@
 """Phase A0 — tagger-verified boy negatives for the SAM3 soft prompt.
 
-The Phase-0 keeper (`docs/experimental/soft_prompt_for_sam.md`) boxes boys: its
-training pool had no boy negatives and the count metric only scores pure-girl
+The shipped subject prompt boxes boys: its training pool had no boy negatives and the count metric only scores pure-girl
 images. Boy-only images are useless as a source (the corpus has ~7), so the
 negatives come from the ``1boy,1girl`` images:
 

@@ -1,15 +1,11 @@
 """PE-Spatial dense grid matching (library primitive).
 
-Promoted out of the near-twin miner engine so any dataset-level tool — near-twin
-pair mining, dataset grouping/clustering, dedup — shares one Stage-B match: a
-mutual-NN + ratio-test dense cell match between two pooled PE-Spatial patch
-grids (:class:`anime_tools.grouping.features.Feature`). Two images are near-twins
-when a large *fraction* of their pooled cells find a distinctive mutual nearest
-neighbour at or above a per-cell cosine floor; the unmatched cells localize the
-difference region.
+The one Stage-B match shared by near-twin mining, grouping and dedup: a
+mutual-NN + ratio-test dense cell match between two pooled PE-Spatial patch grids
+(:class:`anime_tools.grouping.features.Feature`).
 
-``easycontrol_adapters.tools.near_twins.engine`` re-exports these names for
-backward compatibility. Pure numpy/torch — no model lifetime owned here.
+``easycontrol_adapters.tools.near_twins.engine`` re-exports these names, so they
+are not free to rename. Pure numpy/torch — no model lifetime owned here.
 """
 
 from __future__ import annotations
@@ -46,9 +42,10 @@ def match_grids(
 ) -> MatchResult:
     """Mutual-NN + ratio-test dense cell match between two pooled grids.
 
-    Raw "has a >0.9 neighbor" inflates badly on anime art's flat color fields,
-    so we require **mutual** nearest neighbours that also pass a distinctiveness
-    (ratio) test. Unmatched cells localize the difference region.
+    Two images are near-twins when a large *fraction* of their cells find a
+    distinctive mutual nearest neighbour at or above ``cell_min``; raw "has a
+    >0.9 neighbor" inflates badly on anime art's flat colour fields. Unmatched
+    cells localize the difference region.
     """
     ca, cb = pool_cells(fa.grid16, G), pool_cells(fb.grid16, G)
     N = G * G
@@ -88,9 +85,9 @@ def match_grids(
     )
 
 
-# Scalar ``match_grids`` is kept for the miner (needs the full MatchResult). The
-# vectorized path below is for consumers needing only the inlier fraction over many
-# pairs (dataset grouping); bit-comparable to the scalar gate (tests/test_grouping_grid_match.py).
+# Scalar ``match_grids`` is for the miner (it needs the full MatchResult); the
+# vectorized path below is for consumers wanting only the inlier fraction over
+# many pairs, and is bit-comparable to it (tests/test_grouping_grid_match.py).
 
 
 @torch.no_grad()
@@ -114,9 +111,8 @@ def match_fracs(
     """Inlier fraction for a batch of grid pairs — vectorized ``match_grids``.
 
     ``cells_a`` / ``cells_b`` are ``[P, N, D]`` unit-norm pooled grids (P pairs,
-    N=G*G cells). Returns ``[P]`` match fractions under the same mutual-NN +
-    ratio + per-cell-floor gate as the scalar path (geom-check excluded — the
-    grouping caller leaves it off). No diff-cell bookkeeping, so it stays a few
+    N=G*G cells). Same gate as the scalar path minus the geom-check (the grouping
+    caller leaves it off) and minus diff-cell bookkeeping, so it stays a few
     fused kernels instead of a Python per-cell loop.
     """
     sim = cells_a @ cells_b.transpose(-1, -2)  # [P, N, N] cosine
@@ -137,8 +133,7 @@ def _geom_filter(
     """RANSAC-lite translation consistency: keep matches near the median offset.
 
     Rejects "same character, different pose" (whose cell offsets scatter) and
-    estimates the crop offset from the surviving translation. A full
-    LoFTR/SIFT homography is the escape hatch if the coarse grid is too blunt.
+    estimates the crop offset from the surviving translation.
     """
     a = np.array([[i // G, i % G] for i, _ in matched], dtype=np.float32)
     b = np.array([[j // G, j % G] for _, j in matched], dtype=np.float32)

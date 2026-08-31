@@ -1,17 +1,10 @@
 """Anima Tagger checkpoint dir + dataset manifest, as their readers see them.
 
-:class:`TaggerCheckpoint` is the read side of a checkpoint directory —
-``config.json`` / ``vocab.json`` / ``dataset.json``, the "run ``--mode
-build_vocab`` first" exit when one the caller needs is absent, and the
-``index -> name`` map every consumer rebuilds. Five CLIs opened those files by
-hand, each with its own spelling of the same missing-file message and its own
-idea of which ones were optional.
-
-:class:`TaggerManifest` is the trainable-sample list inside ``dataset.json``. The PE dual-encoder feature/token
-cache builders and the bucketed dual dataset that used to share this module
-went to ``_archive/anima_tagger_training/pe_backend_removed_2026_08_30/`` with
-the in-house PE tagger head (curation split Phase 0); the live dbv4 sidecar
-trainer (``anime_tools/tagger/cli/train_sidecar.py``) keeps its own cache.
+:class:`TaggerCheckpoint` is the one read side of a checkpoint directory —
+``config.json`` / ``vocab.json`` / ``dataset.json``, the shared "run ``--mode
+build_vocab`` first" exit when a required one is absent, and the
+``index -> name`` map every consumer needs. :class:`TaggerManifest` is the
+trainable-sample list inside ``dataset.json``.
 """
 
 from __future__ import annotations
@@ -51,9 +44,8 @@ class TaggerManifest:
 
     @classmethod
     def from_dict(cls, d: dict) -> TaggerManifest:
-        # ``people_count_indices`` / ``n_people_counts`` were added late; default
-        # to a zero-length head so old manifests signal "no people supervision"
-        # instead of KeyError-ing (they rebuild on next ``build_vocab``).
+        # Default to a zero-length head so a pre-people-count manifest signals
+        # "no people supervision" instead of KeyError-ing.
         people_idx = list(d.get("people_count_indices") or [])
         n_people = int(d.get("n_people_counts", 0))
         if people_idx and not n_people:

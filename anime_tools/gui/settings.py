@@ -1,14 +1,9 @@
 """The GUI's settings file: one JSON blob beside the curation home.
 
-Split out of :mod:`anime_tools.gui.server` so a plain CLI can read it without
-importing FastAPI — ``anime_tools.workspace.migrate`` has to know whether the
-saved dataset roots still pin the pre-workspace paths, and the alternative was
-retyping the filename in a second place.
-
-Stdlib plus :mod:`anime_tools._json` only. The *shape* of the blob stays with
-the code that gives it meaning: ``gui.dataset.SETTINGS_KEY`` owns the roots,
-``gui.stages.SETTINGS_KEY`` the stage defaults, and ``server``'s settings-derived
-helpers turn one read of this mapping into everything a request needs.
+Kept out of :mod:`anime_tools.gui.server` so a plain CLI (``workspace.migrate``)
+can read it without importing FastAPI. Stdlib plus :mod:`anime_tools._json`
+only; the *shape* of the blob stays with the code that gives it meaning
+(``gui.dataset.SETTINGS_KEY``, ``gui.stages.SETTINGS_KEY``).
 """
 
 from __future__ import annotations

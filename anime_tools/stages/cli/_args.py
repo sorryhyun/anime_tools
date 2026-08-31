@@ -1,18 +1,11 @@
 """Shared argparse blocks for the stage CLIs.
 
-Every caption stage takes the same dataset roots, the same dry-run/apply pair
-and (where it loads the tagger) the same model knobs. Those used to be typed
-out once per parser with byte-identical help strings, which matters more than
-tidiness: :mod:`anime_tools.gui.stages` introspects ``build_parser()`` to build
-the GUI form, so a dropped ``dest=``, a drifted default or a lost ``--foo-bar``
-alias silently changes the form rather than failing anything.
-
-Declaration *order* is part of that contract too — ``fields_of`` walks
-``parser._actions`` in order and the form follows it — so each helper adds its
-flags as one contiguous block, and a caller places the block exactly where the
-flags used to sit. Where two stages genuinely say different things about the
-same flag (``--src`` is read-only for the clause rewrite, written by autotag)
-the help text is an argument, not a fork.
+:mod:`anime_tools.gui.stages` introspects ``build_parser()`` to build the GUI
+form, so a dropped ``dest=``, a drifted default or a lost ``--foo-bar`` alias
+silently changes the form rather than failing anything. Declaration *order* is
+part of that contract (``fields_of`` walks ``parser._actions`` in order), so
+each helper adds its flags as one contiguous block. Where two stages say
+different things about the same flag the help text is an argument, not a fork.
 """
 
 from __future__ import annotations
@@ -28,8 +21,8 @@ PATTERN_HELP = "fnmatch glob (| to OR-combine) on the path relative to {root}"
 def add_path_pattern_arg(p: argparse.ArgumentParser, *, help: str) -> None:
     """``--path_pattern`` — the one scope knob the GUI narrows to a single image.
 
-    Its ``dest`` is what :data:`anime_tools.gui.stages.SCOPE_FIELD` looks for,
-    so the dual spelling and the ``dest=`` are load-bearing.
+    :data:`anime_tools.gui.stages.SCOPE_FIELD` looks for this ``dest``, so the
+    dual spelling and the ``dest=`` are load-bearing.
     """
     p.add_argument(
         "--path_pattern",
@@ -63,8 +56,8 @@ def add_apply_args(
 ) -> None:
     """``--apply`` / ``--from_report``: dry-run-by-default and its replay.
 
-    Kept together and separate from :func:`add_report_dir_arg` because the
-    multiview audit slots its verdict/confidence gate between the two.
+    Separate from :func:`add_report_dir_arg` because the multiview audit slots
+    its verdict/confidence gate between the two.
     """
     p.add_argument("--apply", action="store_true", help=apply_help)
     p.add_argument(
@@ -92,9 +85,8 @@ def add_model_args(p: argparse.ArgumentParser) -> None:
 
     ``--device`` defaults to ``None`` on purpose: it is in
     :data:`anime_tools.gui.stages.AUTO_FIELDS`, never shown and never sent, and
-    every stage resolves it in-process through
-    :func:`anime_tools._device.resolve_device` at the model-load site — so the
-    torch-free ``--from_report`` replay path never pays for the answer.
+    each stage resolves it at the model-load site, so the torch-free
+    ``--from_report`` replay path never pays for the answer.
     """
     p.add_argument(
         "--tagger_dir",

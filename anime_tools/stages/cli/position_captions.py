@@ -1,29 +1,16 @@
 """Rewrite multi-subject captions into position clauses (SAM3 + Anima Tagger).
 
-Thin CLI over ``anime_tools.stages.position_captions``: loads SAM3 and the Anima
-Tagger, drives the detect -> order -> crop+blank -> tag -> compose pipeline over
-the resized dataset, and writes a review report.
+Thin CLI over ``anime_tools.stages.position_captions``: detect -> order ->
+crop+blank -> tag -> compose over the resized dataset, plus a review report.
+An attributable tag is MOVED out of the flat bag into its clause (v2);
+``--no_rewrite`` keeps the additive v1 behaviour and ``--flatten`` is the inverse
+pass. See ``docs/position_captions.md``.
 
-An attributable tag is MOVED out of the flat bag into its clause, so each
-attribute is asserted exactly once and bound to its subject (v2). ``--no_rewrite``
-restores the additive v1 behaviour for a training A/B; ``--flatten`` is the
-inverse pass that merges clauses back into the bag.
-
-The caption master (``image_dataset/``) is never written — clauses land on the
-derived caption next to the resized image (``--dst``, i.e.
-``workspace/resized/<rel>.txt``), the same file the TE step encodes.
-
-Dry-run is the default: nothing is written until ``--apply`` is passed. An
-``--apply`` run bumps the caption's mtime (so TE caches go correctly stale) and
-drops stale ``.variants.txt`` sidecars — follow it with ``make preprocess-te``
-to actually re-encode.
-
-``--from_report <report.json>`` replays a dry run instead of redoing the whole
-detect → crop → tag pass: the report already holds the destination caption and
-the exact proposed text, so the apply writes them **without loading SAM3 or the
-tagger**. A caption edited since the dry run is skipped and counted, never
-overwritten; the replay writes ``apply_report.json`` so it cannot clobber the
-report it read.
+Clauses land on the derived caption under ``--dst``; the caption master is never
+written. Dry-run is the default — ``--apply`` writes, bumps the caption's mtime
+and drops stale ``.variants.txt`` sidecars, so follow it with a TE re-encode.
+``--from_report`` replays a dry run's report without loading SAM3 or the tagger,
+skips any caption edited since, and writes ``apply_report.json``.
 
     make caption-position                      # dry run over the whole dataset
     make caption-position ARGS="--apply"       # write the clauses
@@ -51,8 +38,7 @@ from anime_tools._device import resolve_device
 from anime_tools._env import resolve_path
 from anime_tools._json import write_json
 
-# The one SAM3 entry point: `load_sam3`/`make_processor`, and (as this module's
-# import side effect) the numpy<2 `np.bool` alias sam3 needs before it loads.
+# Importing _sam3 also installs the `np.bool` alias sam3 needs before it loads.
 from anime_tools.masking._sam3 import add_checkpoint_arg, load_sam3, make_processor
 from anime_tools.stages.cli._args import (
     add_apply_args,
@@ -90,9 +76,8 @@ TE_NOTE = (
     "`make preprocess-te` now to regenerate the variant sidecars and "
     "re-encode."
 )
-# Both tokenizers pad to this (``--qwen3_max_token_length`` / ``--t5_…``); a
-# caption past it is silently truncated, and the padding invariant means the
-# tail simply never reaches the model.
+# Both tokenizers pad to this; a caption past it truncates silently, so the tail
+# never reaches the model.
 DEFAULT_MAX_TOKENS = 512
 
 
@@ -305,12 +290,8 @@ def parse_args() -> argparse.Namespace:
 def build_options_from_args(args: argparse.Namespace) -> PositionCaptionOptions:
     """Parsed CLI -> the options one pass runs under.
 
-    Split out of ``main`` so a second entry point (``ab_position_captions.py``,
-    which builds two of these from two flag sets) reuses the shipping
-    construction instead of a copy that would silently drift the moment a knob
-    is added. The detection half comes from
-    :func:`~anime_tools.stages.cli._detection.detection_options`, which the
-    multiview audit shares; only the clause-composition knobs are this stage's.
+    Shared with ``ab_position_captions.py`` so a new knob cannot reach one entry
+    point and not the other.
     """
     return PositionCaptionOptions(
         **detection_options(args),
@@ -336,14 +317,9 @@ def options_from_flag_string(
 ) -> tuple[PositionCaptionOptions, argparse.Namespace]:
     """Parse a flag *string* through this CLI's own parser.
 
-    The A/B and review sheets take their position-stage knobs as one opaque
-    ``--flags=--foo --bar`` string so they cannot drift from what ships: the
-    string goes through :func:`parse_args`, not a second parser. ``sys.argv`` is
-    swapped rather than passing the list, because ``parse_args`` is the entry
-    point those tools are pinning themselves to.
-
-    Returns ``(options, args)`` — the namespace as well, since the detector is
-    built from it (``--checkpoint``, ``--prompt_embed``, ``--tagger_dir``).
+    The A/B and review sheets pin themselves to :func:`parse_args` rather than a
+    second parser, hence the ``sys.argv`` swap. Returns ``(options, args)`` — the
+    namespace too, since the detector is built from it.
     """
     argv = sys.argv
     sys.argv = [argv[0], *flags.split()]
@@ -357,23 +333,18 @@ def options_from_flag_string(
 def build_detect_fn(args: argparse.Namespace, *, model=None, processor=None):
     """SAM3 text-prompt detector returning per-instance boxes + masks.
 
-    Pass ``model``/``processor`` from a previous call to build a second
-    detector (different ``--prompt`` / ``--prompt_embed``) on the same loaded
-    SAM3 — the A/B script uses this for a detector-side A/B.
+    Pass ``model``/``processor`` from a previous call to build a second detector
+    (different prompt) on the same loaded SAM3.
 
-    GOTCHA 1: ``Sam3Processor`` carries its own ``confidence_threshold`` and
-    applies it before the caller ever sees the boxes, so filtering the result
-    against a *lower* retry threshold is a no-op unless the processor itself is
-    built at the lowest threshold we might ask for (which it is here — the
-    score gate is then applied on top, in ``detect``/``part_detect``).
+    GOTCHA 1: ``Sam3Processor`` applies its own ``confidence_threshold`` before
+    the caller sees the boxes, so it must be built at the *lowest* threshold any
+    retry might ask for; the score gate is applied on top in ``detect``.
 
-    GOTCHA 2: ``detect_subjects`` calls back into this per retry and per
-    body-part prompt on the same image — encoding and raw detections are
-    memoised per image/prompt so a retry is a pure re-filter and a part prompt
-    costs only one grounding pass.
+    GOTCHA 2: ``detect_subjects`` calls back per retry and per part prompt on the
+    same image, so encoding and raw detections are memoised per image/prompt.
 
-    Returns ``(detect, part_detect, model, processor)``. ``part_detect`` takes
-    the prompt as an argument; ``detect`` is pinned to ``args.prompt``.
+    Returns ``(detect, part_detect, model, processor)``; ``detect`` is pinned to
+    ``args.prompt``.
     """
     import torch
 
@@ -409,9 +380,8 @@ def build_detect_fn(args: argparse.Namespace, *, model=None, processor=None):
             return memo[prompt]
         with torch.autocast(device_type="cuda", dtype=torch.bfloat16):
             if soft_prompt is not None and prompt == args.prompt:
-                # Learned prompt tensor stands in for the subject phrase; the
-                # processor's text encode is skipped and its grounding pass
-                # reused as-is (bench/sam3_soft_prompt/).
+                # Learned prompt tensor stands in for the subject phrase: the
+                # text encode is skipped, the grounding pass reused as-is.
                 state = cache["state"]
                 state["backbone_out"].update(soft_prompt)
                 state.setdefault("geometric_prompt", model._get_dummy_prompt())
@@ -464,19 +434,16 @@ def _run_flatten(args, src: Path, dst: Path, report_dir: Path) -> None:
         "written": stats.written,
         "skipped": dict(sorted(stats.skipped.items(), key=lambda kv: -kv[1])),
     }
-    # Its own name, not ``report.json``: a flatten is the inverse pass, and a
-    # ``--from_report`` replay of one would write the clauses back.
+    # Its own name, not ``report.json``: replaying a flatten would write the
+    # clauses straight back.
     write_json(report_dir / "flatten_report.json", {"summary": summary, "images": rows})
     print(json.dumps(summary, indent=2, ensure_ascii=False))
     print(f"\nreport: {report_dir / 'flatten_report.json'}")
     print_dry_run_footer(args.apply, TE_NOTE)
 
 
-# How ``replay`` reads a position report: ``images``/``summary`` containers,
-# ``proposed`` is the writable status, and the rewrite lands on the **derived**
-# caption under ``--dst`` (the master is never written). ``drop_variants``
-# mirrors ``_write_derived_caption``: a stale ``{stem}.variants.txt`` outranks
-# ``{stem}.txt`` at encode time, so the replay must unlink it too.
+# ``drop_variants`` mirrors ``_write_derived_caption``: a stale
+# ``{stem}.variants.txt`` outranks ``{stem}.txt`` at encode time.
 REPLAY_SPEC = ReplaySpec(
     stage="position_captions",
     rows_key="images",
@@ -524,8 +491,8 @@ def main() -> None:
     # SAM3 first, tagger second: both stay resident since the pipeline is
     # per-image (detect -> crop -> tag), not two dataset-wide passes.
     detect_fn, part_detect_fn, sam_model, sam_processor = build_detect_fn(args)
-    # Loaded here and not in parse_args(): the --from_report replay returns
-    # before this and must stay torch-free.
+    # Not in parse_args(): the --from_report replay returns above and must stay
+    # torch-free.
     tagger, vocabulary, _ckpt_dir = load_tagger(args)
 
     token_count_fn = None
@@ -560,15 +527,13 @@ def main() -> None:
     ]
     embed_path = resolve_prompt_embed(args.prompt_embed)
     summary = {
-        # The header carries the roots so ``--from_report`` can refuse to replay
-        # this report against a different pair of trees (the row paths are
-        # relative to them).
+        # Row paths are relative to these roots, so ``--from_report`` can refuse
+        # to replay the report against a different pair of trees.
         **stage_report_header(
             src=src, dst=dst, path_pattern=args.path_pattern, apply=args.apply
         ),
         "rewrite": bool(args.rewrite),
-        # Which detector produced these boxes — a soft prompt is a file, so
-        # two runs are only comparable when the sha matches.
+        # A soft prompt is a file: two runs only compare when the sha matches.
         "prompt": args.prompt,
         "prompt_embed": str(embed_path) if embed_path else None,
         "prompt_embed_sha256": prompt_embed_sha256(embed_path),
@@ -577,13 +542,11 @@ def main() -> None:
         "candidates": stats.candidates,
         "proposed": stats.proposed,
         "written": stats.written,
-        # v2: how much of the flat bag the clauses actually took, and which of
-        # the two safety rules pinned the rest. Zero under --no_rewrite.
+        # How much of the flat bag the clauses took. Zero under --no_rewrite.
         "rewritten": stats.rewritten,
         "moved_tags": stats.moved_tags,
-        # Clause composition. ``reuse_ratio`` is the headline for the
-        # move-don't-invent rule: a bag tag is a candidate move, a novel one can
-        # only ever be an addition.
+        # ``reuse_ratio`` is the headline for move-don't-invent: a bag tag can
+        # move, a novel one can only ever be an addition.
         "max_novel_tags": args.max_novel_tags,
         "clause_tags": stats.clause_tags,
         "novel_tags": stats.novel_tags,
@@ -595,8 +558,7 @@ def main() -> None:
         "pinned_tags": dict(sorted(stats.pinned_tags.items(), key=lambda kv: -kv[1])),
         "skipped": dict(sorted(stats.skipped.items(), key=lambda kv: -kv[1])),
         "part_prompts": list(options.part_prompts),
-        # Images the body-part fallback actually rescued: at least one bound
-        # instance whose box came from a part prompt. Zero with the feature off.
+        # Images with at least one bound instance from a part prompt.
         "part_recovered": sum(
             1 for r in rows if any(i.source != "subject" for i in r.instances)
         ),

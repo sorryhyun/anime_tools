@@ -1,21 +1,15 @@
 """Curation-side environment: home dir, path anchoring, ``.env``, logging.
 
-The curation half (tagger / masking / grouping / caption stages) is bound for
-``anime_tools`` and must not import ``library.env`` / ``library.log``. This is
-its own copy of the three tiny pieces it needs. Resolution order for the home
-directory (Phase 0 decision, 2026-08-30 — see
-``docs/contract.md`` §4):
+This package must not import the trainer's ``library.env`` / ``library.log``,
+so it carries its own copy. Home-directory resolution (``docs/contract.md`` §4):
 
 1. ``ANIME_TOOLS_HOME`` — explicit curation home (standalone installs).
-2. ``ANIMA_HOME`` — the trainer's home, so an in-tree run anchors identically
-   to ``library.env.anima_home()``.
-3. The current working directory — a standalone ``anime_tools`` run anchors
-   on the dataset tree it is invoked from; the trainer's ``make`` wrappers
-   export ``ANIMA_HOME`` (and run from the checkout root), so in-tree runs
-   resolve exactly as the pre-split ``library.env.anima_home()`` did.
+2. ``ANIMA_HOME`` — the trainer's home, so an in-tree run anchors identically.
+3. The current working directory — a standalone run anchors on the dataset tree
+   it is invoked from.
 
-There is no "checkout root" fallback any more: once installed as a package
-this file lives in site-packages, not in a project tree.
+There is no "checkout root" fallback: once installed, this file lives in
+site-packages, not in a project tree.
 """
 
 from __future__ import annotations
@@ -39,7 +33,7 @@ def resolve_path(path) -> Path:
     """Anchor a bare relative path under :func:`curation_home`.
 
     Absolute and ``~`` paths pass through; idempotent, so it is safe at every
-    layer of a call chain (mirrors ``library.env.resolve_under_home``).
+    layer of a call chain.
     """
     p = Path(path).expanduser()
     if p.is_absolute():
@@ -51,10 +45,9 @@ def workspace_dir() -> Path:
     """Where the tools write (``ANIME_TOOLS_WORKSPACE`` overrides; default
     ``<home>/workspace``).
 
-    The curation half produces nothing outside this directory: resized images,
-    masks, derived and revised captions, the stage reports and the grouping
-    manifest all live under it, and ``anime_tools.workspace`` lays out the
-    subdirectories. Publishing to the trainer's paths is Export's job alone.
+    The curation half produces nothing outside this directory; publishing to
+    the trainer's paths is Export's job alone. ``anime_tools.workspace`` lays
+    out the subdirectories.
     """
     override = os.environ.get("ANIME_TOOLS_WORKSPACE")
     if override:

@@ -7,8 +7,7 @@ hard enough that they are the *uncontroversial* subset:
 - caption count is exactly ``1girl`` (or ``2girls``), no ``multiple views``;
 - under the shipped ``girl`` prompt at the primary 0.5 floor, NMS leaves
   exactly that many survivors, every one with box fill ≥ ``--min_fill`` and
-  area fraction ≤ ``--max_area`` (the audit's "clean figure" band — see
-  `docs/experimental/multiview_audit.md` §5.4).
+  area fraction ≤ ``--max_area`` (the multiview audit's "clean figure" band).
 
 Those survivors (normalized xyxy box + 288² mask) are the targets. Everything
 the prompt is supposed to *fix* is kept out of training and forms the eval

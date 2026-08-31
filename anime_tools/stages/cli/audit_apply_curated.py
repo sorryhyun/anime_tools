@@ -1,8 +1,7 @@
 """Apply a reviewer-curated accept list of multiview-audit findings — with undo.
 
-The gate-based ``audit_multiview.py --apply`` writes every finding a verdict
-tier admits; this is the other workflow: a human reads the contact sheets,
-hand-picks findings across tiers, and applies exactly that set. Accepted
+Where ``audit_multiview.py --apply`` writes every finding a verdict tier admits,
+this applies exactly the set a human hand-picked across tiers. Accepted
 ``multiple views``/``unsure`` rows get the ``multiple views`` splice; accepted
 ``extra-character`` rows get the ``{instances}girls`` count replacement.
 
@@ -34,9 +33,9 @@ def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument(
         "--report",
-        # `audit_multiview`'s own --report_dir, plus the file it writes there:
-        # the accept list is a list of *that* report's rows, so the two defaults
-        # are one path split in half. Pinned together in test_stage_cli_args.
+        # `audit_multiview`'s --report_dir plus the file it writes there: the
+        # accept list is a list of that report's rows, so the two defaults are
+        # one path split in half. Pinned together in test_stage_cli_args.
         default=f"{WS.REPORTS}/multiview_audit/report.json",
         help="Audit report.json the accept list refers to",
     )

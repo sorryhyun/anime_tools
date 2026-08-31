@@ -11,7 +11,6 @@ import type { RunResult } from "../runner";
     with no report to stand on is being run again for real. */
 export function ApplyDialog(props: {
   open: boolean;
-  /** The stage about to write. */
   title?: string;
   /** The run whose report Apply will replay, or null when there is none. */
   pending: RunResult | null;

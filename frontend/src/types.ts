@@ -288,7 +288,6 @@ export interface ProposalIndex {
   rels: string[];
 }
 
-/** What an Undo actually put back. */
 export interface UndoResult {
   stage: string;
   report: string;

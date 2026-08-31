@@ -22,8 +22,6 @@ export function createLayout() {
   // its scroll position while it is folded away.
   createEffect(on(sidebar, (v) => document.body.classList.toggle("nosidebar", !v)));
 
-  /** Drag the dock's top edge. The dataset view and the stage form both want
-      the vertical space, and which one wins changes by the minute. */
   function grip(e: PointerEvent) {
     e.preventDefault();
     const y0 = e.clientY;

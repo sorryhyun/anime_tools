@@ -1,9 +1,8 @@
 """Stage registry for the web GUI: which CLIs are exposed, and how their
 argparse parsers become a JSON form schema + back into an argv.
 
-Qt/torch/FastAPI-free on purpose so it is unit-testable and cheap to import.
-Every stage's ``build_parser()`` is imported lazily: a stage whose deps are not
-installed (``cv2`` for masking, say) is listed as *unavailable* rather than
+Torch/FastAPI-free on purpose. Every stage's ``build_parser()`` is imported
+lazily, so a stage whose deps are missing is listed as *unavailable* rather than
 breaking the server.
 """
 
@@ -25,7 +24,7 @@ REPLAY_FIELD = "from_report"
 """``--from_report``: the argparse dest a replay-capable stage exposes."""
 REPLAY_REPORT_NAME = "apply_report.json"
 """What a replay writes, mirroring ``anime_tools.stages.replay``. Duplicated
-rather than imported: this module stays torch-free and cheap to import."""
+rather than imported to keep this module torch-free."""
 
 CACHE_ENV = "ANIME_TOOLS_CACHE"
 CACHE_VERSION = 1
@@ -51,13 +50,9 @@ _PATH_HINTS = (
 
 _DIR_HINTS = ("dir", "src", "dst", "root", "source", "tokenizer", "qwen3")
 """Which of those name a *directory*, so the host's chooser opens in the mode
-that can return one. Everything else with a path in its name is a file --
-``--out`` is ``groups.json``, ``--from_report`` is a report, ``--checkpoint``
-and ``--prompt_embed`` are weights -- and ``--report_dir`` says which it is
-right in the flag. The two tokenizer flags are the ones that don't: ``--qwen3``
-and ``--t5_tokenizer_path`` are HF tokenizer *directories*, so they are named
-here. Derived here rather than in the browser for the same reason every other
-fact about a flag is: the form never re-types argparse."""
+that can return one; everything else with a path in its name is a file. The
+tokenizer flags are the odd ones out, so they are named here. Derived
+server-side because the form never re-types argparse."""
 
 
 SETTINGS_KEY = "stage_defaults"
@@ -65,11 +60,8 @@ SETTINGS_KEY = "stage_defaults"
 
 SETTING_FIELDS: dict[str, str] = {
     # argparse dest → settings key. Stage-independent knobs that mean the same
-    # thing everywhere they appear, so they are set once in ⚙ Settings instead
-    # of on nine forms: which images a run touches, which tagger checkpoint
-    # loads, which SAM3 weights the three detector stages build from, and which
-    # soft prompt the two of them find a subject with. Like ROOT_FIELDS these
-    # are hidden from the form and filled by :func:`build_argv`.
+    # thing everywhere they appear, so they are set once in ⚙ Settings. Like
+    # ROOT_FIELDS they are hidden from the form and filled by :func:`build_argv`.
     "path_pattern": "path_pattern",
     "tagger_dir": "tagger_dir",
     "checkpoint": "checkpoint",
@@ -79,31 +71,18 @@ SETTING_FIELDS: dict[str, str] = {
 REPORT_SETTING = "report_root"
 """The directory every stage's report lands under, in :data:`SETTINGS_KEY`.
 
-Not a :data:`SETTING_FIELDS` entry, because one value cannot be handed to every
-stage as-is: two stages sharing a ``--report_dir`` would have one stage's
-``--from_report`` replay read the other's report. Each stage keeps its own
-sub-path (:func:`report_subpath`) and only the *root* is the setting, so the
-whole set moves together and the four defaults stay distinct.
-
-Blank means "beside the ``dst`` root" — see ``server.report_root``. That is what
-the CLI defaults spell out (``workspace/captions/autotag`` is
-``workspace/resized``'s sibling), except they spell it as a literal, so a
-dataset moved off ``workspace/`` would leave its reports behind.
-
-The one report a stage *reads* rather than writes (:data:`REPORT_INPUTS`) is
-bound the same way, so the audit's report and the curated apply that consumes it
-move together.
+Not a :data:`SETTING_FIELDS` entry, because two stages sharing a
+``--report_dir`` would have one stage's ``--from_report`` replay read the
+other's report: each keeps its own sub-path (:func:`report_subpath`) and only
+the *root* is the setting. Blank means "beside the ``dst`` root". The one report
+a stage *reads* (:data:`REPORT_INPUTS`) is bound the same way.
 """
 
 REPORT_INPUTS: dict[str, str] = {
     # stage id → the dest naming a report this stage *reads*. Bound to
-    # :data:`REPORT_SETTING` exactly like the report a stage writes — same
-    # root, same per-stage tail off the CLI default — but kept out of
-    # :attr:`Stage.report`, which means "the report this run produces" and is
-    # what the run bar fetches back, offers as a diff and lets Undo replay.
-    # ``audit_apply`` produces none: it reads the multiview audit's; ``export``
-    # writes its own, and *reads* the caption index, which lives under the same
-    # root by the same tail and so binds here rather than on the form.
+    # :data:`REPORT_SETTING` exactly like the report a stage writes, but kept
+    # out of :attr:`Stage.report`, which means "the report this run produces"
+    # and is what the run bar fetches back and lets Undo replay.
     "audit_apply": "report",
     "export": "index",
 }
@@ -113,35 +92,23 @@ SCOPE_FIELD = "path_pattern"
 
 PREPROCESS_STAGE = "resize"
 """The stage that populates the resized tree, run as a preflight rather than a
-dock panel.
-
-Every stage bound to the ``dst`` root walks ``workspace/resized/`` and
-tags the pixels training sees, so an image that exists only in the caption
-master is invisible to it — the run reports zero rows and writes nothing, which
-reads like a bug. Rather than making that a step the user has to remember,
-:func:`preprocess_for` puts it in front of each such job, narrowed to the same
-images. It is idempotent: on an up-to-date tree it is one image-header read
-apiece and prints ``skip``."""
+dock panel: every stage bound to ``dst`` walks ``workspace/resized/``, so an
+image only in the caption master would be invisible to it — zero rows and no
+writes, which reads like a bug. Idempotent, so the preflight is cheap."""
 
 PREPROCESS_SETTINGS_KEY = "preprocess"
 """Where the resize form's values live in the settings file. It has no panel, so
-its knobs (tiers, min pixels, crop anchor) are set once in ⚙ Settings — the same
-treatment :data:`SETTING_FIELDS` gives ``path_pattern``."""
+its knobs are set once in ⚙ Settings."""
 
 AUTO_FIELDS: frozenset[str] = frozenset({"device"})
-"""Dests the GUI neither shows nor sends: the stage auto-detects them.
-
-``--device`` is the only one. This process is torch-free by design, so it
-cannot see whether the *child* will find a GPU; every stage CLI defaults it to
-``None`` and resolves it through ``anime_tools._device.resolve_device``, which
-is a better answer than anything a form could hold.
-"""
+"""Dests the GUI neither shows nor sends. This process is torch-free, so it
+cannot see whether the *child* will find a GPU; the stage resolves ``--device``
+itself."""
 
 
 ROOT_FIELDS: dict[str, dict[str, str]] = {
-    # stage id → {argparse dest: dataset root name}. These fields are filled
-    # from the Settings dialog's dataset roots (the same three trees the
-    # sidebar joins), so no stage form re-asks for them.
+    # stage id → {argparse dest: dataset root name}, filled from the Settings
+    # dialog's dataset roots so no stage form re-asks for them.
     "resize": {"src": "src", "dst": "dst"},
     "autotag": {"src": "src", "dst": "dst"},
     "position": {"src": "src", "dst": "dst"},
@@ -150,19 +117,17 @@ ROOT_FIELDS: dict[str, dict[str, str]] = {
     "audit_apply": {"source": "src"},
     # Grouping and the two mask generators read the *resized* tree, like the
     # caption stages above: one decode substrate, one geometry. A mask cut from
-    # master pixels is rescaled onto the resized latent by the trainer's loader
-    # (``docs/contract.md`` §mask), which is only sound while free-fit's crop
-    # stays sub-patch — for a ratio-clamped image it is not, and the mask lands
-    # off the subject. Cutting it from the same pixels removes that case.
+    # master pixels is only sound while free-fit's crop stays sub-patch — for a
+    # ratio-clamped image it lands off the subject.
     "groups": {"source_dir": "dst"},
     "masks_sam": {"image_dir": "dst"},
     "masks_mit": {"image_dir": "dst"},
     # Only the *merged* output is the masks root; each generator's --mask-dir
     # is an intermediate that has to differ from it, so it stays on the form.
     "masks_merge": {"output_dir": "masks"},
-    # The one stage that runs the pipeline backwards: it reads the three
-    # workspace trees and writes ``src`` (a revised master, back where the
-    # contract says the master lives) and ``out`` (everything else).
+    # The one stage that runs the pipeline backwards: it reads the workspace
+    # trees and writes ``src`` (a revised master, where the contract says the
+    # master lives) and ``out`` (everything else).
     "export": {
         "src": "src",
         "dst": "dst",
@@ -179,22 +144,19 @@ class Stage:
     title: str
     module: str
     panel: str
-    """Which dock button this stage lives under. Several stages share one --
-    the dock shows one button per panel and picks between its stages inside
-    the panel, so the strip stays four buttons wide instead of nine."""
+    """Which dock button this stage lives under; several stages share one, and
+    the panel picks between them."""
     extra: str
     """Historical feature area (``tagger`` / ``stages`` / ...); informational only now that everything is a plain dependency."""
     report: tuple[str, str | None] | None = None
     """``(dest, filename)``: the form field naming the report dir (or file when
-    ``filename`` is None) so the GUI can fetch the result after a run."""
+    ``filename`` is None), so the GUI can fetch the result after a run."""
     notes: str = ""
     short: str = ""
-    """Label for the in-panel picker, where the panel already gives the
-    context the title spells out. Defaults to :attr:`title`."""
+    """Label for the in-panel picker; defaults to :attr:`title`."""
     hidden: bool = False
-    """Keep this stage out of the dock: it is not something the user runs by
-    hand. It still has a schema and an argv, so it can run as a preflight and be
-    configured from Settings."""
+    """Keep this stage out of the dock. It still has a schema and an argv, so
+    it can run as a preflight and be configured from Settings."""
 
 
 STAGES: tuple[Stage, ...] = (
@@ -309,11 +271,8 @@ PANELS: tuple[str, ...] = tuple(dict.fromkeys(s.panel for s in STAGES if not s.h
 NO_PREFLIGHT: frozenset[str] = frozenset({PREPROCESS_STAGE, "export"})
 """Stages the resize preflight never runs in front of.
 
-``resize`` for the obvious reason. ``export`` because it is bound to ``dst`` but
-does not *consume* the resized tree the way the caption stages do — it publishes
-whatever is in it, and quietly computing more first would make a publish do
-work the user did not ask for. An empty resized tree is a refusal there ("Run
-the Resize stage first"), which is the honest answer rather than a hidden step.
+``export`` is bound to ``dst`` but publishes the resized tree rather than
+consuming it, so an empty one is a refusal, not a hidden step.
 """
 
 
@@ -321,10 +280,8 @@ def preprocess_for(stage_id: str) -> str | None:
     """The stage that must run before ``stage_id``, or ``None``.
 
     A stage bound to the ``dst`` root reads the resized tree, so it needs
-    :data:`PREPROCESS_STAGE` in front of it — which since the resized tree
-    became the one decode substrate is every stage except ``audit_apply`` (it
-    rewrites captions the audit already found and reads no pixels) and the two
-    :data:`NO_PREFLIGHT` names.
+    :data:`PREPROCESS_STAGE` in front of it. ``audit_apply`` opens no pixels,
+    and :data:`NO_PREFLIGHT` names the rest of the exceptions.
     """
     if stage_id in NO_PREFLIGHT:
         return None
@@ -339,13 +296,9 @@ BY_ID: dict[str, Stage] = {s.id: s for s in STAGES}
 def report_subpath(default: str) -> str:
     """The part of a report default that is *not* a dataset root.
 
-    Every ``--report_dir`` / ``--out`` default is written
-    ``<dataset root>/<this stage's own path>`` — ``workspace`` +
-    ``captions/autotag``, ``workspace`` + ``groups/groups.json``.
-    Dropping that first component is what lets one :data:`REPORT_SETTING` move
-    every stage's report at once while each keeps a directory of its own: the
-    root is the setting, the tail is the stage's identity, and the CLI default
-    stays the single place the tail is written down.
+    Every ``--report_dir`` / ``--out`` default is ``<dataset root>/<this stage's
+    own path>``; dropping the first component lets one :data:`REPORT_SETTING`
+    move every report at once while each stage keeps a directory of its own.
     """
     parts = PurePosixPath(default).parts
     return PurePosixPath(*parts[1:]).as_posix() if len(parts) > 1 else default
@@ -362,8 +315,8 @@ class Field:
     required: bool = False
     path: bool = False
     path_kind: str = "dir"
-    """``dir`` | ``file``: which chooser the ``…`` beside a ``path`` field opens
-    (see :data:`_DIR_HINTS`). Meaningless unless ``path``."""
+    """``dir`` | ``file``: which chooser the ``…`` beside a ``path`` field
+    opens. Meaningless unless ``path``."""
     group: str = ""
     negate: str | None = None
     """For BooleanOptionalAction: the ``--no-…`` flag."""
@@ -371,15 +324,14 @@ class Field:
     """What the form shows: the flag, or the dest for a ``store_false`` flag so
     a ticked box always means *on*."""
     root: str | None = None
-    """Bound to a dataset root (``src``/``dst``/``masks``): the GUI hides the
-    field and :func:`build_argv` fills it from the Settings roots."""
+    """Bound to a dataset root: hidden from the form, filled by
+    :func:`build_argv` from the Settings roots."""
     setting: str | None = None
-    """Bound to a :data:`SETTING_FIELDS` key: hidden from the form the same
-    way, filled from the Settings dialog's stage defaults."""
+    """Bound to a :data:`SETTING_FIELDS` key: hidden the same way, filled from
+    the Settings dialog's stage defaults."""
     report: str | None = None
-    """This stage's own path under the :data:`REPORT_SETTING` root
-    (``captions/autotag``, ``groups/groups.json``): hidden from the form and
-    filled by :func:`build_argv` as ``<root>/<report>``."""
+    """This stage's own path under the :data:`REPORT_SETTING` root: hidden from
+    the form and filled by :func:`build_argv` as ``<root>/<report>``."""
     auto: bool = False
     """In :data:`AUTO_FIELDS`: never shown, never sent, always auto-detected."""
 
@@ -465,8 +417,7 @@ def schema(stage: Stage) -> dict[str, Any]:
         "notes": stage.notes,
         "report": bool(stage.report),
         "hidden": stage.hidden,
-        # The preflight this stage gets, so the run bar can say so before the
-        # log does ("Resize → Autotag").
+        # The preflight this stage gets, so the run bar can name it up front.
         "preprocess": preprocess_for(stage.id),
     }
     try:
@@ -489,11 +440,9 @@ def schema(stage: Stage) -> dict[str, Any]:
         "available": True,
         "doc": parser.description or "",
         "apply": any(f.dest == "apply" for f in fs),
-        # This stage takes a ``--path_pattern``, so the GUI can narrow one run
-        # to the selected image and offer the batch as a separate button.
+        # Takes a ``--path_pattern``, so one run can be narrowed to one image.
         "scoped": any(f.dest == SCOPE_FIELD for f in fs),
-        # This stage can write a previous dry run's proposals instead of
-        # recomputing them (``--from_report``); the GUI's Apply offers it.
+        # Can write a dry run's proposals instead of recomputing them.
         "replay": any(f.dest == REPLAY_FIELD for f in fs),
         "fields": [f.__dict__ for f in fs],
     }
@@ -516,18 +465,12 @@ def build_argv(
     ``--apply`` flag regardless of what the form sent, so the Dry run / Apply
     buttons are the only route.
 
-    ``roots`` (``{"src": …, "dst": …, "masks": …}``) fills every field bound by
-    :data:`ROOT_FIELDS`, overriding whatever the form sent: the dataset roots
-    are set once in Settings and no stage gets to disagree with them.
-    ``settings`` does the same for :data:`SETTING_FIELDS` (``path_pattern`` /
-    ``tagger_dir`` / ``checkpoint`` / ``prompt_embed``) — and it is also how
-    the GUI narrows one run to a single image, by handing in a ``path_pattern``
-    that matches just that file. ``report_root`` fills the report field the
-    same way, joined to the stage's own :attr:`Field.report` tail so the four
-    stages keep four directories under the one root.
-
-    :data:`AUTO_FIELDS` (``--device``) never reach the argv at all: the stage
-    auto-detects them.
+    ``roots``, ``settings`` and ``report_root`` fill the bound fields
+    (:data:`ROOT_FIELDS`, :data:`SETTING_FIELDS`, :attr:`Field.report`),
+    overriding whatever the form sent — the report joined to the stage's own
+    tail so the stages keep separate directories under the one root. Narrowing
+    a run to one image is a ``path_pattern`` handed in through ``settings``.
+    :data:`AUTO_FIELDS` never reach the argv at all.
     """
     argv: list[str] = []
     positional: list[str] = []
@@ -591,11 +534,9 @@ def build_argv(
 def form_values(fields: list[dict[str, Any]], values: dict[str, Any]) -> dict[str, Any]:
     """``values`` minus everything the form does not own.
 
-    The GUI persists the last form per stage; dests that are bound (to a root
-    or a Settings default) or auto-detected are not the form's to remember, and
-    a copy left behind from before they moved to Settings is pure confusion in
-    the settings file. :func:`build_argv` already ignores them — this keeps them
-    from being written down in the first place.
+    The GUI persists the last form per stage; bound and auto-detected dests are
+    not the form's to remember. :func:`build_argv` already ignores them — this
+    keeps them from being written down in the first place.
     """
     drop = {
         f["dest"]
@@ -617,14 +558,11 @@ def report_path(
 ) -> str | None:
     """Where this stage's report lands for this run (unresolved).
 
-    The same answer :func:`build_argv` puts on the argv, which is the point:
-    the GUI reads back exactly the file the child was told to write. The report
-    field is bound (:attr:`Field.report`), so ``values`` never carries it — with
-    no ``report_root`` this falls back to the CLI's own default.
-
-    A replay (``--from_report``) writes :data:`REPLAY_REPORT_NAME` instead:
-    ``--from_report`` and ``--report_dir`` normally name the same directory, so
-    the stage refuses to clobber the dry run it is replaying.
+    The same answer :func:`build_argv` puts on the argv, so the GUI reads back
+    exactly the file the child was told to write; with no ``report_root`` this
+    falls back to the CLI's own default. A replay (``--from_report``) writes
+    :data:`REPLAY_REPORT_NAME` instead, because the two flags normally name the
+    same directory and the stage refuses to clobber the dry run it replays.
     """
     if not stage.report:
         return None
@@ -640,9 +578,8 @@ def report_path(
 
 
 def dump_schemas() -> dict[str, dict[str, Any]]:
-    """Every stage's schema, keyed by id. Imports every stage CLI module — call
-    it in a child process from anything long-lived, so a heavy import a stage
-    picks up later cannot leak into the caller."""
+    """Every stage's schema, keyed by id. Imports every stage CLI module, so
+    call it in a child process from anything long-lived."""
     return {s.id: schema(s) for s in STAGES}
 
 
@@ -667,22 +604,16 @@ def dump_schemas_in_child() -> dict[str, dict[str, Any]]:
 
 
 # ---- on-disk memo for the child dump ------------------------------------
-#
-# The child interpreter is on the GUI's startup path, so its output is memoised
-# on disk. Every stage CLI now defers its heavy imports (torch, smp,
-# albumentations) into the functions that need them, which took the dump from
-# ~3.4s to ~0.2s -- the memo is no longer load-bearing, but it keeps startup
-# flat if a stage regains a slow import.
+# The child interpreter is on the GUI's startup path. Stage CLIs defer their
+# heavy imports, so the dump is ~0.2s and the memo is not load-bearing; it keeps
+# startup flat if a stage regains a slow import.
 
 
 def cache_dir() -> Path:
     """Where the GUI keeps derived, throw-away state.
 
-    Deliberately *not* under :func:`~anime_tools._env.curation_home`: a dataset
-    tree is exactly what ``docs/contract.md`` says it is, and a cache that
-    survives switching homes is the point. ``$ANIME_TOOLS_CACHE`` overrides;
-    otherwise ``$XDG_CACHE_HOME`` (or ``~/.cache``) ``/anime_tools/gui`` — the
-    same shape as grouping's ``$NEAR_TWIN_CACHE``.
+    Deliberately *not* under the curation home: a dataset tree is exactly what
+    ``docs/contract.md`` says it is. ``$ANIME_TOOLS_CACHE`` overrides.
     """
     override = os.environ.get(CACHE_ENV)
     if override:
@@ -697,16 +628,11 @@ def schema_cache_path() -> Path:
 
 
 def schema_cache_key() -> str:
-    """What has to change for a cached dump to be wrong.
-
-    The installed version and the interpreter, plus ``(path, mtime_ns, size)``
-    for every ``.py`` under the installed package. Whole-package, not just the
-    nine CLI shells: a parser's defaults routinely come from the stage module
-    behind its CLI, and ``ROOT_FIELDS``/``STAGES``/:func:`fields_of` live in this
-    file. Each stage's module file is resolved with
-    :func:`importlib.util.find_spec`, which does *not* import it (the parent
-    packages are docstring-only shells — nothing pulls torch), so a stage module
-    that lives outside the package is keyed on too.
+    """What has to change for a cached dump to be wrong: the installed version,
+    the interpreter, and ``(path, mtime_ns, size)`` for every ``.py`` under the
+    package — whole-package, because a parser's defaults routinely come from the
+    stage module behind its CLI. :func:`importlib.util.find_spec` keys on a
+    stage module outside the package without importing it.
     """
     parts = [f"v{CACHE_VERSION}", _distribution_version(), sys.version]
     files = set(Path(__file__).resolve().parent.parent.rglob("*.py"))

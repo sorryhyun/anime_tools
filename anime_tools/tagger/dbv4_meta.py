@@ -1,17 +1,13 @@
 """Torch-free facts about the dbv4 tagger backbone.
 
-The Anima Tagger is a thin head over an off-the-shelf danbooru tagger. Our
-half (vocab / rules / thresholds / sidecar) ships from ``sorryhyun/anima-tagger``
-and lands under ``models/captioners/``; the backbone ships from a **gated,
-GPL-3.0** upstream repo and lands in the HuggingFace hub cache under the
-user's own token (which is also their record of accepting the terms).
+Our half of the tagger (vocab / rules / thresholds / sidecar) ships from
+``sorryhyun/anima-tagger`` into ``models/captioners/``; the backbone ships from
+a **gated, GPL-3.0** upstream repo into the HuggingFace hub cache under the
+user's own token, which is also their record of accepting the terms.
 
-Three surfaces need the same facts without importing torch — the download
-catalog (:mod:`anime_tools.downloads`, which the GUI's Settings dialog lists),
-the ComfyUI loader, and :mod:`anime_tools.tagger.tagger` itself — so they live
-here rather than in :mod:`anime_tools.tagger.dbv4_backend`, which imports
-torch. ``tagger.py`` re-exports every name below, so the historical
-``from anime_tools.tagger.tagger import DEFAULT_TAGGER_DIR`` still works.
+These facts live here, not in the torch-importing :mod:`dbv4_backend`, because
+the download catalog, the ComfyUI loader and :mod:`anime_tools.tagger.tagger`
+all need them torch-free. ``tagger.py`` re-exports every name below.
 """
 
 from __future__ import annotations
@@ -27,13 +23,10 @@ DEFAULT_DBV4_IMG_SIZE = 384
 # Everything :class:`Dbv4Backend` pulls from the backbone repo.
 DBV4_BACKBONE_FILES = ("model.safetensors", "selected_tags.csv", "meta.json")
 
-# --- our half of the tagger: the checkpoint dir, and where it ships from -----
-# Auto-fetch repo when ckpt_dir is missing required files (mirrors the ComfyUI
-# loader). The live checkpoint lives under the `dbv4/` subfolder (2026-08-27:
-# the external caformer_b36 backend + our sidecar — vocab / rules / groups /
-# thresholds / sidecar only, the GPL-3.0 backbone weights come from the
-# upstream gated repo); `v5/` is the last in-house PE dual-encoder head, kept
-# as the fallback. `v3/` and the legacy v2 root files were deleted 2026-08-29.
+# Our half of the tagger: auto-fetched when ckpt_dir is missing required files
+# (mirrors the ComfyUI loader). The live checkpoint is the `dbv4/` subfolder —
+# vocab / rules / groups / thresholds / sidecar only; the GPL-3.0 backbone
+# weights come from the upstream gated repo.
 TAGGER_HF_REPO = "sorryhyun/anima-tagger"
 TAGGER_HF_SUBFOLDER = "dbv4"
 TAGGER_REQUIRED_FILES = ("config.json", "model.safetensors", "vocab.json", "rules.yaml")

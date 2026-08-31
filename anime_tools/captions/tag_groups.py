@@ -1,18 +1,11 @@
 """Anima caption tag-groups — structural typing on top of the flat tag vocab.
 
-Companion to :mod:`tag_rules`. Where ``tag_rules.yaml`` enforces *which*
-tags survive caption normalization, ``tag_groups.yaml`` enforces *how* the
-surviving tags relate to each other — which sets are mutually exclusive
-on a single subject (eye color, hair color), which are always exclusive
-(rating), and which are flat multi-label but worth grouping for
-introspection (top-garment families).
-
-The trainer consumes this to route per-group losses (softmax-within-group
-when the image is single-subject and no escape-tag fires; BCE otherwise).
-Inference can use the same groups to produce a structured prediction
-("eye_color: blue eyes (0.91)"). At training-time the YAML is loaded once,
-intersected with the kept vocab, and the resolved index sets are written
-into ``vocab.json`` so the trainer doesn't re-touch the YAML each step.
+Companion to :mod:`tag_rules`: where ``tag_rules.yaml`` enforces *which* tags
+survive caption normalization, ``tag_groups.yaml`` says *how* the survivors
+relate — which sets are mutually exclusive on one subject (eye/hair color),
+which are always exclusive (rating), and which are flat multi-label but worth
+grouping for introspection. The YAML is loaded once, intersected with the kept
+vocab, and the resolved index sets are written into ``vocab.json``.
 
 YAML schema
 -----------
@@ -27,31 +20,21 @@ YAML schema
       escape: [heterochromia, ...]       # optional — disables softmax routing
       tags:                              # canonical space form (matches vocab)
         - blue eyes
-        - red eyes
         - ...
 
 Mode semantics
 ~~~~~~~~~~~~~~
 
-* ``softmax_when_solo`` — at training time, K-way CE on the group's logits
-  when (a) the image is single-subject (``solo``/``1girl``/``1boy`` and no
-  ``multiple_*``/``2+girls``/``2+boys``) **and** (b) no tag in ``escape``
-  fires; falls back to per-tag BCE otherwise. The "solo + no escape" check
-  is the trainer's job — the loader just exposes the group structure.
-* ``softmax`` — always K-way CE. Used for genuinely exclusive groups like
-  rating (which already has its own dedicated head).
-* ``multilabel`` — sigmoid/BCE per tag. Listed only for documentation /
-  introspection (so a UI can show "what kind of top is in this image").
+* ``softmax_when_solo`` — K-way CE on the group's logits when the image is
+  single-subject **and** no ``escape`` tag fires; per-tag BCE otherwise. That
+  gating is the trainer's job; the loader only exposes the group structure.
+* ``softmax`` — always K-way CE, for genuinely exclusive groups like rating.
+* ``multilabel`` — sigmoid/BCE per tag; listed for introspection only.
 
-Validation
-~~~~~~~~~~
-
-* Each tag name appears in at most one group.
-* Tag names use the canonical *space* form (matches parsed-caption tags
-  and ``vocab.json[tags][i][name]``).
-* Tags listed in YAML that aren't in the kept vocab (after ``min_freq``
-  cut) are silently dropped at :func:`resolve_groups` time — the YAML is
-  intended to be stable across min_freq changes, not re-curated each time.
+Validation: each tag name appears in at most one group, and names use the
+canonical *space* form. Names absent from the kept vocab (below ``min_freq``)
+are silently dropped at :func:`resolve_groups` time, so the YAML stays stable
+across min_freq changes rather than being re-curated each time.
 """
 
 from __future__ import annotations
@@ -73,10 +56,9 @@ GROUP_MODES: frozenset[str] = frozenset(
 
 # ``sentinel: true`` on a softmax group adds a synthetic "none of this group"
 # class: the vocab build appends a tag slot named ``sentinel_tag_name(group)``,
-# CE supervises it on applicable samples with no member label (so the gate
-# flips from "exactly one member present" to "at most one"), and decode emits
-# nothing when it wins the argmax. The angle-bracket name can never collide
-# with a caption tag (canonical tags are bare space-form words).
+# CE supervises it on applicable samples with no member label (flipping the gate
+# from "exactly one member" to "at most one"), and decode emits nothing when it
+# wins the argmax. The angle-bracket name can never collide with a caption tag.
 _SENTINEL_FMT = "<none:{group}>"
 
 # ``tags: ["$category:artist"]`` expands at vocab-build time to every kept
@@ -111,9 +93,8 @@ class TagGroup:
 class TagGroups:
     """All groups + a tag → group reverse map.
 
-    The reverse map is built once and used at training time to mask each
-    group's tags out of the residual BCE head (so a tag is supervised by
-    *exactly one* loss term, never both).
+    The reverse map masks each group's tags out of the residual BCE head, so a
+    tag is supervised by *exactly one* loss term, never both.
     """
 
     version: int
@@ -187,9 +168,8 @@ def _group_from_body(name: str, body: object, tag_to_group: dict[str, str]) -> T
 def load_groups(path: str | Path) -> TagGroups:
     """Load a ``tag_groups.yaml`` into a :class:`TagGroups`.
 
-    Validates: known modes, no overlapping tag names across groups. Empty
-    ``tags:`` lists are allowed (group exists but has no current members)
-    so the YAML can be checked in before the corpus catches up.
+    Empty ``tags:`` lists are allowed, so the YAML can be checked in before the
+    corpus catches up.
     """
     with open(path, encoding="utf-8") as f:
         raw = yaml.safe_load(f) or {}
@@ -206,11 +186,7 @@ def load_groups(path: str | Path) -> TagGroups:
 
 
 def from_dict(d: dict) -> TagGroups:
-    """Inverse of :meth:`TagGroups.to_dict` — load a snapshot from JSON/YAML dict.
-
-    Applies the same per-group validations as :func:`load_groups`
-    (via :func:`_group_from_body`).
-    """
+    """Inverse of :meth:`TagGroups.to_dict` — load a snapshot from JSON/YAML dict."""
     version = int(d.get("version", 1))
     groups: list[TagGroup] = []
     tag_to_group: dict[str, str] = {}
@@ -225,10 +201,9 @@ def from_dict(d: dict) -> TagGroups:
 class ResolvedGroup:
     """A :class:`TagGroup` projected onto a built vocab's tag indices.
 
-    ``tag_indices`` and ``escape_indices`` are sorted and disjoint with
-    every other resolved group's ``tag_indices``. Tags / escape tags
-    listed in the YAML but absent from the vocab (e.g. fell below
-    ``min_freq``) are silently dropped.
+    ``tag_indices`` and ``escape_indices`` are sorted and disjoint with every
+    other resolved group's ``tag_indices``. Names absent from the vocab are
+    silently dropped.
     """
 
     name: str
@@ -240,10 +215,9 @@ class ResolvedGroup:
     tag_names: tuple[str, ...]
     escape_names: tuple[str, ...]
     # Vocab index of the group's synthetic "none of these" class, when the
-    # group declares ``sentinel: true`` AND the vocab carries the slot. It is
-    # folded into ``tag_indices`` (always last — the synthetic slot is
-    # appended after every real tag, so it sorts highest) and duplicated here
-    # so consumers don't index-guess.
+    # group declares ``sentinel: true`` AND the vocab carries the slot. Folded
+    # into ``tag_indices`` (always last) and duplicated here so consumers don't
+    # index-guess.
     sentinel_index: int | None = None
 
 
@@ -253,11 +227,9 @@ def resolve_groups(
 ) -> tuple[tuple[ResolvedGroup, ...], dict[str, str]]:
     """Project ``groups`` onto a built vocab's ``tag_to_idx`` map.
 
-    Returns ``(resolved_groups, dropped)`` where ``dropped`` maps each
-    YAML-listed tag/escape name that didn't survive the vocab cut to a
-    short reason (``"not_in_vocab"``). The dropped map is informational —
-    the trainer doesn't care about absent tags, but the build step logs it
-    so the YAML curator can spot drift between corpus and vocab.
+    Returns ``(resolved_groups, dropped)``; ``dropped`` maps each YAML-listed
+    name that didn't survive the vocab cut to a short reason. Informational —
+    the build step logs it so the curator can spot corpus/vocab drift.
     """
     resolved: list[ResolvedGroup] = []
     dropped: dict[str, str] = {}
@@ -283,8 +255,8 @@ def resolve_groups(
             s_name = sentinel_tag_name(g.name)
             sentinel_index = vocab_tag_to_idx.get(s_name)
             if sentinel_index is None:
-                # Vocab was built without the slot (pre-sentinel build) —
-                # degrade to legacy exactly-one behavior rather than error.
+                # Vocab built without the slot — degrade to exactly-one
+                # behaviour rather than error.
                 dropped[s_name] = "sentinel_slot_not_in_vocab"
             else:
                 kept_tags.append((sentinel_index, s_name))
@@ -324,11 +296,10 @@ def resolved_to_dict(resolved: tuple[ResolvedGroup, ...]) -> list[dict]:
 def resolved_from_dict(raw: Iterable[Mapping]) -> tuple[ResolvedGroup, ...]:
     """Inverse of :func:`resolved_to_dict` — read ``vocab.json[groups]`` back.
 
-    The snapshot is already projected onto vocab indices, so this is a plain
-    revival: no vocab, no YAML and no re-resolution. Absent optional keys
-    (``description``, the escape pair, ``sentinel_index``) come back as their
-    :class:`ResolvedGroup` defaults, so a group dict written by an older build
-    revives rather than raising.
+    Already projected onto vocab indices, so this is a plain revival: no vocab,
+    no YAML, no re-resolution. Absent optional keys fall back to the
+    :class:`ResolvedGroup` defaults, so an older build's dict revives rather
+    than raising.
     """
     return tuple(
         ResolvedGroup(
@@ -353,11 +324,10 @@ def expand_category_members(
 ) -> TagGroups:
     """Expand ``$category:<cat>`` member entries against a built vocab.
 
-    Returns a new :class:`TagGroups` whose ``tags`` tuples carry the concrete
-    vocab tag names — run this before :func:`resolve_groups` AND before
-    snapshotting to the checkpoint dir, so the shipped ``groups.yaml`` is
-    self-contained (the inference wrapper re-resolves names, never markers).
-    Expanded names claimed by another group raise, same as the loader.
+    Run this before :func:`resolve_groups` AND before snapshotting to the
+    checkpoint dir, so the shipped ``groups.yaml`` is self-contained (the
+    inference wrapper re-resolves names, never markers). Expanded names claimed
+    by another group raise, same as the loader.
     """
     out_groups: list[TagGroup] = []
     tag_to_group: dict[str, str] = {}

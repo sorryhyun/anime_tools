@@ -6,9 +6,8 @@ stdout line so the caller can parse it back out of the daemon's stdout log:
 
     ANIMA_AUTOTAG_RESULT\t<comma-separated caption>
 
-Kept separate from ``anime_tools.tagger.cli.main`` (corpus / training oriented,
-no auto-download, prints debug scores) so the GUI has a thin, predictable
-entry whose only stdout contract is the sentinel line above.
+Kept separate from ``anime_tools.tagger.cli.main`` so the GUI has a thin entry
+whose only stdout contract is the sentinel line above.
 """
 
 from __future__ import annotations

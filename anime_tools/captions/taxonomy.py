@@ -1,19 +1,12 @@
 """Low-level danbooru tag-*shape* primitives — the single source of truth.
 
 These recognize the *form* of a tag (artist ``@``-prefix, count tag, raw rating
-literal) without any vocab or model. They are shared by every consumer that
-types tags so the two categorization paths can't silently drift:
-
-* the Anima Tagger vocab build — ``anime_tools/tagger/cli/vocab.py::categorize``
-  (image→tag model's view of the corpus), and
-* the dataset caption index — ``anime_tools/captions/index.py``
-  (method-agnostic typed-tag index for identity pairing / analytics).
-
-Pure stdlib by design: importing this must NOT pull in torch. The richer,
-*content*-aware heuristics (vocab-membership classification, danbooru
+literal) without any vocab or model, and are shared by the tagger vocab build
+(``tagger/cli/vocab.py::categorize``) and the caption index (``captions/index.py``)
+so the two categorization paths can't silently drift. Pure stdlib: importing
+this must NOT pull in torch. The *content*-aware heuristics (vocab membership,
 ``name (series)`` paren recovery, positional bare-name recovery) stay with the
-caption-index builder — they exist to compensate for the tagger's frozen vocab
-and have no model-side counterpart.
+caption-index builder.
 """
 
 from __future__ import annotations
@@ -21,7 +14,7 @@ from __future__ import annotations
 import re
 from collections.abc import Iterable
 
-# People-count tags — shared definition that classify_people and the vocab categorizer both key off. The caption-index builder additionally counts "no girls"/"no boys", but those sit after @artist so they never reach the pre-artist span; keeping them out here avoids mistyping them in the model vocab.
+# People-count tags — the one count regex, keyed off by classify_people and the vocab categorizer. "no girls"/"no boys" are deliberately out: they sit after @artist so they never reach the pre-artist span, and including them would mistype them in the model vocab.
 _COUNT_RE = re.compile(
     r"^(?:\d+\+?(?:girl|boy|other)s?|multiple[_ ](?:girls|boys|others))$"
 )
@@ -40,12 +33,11 @@ _OPEN_COUNT_RE = re.compile(r"^\d+\+(girl|boy|other)s?$")
 def normalize_tag(tag: str) -> str:
     """A tag's canonical space form: trimmed, ``_``→`` ``, lowercased, collapsed.
 
-    The one normalizer. ``speech_bubble`` and ``Speech  Bubble`` both become
-    ``speech bubble``, so either danbooru convention keys the same entry — the
-    Danbooru KB is built through this, the caption corrector writes through it,
-    and every "does the caption already say this?" comparison in the grammar
-    and in grouping goes through it. Three near-copies used to disagree on the
-    underscore fold, which is exactly the pair a comparison must not miss.
+    The one normalizer: ``speech_bubble`` and ``Speech  Bubble`` both become
+    ``speech bubble``, so either danbooru convention keys the same entry. Every
+    "does the caption already say this?" comparison in the grammar and in
+    grouping goes through it, and the underscore fold is exactly the pair such a
+    comparison must not miss.
 
     It is a *key* function that happens also to be the corrector's output form;
     callers that only compare must not write the result back.
@@ -61,25 +53,13 @@ def is_count_tag(tag: str) -> bool:
 def classify_people(tags: Iterable[str]) -> int:
     """Derive the 8-class :data:`PEOPLE_COUNT_LABELS` index for a parsed-tag list.
 
-    Bucketing rules:
+    Buckets 0-7 are named by the ``return`` comments below; ``others`` counts
+    ride into ``multi`` since the head is girls/boys-shaped.
 
-    * ``no_people`` (0) — no count tag at all
-    * ``1girl`` (1), ``2girls`` (3), ``1boy`` (6) — exact-girls-no-boy /
-      exact-boys-no-girl combos
-    * ``1girl_1boy`` (2), ``2girls_1boy`` (4), ``2boys_1girl`` (5) —
-      the three explicit mixed combos
-    * ``multi`` (7) — anything else with a count tag: ``3+girls``,
-      ``3+boys``, ``2girls+2+boys``, ``Nothers``, or a ``multiple_*`` tag
-      with no explicit numeric companion. ``others`` count tags ride into
-      ``multi`` since the head is girls/boys-shaped.
-
-    Booru auto-fires ``multiple_girls`` / ``multiple_boys`` whenever the
-    count is ≥2, not just ≥3 — so it cannot be treated as a ≥3 signal on
-    its own. We defer to the explicit numeric count tag when one is
-    present; ``multiple_*`` only contributes as a floor of 2 when no
-    numeric tag for that gender was seen.
-
-    Tag order in ``tags`` doesn't matter — counts are reduced first.
+    Booru auto-fires ``multiple_girls`` / ``multiple_boys`` whenever the count is
+    ≥2, not just ≥3, so it is not a ≥3 signal on its own: an explicit numeric
+    count wins, and ``multiple_*`` only contributes a floor of 2 when no numeric
+    tag for that gender was seen. Tag order doesn't matter.
     """
     girls = boys = 0
     saw_multi_g = saw_multi_b = False
@@ -106,8 +86,8 @@ def classify_people(tags: Iterable[str]) -> int:
         # "others" counts go to the "multi" indicator (no 7-bucket fit).
         elif "other" in t:
             saw_other = True
-    # ``multiple_*`` only kicks in when the numeric tag is missing; treat as ≥2
-    # not ≥3, since that's what the booru auto-tag means.
+    # ``multiple_*`` only kicks in when the numeric tag is missing, and means
+    # ≥2, not ≥3.
     if saw_multi_g and girls == 0:
         girls = 2
     if saw_multi_b and boys == 0:
@@ -135,8 +115,7 @@ def exact_count(tag: str, noun: str) -> int | None:
     """The number in an exact ``N<noun>s`` tag (``3girls`` → 3), else ``None``.
 
     Exact means countable: the open-ended ``6+girls`` and the ``multiple_*``
-    implication are not exact counts and answer ``None`` here — see
-    :func:`count_of`, which is this over a whole bag.
+    implication answer ``None``. :func:`count_of` is this over a whole bag.
     """
     m = _EXACT_COUNT_RE.match(normalize_tag(tag))
     return int(m.group(1)) if m is not None and m.group(2) == noun else None
@@ -169,19 +148,18 @@ def count_of(tags: Iterable[str], noun: str) -> int | None:
     return None if unknown else 0
 
 
-# ``solo`` is a non-count membership tag — gelcrawl writes it alongside
-# ``1girl``/``1boy`` when there is exactly one figure — so the single-subject
-# predicate is "one of these fired, and no *other* count tag did". The
-# single-count names also match :data:`_COUNT_RE` (``\d+girls?``), which is why
-# they have to be excluded from the multi test rather than merely not counted.
+# ``solo`` rides alongside ``1girl``/``1boy`` when there is exactly one figure,
+# so the single-subject predicate is "one of these fired, and no *other* count
+# tag did". These names also match :data:`_COUNT_RE`, which is why they must be
+# excluded from the multi test rather than merely not counted.
 SINGLE_COUNT_NAMES = frozenset({"solo", "1girl", "1boy", "1other"})
 
 
 def is_solo_names(names: Iterable[str]) -> bool:
     """True when a tag-name set describes a single subject.
 
-    The name-side twin of :func:`solo_multi_indices` (and of the trainer's
-    ``GroupRouter.solo_mask``): what ``softmax_when_solo`` groups gate on.
+    The name-side twin of :func:`solo_multi_indices`: what ``softmax_when_solo``
+    groups gate on.
     """
     names = set(names)
     has_multi = any(n not in SINGLE_COUNT_NAMES and is_count_tag(n) for n in names)
@@ -191,9 +169,8 @@ def is_solo_names(names: Iterable[str]) -> bool:
 def solo_multi_indices(vocab_tags: Iterable[dict]) -> tuple[set[int], set[int]]:
     """``(single_count_indices, multi_count_indices)`` over ``vocab.json`` rows.
 
-    The index-side twin of :func:`is_solo_names`, for consumers that hold a
-    multi-hot tensor rather than names. Same precedence: a single-count name is
-    never also counted as multi.
+    The index-side twin of :func:`is_solo_names`. Same precedence: a
+    single-count name is never also counted as multi.
     """
     single: set[int] = set()
     multi: set[int] = set()
@@ -222,16 +199,14 @@ def strip_artist_prefix(tag: str) -> str:
     return tag.removeprefix("@")
 
 
-# Anima's 4-class rating vocabulary — the leading safety band of a caption
-# (``safe, 1girl, …``), and the same set the tagger's rating head predicts
-# (``anime_tools.tagger.tagger.RATINGS``, which fixes the class order).
+# Anima's 4-class rating vocabulary — the leading safety band of a caption, and
+# the same set the tagger's rating head predicts (``tagger.RATINGS`` fixes the
+# class order).
 CAPTION_RATINGS = frozenset({"safe", "sensitive", "nsfw", "explicit"})
 
-# Danbooru's own rating literals, mapped onto the Anima band. Anima renames two
-# of the four (``general``→``safe``, ``questionable``→``nsfw``) and keeps the
-# other two verbatim, so raw booru captions — and corpora/vocab.json built
-# before the rename — still read as ratings instead of falling through to the
-# ``general`` *category*.
+# Danbooru's own rating literals, mapped onto the Anima band, so raw booru
+# captions still read as ratings instead of falling through to the ``general``
+# *category*.
 LEGACY_RATING_ALIASES = {"general": "safe", "questionable": "nsfw"}
 
 # Every literal that reads as a rating: canonical band + accepted legacy spellings.

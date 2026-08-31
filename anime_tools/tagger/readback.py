@@ -2,32 +2,21 @@
 
 The *Read It Back* idea (arXiv 2607.11886): an image-conditioned prompt
 log-likelihood is a training-free text-to-image reward. Here the "prompt" is an
-Anima caption (an atomic tag set — already a decomposition, so no lossy VQA
-decomposer) and the "likelihood" is the tagger's own per-tag confidence:
+Anima caption (already an atomic tag set, so no lossy VQA decomposer) and the
+"likelihood" is the tagger's own per-tag confidence:
 
-    readback(x, caption) := mean over content tags t in caption of  log σ(tag_logit_t(x))
+    readback(x, caption) := mean over content tags t of  log σ(tag_logit_t(x))
 
-This module is the durable primitive. It owns *only* the scoring math + the
-content-tag masking; it does not touch the dataset/feature caches (a caller that
-has cached logits scores with :meth:`TagReadback.readback_from_logits`; a caller
-holding arbitrary PIL images uses :meth:`TagReadback.readback_images`, which
-re-encodes through :class:`AnimaTagger`). The Phase-0a validity bench
-(``bench/readback/run_bench.py``) drives the cached-feature path; the eventual
-consumers (``dave_mod_bestofn`` ``q_tag``, soup ingredient gating, seed
-selection, RWR self-captioning) share the same call.
+This module owns *only* the scoring math and the content-tag masking; it touches
+no dataset/feature cache. Two constraints it enforces:
 
-Design constraints inherited from the proposal (``docs/proposal/tag_readback_reward.md``):
-
-* **Content tags only.** Artist tags are masked (RWR *learns* the artist —
-  scoring it is circular); ``metadata`` / ``deprecated`` and the internal
-  softmax-group sentinels are masked. Rating and people-count live in separate
-  heads and are exposed as extra atomic checks, never folded into the tag mean.
-* **Group-relative use only.** Absolute readback values across *different*
-  captions carry a per-caption base-rate/language-prior term; only comparisons
-  that hold the caption fixed (same caption, N images) cancel it cleanly. The
-  transpose (same image, N captions — the shuffled-caption control) is the
-  *harder* axis precisely because that term does not cancel there, which is why
-  it is the make-or-break validity test.
+* **Content tags only.** Artist tags are masked (a consumer that *learns* the
+  artist would be scoring itself), as are ``metadata`` / ``deprecated`` and the
+  softmax-group sentinels. Rating and people-count are separate heads and are
+  never folded into the tag mean.
+* **Group-relative use only.** Absolute values across *different* captions carry
+  a per-caption base-rate/language-prior term; only comparisons holding the
+  caption fixed (one caption, N images) cancel it cleanly.
 """
 
 from __future__ import annotations
@@ -44,10 +33,6 @@ from anime_tools.tagger.tagger import DEFAULT_TAGGER_DIR, AnimaTagger
 
 logger = logging.getLogger(__name__)
 
-# Categories that count as "content" for read-back. ``artist`` is excluded
-# (circular for the RWR consumer); ``metadata`` / ``deprecated`` are prior-driven
-# noise. Rating and people-count are separate heads, scored via the dedicated
-# helpers rather than the tag mean.
 CONTENT_CATEGORIES: tuple[str, ...] = ("general", "character", "copyright", "count")
 MASKED_CATEGORIES: tuple[str, ...] = ("artist", "metadata", "deprecated")
 
@@ -60,9 +45,8 @@ AGGREGATIONS: tuple[str, ...] = (AGG_LOGSIGMOID, AGG_RECALL)
 class TagReadback:
     """Scores caption adherence by reading the frozen Anima Tagger backwards.
 
-    Wraps an :class:`AnimaTagger` (loaded lazily if not supplied) purely to reuse
-    its vocab / category typing / calibrated thresholds / dual-encoder head — the
-    judge stays frozen throughout, this class never trains anything.
+    Wraps an :class:`AnimaTagger` purely to reuse its vocab, category typing and
+    calibrated thresholds; the judge stays frozen and this class never trains.
     """
 
     def __init__(
@@ -111,10 +95,9 @@ class TagReadback:
     def caption_indices(self, tags: Iterable[str]) -> list[int]:
         """Map caption tag strings → content-tag logit indices.
 
-        Caption tags are emitted space-form (``long hair``); the vocab keys are
-        underscore-form (``long_hair``). Normalize, look up, and keep only
-        indices that survive the content mask. Unknown / masked tags drop out
-        silently — a caption may carry artist / meta tags this score ignores.
+        Caption tags are space-form (``long hair``), vocab keys underscore-form,
+        so both spellings are tried. Unknown / masked tags drop out silently — a
+        caption may legitimately carry artist / meta tags this score ignores.
         """
         out: list[int] = []
         for t in tags:
@@ -185,8 +168,7 @@ class TagReadback:
     def image_logits(self, pil_img) -> torch.Tensor:
         """Encode one PIL image through the frozen tagger → ``[n_tags]`` logits.
 
-        The live path for arbitrary renders (no cached feature); backend-
-        agnostic via :meth:`AnimaTagger.tag_logits` (PE head or dbv4).
+        The live path for arbitrary renders, with no cached feature.
         """
         return self.tagger.tag_logits(pil_img)
 
@@ -194,10 +176,9 @@ class TagReadback:
     def readback_images(
         self, pil_images: Sequence, tags: Iterable[str], agg: str = AGG_LOGSIGMOID
     ) -> torch.Tensor:
-        """Group-relative read-back for N images against ONE caption.
+        """Group-relative read-back for N images against ONE caption → ``[N]``.
 
-        The canonical language-prior-cancelling form: fix the caption, score the
-        N images, compare within the group. Returns ``[N]``.
+        The canonical language-prior-cancelling form.
         """
         cm = self.caption_mask(tags).unsqueeze(0)  # [1, n_tags]
         logits = torch.stack([self.image_logits(im) for im in pil_images], dim=0)

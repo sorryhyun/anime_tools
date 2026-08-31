@@ -1,24 +1,20 @@
 """Audit `1girl` captions for images that are really several views of one girl.
 
-Thin CLI over ``anime_tools.stages.multiview_audit``: loads SAM3 and the Anima
-Tagger (the same two models ``caption-position`` uses, via the same builders),
-sweeps the images that pipeline skips as ``single-subject``, and reports every
-one where the ``girl`` prompt finds two or more subjects.
+Thin CLI over ``anime_tools.stages.multiview_audit``: sweeps the images the
+position stage skips as ``single-subject`` and reports every one where the
+``girl`` prompt finds two or more subjects. See ``docs/multiview_audit.md``.
 
 Dry-run by default. ``--apply`` writes the missing tag into the **caption
-master** — unlike the clause rewrite, which only ever touches the derived
-caption — because a missing ``multiple views`` is a fact about the picture that
-every later stage should read down from. Follow it with ``make preprocess-te``.
+master** — a missing ``multiple views`` is a fact about the picture every later
+stage reads down from — so follow it with a TE re-encode.
 
 GOTCHA: ``image_dataset/`` is gitignored, so an ``--apply`` is not
 git-recoverable. ``report.json`` carries the verbatim before-text of every
 caption it touched; keep it.
 
-``--from_report <report.json>`` replays a dry run's findings instead of
-re-auditing — the report holds the caption path, the before-text and the
-proposal, so the write needs **no SAM3 and no tagger**. The verdict/confidence
-gate is still applied at replay time, so one audit pass can be replayed at
-several tiers; a caption edited since the audit is skipped and counted.
+``--from_report`` replays a dry run's findings with no SAM3 and no tagger. The
+verdict/confidence gate is applied at replay time, so one audit pass can be
+replayed at several tiers; a caption edited since is skipped and counted.
 """
 
 from __future__ import annotations
@@ -163,13 +159,9 @@ def _gate(args) -> tuple[tuple[str, ...], tuple[str, ...]]:
     return verdicts, confidences
 
 
-# How ``replay`` reads an audit report: ``images``/``summary`` containers and
-# the caption **master** (``--src``), which is the one stage that writes it.
-# Unlike the other two the writable set is not a row ``status`` but the
-# verdict/confidence gate ``apply_findings`` applies, so ``row_filter`` is left
-# open here and closed over the CLI's own gate at replay time — replaying one
-# audit pass under ``--apply_verdicts "multiple views,extra-character"`` writes
-# strictly more of it than the default.
+# Unlike the other stages the writable set is not a row ``status`` but the
+# verdict/confidence gate, so ``row_filter`` is left open here and closed over
+# the CLI's own gate at replay time.
 REPLAY_SPEC = ReplaySpec(
     stage="audit_multiview",
     rows_key="images",
@@ -218,13 +210,12 @@ def main() -> None:
         return
 
     detect_fn, part_detect_fn, sam_model, sam_processor = build_detect_fn(args)
-    # Loaded here and not in parse_args(): the --from_report replay returns
-    # before this and must stay torch-free.
+    # Not in parse_args(): the --from_report replay returns above and must stay
+    # torch-free.
     tagger, vocabulary, _ckpt_dir = load_tagger(args)
 
-    # Two subjects is what the audit is *for*, so it pins min_instances rather
-    # than exposing it; everything else is the position stage's detector,
-    # verbatim, because the audit sweeps what that stage skipped.
+    # Two subjects is what the audit is *for*, so min_instances is pinned, not
+    # exposed; the rest is the position stage's detector verbatim.
     options = PositionCaptionOptions(
         **detection_options(args, min_instances=2, name_confidence=args.name_confidence)
     )
@@ -257,9 +248,8 @@ def main() -> None:
         apply_skipped = dict(skipped.most_common())
 
     summary = {
-        # The header carries the roots so ``--from_report`` can refuse to replay
-        # this report against a different pair of trees (the row paths are
-        # relative to them).
+        # Row paths are relative to these roots, so ``--from_report`` can refuse
+        # to replay the report against a different pair of trees.
         **stage_report_header(
             src=src, dst=dst, path_pattern=args.path_pattern, apply=args.apply
         ),
@@ -277,9 +267,8 @@ def main() -> None:
             "tagger-only": sum(1 for r in rows if r.source == "tagger-only"),
         },
         "written": len(written),
-        # Why a gated row was not written — ``drifted`` (the master moved since
-        # the audit) and ``already-applied`` used to be indistinguishable from
-        # "the gate rejected it".
+        # Why a gated row was not written: ``drifted`` / ``already-applied`` vs
+        # the gate rejecting it.
         "apply_skipped": apply_skipped,
         "part_prompts": list(options.part_prompts),
         "part_recovered": sum(

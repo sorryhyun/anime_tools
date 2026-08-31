@@ -1,37 +1,27 @@
 """Build a method-agnostic typed-tag index from caption sidecars.
 
-Walks caption ``.txt`` sidecars under a source dir, classifies each tag
-(parsed through the caption grammar — position-clause tags included) into
-character / copyright / artist / count via the Anima
-Tagger vocab (artist additionally by the ``@`` prefix, which is exact and not
-limited by the vocab's frequency cutoff), and writes a single JSON index to
-``workspace/captions/caption_index.json`` (published to
-``post_image_dataset/captions/`` by Export)::
+Walks caption ``.txt`` sidecars under a source dir, classifies each tag (parsed
+through the caption grammar — position-clause tags included) into character /
+copyright / artist / count via the Anima Tagger vocab (artist additionally by
+the ``@`` prefix, exact and not limited by the vocab's frequency cutoff), and
+writes one JSON index::
 
     {
-      "meta":  {... provenance: vocab path+mtime, src, n_images, generated ...},
+      "meta":  {... vocab path+mtime, src, n_images, generated ...},
       "image_meta": {
         "<key>": {"path": "<rel>", "character": [...], "copyright": [...],
                   "artist": [...], "count": [...]},
-        ...
       },
-      "groups": {
-        "character": {"<tag>": ["<key>", ...], ...},
-        "copyright": {...},
-        "artist":    {...}
-      }
+      "groups": {"character": {"<tag>": ["<key>", ...]}, "copyright": {...},
+                 "artist": {...}}
     }
 
-The ``<key>`` is the caption's path relative to the source root, extension
-stripped and posix-normalized (e.g. ``en/1``) — subdir-disambiguated so the
-same bare filename may repeat across folders (see :func:`caption_key`).
+``<key>`` is the caption's path relative to the source root, extension stripped
+and posix-normalized (e.g. ``en/1``) — subdir-disambiguated so the same bare
+filename may repeat across folders (see :func:`caption_key`).
 
-This is a *dataset artifact* — it lives beside the VAE/PE caches under
-the workspace (not in any checkpoint) and is regenerated when the
-dataset or vocab changes. It encodes **no sampling policy**: how a method backs
-off across the character → copyright → artist tiers is the method's own concern
-(e.g. the IP-Adapter distinct-pair sampler). Consumers: the IP-Adapter
-identity-pair sampler, artist balancing, dataset analytics.
+It encodes **no sampling policy**: how a method backs off across the character →
+copyright → artist tiers is the method's own concern.
 """
 
 import argparse
@@ -46,21 +36,15 @@ from anime_tools._env import resolve_path
 from anime_tools._json import write_json
 from anime_tools._walk import IMAGE_EXTENSIONS, caption_key, safe_walk
 
-# The single caption grammar — never hand-split a caption (a raw split(",")
-# glues the clause header onto the previous tag: "white socks. On the left").
+# Never hand-split a caption — see position_clauses for why.
 from anime_tools.captions.position_clauses import parse_caption
-
-# Shared torch-free tag-shape primitives, kept in sync with the Anima Tagger
-# vocab build (anime_tools/tagger/cli/vocab.py).
 from anime_tools.captions.taxonomy import is_artist_tag, is_count_tag, is_rating_tag
 from anime_tools.captions.vocab_io import load_vocab, names_by_category
 from anime_tools.path_filter import filter_paths_by_glob
 
 DEFAULT_VOCAB = "models/captioners/anima-tagger-dbv4/vocab.json"
-# The index is a *contract* artifact (docs/contract.md §2), so its published
-# home stays under ``post_image_dataset/captions/`` -- but it is produced
-# here, and the tools only write the workspace. Export publishes it, like
-# every other row in that table.
+# A contract artifact (docs/contract.md §2): produced into the workspace here,
+# published to ``post_image_dataset/captions/`` by Export.
 DEFAULT_OUT = f"{WS.REPORTS}/caption_index.json"
 # Artist is detected by the `@` prefix (superset of the vocab artist list);
 # character/copyright/count are classified by vocab membership.
@@ -69,11 +53,11 @@ VOCAB_AXES = ("character", "copyright", "count")
 # the copyright-recovery veto below (see _vocab_typed_non_copyright).
 VOCAB_LOAD_AXES = (*VOCAB_AXES, "general")
 
-# Danbooru disambiguator form ``character_name (copyright_name)``. The vocab
-# only carries character names frozen at its training cutoff, so newer ones miss
-# the exact-membership classifier. Rescue: a ``name (series)`` tag is a character
-# when the series is a real franchise (a known vocab copyright, or co-tagged bare
-# in the same caption) and not a generic disambiguator (``X (cosplay)``).
+# Danbooru disambiguator form ``character_name (copyright_name)``. The vocab's
+# character names are frozen at its training cutoff, so newer ones miss the
+# exact-membership classifier. Rescue: a ``name (series)`` tag is a character
+# when the series is a real franchise (a known vocab copyright, or co-tagged
+# bare in the same caption) and not a generic disambiguator (``X (cosplay)``).
 _PAREN_RE = re.compile(r"^(.+?)\s*\(([^)]+)\)$")
 _GENERIC_PAREN_QUALIFIERS = frozenset(
     {
@@ -92,10 +76,9 @@ _GENERIC_PAREN_QUALIFIERS = frozenset(
 # Positional recovery of bare-name characters (no `(series)` disambiguator).
 # Danbooru order is rigid — ``[rating] [count] [character…] [copyright…] @artist
 # [general…]`` — so the character band is the pre-`@artist` run that isn't
-# rating/count/copyright. Franchise sub-titles (``pokemon scarlet and violet``)
-# sit in that span but are copyright, not character: excluded when they share a
-# ≥4-char non-generic word with a known copyright in the same caption.
-# ``_COPYRIGHT_STOPWORDS`` are franchise-title words too weak to anchor that test.
+# rating/count/copyright. Franchise sub-titles sit in that span but are
+# copyright: excluded when they share a ≥4-char non-generic word with a known
+# copyright in the same caption. These stopwords are too weak to anchor it.
 _COPYRIGHT_STOPWORDS = frozenset(
     {
         "club",
@@ -121,8 +104,7 @@ _COPYRIGHT_STOPWORDS = frozenset(
 
 def _norm_words(tag: str) -> set[str]:
     """≥4-char alphanumeric words of a tag, minus generic franchise-title
-    stopwords — the unit the positional pass uses to test whether a pre-artist
-    tag is a franchise sub-title of a known copyright."""
+    stopwords — the unit the positional pass tests franchise sub-titles with."""
     return {
         w
         for w in re.split(r"[^a-z0-9]+", tag)
@@ -133,9 +115,9 @@ def _norm_words(tag: str) -> set[str]:
 def _load_vocab_sets(vocab_path: str) -> dict[str, set[str]]:
     """``axis -> {vocab name}`` for the axes the classifier tests membership on.
 
-    Names are folded to the form caption tags arrive in (the index lowercases
-    but does not touch underscores — a vocab name and a caption tag that differ
-    by an underscore are two different tags to danbooru's own vocab).
+    Names are folded to the form caption tags arrive in: lowercased, but
+    underscores left alone — a vocab name and a caption tag that differ by an
+    underscore are two different tags to danbooru's own vocab.
     """
     return names_by_category(
         load_vocab(vocab_path),
@@ -147,20 +129,16 @@ def _load_vocab_sets(vocab_path: str) -> dict[str, set[str]]:
 def _vocab_typed_non_copyright(tag: str, vsets: dict[str, set[str]]) -> bool:
     """True if the tagger vocab already types ``tag`` as something else.
 
-    The vocab is the authority on tag category (``anime_tools/tagger/cli/vocab.py``
-    ``categorize()``: booru category cache + curator ``category_overrides``), and
-    a tag carries exactly one category there. So a name the vocab calls
-    ``general`` / ``character`` / ``count`` must never be promoted to copyright by
-    the parenthetical heuristic below, however it appears in a caption.
+    The vocab is the authority on tag category and a tag carries exactly one
+    there, so a name it calls ``general`` / ``character`` / ``count`` must never
+    be promoted to copyright by the parenthetical heuristic below.
 
-    Without this veto, danbooru's *homonym* disambiguators — ``lily (flower)``,
-    ``star (sky)``, ``choko (cup)``, ``piledriver (sex)``,
-    ``hakui koyori (school uniform)`` — and its *pet/prop-of-character* ones —
-    ``bubba (watson amelia)``, ``friend (nanashi mumei)`` — leak their qualifier
-    into the copyright vocab. Consumers flatten ``groups.copyright`` into a plain
-    name set (e.g. ``color_caption.load_copyright_tags``), so one such caption
-    poisons the term corpus-wide: a single ``piledriver (sex)`` page made
-    ``sex`` a "copyright" on 525 of 2951 colorize captions (measured 2026-08-15).
+    Without this veto, danbooru's *homonym* disambiguators (``lily (flower)``,
+    ``piledriver (sex)``) and its *pet/prop-of-character* ones (``bubba (watson
+    amelia)``) leak their qualifier into the copyright vocab. Consumers flatten
+    ``groups.copyright`` into a plain name set, so one such caption poisons the
+    term corpus-wide: a single ``piledriver (sex)`` page made ``sex`` a
+    "copyright" on 525 of 2951 colorize captions (measured 2026-08-15).
     """
     return any(tag in vsets.get(axis, ()) for axis in ("general", "character", "count"))
 
@@ -170,11 +148,8 @@ def _iter_captions(src: Path, path_pattern: str | None = None):
 
     ``image_dataset`` is a symlink to a tree of (possibly symlinked) artist
     dirs, so resolve the root and walk with ``followlinks=True`` — a plain walk
-    descends into neither. The yielded key is the caption's path **relative to
-    the root**, extension stripped, posix-normalized (:func:`caption_key`) — so
-    the same bare stem may legally repeat across subfolders (``en/1`` vs
-    ``ew/1``), matching the nested-cache disambiguation the rest of the pipeline
-    already relies on."""
+    descends into neither. The key is subdir-disambiguated (:func:`caption_key`),
+    so the same bare stem may legally repeat across subfolders."""
     root = Path(os.path.realpath(src))
     for dirpath, _dirnames, filenames in safe_walk(root, followlinks=True):
         for name in filenames:
@@ -200,10 +175,8 @@ def _iter_captions(src: Path, path_pattern: str | None = None):
                 text = abs_path.read_text(encoding="utf-8")
             except (OSError, UnicodeDecodeError):
                 continue
-            # Posix-normalize so the JSON artifact is OS-portable: the key and
-            # the ``path`` field both use ``/`` regardless of build platform,
-            # and ``rel_dir`` (os.path.dirname on ``path``) stays correct when a
-            # Windows-built index is consumed on Linux (or vice-versa).
+            # Posix-normalize so the JSON artifact is OS-portable: a
+            # Windows-built index has to read correctly on Linux.
             rel = os.path.relpath(abs_path, root).replace(os.sep, "/")
             yield caption_key(abs_path, root), rel, text
 
@@ -215,13 +188,10 @@ def _classify(
     recover_paren: bool = True,
     recover_positional: bool = True,
 ) -> dict[str, list[str]]:
-    # Parse through the caption grammar, never split(","): a position clause
-    # would otherwise yield a glued pseudo-tag ("white socks. on the left").
     # Flat bag first (order preserved — the positional recovery below reads the
-    # danbooru pre-`@artist` band off it), then each clause's tags in order: a
+    # danbooru pre-`@artist` band off it), then each clause's tags: a
     # character/copyright asserted only inside a clause still belongs in the
-    # index ("which images contain X"), and appending after the bag keeps the
-    # clause tags out of the pre-artist band.
+    # index, and appending after the bag keeps it out of the pre-artist band.
     parsed = parse_caption(text)
     tags = [
         t.strip().lower()
@@ -248,7 +218,6 @@ def _classify(
                 matched = True
         if matched or not recover_paren:
             continue
-        # Vocab missed it — try the danbooru `name (series)` character recovery.
         m = _PAREN_RE.match(tag)
         if m:
             series = m.group(2).strip()
@@ -262,7 +231,6 @@ def _classify(
                 _add("character", tag)
                 _add("copyright", series)
 
-    # Positional recovery of bare-name characters (see _COPYRIGHT_STOPWORDS note).
     if recover_positional:
         artist_at = next((i for i, t in enumerate(tags) if is_artist_tag(t)), None)
         if artist_at is not None:
@@ -316,10 +284,9 @@ def build_index(
             recover_positional=recover_positional,
         )
         if key in image_meta:
-            # Keys are posix relpaths (subdir-disambiguated), so two *distinct*
-            # captions can never collide; a repeat means the same file was
-            # reached twice (e.g. a symlink loop under followlinks=True). The
-            # content is identical — skip the revisit rather than crash.
+            # Keys are subdir-disambiguated, so two *distinct* captions cannot
+            # collide; a repeat is the same file reached twice (symlink loop
+            # under followlinks=True). Skip the revisit rather than crash.
             continue
         n_seen += 1
         image_meta[key] = {
@@ -395,8 +362,7 @@ def main():
     )
     args = ap.parse_args()
 
-    # Anchor bare relatives under the curation home like every stage CLI does,
-    # so `--out` lands in the dataset tree rather than wherever the shell was.
+    # Anchor bare relatives under the curation home like every stage CLI does.
     src = resolve_path(args.src)
     out = resolve_path(args.out)
     index = build_index(

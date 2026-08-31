@@ -1,7 +1,7 @@
 # `anime_tools` ↔ `anima_lora` contract
 
-Status: **frozen** — current as of 2026-08-31. Both repos' tests pin every
-row below; a change to any row is a two-PR change by design.
+Status: **frozen**. Both repos' tests pin every row below; a change to any row
+is a two-PR change by design.
 
 ## 1. Dependency direction
 
@@ -9,21 +9,18 @@ row below; a change to any row is a two-PR change by design.
 anima_lora (trainer)  ──depends on──▶  anime_tools            never the reverse
 ```
 
-Enforced today by `tests/test_curation_boundary.py`: every file in the move
-manifest must not import **any** `library.*` module outside the manifest, nor
-`networks` / `train`. The curation set carries its own tiny copies of the
-infrastructure it needs (`anime_tools/captions/{_env,_walk,_hf}.py`,
-`path_filter.py`); `tests/test_curation_walk_parity.py` pins the copied walkers
-to the trainer originals.
+Enforced by `tests/test_boundary.py`: no module in this package may import
+`library.*`, `networks`, `train`, `gui`, `scripts` or `bench`. The package
+carries its own tiny copies of the infrastructure it needs
+(`anime_tools/{_env,_walk,_json,_device,_hf}.py`, `path_filter.py`) rather than
+importing the trainer's.
 
 ## 2. File artifacts (what the trainer reads)
 
-Since the workspace phase (2026-08-31) the curation stages no longer write these
-paths directly: they write `workspace/`, and **Export** publishes from there to
-the paths in this table. Nothing in this table moved — same paths, same formats,
-same producers — only *when* they appear, which is the point of the change.
-`workspace/` itself is curation-private in the same sense as the near-twin
-feature cache: nothing in the trainer reads it, and its layout
+The curation stages do not write these paths directly: they write `workspace/`,
+and **Export** publishes from there to the paths in this table. `workspace/`
+itself is curation-private in the same sense as the near-twin feature cache:
+nothing in the trainer reads it, and its layout
 (`anime_tools/workspace/__init__.py`) is not part of this contract.
 
 Export is `python -m anime_tools.stages.cli.export_workspace` (dry-run by
@@ -72,24 +69,16 @@ latents `{stem}_{WxH}_anima.npz`, TE `{stem}_anima_te.safetensors`, PE
   `anime_tools.captions`; the trainer imports them (`library.anima.training`
   re-exports the shuffle names today). **Never fork either.**
 
-## 4. Code-level seams (Phase 0 decisions)
+## 4. Code-level seams
 
 | Seam | Decision |
 |---|---|
 | **Tokenizers** (caption length / erasure pool) | Curation scripts take tokenizer **directories** only (`anime_tools/captions/tokenizers.py::load_{qwen3,t5}_tokenizer_from_dir`). The trainer wrapper resolves a `.safetensors` text-encoder path → bundled config dir (`library.anima.weights.qwen3_tokenizer_dir` / `t5_tokenizer_dir`) and passes `--qwen3 <dir> --t5_tokenizer_path <dir>`. Curation never learns the safetensors→config mapping. |
-| **Grouping embedder** | `anime_tools.grouping.features.Embedder` protocol: `.device`, `.dtype`, `__call__(batch[B,3,512,512] in [-1,1]) -> (cls[B,D] f32 L2-normed, grid16[B,16,16,D] f16)`. **Phase 2 (2026-08-30) reversed the Phase-0 seam: PE-Spatial-B16-512 is owned here** — the vendored PE tower is `anime_tools.vision.pe` (`load_pe_spatial()`, Hub fetch, `ANIME_TOOLS_MODELS/pe/`), the default embedder is `anime_tools.grouping.embedder:pe_spatial_embedder` (bf16, matching the pre-split trainer cache), and `build_groups` / the CLI use it when no `--embedder module:callable(device=…)` override is given. The trainer re-exports the tower as `library.models.pe` (REPA / CMMD / PE caching) and keeps its own encoder registry (`library.vision.{encoder,encoders,buckets}`), which the package never imports. |
-| **Tagger backend** | dbv4 only (`config.json["backend"] == "dbv4"`); the in-house PE dual-encoder head was deleted 2026-08-30 (archived under `_archive/anima_tagger_training/pe_backend_removed_2026_08_30/`). The tagger never imports `library.vision`. Checkpoint layout: `config.json`, `vocab.json`, `rules.yaml`, `groups.json`, `thresholds.safetensors`, optional `sidecar.safetensors`; GPL backbone fetched from the gated upstream repo at load. |
+| **Grouping embedder** | `anime_tools.grouping.features.Embedder` protocol: `.device`, `.dtype`, `__call__(batch[B,3,512,512] in [-1,1]) -> (cls[B,D] f32 L2-normed, grid16[B,16,16,D] f16)`. **PE-Spatial-B16-512 is owned here** — the vendored PE tower is `anime_tools.vision.pe` (`load_pe_spatial()`, Hub fetch, `ANIME_TOOLS_MODELS/pe/`), the default embedder is `anime_tools.grouping.embedder:pe_spatial_embedder` (bf16), and `build_groups` / the CLI use it when no `--embedder module:callable(device=…)` override is given. The trainer re-exports the tower as `library.models.pe` (REPA / CMMD / PE caching) and keeps its own encoder registry (`library.vision.{encoder,encoders,buckets}`), which the package never imports. |
+| **Tagger backend** | dbv4 only (`config.json["backend"] == "dbv4"`). The tagger never imports `library.vision`. Checkpoint layout: `config.json`, `vocab.json`, `rules.yaml`, `groups.json`, `thresholds.safetensors`, optional `sidecar.safetensors`; GPL backbone fetched from the gated upstream repo at load. |
 | **Home / model paths** | `anime_tools/_env.py`: `curation_home()` = `ANIME_TOOLS_HOME` → `ANIMA_HOME` → checkout root; `resolve_path()` anchors bare relatives there; `models_dir()` = `ANIME_TOOLS_MODELS` → `<home>/models`; `workspace_dir()` = `ANIME_TOOLS_WORKSPACE` → `<home>/workspace`, everything the curation stages write. In-tree all three coincide with `library.env.anima_home()`, so nothing changes for the trainer; a standalone `anime_tools` install sets `ANIME_TOOLS_HOME`/`ANIME_TOOLS_MODELS`. The trainer's `make` wrappers keep passing explicit dirs (`--tagger_dir`, `--src/--dst`). |
-| **`path_pattern` glob** | One implementation, `anime_tools/path_filter.py::filter_paths_by_glob` (moved from `library/datasets/`, shim left); training subsets and every curation stage share it. |
-| **HF fetch** | `anime_tools/_hf.py` (moved from `library/runtime/hf_download.py`, shim left); tests patch the canonical path. |
+| **`path_pattern` glob** | One implementation, `anime_tools/path_filter.py::filter_paths_by_glob`; training subsets and every curation stage share it. |
+| **HF fetch** | `anime_tools/_hf.py`; tests patch the canonical path. |
 | **Process boundary** | Curation stages are plain CLIs; the trainer's daemon wraps them (`make … --queue`). No daemon client in `anime_tools`. |
 
-## 5. Guarantees during the move (Phases 1–2)
 
-- Byte-identical `{stem}.txt` + `.variants.txt` + TE caches on the live dataset
-  (hash the caption master before/after).
-- Byte-identical masks on a fixed 20-image sample.
-- Same `groups.json` for the same thresholds + embedder.
-- Old import paths keep working one release (`anime_tools.captions`,
-  `library.vision.{pe_features,pe_matching}`, `library.datasets.path_filter`,
-  `library.runtime.hf_download`) as warning shims; deleted in Phase 3.

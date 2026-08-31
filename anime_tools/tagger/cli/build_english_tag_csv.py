@@ -1,29 +1,15 @@
 """Build an English sibling of ``models/danbooru_tags_classified.csv``.
 
-The shipped tag KB (``danbooru_tags_classified.csv``) comes from
-``Localsmile/danbooru_KR_wiki_tag_search`` — Danbooru's English tag taxonomy
-with **Korean** wiki descriptions. That keeps the GUI tag-explanation tooltip
-gated to the Korean UI (see ``gui/tabs/image_tab.py::_on_tag_clicked`` and
-``CONTRIBUTING.md`` §5).
+The shipped tag KB carries Danbooru's English taxonomy with **Korean** wiki
+descriptions. This regenerates the ``description`` column in English by joining
+its tag names against the Danbooru wiki mirror (``isek-ai/danbooru-wiki-2024``),
+keeping ``name`` / ``category`` / ``post_count`` byte-for-byte so tag
+classification stays identical, and writes ``danbooru_tags_classified.en.csv``
+next to the base CSV.
 
-This script regenerates the ``description`` column in English by joining the
-existing CSV's tag names against the upstream the Korean repo itself translated
-from — the Danbooru wiki, mirrored as ``isek-ai/danbooru-wiki-2024`` on the Hub.
-It keeps ``name`` / ``category`` / ``post_count`` byte-for-byte from the base CSV
-(so tag classification stays identical) and only swaps the description, writing
-``danbooru_tags_classified.en.csv`` next to it.
-
-The mirror is a single 45 MB parquet, read with ``pyarrow`` straight out of the
-hub cache — no ``datasets`` round trip, so this stays a plain CLI rather than a
-data-pipeline dependency.
-
-Usage::
-
-    python -m anime_tools.tagger.cli.build_english_tag_csv          # default paths
-    python -m anime_tools.tagger.cli.build_english_tag_csv --revision 202408-at20240906
-
-The GUI runs it for you: it is the ``danbooru_tags_en`` row of
-:mod:`anime_tools.downloads`, i.e. a Download button in Settings › Models.
+The mirror is a single 45 MB parquet read with ``pyarrow`` straight out of the
+hub cache — no ``datasets`` round trip. The GUI runs this for you as the
+``danbooru_tags_en`` row of :mod:`anime_tools.downloads`.
 """
 
 from __future__ import annotations
@@ -39,9 +25,8 @@ from anime_tools._env import models_dir
 from anime_tools.captions.correction import TAG_CSV_EN_NAME, TAG_CSV_NAME
 from anime_tools.downloads import DANBOORU_WIKI_FILE, DANBOORU_WIKI_REPO
 
-# ── DText → plain-text cleanup ────────────────────────────────────────────────
-# Danbooru wiki bodies are DText, not MediaWiki. Strip the markup down to the
-# bare prose so it renders cleanly in the Qt tooltip.
+# DText → plain text: danbooru wiki bodies are DText, not MediaWiki. Strip the
+# markup down to bare prose so it renders cleanly in a tooltip.
 _WIKI_LINK_LABELLED = re.compile(r"\[\[[^\]|]+\|([^\]]+)\]\]")  # [[tag|label]] -> label
 _WIKI_LINK = re.compile(r"\[\[([^\]]+)\]\]")  # [[tag]] -> tag
 _SEARCH_LINK = re.compile(r"\{\{([^}]+)\}\}")  # {{search}} -> search
@@ -98,9 +83,8 @@ def load_wiki_descriptions(
         filename=DANBOORU_WIKI_FILE,
         revision=revision,
     )
-    # `tag` is the canonical tag; `title` mirrors it. Index both for the join.
-    # Only the four columns we read come off disk -- the mirror also carries
-    # `other_names` and per-row metadata this has no use for.
+    # `tag` is the canonical tag, `title` mirrors it — index both for the join.
+    # Only these four columns come off disk.
     table = pq.read_table(path, columns=["tag", "title", "body", "is_deleted"])
     out: dict[str, str] = {}
     for tag, title, body, deleted in zip(
@@ -169,9 +153,8 @@ def build(
 
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__)
-    # Defaults resolve at call time, not import time: the models dir moves
-    # with ANIME_TOOLS_MODELS / the curation home, and it is where the
-    # ``danbooru_tags`` download row puts the base CSV.
+    # Defaults resolve at call time, not import time: the models dir moves with
+    # ANIME_TOOLS_MODELS / the curation home.
     ap.add_argument("--src", type=Path, default=models_dir() / TAG_CSV_NAME)
     ap.add_argument("--dst", type=Path, default=models_dir() / TAG_CSV_EN_NAME)
     ap.add_argument(

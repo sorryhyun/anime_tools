@@ -1,26 +1,18 @@
 """Which caption file a stage reads for a resized image — once, for all of them.
 
-The rule is one line and easy to retype slightly wrong: the **derived** caption
-(``workspace/resized/<rel>.txt``) is authoritative when it exists, and
-the hand-written **master** (``image_dataset/<rel>.txt``) is the read-only
-fallback for an image the mirror pass has not reached yet. Derived-first matters
-in both directions — the derived text is already order-corrected, and it carries
-an earlier run's position clauses, which is exactly what makes
-``is_candidate`` / ``is_audit_target`` skip an image a previous ``--apply``
-already rewrote. Reading the master instead would re-propose clauses on every
-run.
+The **derived** caption (``workspace/resized/<rel>.txt``) is authoritative when
+it exists; the hand-written **master** is the read-only fallback for an image
+the mirror pass has not reached yet. Derived-first matters because that text is
+already order-corrected and carries an earlier run's position clauses, which is
+what makes ``is_candidate`` / ``is_audit_target`` skip an image a previous
+``--apply`` already rewrote — reading the master would re-propose clauses on
+every run.
 
-:func:`iter_captions` is that rule plus the walk around it: ``stats.seen``, the
-``no-caption`` skip, and a progress callback over *every* walked image rather
-than only the captioned ones. It is shared by the clause rewrite, its flatten
-twin, and the multiview audit — which used to hand-roll the same resolution
-under a comment claiming it matched.
-
-Stages that deliberately read one specific tree do **not** go through here:
-autotag reads (and writes) the master, and ``ab_position_captions`` reads the
-master on purpose, because after one ``--apply`` the derived side already
-carries clauses and every rule in it would skip. Those call
-:func:`read_caption` directly.
+:func:`iter_captions` is that rule plus the walk around it. Stages that
+deliberately read one tree do **not** go through here: autotag reads (and
+writes) the master, and ``ab_position_captions`` reads it on purpose, because
+after one ``--apply`` the derived side already carries clauses and every rule in
+it would skip.
 
 Torch-free.
 """
@@ -76,10 +68,9 @@ def iter_captions(
 ) -> Iterator[CaptionItem]:
     """Walk the resized tree, yielding every image that has a caption.
 
-    Sets ``stats.seen`` to the walked count, reports ``stats.skip("no-caption")``
-    for an image with neither a derived nor a master caption, and calls
-    ``progress`` once per walked image (captioned or not, so the bar tracks the
-    walk rather than the yield).
+    Sets ``stats.seen``, reports ``stats.skip("no-caption")`` for an image with
+    neither caption, and calls ``progress`` once per walked image (captioned or
+    not, so the bar tracks the walk rather than the yield).
     """
     from anime_tools._walk import walk_images
 

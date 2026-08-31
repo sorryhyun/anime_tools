@@ -23,8 +23,7 @@ from anime_tools.masking._masks import (
     write_mask,
 )
 
-# Imported for `load_sam3`, and for the numpy<2 `np.bool` alias sam3 needs,
-# which is that module's import side effect.
+# Importing _sam3 also installs the `np.bool` alias sam3 needs before it loads.
 from anime_tools.masking._sam3 import add_checkpoint_arg, load_sam3
 from anime_tools.path_filter import filter_paths_by_glob
 
@@ -42,14 +41,14 @@ def build_rules(config: dict) -> list[dict]:
     ``girl`` masks all background). ``threshold`` / ``dilate`` fall back to the
     top-level defaults when a rule omits them.
 
-    Two schemas, both accepted (the "keep both" contract):
+    Two schemas, both accepted:
 
     * **rules** — a top-level ``rules:`` list; every rule whose ``path_pattern``
-      matches an image *composes* (ignore-regions unioned, focus-regions
-      unioned across all matches).
-    * **flat (legacy)** — top-level ``prompts`` / ``focus_prompts`` with no
-      ``rules:`` key, wrapped here as a single catch-all rule (its own
-      path_pattern is left unset; the global walk filter handles scoping).
+      matches an image *composes* (ignore- and focus-regions unioned across all
+      matches).
+    * **flat** — top-level ``prompts`` / ``focus_prompts`` with no ``rules:``
+      key, wrapped here as a single catch-all rule (the global walk filter
+      handles scoping).
     """
     default_threshold = config.get("threshold", 0.5)
     default_dilate = config.get("dilate", 5)
@@ -203,8 +202,7 @@ def main() -> None:
                 w, h = image.size
                 pbar.update(1)
 
-                # Compose every rule whose path_pattern matches: ignore-regions
-                # union together, focus-regions union together.
+                # Ignore-regions union together, focus-regions union together.
                 matched = [r for r in rules if rule_matches(r, image_path, image_dir)]
                 if not matched:
                     pbar.set_postfix_str(f"{image_path.name}: no matching rule")
@@ -239,7 +237,7 @@ def main() -> None:
                         # than zeroing out the whole loss.
                         pbar.set_postfix_str(f"{image_path.name}: focus not found")
                         continue
-                    # Keep ONLY the focus subject, minus any ignore-prompt regions.
+                    # ONLY the focus subject, minus any ignore-prompt regions.
                     trainable = focus_mask * (1 - ignore_mask)
                     save_futures.append(write_mask(mask_path, trainable, pool=pool))
                     train_pct = 100 * np.count_nonzero(trainable) / (w * h)

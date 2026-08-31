@@ -1,4 +1,4 @@
-"""User-facing tag-group names for batch caption filtering (GH #95).
+"""User-facing tag-group names for batch caption filtering.
 
 Maps a small English vocabulary (``artist``, ``clothing``, ``pose``,
 ``lighting`` …) onto the ``[대분류 > 소분류]`` taxonomy path every row of
@@ -87,8 +87,7 @@ def parse_drop_groups(spec: str | Iterable[str] | None) -> tuple[str, ...]:
     """Normalize a comma-separated (or iterable) selector list.
 
     Slugs are lower-cased; anything else is kept verbatim as a literal
-    taxonomy-path prefix. Empty entries are dropped, order/duplicates kept
-    stable.
+    taxonomy-path prefix. Order is stable, duplicates and blanks dropped.
     """
     if not spec:
         return ()

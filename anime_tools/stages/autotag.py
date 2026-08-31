@@ -1,31 +1,25 @@
 """Batch auto-tagging: image → Anima Tagger → caption master.
 
-The dataset-wide counterpart to the Dataset tab's single-image autotag button
-(``anime_tools.tagger.cli.autotag``, which is stdout-only and tags one file).
-This walks the resized tree and writes ``.txt`` sidecars back into the caption
-**master** under ``image_dataset/``, because it *creates* the caption every later
-stage reads — unlike :mod:`anime_tools.stages.position_captions`, which writes
-only the derived caption in ``resized/``. The master is what
-``preprocess-captions`` mirrors and the TE step then encodes.
+Walks the resized tree and writes ``.txt`` sidecars back into the caption
+**master**, because it *creates* the caption every later stage reads — unlike
+the clause rewrite, which only ever touches the derived caption.
 
 Three modes, because the right policy depends on whether the corpus is
 hand-captioned:
 
 ``missing``
-    Tag only images with no caption sidecar. Never touches an existing caption
-    — the safe default, and the only mode that cannot lose hand-written text.
+    Tag only images with no caption sidecar — the safe default, and the only
+    mode that cannot lose hand-written text.
 ``merge``
     Tag everything, but only *append* tags the caption does not already carry.
-    Position clauses are preserved verbatim and their tags count as present, so
-    a merge after ``caption-position`` cannot re-flatten a bound tag back into
-    the bag.
+    Clause tags count as present, so a merge after ``caption-position`` cannot
+    re-flatten a bound tag back into the bag.
 ``overwrite``
-    Replace the caption with the tagger's output. Destructive — an ``--apply``
-    run in this mode discards hand-written captions.
+    Replace the caption with the tagger's output. Destructive.
 
-**Dry-run is the default** (the caller passes ``apply``), mirroring the
-position-clause pass. Caption edits do *not* invalidate the TE caches, so an
-applied run must be followed by ``make preprocess-te``.
+**Dry-run is the default** (the caller passes ``apply``). Caption edits do *not*
+invalidate the TE caches, so an applied run must be followed by
+``make preprocess-te``.
 """
 
 from __future__ import annotations
@@ -100,9 +94,8 @@ def merge_tags(existing: str, tagged: str) -> tuple[str, tuple[str, ...]]:
 
     Returns ``(caption, added)``. A tag already bound inside a position clause
     counts as present, so merging after ``caption-position`` never duplicates a
-    clause tag back into the flat bag. The tagger always emits a rating first;
-    it is dropped when the caption already carries one, since two rating tokens
-    are a contradiction rather than an addition.
+    clause tag back into the flat bag. The tagger's leading rating is dropped
+    when the caption already carries one — two ratings contradict.
     """
     parsed = parse_caption(existing)
     seen = {t.strip().lower() for t in parsed.flat_tags}
@@ -141,9 +134,8 @@ def run_autotag_captions(
     """Walk the resized tree, tag, and (with ``apply``) write the caption master.
 
     Tagging runs on the *resized* image because that is the pixel data training
-    actually sees; the caption lands next to the original under ``source_dir``.
-    ``tag_fn`` takes a PIL image and returns a caption string — normally
-    ``AnimaTagger.predict_caption`` bound to ``min_confidence``.
+    sees; the caption lands next to the original under ``source_dir``. ``tag_fn``
+    is normally ``AnimaTagger.predict_caption`` bound to ``min_confidence``.
     """
     from anime_tools._walk import walk_images
 
@@ -215,8 +207,7 @@ def build_tag_fn(
 
     Torch-importing, so it lives behind a function rather than at module import
     — ``run_autotag_captions`` itself is torch-free and unit-testable with a
-    stub ``tag_fn``. The checkpoint is auto-fetched when absent, matching the
-    Dataset tab's one-click autotag.
+    stub ``tag_fn``. The checkpoint is auto-fetched when absent.
     """
     from anime_tools._env import resolve_path
     from anime_tools.tagger.tagger import (

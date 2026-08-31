@@ -1,22 +1,17 @@
 """Dump SAM3's raw per-instance masks, colour-coded, over one or many images.
 
 Answers "is the mask actually broken, or are we mishandling it?" — the two look
-identical downstream once ``crop_instance`` has blanked a crop white. So this
-bypasses the audit entirely: run a prompt, print each mask's shape / dtype /
-value range / fill against the image it is supposed to align with, and render
-every instance in its own colour over the original.
+identical downstream once ``crop_instance`` has blanked a crop white. Bypasses
+the audit: run a prompt, print each mask's shape / dtype / value range / fill
+against the image it should align with, and render every instance in its own
+colour. A clean silhouette means the mask is fine and our indexing is wrong;
+the crop's speckle means the mask really is that bad.
 
-If the overlay shows a clean silhouette, the mask is fine and our indexing is
-wrong. If it shows the same speckle the crop did, the mask really is that bad.
-
-Sweeps several prompts over several images in one pass. The image encoding is
-computed once per image and re-grounded per prompt (``set_text_prompt`` reuses
-the cached ``backbone_out``), so extra prompts cost a grounding pass each, not a
-re-encode — which is what makes a body-part prompt cheap to compare against
-``girl``. Renders land at ``<out>/<stem>/prompt_<label>.png`` and the numbers in
-a ``probe.json`` carrying every proposal's score / box / area fraction / box
-fill, the same schema the earlier prompt sweeps under
-``workspace/captions/mask_probe/`` use.
+Sweeps several prompts over several images in one pass: the encoding is computed
+once per image and re-grounded per prompt, so an extra prompt costs a grounding
+pass, not a re-encode. Renders land at ``<out>/<stem>/prompt_<label>.png`` and
+the numbers in a ``probe.json`` carrying every proposal's score / box / area
+fraction / box fill.
 """
 
 from __future__ import annotations
@@ -34,8 +29,7 @@ from anime_tools._env import resolve_path
 from anime_tools._json import write_json
 from anime_tools._walk import walk_images
 
-# Imported for `load_sam3`, and for the numpy<2 `np.bool` alias sam3 needs,
-# which is that module's import side effect.
+# Importing _sam3 also installs the `np.bool` alias sam3 needs before it loads.
 from anime_tools.masking._sam3 import add_checkpoint_arg, load_sam3
 from anime_tools.stages.instance_detection import Detection, mask_box_fill
 
@@ -127,10 +121,9 @@ def resolve_images(args: argparse.Namespace) -> list[Path]:
 def out_names(paths: list[Path]) -> list[str]:
     """One output dir per image, keyed on the stem.
 
-    Stems repeat across artist dirs (`project_booru_id_space_collision`: a bare
-    stem is only unique within one folder), so the whole selection falls back to
-    `<parent>__<stem>` the moment any two collide — all-or-nothing, so the
-    naming doesn't depend on which images happened to be selected.
+    A bare stem is only unique within one folder, so the whole selection falls
+    back to `<parent>__<stem>` the moment any two collide — all-or-nothing, so
+    the naming doesn't depend on which images happened to be selected.
     """
     stems = [p.stem for p in paths]
     if len(set(stems)) == len(stems):
@@ -188,9 +181,9 @@ def probe_one(
         flat = raw[0] if raw.ndim == 3 else raw
         aligned = flat.shape == (image.height, image.width)
         binary = flat > 0.5
-        # Same fill the pipeline's NMS tie-break sees, so a number printed here
-        # is the number `dedupe_detections` would have ranked on. It clamps the
-        # box to the *mask's* shape, which is the point when `aligned` is False.
+        # Same fill the pipeline's NMS tie-break sees, so this is the number
+        # `dedupe_detections` would have ranked on. It clamps the box to the
+        # *mask's* shape, which is the point when `aligned` is False.
         fill = mask_box_fill(
             Detection(box=tuple(coords), score=float(score), mask=flat)
         )

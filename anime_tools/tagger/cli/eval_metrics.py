@@ -1,20 +1,15 @@
 """Stratified tagger eval — per-tag metrics, inference-rule prediction, KB slices.
 
-Pure helpers shared by ``bench/tagger_eval/run_bench.py`` and the unit tests.
-Everything here operates on collected ``[N, n_tags]`` logit / multi-hot
-tensors — no model, no loader, no disk.
-
-Why this exists: the trainer's ``macro_f1`` **excludes** softmax-group tags
-(their sigmoid scores are argmax-only at inference), so the headline metric
-was blind to the very tags the group machinery supervises.
+Pure helpers over collected ``[N, n_tags]`` logit / multi-hot tensors: no model,
+no loader, no disk. They exist because the trainer's ``macro_f1`` **excludes**
+softmax-group tags (their sigmoid scores are argmax-only at inference), leaving
+the headline metric blind to the tags the group machinery supervises;
 :func:`predict_with_inference_rule` mirrors the real ``AnimaTagger.predict``
-decision procedure (per-tag thresholds + group argmax refinement gated on
-*predicted* solo / escape) so every tag can be scored end-to-end.
+decision procedure so every tag can be scored end-to-end.
 
-Slice keys: general tags map to their danbooru taxonomy ``소분류`` (via the KB
-+ the same ``_EN_KEY`` naming ``derive_groups`` uses); non-general categories
-become ``cat:<category>`` slices; general tags absent from the KB fall into
-``general:unmatched``. Frequency tiers cut on the vocab's train ``freq``.
+Slice keys: general tags map to their danbooru taxonomy ``소분류`` (KB plus
+``derive_groups``' ``_EN_KEY`` naming), other categories to ``cat:<category>``,
+KB misses to ``general:unmatched``. Frequency tiers cut on the vocab ``freq``.
 """
 
 from __future__ import annotations
@@ -25,9 +20,7 @@ import torch
 
 from .derive_groups import _EN_KEY, _slug
 
-# --------------------------------------------------------------------------- #
 # Per-tag metrics.
-# --------------------------------------------------------------------------- #
 
 
 def per_tag_prf(
@@ -55,9 +48,8 @@ def per_tag_average_precision(
 ) -> torch.Tensor:
     """Threshold-free AP per tag; NaN where the split has no positives.
 
-    AP = mean over positives of precision@rank when samples are sorted by
-    score descending. Works for softmax-group tags too (no threshold enters),
-    which makes it the cleanest cross-head comparison metric.
+    Works for softmax-group tags too (no threshold enters), which makes it the
+    cleanest cross-head comparison metric.
     """
     N = scores.shape[0]
     order = scores.argsort(dim=0, descending=True)
@@ -80,9 +72,7 @@ def micro_f1(pred: torch.Tensor, target: torch.Tensor) -> float:
     return float((2 * tp / denom).item())
 
 
-# --------------------------------------------------------------------------- #
 # Inference-rule prediction (mirrors AnimaTagger.predict group refinement).
-# --------------------------------------------------------------------------- #
 
 
 def predict_with_inference_rule(
@@ -90,18 +80,14 @@ def predict_with_inference_rule(
     thresholds: torch.Tensor,
     router,
 ) -> torch.Tensor:
-    """``[N, n_tags] bool`` predictions via the real inference decision rule.
+    """``[N, n_tags] bool`` predictions via the real inference decision rule:
+    per-tag sigmoid threshold, then group argmax refinement exactly as
+    ``AnimaTagger.predict``.
 
-    1. Per-tag sigmoid threshold (calibrated thresholds when available).
-    2. Group argmax refinement, exactly as ``AnimaTagger.predict``: solo-ness
-       and escape both come from the *thresholded predictions* (not GT — at
-       inference there is no GT); where a softmax group is applicable its
-       tags are cleared and the argmax winner is always emitted, even if no
-       group tag passed threshold.
-
-    ``router`` is a :class:`anime_tools.captions.group_router.GroupRouter`
-    (only its index sets are read, so any object with the same attributes
-    works in tests).
+    Solo-ness and escape both come from the *thresholded predictions* — at
+    inference there is no GT — and where a softmax group is applicable its tags
+    are cleared and the argmax winner emitted even if none passed threshold.
+    ``router`` is a ``GroupRouter``; only its index sets are read.
     """
     pred = tag_logits.sigmoid() > thresholds.to(tag_logits.device)
     if not router.softmax_groups:
@@ -133,8 +119,6 @@ def predict_with_inference_rule(
         winner_local = tag_logits[:, g.tag_indices].argmax(dim=1)
         pred[rows[:, None], g.tag_indices[None, :]] = False
         pred[rows, g.tag_indices[winner_local[rows]]] = True
-        # Sentinel winner = "none of this group" — the assignment above set
-        # the sentinel column for those rows; the global clear below drops it.
     if getattr(router, "sentinel_indices", None) is not None:
         # Sentinel slots are never emitted: not as argmax winners (cleared
         # here) and not via the sigmoid-threshold path (their calibrated
@@ -143,9 +127,7 @@ def predict_with_inference_rule(
     return pred
 
 
-# --------------------------------------------------------------------------- #
 # Slice assignment — KB taxonomy + frequency tiers.
-# --------------------------------------------------------------------------- #
 
 UNMATCHED_SLICE = "general:unmatched"
 
@@ -203,9 +185,7 @@ def assign_slices(
     return TagSlices(kb_slice=kb_slice, freq_tier=freq_tier)
 
 
-# --------------------------------------------------------------------------- #
 # Aggregation.
-# --------------------------------------------------------------------------- #
 
 
 def aggregate_slices(

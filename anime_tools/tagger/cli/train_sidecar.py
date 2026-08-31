@@ -1,32 +1,17 @@
-"""Train the dbv4 sidecar head — copyright / dataset-only characters /
-renamed general tags / people-count — on cached backend features.
+"""Train the dbv4 sidecar head on cached backend features.
 
-dbv4 (``animetimm/*.dbv4-full``) has no copyright category, none of our
-dataset OCs, and a 2025 danbooru namespace that renamed a few of our general
-tags (``black shoes`` → ``black footwear`` …). Those rows are what this head
-emits; ``@artist`` is deliberately excluded (not a tagger goal any more).
+dbv4 (``animetimm/*.dbv4-full``) has no copyright category, none of our dataset
+OCs, and a 2025 danbooru namespace that renamed a few of our general tags
+(``black shoes`` → ``black footwear``). Those rows plus the 8-way people-count
+bucket are what this head emits; ``@artist`` is deliberately excluded.
 
-Stages (all resumable — each is skipped when its output exists):
-
-1. **cache** — one dbv4 forward per ``dataset.json`` image → the MLP-head
-   hidden feature (3072-d on caformer_b36, fp16) plus the projected our-vocab
-   probs (for the count-tag people rule baseline). ~minutes on a GPU.
-2. **train** — a linear head, BCE over the sidecar tag rows + CE over the
-   8-way people-count bucket, AdamW + cosine, best epoch by val (mean AP of
-   the BCE rows + people accuracy).
-3. **calibrate** — per-tag F1-optimal thresholds on val for the BCE rows
-   (``calibrate.calibrate_thresholds``, same rule as the PE checkpoints),
-   written into the checkpoint's ``thresholds.safetensors`` at those indices.
-4. **write** — ``sidecar.safetensors`` + ``sidecar.json`` + ``sidecar_metrics.json``
-   into ``--ckpt_dir``; ``AnimaTagger`` picks them up on next load.
-
-::
-
-    make daemon-run ARGS="anime_tools/tagger/cli/train_sidecar.py --ckpt_dir models/captioners/anima-tagger-dbv4"
-
-Gate (proposal ``docs/proposal/tagger_caformer_backend.md`` Phase 2, artist
-dropped): copyright macro-F1 ≥ v5's 0.638 on the same val split; people-count
-acc ≥ v5's 0.885 — both printed at the end next to the count-tag-rule baseline.
+Four resumable stages, each skipped when its output exists: **cache** (one dbv4
+forward per ``dataset.json`` image → the fp16 MLP-head hidden feature plus the
+projected our-vocab probs, used for the count-tag people-rule baseline),
+**train** (linear head, BCE + CE, best epoch by val mean-AP + people accuracy),
+**calibrate** (per-tag F1-optimal thresholds written into the checkpoint's
+``thresholds.safetensors`` at the sidecar indices) and **write**. See
+``docs/anima_tagger.md``.
 """
 
 from __future__ import annotations
@@ -104,9 +89,7 @@ def parse_args() -> argparse.Namespace:
     return p.parse_args()
 
 
-# --------------------------------------------------------------------------- #
-# Stage 1 — feature cache
-# --------------------------------------------------------------------------- #
+# Stage 1 — feature cache.
 
 
 class _ImageDS(Dataset):
@@ -177,9 +160,7 @@ def build_cache(
     log.info("wrote %s (%d × %d)", out_path, len(ds), d_hidden)
 
 
-# --------------------------------------------------------------------------- #
-# Stage 2 — train
-# --------------------------------------------------------------------------- #
+# Stage 2 — train.
 
 
 def _eval_head(
@@ -272,11 +253,6 @@ def train_head(
     head.load_state_dict(best_state)
     head.eval()
     return head, {"history": history, "best_score": best}
-
-
-# --------------------------------------------------------------------------- #
-# main
-# --------------------------------------------------------------------------- #
 
 
 def main() -> None:

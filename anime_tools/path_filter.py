@@ -1,6 +1,5 @@
-# Pure-stdlib path filtering, split out of `subsets.py` so torch-free callers
-# (notably the GUI process — see gui/CLAUDE.md) can use it without paying the
-# torch/cv2 import that subsets.py needs for its dataset classes.
+# Pure-stdlib path filtering, so torch-free callers (notably the GUI process)
+# can use it without paying a torch/cv2 import.
 
 import fnmatch
 import os

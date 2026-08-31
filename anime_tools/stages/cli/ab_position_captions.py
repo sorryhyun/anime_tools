@@ -1,21 +1,12 @@
 """A/B two `caption-position` configurations side by side, as contact sheets.
 
-Proposes each image **twice** off one detection + tagging pass — the models are
-the expensive part and both sides see identical crops, so the only thing that
-can differ is the clause rule under test. Default test is the `framing` bind
-(`--no_framing` is the A side); `--a_flags` / `--b_flags` take any
-`position_captions.py` flag, so the same tool serves the next rule too.
+Proposes each image **twice** off one detection + tagging pass, so both sides see
+identical crops and only the clause rule under test can differ. `--a_flags` /
+`--b_flags` take any `position_captions.py` flag.
 
-One page per image where the two sides disagree, plus an `index.html` that
-stacks them in the order most-changed-first. Images where both sides produce the
-same caption are counted and skipped — a sheet nobody needs to look at is worse
-than no sheet, because it hides the ones that matter.
-
-Always proposes from the hand-written master under ``--src``, never the derived
-caption: after one ``--apply`` the derived side already carries clauses and
-``is_candidate`` would reject the whole corpus as ``already-has-clauses``.
-
-Read-only: writes only under `--out`, never a caption.
+One page per disagreeing image plus an `index.html`, most-changed-first; images
+where both sides agree are counted and skipped. Read-only: writes only under
+`--out`, never a caption.
 
     make daemon-run ARGS="anime_tools/stages/cli/ab_position_captions.py \\
         --path_pattern 'ama_mitsuki/*'"
@@ -52,9 +43,8 @@ _BG = (24, 24, 28)
 _FG = (232, 232, 236)
 _DIM = (150, 150, 158)
 _RULE = (52, 52, 60)
-# A-vs-B contrast, this sheet's own — the two verdict-neutral accents that say
-# which column is the incumbent. The per-instance palette is the shared
-# BOX_COLORS, so a box here means the same subject it means on a review sheet.
+# A-vs-B contrast, this sheet's own; boxes use the shared BOX_COLORS so a box
+# means the same subject it means on a review sheet.
 _A = (150, 150, 158)  # the incumbent reads as neutral…
 _B = (80, 200, 120)  # …the challenger as the thing to look at
 
@@ -172,7 +162,6 @@ def render(
 
 
 def write_index(out_dir: Path, rows: list[dict], labels: tuple[str, str]) -> Path:
-    """A scrollable page beats a directory of PNGs for a side-by-side read."""
     parts = [
         "<meta charset='utf-8'><title>position captions A/B</title>",
         (
@@ -218,9 +207,8 @@ def main() -> None:
 
     detect_args.device = args.device
     detect_fn, part_detect_fn, _model, _proc = build_detect_fn(detect_args)
-    # Detector-side A/B: a B side with a different subject prompt (text or
-    # `--prompt_embed`) gets its own detector on the same loaded SAM3, so the
-    # two sides no longer share one detection pass.
+    # Detector-side A/B: a B side with a different subject prompt gets its own
+    # detector on the same loaded SAM3.
     b_detect_fn, b_part_detect_fn = detect_fn, part_detect_fn
     if (b_detect_args.prompt, b_detect_args.prompt_embed) != (
         detect_args.prompt,
@@ -246,7 +234,7 @@ def main() -> None:
         stats["seen"] += 1
         rel = str(image_path.relative_to(dst))
         # The master, not the derived caption: after one `--apply` the derived
-        # side already carries clauses and would be skipped by every rule here.
+        # side carries clauses and `is_candidate` would reject the whole corpus.
         caption_path = (src / rel).with_suffix(".txt")
         if not caption_path.exists():
             stats["no_caption"] += 1

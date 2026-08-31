@@ -1,11 +1,10 @@
 """Free-fit ("free-aspect token-band") resize geometry — the tier + bucket math.
 
-A ≤130-line torch-free/numpy-free copy of the free-fit half of the trainer's
-``library/datasets/buckets.py`` (``EDGE_TOKEN_BANDS`` / ``choose_edge`` /
-``freefit_band_for_edge`` / ``freefit_bucket``), in the same spirit as
-:mod:`anime_tools._walk`: curation must not import the trainer, and both sides
-have to land an image on the *same* pixel size or the resized PNG this package
-writes would be re-resized by ``make preprocess-resize`` instead of skipped.
+A torch-free/numpy-free copy of the free-fit half of the trainer's
+``library/datasets/buckets.py``, in the same spirit as :mod:`anime_tools._walk`:
+curation must not import the trainer, and both sides have to land an image on
+the *same* pixel size or the resized PNG this package writes would be re-resized
+by ``make preprocess-resize`` instead of skipped.
 ``tests/test_resize_images.py`` pins the numbers that matter.
 
 Free-fit preserves an image's native aspect ratio and lands its patch-grid token
@@ -13,8 +12,7 @@ count anywhere inside its tier's band, so the cropped residual on the covering
 axis is under one patch. Token count is ``(W//16) * (H//16)``.
 
 The trainer's discrete-bucket ``BucketManager``, the σ-demote tables and the
-frozen ``DCW_ASPECT_BUCKETS`` set are deliberately **not** copied — they are
-training-side concerns with no curation consumer.
+frozen ``DCW_ASPECT_BUCKETS`` set are deliberately **not** copied.
 """
 
 from __future__ import annotations
@@ -37,9 +35,8 @@ DEFAULT_TARGET_RES: tuple[int, ...] = (1024,)
 DEFAULT_FREEFIT_MAX_RATIO = 4.0
 
 # Widens every non-frozen tier's natural band so the solver has aspect freedom:
-# a band with lo == hi leaves free-fit only that count's coarse divisor grids and
-# it crops like the retired snap mode did. Free at train time (the whole band is
-# one compiled graph).
+# a band with lo == hi leaves free-fit only that count's coarse divisor grids
+# and it crops. Free at train time (the whole band is one compiled graph).
 FREEFIT_BAND_TOLERANCE = 0.025  # ±2.5%
 
 # 1024 stays at its natural (4032, 4200): the trainer's frozen top-5 aspect set
@@ -64,11 +61,10 @@ def band_for_tier(edge: int) -> tuple[int, int]:
 def choose_edge(width: int, height: int, target_res) -> int:
     """Assign an image to the tier that resizes it the *least*.
 
-    Free-fit preserves aspect, so the only thing that varies across tiers is the
-    patch-token budget (area). The chosen tier minimizes
-    ``|log(nominal / native_tokens)|`` against each band's midpoint — so a 0.95MP
-    image stays at 1024 (a tiny upscale) instead of being shoved down to 768,
-    while a 0.6MP image still picks 768. Scale-symmetric; a single-element
+    Free-fit preserves aspect, so only the patch-token budget varies across
+    tiers. The chosen tier minimizes ``|log(nominal / native_tokens)|`` against
+    each band's midpoint — a 0.95MP image stays at 1024 (a tiny upscale) rather
+    than being shoved down to 768. Scale-symmetric; a single-element
     ``target_res`` is a no-op.
     """
     tiers = list(target_res)
@@ -92,9 +88,8 @@ def freefit_band_for_edge(
 ) -> tuple[int, int]:
     """Token-count band ``(lo, hi)`` for one tier — the free-fit search range.
 
-    The tier's natural band, widened symmetrically by ``tol`` for every tier
-    except :data:`FREEFIT_FROZEN_EDGES`. A wider band lets the solver match the
-    native aspect more exactly, i.e. crop less.
+    The natural band, widened symmetrically by ``tol`` except for
+    :data:`FREEFIT_FROZEN_EDGES`. A wider band crops less.
     """
     lo, hi = band_for_tier(edge)
     if edge in FREEFIT_FROZEN_EDGES:
@@ -112,17 +107,16 @@ def freefit_bucket(
 ) -> tuple[int, int]:
     """Native-aspect resize target whose patch grid fills the token ``band``.
 
-    Returns pixel ``(W, H)`` — both multiples of ``patch`` — whose patch grid
-    ``(W//patch)*(H//patch)`` lies in ``[lo, hi]`` and whose aspect is as close
-    as possible to the source's, clamped to ``[1/max_ratio, max_ratio]``, subject
-    to ``max(W//patch, H//patch) <= rope_cap``. Deterministic in its inputs.
+    Returns pixel ``(W, H)``, both multiples of ``patch``, whose patch grid lies
+    in ``[lo, hi]`` and whose aspect is as close as possible to the source's,
+    clamped to ``[1/max_ratio, max_ratio]`` and subject to ``max(W//patch,
+    H//patch) <= rope_cap``. Deterministic in its inputs.
 
     Aspect distortion is sub-patch by construction, so crop is zero unless the
-    ratio clamp fired (a degenerate input the caller explicitly allowed), in
-    which case the caller cover-crops to the clamped aspect. The search is
-    exhaustive over the band — small, because the band is narrow and bounded by
-    ``rope_cap`` — so the result is the global aspect-error minimum, tie-broken
-    toward the grid that rescales the image the least.
+    ratio clamp fired, in which case the caller cover-crops to the clamped
+    aspect. The search is exhaustive over the (narrow, rope_cap-bounded) band,
+    so the result is the global aspect-error minimum, tie-broken toward the grid
+    that rescales the image the least.
     """
     lo, hi = int(band[0]), int(band[1])
     if lo <= 0 or hi < lo:

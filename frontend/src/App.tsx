@@ -17,21 +17,12 @@ import { SettingsDialog } from "./components/SettingsDialog";
 import { StagePanel } from "./components/StagePanel";
 import { TagLens } from "./components/TagLens";
 
-/** The whole GUI is five pieces of state and the layout that shows them:
- *
- *     config   — what the server says about itself: home, roots, weights,
- *                settings, and the dialog that edits them
- *     layout   — which panes are open, and how tall the dock is
- *     dataset  — the image listing, the selection (mirrored into the hash),
- *                and the detail of the selected row
- *     stages   — the stage registry and the form over the open one
- *     runner   — running that stage: Run → diff → Apply → Undo
- *
- * Nothing below is business logic: this file wires those five together and
- * hands their signals to the components. The two seams worth naming are the
- * dock (a stage start opens it, so `runner` is given `openDock`) and the single
- * job slot the server has — a stage run and a weights download share it, which
- * is why an adopted job has to be told apart before it is followed.
+/** Wiring only: this file creates the five state modules, bridges the two of
+ * them that must talk, and hands their signals to the components. No business
+ * logic lives here. The two seams worth naming are the dock (a stage start
+ * opens it, so `runner` is given `openDock`) and the single job slot the server
+ * has — a stage run and a weights download share it, which is why an adopted
+ * job has to be told apart before it is followed.
  */
 export default function App() {
   const config = createConfig();

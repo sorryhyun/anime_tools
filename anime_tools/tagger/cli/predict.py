@@ -19,11 +19,6 @@ logger = logging.getLogger(__name__)
 
 
 def cmd_predict(args: argparse.Namespace) -> None:
-    """Run a single image through the trained tagger and print the caption.
-
-    With ``--show_scores`` also prints rating distribution + top-K kept tags
-    sorted by probability — useful for sanity-checking thresholds.
-    """
     from PIL import Image
 
     from anime_tools.tagger.data import TaggerCheckpoint

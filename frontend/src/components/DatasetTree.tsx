@@ -73,7 +73,6 @@ interface Artist {
     extension is the one part of a rel the two trees need not agree on. Same
     stem-match `_row`'s `resized`/`mask` flags and `_sibling_image` use. */
 const stemKey = (dir: string, stem: string) => (dir ? `${dir}/${stem}` : stem);
-/** The same key off a bare rel: drop the extension, keep the directory. */
 function relStemKey(rel: string) {
   const cut = rel.lastIndexOf("/");
   const dot = rel.lastIndexOf(".");
@@ -145,9 +144,7 @@ export function DatasetTree(props: {
   const [flipped, setFlipped] = createSignal(new Set<string>());
   const [shown, setShown] = createSignal(new Map<string, number>());
 
-  // Small trees open so the whole dataset is visible at a glance; big ones stay
-  // collapsed, because expanding thousands of rows on load is the one thing
-  // that makes this sidebar feel slow.
+  // Small trees open so the whole dataset is visible at a glance.
   const openByDefault = createMemo(() => (props.list?.items.length ?? 0) <= AUTO_EXPAND_MAX);
   /** `key` is the collapse identity; `dflt` what it does before a click. */
   const open = (key: string, dflt = openByDefault()) => (flipped().has(key) ? !dflt : dflt);
@@ -180,7 +177,6 @@ export function DatasetTree(props: {
 
   const Twisty = (p: { open: boolean }) => <span class="tw">{p.open ? "▾" : "▸"}</span>;
 
-  /** The "+ N more" row that ends a paged run of images. */
   const More = (p: { key: string; total: number; depth: number }) => (
     <Show when={p.total > limitOf(p.key)}>
       <div

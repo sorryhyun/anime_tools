@@ -1,19 +1,9 @@
 """Vocab build — caption discovery, tag categorization, frequency cuts.
 
-Produces three artifacts under ``out_dir/``:
-
-* ``vocab.json``   — kept tag list (with category + median emit position),
-                     rating list, slot order, coverage stats. No per-stem data:
-                     it's the model's label space, independent of the corpus.
-* ``rules.yaml``   — snapshot of the source ``tag_rules.yaml`` so the
-                     inference wrapper has zero runtime dep on the corpus.
-* ``dataset.json`` — per-stem ``(image_path, multi_hot_indices, rating_idx)``
-                     manifest + the train/val ``split``, filtered to captions
-                     with a sibling image, a recognized rating, and at least
-                     one in-vocab tag. This is the sole home of the split.
-
-The build is intentionally self-contained: every other CLI mode reads from
-the manifest + vocab snapshot, never from the source corpus.
+Writes ``vocab.json`` (the label space: no per-stem data), ``rules.yaml`` (a
+snapshot of the source ``tag_rules.yaml``) and ``dataset.json`` (the per-stem
+manifest and the sole home of the train/val split) under ``out_dir/``. Every
+other CLI mode reads those, never the source corpus.
 """
 
 from __future__ import annotations
@@ -55,10 +45,9 @@ logger = logging.getLogger(__name__)
 def find_caption_files(roots: Sequence[Path]) -> list[Path]:
     """Discover all ``.txt`` caption files under the given roots.
 
-    Skips dotfiles and the ``tag_cache``/``hash_cache`` JSON sidecars.
     Returns files in **root order** (sorted within each root for determinism);
-    a stem appearing under multiple roots is *not* deduped here — that's the
-    caller's job (see :func:`build_caption_index`, where earlier wins).
+    a stem appearing under multiple roots is *not* deduped here — that's
+    :func:`build_caption_index`'s job, where the earlier one wins.
     """
     out: list[Path] = []
     for root in roots:
@@ -81,15 +70,11 @@ def build_caption_index(
 ) -> dict[str, tuple[Path, Path | None, list[str]]]:
     """Map ``stem → (caption_path, image_path | None, parsed_tags)``.
 
-    When a stem appears in multiple caption sources, the *first* path wins —
-    ``paths`` is consumed in the order given, so the caller controls precedence
-    via root order (see :func:`find_caption_files`). Stems whose sibling image
-    file can't be found are still indexed (caption-only entries) so the
-    coverage scan reflects what's *captioned*, not what's *trainable*; the
-    image-required filter happens at manifest-build time.
-
-    Position clauses are dropped: only the flat tag bag feeds tag training,
-    so clause-bound tags (``On the left, …``) never enter the label space.
+    The *first* path for a stem wins, so the caller controls precedence via root
+    order. Stems with no sibling image are still indexed, so the coverage scan
+    reflects what's *captioned*, not what's *trainable*; the image-required
+    filter happens at manifest-build time. Position clauses are dropped: only
+    the flat tag bag feeds tag training.
     """
     index: dict[str, tuple[Path, Path | None, list[str]]] = {}
     for path in paths:
@@ -115,17 +100,11 @@ def build_caption_index(
 def load_tag_cache(path: Path) -> dict[str, str]:
     """Load a tag-taxonomy source and map tag → category name.
 
-    Two on-disk formats are accepted, dispatched by suffix:
-
-    * ``.json`` — gelcrawl's corpus cache, a ``{tag: integer type_id}`` dict.
-    * ``.csv``  — the public ``danbooru_tags_classified.csv`` KB (``name``,
-      ``category``, ``post_count``, ``description``); ``category`` carries the
-      same numeric Danbooru type id, so it feeds the identical ``TAG_TYPE_NAMES``
-      mapping. This lets the vocab build run off the downloadable KB with no
-      dependency on the private corpus crawl.
-
-    Both normalize underscored cache keys to the space-separated canonical
-    caption form.
+    Dispatched by suffix: ``.json`` is gelcrawl's ``{tag: type_id}`` corpus
+    cache, ``.csv`` the public ``danbooru_tags_classified.csv`` KB, whose
+    ``category`` column carries the same numeric Danbooru type id — so the vocab
+    build can run off the downloadable KB with no private-crawl dependency.
+    Both normalize underscored keys to the space-separated caption form.
     """
     path = Path(path)
     if path.suffix.lower() == ".csv":
@@ -173,28 +152,18 @@ def categorize(
     """Return ``rating`` / ``count`` / ``character`` / ``copyright`` /
     ``artist`` / ``general`` / ``metadata`` / ``deprecated`` for ``tag``.
 
-    Resolution order:
+    Resolution order matters:
 
-    1. Rating literals (``safe``/``sensitive``/``nsfw``/``explicit``, plus the
-       legacy booru spellings ``general``/``questionable``) → ``rating``.
-       Note ``general`` is *both* a legacy rating value and a category name, so
-       rating-tag membership is checked before any category lookup.
-    2. ``@<non-space>...`` tags → ``artist``. Anima's caption format
-       prefixes artists with ``@`` directly followed by the name (e.g.
-       ``@sincos``, ``@sumiyao (amam)``); the underlying tag-cache key
-       drops the ``@``, so cache lookups need the bare name. Emoticons
-       like ``@ @`` (booru ``@_@`` after ``_``→`` `` normalization) fall
-       through to the cache so they get their real category (``general``).
-    3. Count-tag regex → ``count`` (overrides ``general`` typing for
-       ``1girl`` etc.).
-    4. ``category_overrides`` lookup (curator-supplied via tag_rules.yaml).
-       Fixes booru cache mistypings — e.g. GFL character tags stored as
-       ``general`` (type_id=0) get corrected here.
-    5. Cache lookup.
-    6. Fallback: ``general``.
+    1. Rating literals first — ``general`` is *both* a legacy rating value and a
+       category name, so rating membership must beat any category lookup.
+    2. ``@<non-space>…`` → ``artist``. Emoticons like ``@ @`` (booru ``@_@``)
+       fall through to the cache so they get their real category.
+    3. Count-tag regex → ``count`` (overrides ``general`` typing for ``1girl``).
+    4. ``category_overrides``, which fix booru cache mistypings.
+    5. Cache lookup, else ``general``.
+
+    Cache keys drop the ``@``, so lookups use the bare name.
     """
-    # Rating literals collide with the "general" category name — slot them
-    # separately regardless of cache typing (the cache carries no rating values).
     if is_rating_tag(tag):
         return "rating"
     if is_artist_tag(tag):
@@ -213,12 +182,11 @@ def categorize(
 
 
 def validate_overrides(overrides: dict[str, str]) -> list[str]:
-    """Return a list of human-readable validation errors for overrides.
+    """Return human-readable validation errors for overrides; empty = all good.
 
-    Empty list → all entries are well-formed. Catches typos like
-    ``caracter`` and unsupported categories (``rating`` / ``count``) up
-    front so :func:`cmd_build_vocab` can fail loudly rather than silently
-    typing tags into a slot the trainer doesn't understand.
+    Catches typos like ``caracter`` and unsupported categories up front so
+    :func:`cmd_build_vocab` fails loudly rather than silently typing tags into a
+    slot the trainer doesn't understand.
     """
     errors: list[str] = []
     for tag, cat in overrides.items():
@@ -343,12 +311,10 @@ def build_manifest(
 ) -> dict:
     """Compact dataset.json: per-stem image path, multi-hot indices, rating, people-count.
 
-    Stems lacking a sibling image file are dropped from the manifest (the
-    coverage scan in :func:`scan_cache_coverage` still counts them in vocab
-    statistics — we just can't *train* on captions without pixels). The split
-    is filtered to match. Per-stem people-count label is recomputed from
-    parsed tags via :func:`classify_people` so the bucketing rule is the
-    single source of truth (no plumbing through vocab).
+    Stems lacking a sibling image are dropped (vocab statistics still count
+    them) and the split is filtered to match. The people-count label is
+    recomputed via :func:`classify_people` so the bucketing rule stays the
+    single source of truth.
     """
     tag_to_idx: dict[str, int] = {t["name"]: t["index"] for t in vocab["tags"]}
     rating_to_idx: dict[str, int] = {r: i for i, r in enumerate(vocab["ratings"])}
@@ -424,18 +390,13 @@ def scan_cache_coverage(
     category_overrides: dict[str, str] | None = None,
     coverage_ignore: tuple[str, ...] | None = None,
 ) -> dict:
-    """How many caption tags lack a category in gelcrawl's cache?
+    """How many caption tags lack a category in the tag cache?
 
-    A high miss rate would mean ``categorize()`` is falling back to
-    ``general`` for too many tags and we should run the gelbooru API fill-in
-    pass before training. <5 % miss → safe to default-to-general.
-
-    Tags listed in ``category_overrides`` are treated as covered (they
-    *are* explicitly typed — just by the curator rather than the cache).
-    Tags whose name contains any substring in ``coverage_ignore`` are
-    silently skipped from both the seen and missing tallies — used to
-    drop noisy general descriptors ("grabbing another's …") that the
-    booru cache doesn't track but the curator knows are general.
+    A high miss rate means ``categorize()`` falls back to ``general`` too often
+    and the gelbooru API fill-in pass should run first; <5 % is safe. Tags in
+    ``category_overrides`` count as covered (typed by the curator instead), and
+    tags containing a ``coverage_ignore`` substring are skipped from both
+    tallies — noisy general descriptors the booru cache doesn't track.
     """
     overrides = category_overrides or {}
     ignore_subs = tuple(coverage_ignore or ())
@@ -536,10 +497,9 @@ def cmd_build_vocab(args: argparse.Namespace) -> None:
     vocab["rules_source_path"] = str(rules_src.resolve())
     vocab["coverage"] = coverage
 
-    # Optionally derive tag-groups from the danbooru taxonomy + the captions we
-    # just scanned, merging onto any existing curated --groups (preserved
-    # verbatim). Writes out_dir/groups.yaml and uses it as the groups source, so
-    # one build_vocab call replaces the separate derive_groups step.
+    # Derive tag-groups from the danbooru taxonomy + the scanned captions, merged
+    # onto any curated --groups (preserved verbatim), and use the result as the
+    # groups source — so one build_vocab call replaces a separate derive_groups.
     groups_src = Path(args.groups) if args.groups else None
     if getattr(args, "derive_groups", False):
         from anime_tools.captions.correction import (
@@ -605,11 +565,9 @@ def cmd_build_vocab(args: argparse.Namespace) -> None:
         # the shipped groups.yaml carries concrete names for inference.
         groups = tg.expand_category_members(groups, name_to_cat)
         # One synthetic "<none:group>" tag slot per sentinel group, appended
-        # after every real tag (indices stay stable). Category inherits the
-        # member majority so dual-encoder routing keeps the sentinel logit on
-        # the same feature side as the tags it competes with. freq=0 — the
-        # slot never appears in captions; BCE never supervises it (trainer
-        # masks sentinel cells) and decode never emits it.
+        # after every real tag so existing indices stay stable. Category inherits
+        # the member majority; freq=0 — the slot never appears in captions, BCE
+        # never supervises it and decode never emits it.
         n_sentinels = 0
         for g in groups.groups:
             if not (g.sentinel and g.mode in ("softmax", "softmax_when_solo")):
@@ -673,9 +631,8 @@ def cmd_build_vocab(args: argparse.Namespace) -> None:
                 "(pure BCE on every tag)",
             )
 
-    # The train/val split is a property of the training corpus, not the model's
-    # label space — it lives only in dataset.json (the manifest), never in the
-    # shipped vocab.json, so the published vocab carries no per-stem train list.
+    # The split is a property of the corpus, not the label space: it lives only
+    # in dataset.json, never in the shipped vocab.json.
     split = make_split(
         sorted(index.keys()),
         val_frac=args.val_frac,
@@ -702,7 +659,6 @@ def cmd_build_vocab(args: argparse.Namespace) -> None:
         _yaml.safe_dump(rules.to_dict(), f, sort_keys=False)
     logger.info("wrote %s", snap_path)
 
-    # Manifest drops captions without a sibling image, rating tag, or in-vocab tag.
     manifest = build_manifest(index, vocab, split)
     manifest_path = write_json(out_dir / "dataset.json", manifest)
     logger.info(

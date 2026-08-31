@@ -1,7 +1,7 @@
 """Positional caption clauses — parse / compose / position vocabulary.
 
-The dataset's hand-written convention binds attributes to subjects via trailing
-clauses appended to the flat tag bag::
+The caption grammar lives here. A caption is a flat tag bag followed by trailing
+clauses that bind attributes to subjects::
 
     safe, 3girls, akita neru, ..., white socks. On the left, akita neru,
     yellow eyes. On the middle, hatsune miku, twintails. On the right,
@@ -10,11 +10,8 @@ clauses appended to the flat tag bag::
 GOTCHA: the **period** is the clause delimiter; commas separate tags *within* a
 segment. A naive ``caption.split(",")`` glues the header onto the previous tag
 (``"white socks. On the left"``), silently shredding every clause a downstream
-``tag.startswith("On the ")`` check relies on.
-
-Pure stdlib by design (no torch, no model): the caption-variant generator, the
-order-correction pass, and the auto-caption pipeline all parse clauses through
-here so the three can't drift.
+``tag.startswith("On the ")`` check relies on. Pure stdlib, and every caption
+consumer parses through here so they cannot drift.
 """
 
 from __future__ import annotations
@@ -62,7 +59,6 @@ MAX_ROWS = max(_ROW_WORDS)
 class PositionClause:
     """One ``On the <position>, <tags>`` segment.
 
-    ``position`` is the bare position phrase (``"left"``, ``"top right"``);
     ``prefix`` is the header verb kept verbatim from the source so a round-trip
     of a hand-written ``In the background`` clause stays byte-stable.
     """
@@ -95,13 +91,10 @@ class ParsedCaption:
     def tag_keys(self) -> frozenset[str]:
         """The flat bag as a lookup set, in :func:`normalize_tag` form.
 
-        Every "does the caption already say this?" test keys off this form —
-        the rewrite compares crop tags against it, the prefilter matches count
-        and layout tags in it. It is the shared normalizer and not a local
-        ``lower()`` precisely because the two sides disagree on the underscore:
-        the tagger emits ``speech bubble``, a hand-written caption may hold
-        ``speech_bubble``, and a lookup that misses that pair is a caption that
-        gets told something it already said.
+        Every "does the caption already say this?" test keys off this form. The
+        shared normalizer, not a local ``lower()``, because the two sides
+        disagree on the underscore: the tagger emits ``speech bubble`` where a
+        hand-written caption may hold ``speech_bubble``.
         """
         return frozenset(normalize_tag(t) for t in self.flat_tags)
 
@@ -112,8 +105,8 @@ class ParsedCaption:
 def _strip_trailing_period(tag: str) -> str:
     """Drop the caption-terminating ``.`` from the final tag of a segment.
 
-    Guarded on the remainder still carrying an alphanumeric so punctuation-only
-    booru tags (``:d``, ``>_<``, ``...``) survive intact.
+    Guarded on an alphanumeric remainder so punctuation-only booru tags
+    (``:d``, ``>_<``, ``...``) survive intact.
     """
     if tag.endswith(".") and any(c.isalnum() for c in tag[:-1]):
         return tag[:-1].rstrip()
@@ -127,9 +120,6 @@ def _split_tags(segment: str) -> list[str]:
 def is_clause_header(tag: str) -> bool:
     """True for a bare clause header token (``"On the left"``).
 
-    Used by consumers already holding a comma-split token list (the comma-form
-    caption, which :func:`parse_caption` also accepts).
-
     GOTCHA: deliberately case-SENSITIVE, unlike ``_CLAUSE_SPLIT_RE`` — with no
     period to delimit it, a lowercase ``on the beach`` mid-bag is a scene tag,
     not a header. The period-delimited form has the delimiter to go on, so
@@ -139,10 +129,7 @@ def is_clause_header(tag: str) -> bool:
 
 
 def has_clauses(caption: str) -> bool:
-    """Cheap "does this caption already carry positional clauses?" check.
-
-    The candidate prefilter uses it to leave hand-written captions alone.
-    """
+    """Cheap "does this caption already carry positional clauses?" check."""
     return bool(_CLAUSE_SPLIT_RE.search(caption)) or any(
         is_clause_header(t) for t in _split_tags(caption)
     )
@@ -161,10 +148,9 @@ def parse_caption(caption: str) -> ParsedCaption:
         parts = _split_tags(segment)
         if not parts:
             continue
-        # GOTCHA: trust segment position, not ``is_clause_header``, for whether a
-        # segment starts a clause — that check is case-sensitive, so a
-        # hand-written ``safe. on the left, red hair.`` used to parse as ZERO
-        # clauses while ``has_clauses`` said yes, silently dropping the clause
+        # GOTCHA: trust segment position, not ``is_clause_header``, for whether
+        # a segment starts a clause — that check is case-sensitive, and a
+        # hand-written ``safe. on the left, red hair.`` must not drop its clause
         # into the flat bag. Within a segment only the comma form introduces a
         # header, and that stays strict.
         for j, part in enumerate(parts):
@@ -196,31 +182,25 @@ def parse_caption(caption: str) -> ParsedCaption:
 
 
 def flat_tag_set(caption: str) -> frozenset[str]:
-    """``caption``'s flat bag as a lookup set — clause tags excluded.
-
-    Shorthand for ``parse_caption(caption).tag_keys``; see that property for why
-    the normalization is shared.
-    """
+    """``caption``'s flat bag as a lookup set — clause tags excluded."""
     return parse_caption(caption).tag_keys
 
 
 def flatten_caption(caption: str) -> str:
     """Merge every clause's tags back into the flat bag, dropping the clauses.
 
-    The inverse of the v2 rewrite (which *moves* a tag rather than deleting it,
-    so every tag is recoverable from the text alone). Bag order first, then each
-    clause left-to-right, duplicates dropped.
+    The inverse of the clause rewrite, which *moves* a tag rather than deleting
+    it. Bag order first, then each clause left-to-right, duplicates dropped.
 
-    NOTE: order is not guaranteed byte-identical to the pre-rewrite caption (a
-    moved tag returns at the end, not its original slot), but the tag *set* is
-    exactly restored.
+    NOTE: order is not byte-identical to the pre-rewrite caption (a moved tag
+    returns at the end, not its original slot), but the tag *set* is restored.
     """
     parsed = parse_caption(caption)
     seen: set[str] = set()
     flat: list[str] = []
     for tag in (*parsed.flat_tags, *(t for c in parsed.clauses for t in c.tags)):
-        # Same key as `tag_keys`: a tag the rewrite moved out in space form must
-        # not come back beside its own underscore spelling in the bag.
+        # Same key as `tag_keys`: a tag moved out in space form must not come
+        # back beside its own underscore spelling in the bag.
         key = normalize_tag(tag)
         if key and key not in seen:
             seen.add(key)
@@ -233,9 +213,8 @@ def compose_caption(
 ) -> str:
     """Render a flat tag bag + clauses back into the hand-written convention.
 
-    Inverse of :func:`parse_caption` (modulo whitespace normalization around
-    commas). With no clauses this is a plain ``", "`` join, so it is safe to
-    route every caption through it.
+    Inverse of :func:`parse_caption` (modulo whitespace around commas). With no
+    clauses this is a plain ``", "`` join, so every caption can route through it.
     """
     flat = ", ".join(t for t in flat_tags if t)
     parts = [c.render() for c in clauses if c.tags or c.position]
@@ -253,9 +232,8 @@ def compose_caption(
 def horizontal_names(n: int) -> list[str]:
     """Left→right position words for ``n`` subjects in one row.
 
-    ``left/right`` for a pair, ``left/middle/right`` for a trio, and
-    ``leftmost / second from left / … / rightmost`` beyond that — the vocabulary
-    the hand-written captions use.
+    ``left/right``, ``left/middle/right``, then ``leftmost / second from left /
+    … / rightmost`` — the vocabulary the hand-written captions use.
     """
     if n <= 0:
         return []
@@ -279,12 +257,11 @@ def horizontal_names(n: int) -> list[str]:
 # subject beside stacked panels stays bare "right", and two same-height girls
 # stay bare "left"/"right" however their boxes wobble.
 #
-# _EDGE_CLEAR is calibrated on two curated judgment calls (2026-08-19), and
-# the margin is thin: `9760121`'s top-left panel (bottom gap 0.488) reads
-# "top left", while `6183990`'s near-identical layout (0.452) reads bare
-# "left" — the intuition being "qualify only when the panel stops clearly
-# above the halfway line". Both sit within box-jitter of the threshold; if a
-# review sweep shows flapping, resolve it toward the user's calls above.
+# _EDGE_CLEAR is calibrated on two curated judgment calls and the margin is
+# thin: bottom gap 0.488 reads "top left", a near-identical 0.452 reads bare
+# "left" ("qualify only when the panel stops clearly above the halfway line").
+# Both sit within box-jitter of the threshold; if a review sweep shows flapping,
+# resolve it toward those calls.
 _EDGE_HUG = 0.15
 _EDGE_CLEAR = 0.47
 
@@ -295,12 +272,10 @@ def _cluster_intervals(
     """Single-linkage grouping of 1-D intervals by fractional overlap.
 
     Two intervals share a group when they overlap by at least ``min_overlap``
-    of the narrower one, and groups chain through a shared member (a
-    full-height box bridges every panel it overlaps — which is exactly the
-    signal that they are NOT stacked rows). Center-distance clustering, which
-    this replaced, split a tall box from a short neighbour it overlapped by
-    80%+, misnaming a magazine layout ``top``/``bottom``. Returns a group
-    index per input, group 0 = lowest coordinate.
+    of the narrower one, and groups chain through a shared member (a full-height
+    box bridges every panel it overlaps — exactly the signal that they are NOT
+    stacked rows; center-distance clustering misnames that a ``top``/``bottom``
+    split). Returns a group index per input, group 0 = lowest coordinate.
     """
     if not intervals:
         return []
@@ -325,8 +300,8 @@ def _cluster_intervals(
 # _LANE_GAP of the NARROWER box's width. Deliberately not interval overlap:
 # a wide panel whose content bleeds under the neighbouring subject (a leg
 # drawn across the sheet) overlaps that subject's x-extent completely, but its
-# center still sits squarely in its own lane — overlap-chaining glued such a
-# layout into one column and degraded it to left/middle/right.
+# center still sits squarely in its own lane — overlap-chaining would glue such
+# a layout into one column and degrade it to left/middle/right.
 _LANE_GAP = 0.5
 
 
@@ -402,16 +377,14 @@ def assign_positions(
     Boxes are grouped by *interval overlap* (``row_tol`` = the minimum
     fractional overlap of the narrower extent), rows first: row groups are
     named ``top``/``bottom`` with left→right names inside a row, and a row's
-    lone subject takes the bare row word — plus the side it hugs when it
-    leaves the other side clear (a diagonal pair reads ``top left`` /
-    ``bottom right``). When everything shares one row — the magazine layout: a
-    full-height subject beside a column of stacked panels, which center-y
-    clustering used to split into fake ``top``/``bottom`` rows — columns are
-    named left→right instead, a stacked column takes ``top left``/``bottom
-    left``, and the full-height subject stays bare ``right`` (an end-hugging
-    lone panel is qualified: ``top left``). Degrades to the plain horizontal
-    names when nothing separates, or when a grouping outgrows the row
-    vocabulary (:data:`MAX_ROWS`).
+    lone subject takes the bare row word — plus the side it hugs when it leaves
+    the other side clear (a diagonal pair reads ``top left`` / ``bottom
+    right``). When everything shares one row — the magazine layout: a
+    full-height subject beside a column of stacked panels — columns are named
+    left→right instead, a stacked column takes ``top left``/``bottom left``,
+    and the full-height subject stays bare ``right``. Degrades to the plain
+    horizontal names when nothing separates, or when a grouping outgrows the
+    row vocabulary (:data:`MAX_ROWS`).
 
     ``size`` is unused (the frame is the subjects' own combined extent) but
     kept for signature stability.
