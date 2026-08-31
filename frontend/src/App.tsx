@@ -119,6 +119,7 @@ export default function App() {
         proposal={runner.shownProposal()}
         proposalStage={stages.cur()?.title}
         droppedKind={runner.droppedKind()}
+        help={layout.help()}
         onSaved={dataset.onSaved}
       />
 

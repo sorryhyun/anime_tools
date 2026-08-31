@@ -143,7 +143,6 @@ main { grid-column:2; grid-row:2; display:grid; grid-template-rows:auto minmax(0
 .card { border:1px solid var(--line); border-radius:7px; padding:10px 12px; background:var(--panel) }
 .card.sel { border-color:var(--accent) }
 .card-h { display:flex; align-items:center; gap:8px }
-.card-h .path { font-family:var(--font-mono); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:34ch }
 /* The path is the only part of a card header that may shrink: the badge and
    the two buttons carry translated words (「元に戻す」, "되돌리기"), which flex
    would otherwise break onto a second line one character at a time. */

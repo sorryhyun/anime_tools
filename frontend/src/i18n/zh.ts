@@ -76,7 +76,6 @@ const zh: Dict = {
     keys: "↑/↓ 或 j/k 切换图片 · ⌘/Ctrl+Enter 保存标注",
     views: {
       image: "原图",
-      resized: "缩放图",
       mask: "掩膜",
       overlay: "叠加",
     },
@@ -85,7 +84,6 @@ const zh: Dict = {
     notGenerated: "尚未生成",
     noOverlay: "这张图没有可叠加的内容",
     noView: (view) => `这张图没有${view}`,
-    overlayOver: (base) => `以 40% 叠在 ${base} 上`,
     variants: "variants",
     readOnly: "只读",
     variantsHint: "由 correct 阶段生成 — v0 是未改动的 derived 标注。在这里手改会被覆盖。",

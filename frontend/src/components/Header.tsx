@@ -26,10 +26,10 @@ export function Header(props: {
         onHelp={props.onHelp}
         onSettings={props.onSettings}
       />
-      <b>anime_tools</b>
-      <span class="dim mono" title={props.info?.home}>
-        {props.info?.home}
-      </span>
+      {/* One path in the bar, not two: the home is what every path shown in
+          the panel is written against, so it reads back off the name here and
+          the listing's root is the one that says something. */}
+      <b title={props.info?.home}>anime_tools</b>
       <Show when={props.list}>
         {(l) => <span class="dim">{t().header.images(l().total, l().root)}</span>}
       </Show>

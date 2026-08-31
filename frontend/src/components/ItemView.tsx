@@ -11,10 +11,14 @@ import type {
   Proposal,
 } from "../types";
 
-/** The three files a preview can show, plus `overlay`: the mask drawn over the
+/** The two files a preview can show, plus `overlay`: the mask drawn over the
     image at 40%, which is how a mask is actually audited — flipping tabs and
-    comparing from memory is not. */
-const FILE_VIEWS = ["image", "resized", "mask"] as const;
+    comparing from memory is not.
+
+    The resized pixels are deliberately not a tab of their own: they are the
+    source re-encoded onto the bucket geometry, so the tab showed the same
+    picture twice. They are still the overlay's base when there is no source. */
+const FILE_VIEWS = ["image", "mask"] as const;
 type FileView = (typeof FILE_VIEWS)[number];
 type View = FileView | "overlay";
 const viewLabel = (v: View) => t().item.views[v];
@@ -46,6 +50,9 @@ export function ItemView(props: {
   /** The caption kind whose diff was dropped, because the form changed since
       the run. */
   droppedKind?: CaptionKind;
+  /** The one global "show explanations" preference: the prose under a card is
+      the same kind of text the ? hides everywhere else. */
+  help: boolean;
   onSaved: (entry: CaptionEntry) => void;
 }) {
   const [view, setView] = createSignal<View>("image");
@@ -171,13 +178,14 @@ export function ItemView(props: {
       >
         {(it) => (
           <>
+            {/* The address, and only that: the geometry belongs to whichever
+                file is on screen, so the line under the picture reports it and
+                this row is not a second copy of the source's numbers. */}
             <div class="crumbs">
               <Show when={it().dir}>
                 <span class="dim">{it().dir}/</span>
               </Show>
               <b>{it().name}</b>
-              <span class="sp" />
-              <span class="dim">{dims(it().image)}</span>
             </div>
 
             <div class="split" ref={split} style={{ "--cap-w": `${capW()}px` }}>
@@ -224,8 +232,8 @@ export function ItemView(props: {
                           <img class="ov" src={api.fileUrl(it().mask!.path)} alt="" />
                         </div>
                       </div>
-                      <div class="dim hint mono">
-                        {it().mask!.path} · {t().item.overlayOver(base()!.path)}
+                      <div class="dim hint mono" title={`${it().mask!.path} · ${base()!.path}`}>
+                        {t().item.overlayHint} · {dims(base())}
                         <Show when={zoom() > 1}> · {zoom().toFixed(1)}×</Show>
                       </div>
                     </Show>
@@ -251,8 +259,8 @@ export function ItemView(props: {
                             style={shownStyle()}
                           />
                         </div>
-                        <div class="dim hint mono">
-                          {img().path} · {dims(img())}
+                        <div class="dim hint mono" title={img().path}>
+                          {dims(img())}
                           <Show when={zoom() > 1}> · {zoom().toFixed(1)}×</Show>
                         </div>
                       </>
@@ -267,6 +275,7 @@ export function ItemView(props: {
                 <Index each={it().captions}>
                   {(c) => (
                     <CaptionCard
+                      help={props.help}
                       rel={it().rel}
                       entry={c()}
                       selected={props.kind === c().kind}
@@ -281,14 +290,13 @@ export function ItemView(props: {
                 <div classList={{ card: true, sel: props.kind === "variants" }} ref={variantsCard}>
                   <div class="card-h">
                     <span class="dot variants" />
-                    <b>{t().item.variants}</b>
-                    <span class="dim path" title={it().variants.path}>
-                      {it().variants.path}
-                    </span>
+                    <b title={it().variants.path}>{t().item.variants}</b>
                     <span class="sp" />
                     <span class="badge">{t().item.readOnly}</span>
                   </div>
-                  <div class="dim hint">{t().item.variantsHint}</div>
+                  <Show when={props.help}>
+                    <div class="dim hint">{t().item.variantsHint}</div>
+                  </Show>
                   <Show
                     when={it().variants.rows.length}
                     fallback={<div class="dim hint">{t().item.noSidecar}</div>}

@@ -76,7 +76,6 @@ const ko: Dict = {
     keys: "↑/↓ 또는 j/k로 이미지 이동 · ⌘/Ctrl+Enter로 캡션 저장",
     views: {
       image: "원본",
-      resized: "리사이즈",
       mask: "마스크",
       overlay: "겹쳐 보기",
     },
@@ -85,7 +84,6 @@ const ko: Dict = {
     notGenerated: "생성되지 않음",
     noOverlay: "이 이미지에는 겹쳐 볼 것이 없습니다",
     noView: (view) => `이 이미지에는 ${view}이(가) 없습니다`,
-    overlayOver: (base) => `${base} 위에 40%로`,
     variants: "variants",
     readOnly: "읽기 전용",
     variantsHint:

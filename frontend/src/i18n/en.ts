@@ -92,7 +92,6 @@ const en = {
     keys: "↑/↓ or j/k walk the images · ⌘/Ctrl+Enter saves a caption",
     views: {
       image: "source",
-      resized: "resized",
       mask: "mask",
       overlay: "overlay",
     },
@@ -102,7 +101,6 @@ const en = {
     noOverlay: "no overlay for this image",
     /** e.g. "no mask for this image" — {0} is one of `views`. */
     noView: (view: string) => `no ${view} for this image`,
-    overlayOver: (base: string) => `at 40% over ${base}`,
     variants: "variants",
     readOnly: "read-only",
     variantsHint:

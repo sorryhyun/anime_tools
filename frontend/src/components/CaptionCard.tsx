@@ -41,6 +41,9 @@ export function CaptionCard(props: {
   /** The run's diff for this caption was dropped (the form changed since); say
       so where it stood instead of letting it vanish silently. */
   dropped?: boolean;
+  /** The global "show explanations" preference — the same ? that folds the
+      prose in the dock and in Settings folds this card's. */
+  help: boolean;
   onSaved: (entry: CaptionEntry) => void;
 }) {
   const [text, setText] = createSignal(props.entry.text);
@@ -74,8 +77,10 @@ export function CaptionCard(props: {
 
   const dirty = () => text().trim() !== props.entry.text.trim();
   /** Which *tree* the file is in. The tail is identical for master and derived
-      (same relative path by contract), so the root is the only telling part —
-      the full path stays in the tooltip. */
+      (same relative path by contract) and the crumbs above already name it, so
+      the root is the only telling part — and it rides with the prose the ?
+      folds, since it is the same answer to the same question. The full path
+      stays in the tooltip either way. */
   const root = () => {
     const tail = props.rel.replace(/\.[^./]+$/, ".txt");
     return props.entry.path.endsWith(tail)
@@ -118,10 +123,7 @@ export function CaptionCard(props: {
     <div classList={{ card: true, sel: props.selected }} ref={card}>
       <div class="card-h">
         <span class={`dot ${props.entry.kind}`} />
-        <b>{label(props.entry.kind)}</b>
-        <span class="dim path" title={props.entry.path}>
-          {root()}
-        </span>
+        <b title={props.entry.path}>{label(props.entry.kind)}</b>
         <Show when={!props.entry.exists}>
           <span class="badge">{t().caption.new}</span>
         </Show>
@@ -138,7 +140,11 @@ export function CaptionCard(props: {
           {t().caption.save}
         </button>
       </div>
-      <div class="dim hint">{where(props.entry.kind)}</div>
+      <Show when={props.help}>
+        <div class="dim hint" title={props.entry.path}>
+          {where(props.entry.kind)} · {root()}
+        </div>
+      </Show>
       <BoxedCaption
         text={text()}
         spans={parsed()?.spans ?? []}
@@ -158,8 +164,8 @@ export function CaptionCard(props: {
       <Show when={parsed()} fallback={<div class="dim hint">{t().caption.noCaption}</div>}>
         {(pp) => (
           <div class="dim hint">
-            {t().caption.tags(pp().flat_tags.length)} · {t().caption.clauses(pp().clauses.length)} ·{" "}
-            {t().caption.lookUpHint}
+            {t().caption.tags(pp().flat_tags.length)} · {t().caption.clauses(pp().clauses.length)}
+            <Show when={props.help}> · {t().caption.lookUpHint}</Show>
             <Show when={dirty()}> · {t().caption.unsaved}</Show>
           </div>
         )}

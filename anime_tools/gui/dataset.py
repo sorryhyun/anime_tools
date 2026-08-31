@@ -135,8 +135,22 @@ def reachable(path: str | Path) -> Path:
 
 
 def rel_to_home(p: Path) -> str:
+    """A path as the panel shows it: home-relative under the home, ``../``-style
+    for the sibling tree beside it, absolute anywhere else.
+
+    The sibling case is the documented layout -- ``anime_tools/`` beside
+    ``anima_lora/``, whose ``image_dataset`` is the ordinary ``src`` -- and
+    spelling it absolute meant every path in the panel repeated the home's own
+    prefix back at the reader. One level up only: deeper than that, ``../../..``
+    says less than the absolute path does. ``lexical`` collapses the ``..``
+    again on the way back in, so a path that goes out this way comes back.
+    """
     home = curation_home()
-    return p.relative_to(home).as_posix() if p.is_relative_to(home) else p.as_posix()
+    if p.is_relative_to(home):
+        return p.relative_to(home).as_posix()
+    if p != home.parent and p.is_relative_to(home.parent):
+        return "../" + p.relative_to(home.parent).as_posix()
+    return p.as_posix()
 
 
 def resolve_roots(

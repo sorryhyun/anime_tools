@@ -78,7 +78,6 @@ const ja: Dict = {
     keys: "↑/↓ または j/k で画像を移動 · ⌘/Ctrl+Enter でキャプションを保存",
     views: {
       image: "元画像",
-      resized: "リサイズ",
       mask: "マスク",
       overlay: "重ね表示",
     },
@@ -87,7 +86,6 @@ const ja: Dict = {
     notGenerated: "未生成",
     noOverlay: "この画像に重ねるものがありません",
     noView: (view) => `この画像には${view}がありません`,
-    overlayOver: (base) => `${base} の上に 40% で`,
     variants: "variants",
     readOnly: "読み取り専用",
     variantsHint:

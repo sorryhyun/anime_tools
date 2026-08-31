@@ -267,6 +267,8 @@ def test_saving_roots_creates_the_missing_directories(client, home):
 def test_a_root_can_be_a_tree_beside_the_home(client, home):
     """The ordinary layout: ``anime_tools/`` checked out next to ``anima_lora/``,
     so ``src`` is ``../anima_lora/image_dataset`` and no home holds both."""
+    from anime_tools.gui import dataset as D
+
     c, _ = client
     sibling = home.parent / "anima_lora" / "image_dataset"
     _png(sibling / "z.png")
@@ -274,8 +276,14 @@ def test_a_root_can_be_a_tree_beside_the_home(client, home):
 
     r = c.put("/api/dataset/roots", json={"src": "../anima_lora/image_dataset"})
     assert r.status_code == 200, r.text
-    # Outside the home, so it is reported by the name it actually has.
-    assert r.json()["roots"]["src"] == {"path": sibling.as_posix(), "exists": True}
+    # Outside the home, so it comes back by the name it was given rather than
+    # with the home's own prefix repeated back at the reader -- and `lexical`
+    # collapses that `..` again, so what goes out is what comes back in.
+    assert r.json()["roots"]["src"] == {
+        "path": "../anima_lora/image_dataset",
+        "exists": True,
+    }
+    assert D.lexical("../anima_lora/image_dataset") == sibling
     # The listing and the pixels follow the root out of the home...
     assert [i["rel"] for i in c.get("/api/dataset").json()["items"]] == ["z.png"]
     assert c.get("/api/thumb", params={"path": f"{sibling}/z.png"}).status_code == 200
