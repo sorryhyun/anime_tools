@@ -249,3 +249,24 @@ export interface ItemDetail {
   captions: CaptionEntry[];
   variants: { path: string; exists: boolean; rows: { label: string; text: string }[] };
 }
+
+/** One Danbooru tag as the KB knows it — `/api/tags/describe`, behind a click
+    on any tag chip. `installed` false means the KB CSV was never downloaded
+    (Settings › Models › Danbooru tag KB); `known` false means it is downloaded
+    and this simply is not a Danbooru tag (an Anima quality tag, a typo). */
+export interface TagInfo {
+  tag: string;
+  installed: boolean;
+  known: boolean;
+  /** Which CSV the description came from, for the panel's footer. */
+  source: string | null;
+  /** The catalog row that installs it, for the download button. */
+  download_id: string;
+  name?: string;
+  kind?: string;
+  category_path?: string;
+  description?: string;
+  post_count?: number;
+  /** False when the KB answered under another spelling than the one clicked. */
+  exact?: boolean;
+}

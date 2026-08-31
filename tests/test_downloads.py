@@ -8,6 +8,8 @@ checkpoint into the wrong directory is worse than no button.
 
 from __future__ import annotations
 
+from dataclasses import replace
+
 import pytest
 
 from anime_tools import downloads as DL
@@ -47,7 +49,10 @@ def test_every_row_is_addressable_and_serializable(home):
             # A fresh home holds nothing, and no path-backed row may claim it does.
             # (Hub-cache rows answer for the machine, not the home, so they are
             # legitimately "installed" here.)
-            assert d["installed"] is False and d["missing"] == list(a.files)
+            assert d["installed"] is False
+            # A row that *builds* its product is that product, not its inputs:
+            # the parquet it joins may sit in the hub cache all day.
+            assert d["missing"] == list(a.derived or a.files)
 
 
 def test_destinations_follow_the_curation_home(home):
@@ -97,6 +102,60 @@ def test_rows_land_where_the_loaders_look():
     # Same for the soft prompt: the --prompt_embed default is the row's file.
     embed = DL.resolve_path(pc.build_parser().parse_args([]).prompt_embed)
     assert embed == by["soft_prompt"].dest / DL.SOFT_PROMPT_FILENAME
+
+
+def test_the_tag_kb_lands_where_correction_looks_for_it(home):
+    """The KB is the one row a *stage* reads as data rather than weights, so
+    the pairing to pin is with ``find_tag_csv``, not with a checkpoint loader."""
+    from anime_tools.captions.correction import (
+        TAG_CSV_EN_NAME,
+        TAG_CSV_NAME,
+        find_tag_csv,
+    )
+
+    by = DL.by_id()
+    assert by["danbooru_tags"].dest == home / "models"
+    assert by["danbooru_tags"].files == (TAG_CSV_NAME,)
+    csv = home / "models" / TAG_CSV_NAME
+    csv.parent.mkdir(parents=True)
+    csv.write_text("name,category,post_count,description\n", encoding="utf-8")
+    assert find_tag_csv(home) == csv
+    assert DL.by_id()["danbooru_tags"].installed
+
+    # The English row *builds* its file out of the wiki mirror, so its probe
+    # asks for the product; the 45 MB parquet is an input in the hub cache.
+    en = by["danbooru_tags_en"]
+    assert en.derived == (TAG_CSV_EN_NAME,) and en.build is not None
+    assert en.missing() == [TAG_CSV_EN_NAME]
+    (home / "models" / TAG_CSV_EN_NAME).write_text("name\n", encoding="utf-8")
+    assert DL.by_id()["danbooru_tags_en"].installed
+
+
+def test_a_built_row_runs_its_build_after_fetching(home, monkeypatch):
+    """``fetch`` is download-then-build for a derived row -- and the downloads
+    go to the hub cache, not into ``dest`` beside the product."""
+    seen: dict[str, object] = {}
+
+    def fake_download(**kwargs):
+        seen.update(kwargs)
+        path = home / "cache" / "wiki.parquet"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(b"x")
+        return str(path)
+
+    monkeypatch.setattr("anime_tools._hf.hf_download", fake_download)
+    monkeypatch.setattr(
+        DL, "_build_english_tag_csv", lambda dest, log: seen.update(built=dest)
+    )
+    row = DL.by_id()["danbooru_tags_en"]
+    # by_id() captured the module-level function, so rebuild the row with the
+    # patched one -- what is under test is fetch(), not the join itself.
+    row = replace(row, build=DL._build_english_tag_csv)
+    row.fetch(log=lambda _msg: None)
+
+    assert seen["repo_type"] == "dataset" and seen["repo_id"] == DL.DANBOORU_WIKI_REPO
+    assert "local_dir" not in seen  # inputs stay in the hub cache
+    assert seen["built"] == home / "models"
 
 
 def test_gated_rows_carry_their_accept_terms_url(home):

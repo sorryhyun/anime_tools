@@ -26,6 +26,7 @@ from anime_tools._env import curation_home, models_dir, resolve_path
 from anime_tools.gui import dataset as D
 from anime_tools.gui import proposals as P
 from anime_tools.gui import stages as S
+from anime_tools.gui import tags as T
 from anime_tools.gui.jobs import JobManager, Step
 
 STATIC = Path(__file__).parent / "static"
@@ -528,6 +529,19 @@ def create_app(
         """
         body = await request.json()
         return D.parsed_caption(str(body.get("text") or ""))
+
+    @app.get("/api/tags/describe")
+    def describe_tag(tag: str) -> dict[str, Any]:
+        """What one Danbooru tag means — the caption panel's click-a-tag panel.
+
+        Answers even when the KB is not downloaded (``installed: false``), so
+        the panel can point at Settings > Models instead of erroring; the first
+        call parses the table and later ones are dictionary lookups.
+        """
+        tag = tag.strip()
+        if not tag:
+            raise HTTPException(400, "tag is required")
+        return T.describe(tag)
 
     @app.get("/api/thumb")
     def thumb(path: str, size: int = 192) -> Response:

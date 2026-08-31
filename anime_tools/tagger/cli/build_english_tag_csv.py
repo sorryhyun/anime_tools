@@ -11,14 +11,19 @@ existing CSV's tag names against the upstream the Korean repo itself translated
 from — the Danbooru wiki, mirrored as ``isek-ai/danbooru-wiki-2024`` on the Hub.
 It keeps ``name`` / ``category`` / ``post_count`` byte-for-byte from the base CSV
 (so tag classification stays identical) and only swaps the description, writing
-``models/danbooru_tags_classified.en.csv``.
+``danbooru_tags_classified.en.csv`` next to it.
+
+The mirror is a single 45 MB parquet, read with ``pyarrow`` straight out of the
+hub cache — no ``datasets`` round trip, so this stays a plain CLI rather than a
+data-pipeline dependency.
 
 Usage::
 
     python -m anime_tools.tagger.cli.build_english_tag_csv          # default paths
     python -m anime_tools.tagger.cli.build_english_tag_csv --revision 202408-at20240906
 
-Requires the ``datasets`` library (``uv sync`` / ``uv pip install datasets``).
+The GUI runs it for you: it is the ``danbooru_tags_en`` row of
+:mod:`anime_tools.downloads`, i.e. a Download button in Settings › Models.
 """
 
 from __future__ import annotations
@@ -27,12 +32,12 @@ import argparse
 import csv
 import re
 import sys
+from collections.abc import Callable
 from pathlib import Path
 
-_REPO_ROOT = Path(__file__).resolve().parents[2]
-_DEFAULT_SRC = _REPO_ROOT / "models" / "danbooru_tags_classified.csv"
-_DEFAULT_DST = _REPO_ROOT / "models" / "danbooru_tags_classified.en.csv"
-_HF_REPO = "isek-ai/danbooru-wiki-2024"
+from anime_tools._env import models_dir
+from anime_tools.captions.correction import TAG_CSV_EN_NAME, TAG_CSV_NAME
+from anime_tools.downloads import DANBOORU_WIKI_FILE, DANBOORU_WIKI_REPO
 
 # ── DText → plain-text cleanup ────────────────────────────────────────────────
 # Danbooru wiki bodies are DText, not MediaWiki. Strip the markup down to the
@@ -75,41 +80,60 @@ def _norm_key(tag: str) -> str:
     return tag.strip().replace(" ", "_").lower()
 
 
-def load_wiki_descriptions(revision: str | None) -> dict[str, str]:
+def load_wiki_descriptions(
+    revision: str | None, log: Callable[[str], None] = print
+) -> dict[str, str]:
     """tag-key -> cleaned English description from the Danbooru wiki mirror."""
-    try:
-        from datasets import load_dataset
-    except ImportError:  # pragma: no cover - dependency guard
-        raise SystemExit(
-            "The 'datasets' library is required. Install it with "
-            "`uv pip install datasets` (or `uv sync`)."
-        )
+    import pyarrow.parquet as pq
 
-    print(f"  loading {_HF_REPO}" + (f"@{revision}" if revision else "") + " …")
-    ds = load_dataset(_HF_REPO, split="train", revision=revision)
+    from anime_tools._hf import hf_download
+
+    # No log line for the fetch: this is a cache hit whenever the catalog row
+    # ran it, and hf_hub_download draws its own bar when it is not.
+    path = hf_download(
+        what="Danbooru wiki mirror",
+        hint="python -m anime_tools.downloads danbooru_tags_en",
+        repo_id=DANBOORU_WIKI_REPO,
+        repo_type="dataset",
+        filename=DANBOORU_WIKI_FILE,
+        revision=revision,
+    )
+    # `tag` is the canonical tag; `title` mirrors it. Index both for the join.
+    # Only the four columns we read come off disk -- the mirror also carries
+    # `other_names` and per-row metadata this has no use for.
+    table = pq.read_table(path, columns=["tag", "title", "body", "is_deleted"])
     out: dict[str, str] = {}
-    for row in ds:
-        if row.get("is_deleted"):
+    for tag, title, body, deleted in zip(
+        table.column("tag").to_pylist(),
+        table.column("title").to_pylist(),
+        table.column("body").to_pylist(),
+        table.column("is_deleted").to_pylist(),
+        strict=True,
+    ):
+        if deleted:
             continue
-        body = clean_dtext(row.get("body") or "")
-        if not body:
+        text = clean_dtext(body or "")
+        if not text:
             continue
-        # `tag` is the canonical tag; `title` mirrors it. Index both for join.
-        for field in ("tag", "title"):
-            name = row.get(field)
+        for name in (tag, title):
             if name:
-                out.setdefault(_norm_key(name), body)
-    print(f"  {len(out):,} tags carry an English description")
+                out.setdefault(_norm_key(name), text)
+    log(f"  {len(out):,} tags carry an English description")
     return out
 
 
-def build(src: Path, dst: Path, revision: str | None) -> None:
+def build(
+    src: Path,
+    dst: Path,
+    revision: str | None = None,
+    log: Callable[[str], None] = print,
+) -> None:
     if not src.exists():
-        raise SystemExit(
-            f"source CSV not found: {src}\n"
-            "Run `python tasks.py download-danbooru-tags` first."
+        raise FileNotFoundError(
+            f"source CSV not found: {src}. Run "
+            "`python -m anime_tools.downloads danbooru_tags` first."
         )
-    descriptions = load_wiki_descriptions(revision)
+    descriptions = load_wiki_descriptions(revision, log)
 
     total = matched = 0
     with (
@@ -139,21 +163,27 @@ def build(src: Path, dst: Path, revision: str | None) -> None:
             )
 
     pct = (100.0 * matched / total) if total else 0.0
-    print(f"  ✓ wrote {dst}")
-    print(f"  {matched:,}/{total:,} rows have an English description ({pct:.1f}%)")
+    log(f"    ok  {dst}  ({dst.stat().st_size / 1e6:,.0f} MB)")
+    log(f"  {matched:,}/{total:,} rows have an English description ({pct:.1f}%)")
 
 
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("--src", type=Path, default=_DEFAULT_SRC)
-    ap.add_argument("--dst", type=Path, default=_DEFAULT_DST)
+    # Defaults resolve at call time, not import time: the models dir moves
+    # with ANIME_TOOLS_MODELS / the curation home, and it is where the
+    # ``danbooru_tags`` download row puts the base CSV.
+    ap.add_argument("--src", type=Path, default=models_dir() / TAG_CSV_NAME)
+    ap.add_argument("--dst", type=Path, default=models_dir() / TAG_CSV_EN_NAME)
     ap.add_argument(
         "--revision",
         default=None,
         help="git tag/revision of isek-ai/danbooru-wiki-2024 (default: latest)",
     )
     args = ap.parse_args(argv)
-    build(args.src, args.dst, args.revision)
+    try:
+        build(args.src, args.dst, args.revision)
+    except FileNotFoundError as exc:
+        raise SystemExit(str(exc)) from exc
     return 0
 
 

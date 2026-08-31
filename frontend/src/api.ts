@@ -14,6 +14,7 @@ import type {
   ProposalIndex,
   Settings,
   Stage,
+  TagInfo,
   UndoResult,
   Values,
 } from "./types";
@@ -78,6 +79,8 @@ export const api = {
     req<{ items: DatasetItem[] }>("/api/dataset/items", json("POST", { rels })),
   /** Parse an unsaved caption server-side; the grammar has one implementation. */
   parse: (text: string) => req<Parsed>("/api/dataset/parse", json("POST", { text })),
+  /** What one tag means, out of the Danbooru KB. */
+  describeTag: (tag: string) => req<TagInfo>(`/api/tags/describe?tag=${encodeURIComponent(tag)}`),
   saveCaption: (rel: string, kind: CaptionKind, text: string) =>
     req<CaptionEntry>("/api/dataset/item", json("PUT", { rel, kind, text })),
 };

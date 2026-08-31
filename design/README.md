@@ -19,7 +19,7 @@ design choice. When the GUI's CSS changes, change the board to match; when the
 board wants a value the CSS does not have, change the CSS first.
 
 The boards say so in their own words too — "eleven colour tokens and two font
-stacks on `:root`", "193 lines of CSS, no framework, no
+stacks on `:root`", "233 lines of CSS, no framework, no
 component library". Keep them honest.
 
 ## Layout

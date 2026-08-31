@@ -1,5 +1,6 @@
 import { createMemo, For, Show } from "solid-js";
 import type { Clause, Parsed, Proposal } from "../types";
+import { Tag } from "./TagLens";
 
 /** What a finished **Run** proposes for this caption, shown against what is on
     disk. The Run wrote it down; **Apply** is the plain write of exactly this.
@@ -82,8 +83,8 @@ export function CaptionDiff(props: {
               <div class="clause">
                 <span classList={{ ck: true, pos: r.pos }}>{r.label}</span>
                 <span class="tags">
-                  <For each={r.d.removed}>{(t) => <span class="tag del">− {t}</span>}</For>
-                  <For each={r.d.added}>{(t) => <span class="tag add">+ {t}</span>}</For>
+                  <For each={r.d.removed}>{(t) => <Tag tag={t} class="del" prefix="− " />}</For>
+                  <For each={r.d.added}>{(t) => <Tag tag={t} class="add" prefix="+ " />}</For>
                 </span>
               </div>
             )}

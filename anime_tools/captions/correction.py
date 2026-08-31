@@ -13,6 +13,7 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
 
+from anime_tools._env import models_dir
 from anime_tools.captions.position_clauses import (
     compose_caption as compose_position_caption,
 )
@@ -29,6 +30,15 @@ from anime_tools.captions.taxonomy import (
 
 _CATEGORY_RE = re.compile(r"^\s*\[([^\]]+)\]")
 _SPACE_RE = re.compile(r"\s+")
+
+# The KB's two file names, spelled once. :mod:`anime_tools.downloads` imports
+# them for its catalog row, so the file a Download button fetches and the file
+# this module looks for can't drift apart.
+TAG_CSV_NAME = "danbooru_tags_classified.csv"
+"""The base table: English tag names / categories, **Korean** descriptions."""
+TAG_CSV_EN_NAME = "danbooru_tags_classified.en.csv"
+"""Its English sibling, built by
+``python -m anime_tools.tagger.cli.build_english_tag_csv``."""
 
 # Fallback path works for this source tree without importing gui. GUI passes
 # ROOT explicitly so installed layouts can keep the CSV under models/.
@@ -142,22 +152,27 @@ def default_tag_csv_candidates(
     The shipped base CSV (``danbooru_tags_classified.csv``) carries Korean
     descriptions. When ``lang`` is a non-Korean UI language the lookup prefers,
     in order, a same-language sibling ``danbooru_tags_classified.<lang>.csv`` then
-    the English ``danbooru_tags_classified.en.csv`` (the ``download-danbooru-tags``
-    output), so e.g. a Japanese/Chinese UI shows English explanations rather than
+    the English ``danbooru_tags_classified.en.csv`` (the
+    ``build_english_tag_csv`` output), so e.g. a Japanese/Chinese UI shows
+    English explanations rather than
     untranslated Hangul; the Korean base file remains the final fallback (it still
     supplies language-neutral tag names / categories for autocomplete).
     """
 
-    stems = ["danbooru_tags_classified.csv"]
+    stems = [TAG_CSV_NAME]
     if lang and lang != "ko":
         if lang != "en":
-            stems.insert(0, "danbooru_tags_classified.en.csv")
+            stems.insert(0, TAG_CSV_EN_NAME)
         stems.insert(0, f"danbooru_tags_classified.{lang}.csv")
 
     paths: list[Path] = []
     for stem in stems:
         if root is not None:
             paths.append(root / "models" / stem)
+        # Then models_dir(): the same directory whenever `root` is the curation
+        # home, and the only candidate that honours ANIME_TOOLS_MODELS -- which
+        # is where the `danbooru_tags` download row puts the file.
+        paths.append(models_dir() / stem)
         paths.append(_REPO_ROOT / "models" / stem)
     env = os.environ.get("ANIMA_DANBOORU_TAGS_CSV")
     if env:

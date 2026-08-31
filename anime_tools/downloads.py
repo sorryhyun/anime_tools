@@ -39,6 +39,7 @@ from pathlib import Path
 from typing import Any
 
 from anime_tools._env import models_dir, resolve_path
+from anime_tools.captions.correction import TAG_CSV_EN_NAME, TAG_CSV_NAME
 from anime_tools.tagger.dbv4_meta import (
     DBV4_BACKBONE_FILES,
     DBV4_OPTIONAL_FILES,
@@ -80,6 +81,23 @@ SOFT_PROMPT_URL = (
 # the hub cache, so there is no path under models/ to keep in sync.
 MIT_TEXT_REPO = "a-b-c-x-y-z/Manga-Text-Segmentation-2025"
 MIT_TEXT_FILENAME = "model.pth"
+
+# Danbooru tag KB — the ~114k-row classified tag table every correction pass
+# types its tags against, and the only source the GUI's click-a-tag panel has
+# for what a tag *means*. Not a checkpoint and not on the Hub: a CSV in a
+# GitHub repo, so it rides ``_fetch_http`` like the soft prompt does. The
+# descriptions in this base file are Korean (it is a Korean wiki mirror of
+# Danbooru's own taxonomy); the English sibling is *built* from the Danbooru
+# wiki, not hosted, which is why only the base file is a row here.
+DANBOORU_TAGS_GH_REPO = "Localsmile/danbooru_KR_wiki_tag_search"
+DANBOORU_TAGS_URL = f"https://raw.githubusercontent.com/{DANBOORU_TAGS_GH_REPO}/main"
+
+# The Danbooru wiki itself, mirrored as one parquet on the Hub — the English
+# descriptions. It is an *input*, not a product: the row below joins it against
+# the base CSV above and writes the English sibling, so what lands under
+# models/ is the CSV and the 45 MB parquet stays in the hub cache.
+DANBOORU_WIKI_REPO = "isek-ai/danbooru-wiki-2024"
+DANBOORU_WIKI_FILE = "data/train-00000-of-00001.parquet"
 
 
 def default_pe_spatial_path() -> Path:
@@ -123,6 +141,15 @@ class Asset:
     GitHub raw prefix). Set it and ``repo`` is only a label; requires ``dest``."""
     subfolder: str = ""
     """Path prefix inside the repo (the tagger ships under ``dbv4/``)."""
+    repo_type: str = "model"
+    """Hub repo kind — ``dataset`` for the Danbooru wiki mirror."""
+    derived: tuple[str, ...] = ()
+    """Files this row *makes* under ``dest`` out of what it downloads, via
+    :attr:`build`. They, not the downloads, are what the row is: the probe asks
+    for them and the downloaded inputs are cache detail (a hub-cache sweep must
+    not turn a built row back to "missing")."""
+    build: Callable[[Path, Callable[[str], None]], None] | None = None
+    """Post-fetch step that writes :attr:`derived` into ``dest``."""
     optional: tuple[str, ...] = field(default_factory=tuple)
     """Best-effort files: a 404 means this checkpoint doesn't ship one."""
     gated: str = ""
@@ -135,6 +162,9 @@ class Asset:
 
     def missing(self) -> list[str]:
         """Required files that are not here yet. Never touches the network."""
+        if self.derived:
+            assert self.dest is not None, "a built row needs a dest to write into"
+            return [f for f in self.derived if not (self.dest / f).exists()]
         if self.dest is None:
             from anime_tools._hf import hf_file_cached
 
@@ -214,9 +244,13 @@ class Asset:
             self.dest.mkdir(parents=True, exist_ok=True)
         if self.url:
             self._fetch_http(log)
+            self._build(log)
             return
 
         hint = self._hint
+        # A built row's downloads are inputs, so they stay in the hub cache;
+        # only what ``build`` writes belongs in ``dest``.
+        into = None if self.build else self.dest
         for name in (*self.files, *self.optional):
             remote = f"{self.subfolder}/{name}" if self.subfolder else name
             log(f"  {self.repo}/{remote}")
@@ -226,8 +260,9 @@ class Asset:
                         what=f"{self.title} ({name})",
                         hint=hint,
                         repo_id=self.repo,
+                        repo_type=self.repo_type,
                         filename=remote,
-                        **({"local_dir": str(self.dest)} if self.dest else {}),
+                        **({"local_dir": str(into)} if into else {}),
                     )
                 )
             except EntryNotFoundError:
@@ -235,20 +270,36 @@ class Asset:
                     log(f"    optional — not published by {self.repo}, skipped")
                     continue
                 raise
-            if self.dest is not None:
+            if into is not None:
                 # local_dir keeps the repo's own subfolder layout; the loaders
                 # want a flat checkpoint dir.
-                final = self.dest / Path(name).name
+                final = into / Path(name).name
                 if got.resolve() != final.resolve():
                     shutil.move(str(got), str(final))
                 got = final
             log(f"    ok  {got}  ({_size(got.stat().st_size)})")
-        if self.dest is not None and self.subfolder:
+        self._build(log)
+        if into is not None and self.subfolder:
             # local_dir mirrored the repo's layout and we moved the files out of
             # it; don't leave an empty `dbv4/` sitting in the checkpoint dir.
-            leftover = self.dest / self.subfolder
+            leftover = into / self.subfolder
             if leftover.is_dir() and not any(leftover.iterdir()):
                 leftover.rmdir()
+
+    def _build(self, log: Callable[[str], None]) -> None:
+        """Run the post-fetch step, if this row has one."""
+        if self.build is None:
+            return
+        assert self.dest is not None, "a built row needs a dest to write into"
+        self.build(self.dest, log)
+
+
+def _build_english_tag_csv(dest: Path, log: Callable[[str], None]) -> None:
+    """``danbooru_tags_en``'s post-fetch step: the wiki parquet is already in
+    the hub cache by now, so this is the join that writes the English CSV."""
+    from anime_tools.tagger.cli.build_english_tag_csv import build
+
+    build(dest / TAG_CSV_NAME, dest / TAG_CSV_EN_NAME, revision=None, log=log)
 
 
 def catalog() -> tuple[Asset, ...]:
@@ -318,6 +369,39 @@ def catalog() -> tuple[Asset, ...]:
             "trainer repo over plain HTTPS rather than the Hub. It is the "
             "default --prompt_embed; without it both stages fall back to the "
             "text prompt `girl`, which finds fewer subjects.",
+        ),
+        Asset(
+            id="danbooru_tags",
+            title="Danbooru tag KB",
+            repo=DANBOORU_TAGS_GH_REPO,
+            url=DANBOORU_TAGS_URL,
+            files=(TAG_CSV_NAME,),
+            dest=models_dir(),
+            used_by="Correct + mirror captions · the caption panel's tag descriptions",
+            stages=("correct",),
+            notes="~114k Danbooru tags with category, post count and a wiki "
+            "blurb, over plain HTTPS rather than the Hub. Correction needs it "
+            "to type a tag; clicking a tag in the caption panel reads its "
+            f"entry out of it. Descriptions are Korean — `{TAG_CSV_EN_NAME}` "
+            "next to it wins when present, built by `python -m "
+            "anime_tools.tagger.cli.build_english_tag_csv`.",
+        ),
+        Asset(
+            id="danbooru_tags_en",
+            title="Danbooru tag descriptions (English)",
+            repo=DANBOORU_WIKI_REPO,
+            repo_type="dataset",
+            files=(DANBOORU_WIKI_FILE,),
+            derived=(TAG_CSV_EN_NAME,),
+            build=_build_english_tag_csv,
+            dest=models_dir(),
+            used_by="the caption panel's tag descriptions",
+            stages=(),
+            notes="Optional, and needs the row above: joins the Danbooru wiki "
+            f"mirror (45 MB, stays in the hub cache) onto {TAG_CSV_NAME} and "
+            f"writes {TAG_CSV_EN_NAME} beside it. Tag names, categories and "
+            "counts are unchanged — only the blurb is, from Korean to English. "
+            "The caption panel prefers this file when it exists.",
         ),
         Asset(
             id="mit_text",

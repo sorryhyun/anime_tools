@@ -19,6 +19,10 @@ dependencies = [
     "torchvision",
     "timm>=1.0",
     "einops",
+    # The Danbooru wiki mirror (English tag descriptions) ships as one parquet;
+    # `downloads.py`'s danbooru_tags_en row reads it directly rather than pulling
+    # the whole `datasets` stack in for a single table.
+    "pyarrow>=17",
     # Tokenizer-length checks in the correction / position stages.
     "transformers>=5.16",
     "sentencepiece",

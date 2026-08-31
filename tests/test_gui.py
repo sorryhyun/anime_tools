@@ -574,6 +574,67 @@ def test_second_concurrent_job_is_refused(client):
     assert c.get(f"/api/jobs/{j['id']}").json()["state"] == "cancelled"
 
 
+ROW = "name,category,post_count,description\n"
+
+
+def test_tag_descriptions_are_the_caption_panel_s_kb(client, monkeypatch):
+    """Click a tag -> what the Danbooru KB says. The panel has to answer even
+    with no KB on disk (that answer is the download prompt), and the English
+    sibling must win for the *description* only -- the taxonomy is the base
+    table's, or half the tags would lose their category with their blurb."""
+    from anime_tools.captions import correction
+    from anime_tools.gui import tags as T
+
+    c, home = client
+    # The source tree's own models/ is a fallback candidate; a test must not
+    # find the developer's copy of a 16 MB CSV.
+    monkeypatch.setattr(correction, "_REPO_ROOT", home / "elsewhere")
+    monkeypatch.setattr(T, "_CACHE", None)
+
+    body = c.get("/api/tags/describe", params={"tag": "1girl"}).json()
+    assert body["installed"] is False and body["known"] is False
+    assert body["download_id"] == "danbooru_tags"
+    assert c.get("/api/tags/describe", params={"tag": " "}).status_code == 400
+
+    models = home / "models"
+    models.mkdir(parents=True, exist_ok=True)
+    (models / correction.TAG_CSV_NAME).write_text(
+        ROW
+        + '1girl,0,7598073,"[people > count] one female character, in Korean"\n'
+        + "fumihiko,1,4200,\n",
+        encoding="utf-8",
+    )
+    body = c.get("/api/tags/describe", params={"tag": "1girl"}).json()
+    assert body["installed"] and body["known"] and body["exact"] is True
+    assert body["kind"] == "general" and body["post_count"] == 7598073
+    assert body["category_path"] == "people > count"
+    assert body["description"] == "one female character, in Korean"
+    assert body["source"] == correction.TAG_CSV_NAME
+
+    # The English sibling, built later: picked up without a restart (the cache
+    # is keyed on both files), and it replaces the blurb, nothing else.
+    (models / correction.TAG_CSV_EN_NAME).write_text(
+        ROW + "1girl,0,7598073,One female character.\n", encoding="utf-8"
+    )
+    body = c.get("/api/tags/describe", params={"tag": "1girl"}).json()
+    assert body["description"] == "One female character."
+    assert body["category_path"] == "people > count" and body["post_count"] == 7598073
+    assert body["source"] == correction.TAG_CSV_EN_NAME
+
+    # An Anima ``@artist`` is looked up bare, and says so...
+    body = c.get("/api/tags/describe", params={"tag": "@fumihiko"}).json()
+    assert body["known"] and body["name"] == "fumihiko" and body["exact"] is False
+    assert body["kind"] == "artist"
+    # ...and an injected quality tag is simply not a Danbooru tag.
+    assert c.get("/api/tags/describe", params={"tag": "masterpiece"}).json() == {
+        "tag": "masterpiece",
+        "installed": True,
+        "known": False,
+        "source": correction.TAG_CSV_EN_NAME,
+        "download_id": "danbooru_tags",
+    }
+
+
 def test_model_catalog_and_download_job(client, monkeypatch):
     """The Settings rows come from the download catalog, and Download starts a
     normal job -- so it shares the one slot with the stages."""

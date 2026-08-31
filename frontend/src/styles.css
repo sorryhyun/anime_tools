@@ -90,7 +90,16 @@ textarea.cap { min-height:78px; font:13px/1.5 var(--font-mono); margin-top:6px }
 .ck { flex:none; min-width:12ch; color:var(--dim); font:11px var(--font-mono); text-transform:uppercase; letter-spacing:.04em }
 .ck.pos { color:var(--accent); text-transform:none; font-size:12px }
 .tags { display:flex; flex-wrap:wrap; gap:4px }
-.tag { background:#ffffff0d; border:1px solid var(--line); border-radius:10px; padding:0 7px; font-size:12px }
+/* Every tag is a button: clicking one opens the Danbooru KB card (TagLens).
+   The class outranks the element rule below, so a chip still looks like a chip. */
+.tag { background:#ffffff0d; border:1px solid var(--line); border-radius:10px; padding:0 7px; font-size:12px; line-height:1.6; cursor:help; font-family:inherit }
+.tag:hover { border-color:var(--accent) }
+/* The card itself: fixed, positioned under the chip that was clicked. */
+.taglens { position:fixed; z-index:60; width:380px; max-width:calc(100vw - 16px); border:1px solid var(--line); border-radius:7px; background:var(--panel); box-shadow:0 8px 28px #0009; padding:8px 10px }
+.taglens .card-h { gap:6px }
+.tlcat { color:var(--accent); font-size:12px; margin-top:4px }
+.tlbody { font-size:12px; line-height:1.55; margin-top:4px; max-height:40vh; overflow:auto; overflow-wrap:anywhere }
+.tlsrc { font-size:10px; margin-top:6px; border-top:1px solid var(--line); padding-top:4px }
 /* The pending diff: what Run proposed for this caption, sitting under the
    editor holding what is on disk. Warn-tinted, because it is not written yet --
    Apply is what makes it real, and Undo is what takes it back. */
@@ -133,6 +142,9 @@ button.help.warn:hover { border-color:var(--accent) }
 fieldset { border:1px solid var(--line); border-radius:6px; margin:0 0 12px; padding:8px 12px }
 legend { color:var(--dim); font-size:12px; padding:0 4px }
 .row { display:grid; grid-template-columns:180px 1fr; gap:8px; align-items:center; padding:3px 0 }
+/* The Settings-only two-up wrapper for .row groups (the preflight's knobs). */
+.sfields { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:0 16px }
+.sfields .row { grid-template-columns:150px minmax(0,1fr) }
 .row label { font-family:var(--font-mono); font-size:12px; color:#c8cdd6; overflow:hidden; text-overflow:ellipsis; white-space:nowrap }
 .row label.req::after { content:" *"; color:var(--err) }
 input[type=text], input[type=number], input[type=password], select, textarea { width:100%; background:var(--input); color:var(--fg); border:1px solid var(--line); border-radius:4px; padding:5px 7px; font:13px var(--font-mono) }
@@ -173,6 +185,12 @@ td.mono { font-family:var(--font-mono) }
 img.thumb { max-height:96px; max-width:160px; display:block; border-radius:3px }
 pre.json { font:12px var(--font-mono); white-space:pre-wrap; margin:0 }
 dialog { background:var(--panel); color:var(--fg); border:1px solid var(--line); border-radius:8px; min-width:520px; max-width:80vw; max-height:88vh }
+dialog.settings { width:920px }
+/* One column again once two would be narrower than a path. */
+@media (max-width:820px) {
+  .kv { grid-template-columns:110px minmax(0,1fr) }
+  .models, .sfields { grid-template-columns:minmax(0,1fr) }
+}
 dialog h4 { margin:16px 0 4px; color:var(--dim); font-size:11px; text-transform:uppercase; letter-spacing:.06em }
 dialog::backdrop { background:#0008 }
 dialog h3 { margin:0 0 10px }
@@ -189,13 +207,21 @@ dialog h3 { margin:0 0 10px }
 .hide { display:none }
 .picker ul { list-style:none; padding:0; margin:8px 0; max-height:50vh; overflow:auto; font-family:var(--font-mono); font-size:13px }
 .picker li { padding:3px 6px; cursor:pointer; border-radius:3px } .picker li:hover { background:var(--sel) }
-.kv { display:grid; grid-template-columns:110px 1fr; gap:6px 12px; font-size:13px; align-items:baseline } .kv b { color:var(--dim); font-weight:500 }
+/* Settings runs two label/value pairs per line -- the panes are lists of short
+   rows, and one 900px-wide column of them was mostly empty gutter. Everything
+   below (.kv, the stage-default rows, the model catalog) collapses back to one
+   column on a narrow window, where two would just wrap mid-value. */
+.kv { display:grid; grid-template-columns:110px minmax(0,1fr) 110px minmax(0,1fr); gap:6px 16px; font-size:13px; align-items:baseline } .kv b { color:var(--dim); font-weight:500 }
+.kv > span { min-width:0 }
 .kv .dim { display:block; margin-top:2px }
 .err { color:var(--err) }
 /* Settings > Models: one row per downloadable checkpoint. The panel around it
    is the scroller, so the list itself just grows with the catalog. */
-.models { display:flex; flex-direction:column; gap:6px }
+.models { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:6px }
 .modelrow { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:10px; align-items:center; border:1px solid var(--line); border-radius:6px; padding:8px 10px }
+/* Two-up rows are half as wide, so the notes wrap instead of being one clipped
+   line; only the identity lines (repo -> location, used_by) stay on one. */
+.modelrow .mi > span.wrap { white-space:normal; overflow:visible }
 .modelrow .mi { display:flex; flex-direction:column; gap:2px; min-width:0 }
 .modelrow .mh { display:flex; align-items:center; gap:8px; min-width:0 }
 .modelrow .mi > span { overflow:hidden; text-overflow:ellipsis; white-space:nowrap }

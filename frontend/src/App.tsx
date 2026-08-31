@@ -34,6 +34,7 @@ import { StagePanel } from "./components/StagePanel";
 import { FieldRow, grouped } from "./components/StageForm";
 import { Dialog } from "./components/Dialog";
 import { HelpToggle } from "./components/HelpToggle";
+import { TagLens } from "./components/TagLens";
 
 const ROOT_NAMES: RootName[] = ["src", "dst", "masks"];
 /** `/api/models/download` names its job `download:<ids>`; that prefix is the
@@ -848,6 +849,10 @@ export default function App() {
         </div>
       </Dialog>
 
+      {/* One card for every tag chip in the app; it floats, so it is mounted
+          at the root rather than inside the caption panel. */}
+      <TagLens onInstall={() => openSettings("models")} />
+
       <SettingsDialog
         open={settingsOpen()}
         initialTab={settingsTab()}
@@ -962,6 +967,7 @@ function SettingsDialog(props: {
   return (
     <Dialog
       open={props.open}
+      class="settings"
       onClose={(v) => {
         const t = tokenEl.value.trim();
         tokenEl.value = "";
@@ -1084,16 +1090,18 @@ function SettingsDialog(props: {
                   near-free. Tiers must match the trainer's <code>target_res</code>.
                 </p>
               </Show>
-              <For each={preFields()}>
-                {(f) => (
-                  <FieldRow
-                    field={f}
-                    value={pre[f.dest] ?? f.default}
-                    dirty={pre[f.dest] !== undefined && String(pre[f.dest]) !== String(f.default)}
-                    setValue={(v) => setPre(f.dest, v)}
-                  />
-                )}
-              </For>
+              <div class="sfields">
+                <For each={preFields()}>
+                  {(f) => (
+                    <FieldRow
+                      field={f}
+                      value={pre[f.dest] ?? f.default}
+                      dirty={pre[f.dest] !== undefined && String(pre[f.dest]) !== String(f.default)}
+                      setValue={(v) => setPre(f.dest, v)}
+                    />
+                  )}
+                </For>
+              </div>
             </>
           )}
         </Show>
@@ -1200,16 +1208,18 @@ function ModelRow(props: {
           >
             {props.active ? "downloading" : props.m.installed ? "installed" : "missing"}
           </span>
-          <span class="dim">{props.m.used_by}</span>
         </span>
         <span class="dim mono" title={props.m.location}>
           {props.m.repo} → {props.m.location}
         </span>
+        {/* Two-up rows are half the old width: what a model is *for* gets its
+            own wrapping line rather than a clipped tail of the title's. */}
+        <span class="dim wrap">{props.m.used_by}</span>
         <Show when={props.m.notes}>
-          <span class="dim">{props.m.notes}</span>
+          <span class="dim wrap">{props.m.notes}</span>
         </Show>
         <Show when={props.m.gated}>
-          <span class="dim">
+          <span class="dim wrap">
             Gated —{" "}
             <a href={props.m.gated} target="_blank" rel="noreferrer">
               accept the terms

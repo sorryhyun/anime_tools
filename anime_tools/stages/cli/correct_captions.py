@@ -130,7 +130,8 @@ def main() -> None:
     if csv_path is None or not csv_path.exists():
         raise SystemExit(
             "danbooru_tags_classified.csv not found. Run "
-            "`python tasks.py download-danbooru-tags` first."
+            "`python -m anime_tools.downloads danbooru_tags` first "
+            "(or the GUI's Settings > Models > Danbooru tag KB)."
         )
 
     num_variants = int(args.caption_shuffle_variants or 0)

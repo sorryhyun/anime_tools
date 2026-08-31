@@ -1,6 +1,7 @@
 import { createEffect, createResource, createSignal, For, on, Show } from "solid-js";
 import { api } from "../api";
 import { CaptionDiff } from "./CaptionDiff";
+import { Tag } from "./TagLens";
 import type { CaptionEntry, CaptionKind, Parsed, Proposal } from "../types";
 
 const LABEL: Record<CaptionKind, string> = { master: "master", derived: "derived" };
@@ -162,7 +163,7 @@ export function CaptionCard(props: {
             <div class="clause">
               <span class="ck">bag</span>
               <span class="tags">
-                <For each={pp().flat_tags}>{(t) => <span class="tag">{t}</span>}</For>
+                <For each={pp().flat_tags}>{(t) => <Tag tag={t} />}</For>
               </span>
             </div>
             <For each={pp().clauses}>
@@ -170,7 +171,7 @@ export function CaptionCard(props: {
                 <div class="clause">
                   <span class="ck pos">{c.header}</span>
                   <span class="tags">
-                    <For each={c.tags}>{(t) => <span class="tag">{t}</span>}</For>
+                    <For each={c.tags}>{(t) => <Tag tag={t} />}</For>
                   </span>
                 </div>
               )}
