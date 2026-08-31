@@ -183,14 +183,24 @@ dialog h4 { margin:16px 0 4px; color:var(--dim); font-size:11px; text-transform:
 dialog::backdrop { background:#0008 }
 dialog h3 { margin:0 0 10px }
 .dlg-actions { display:flex; gap:8px; justify-content:flex-end; margin-top:12px }
+/* The Settings dialog is tabbed: a strip of panel buttons over one .spane per
+   group. A pane is hidden, never unmounted -- its inputs are uncontrolled and
+   Save reads them off their refs, including a panel that was never opened. */
+.dlg-tabs { display:flex; gap:2px; border-bottom:1px solid var(--line); margin:0 0 12px }
+.dlg-tabs button { display:flex; align-items:center; gap:6px; background:none; border:0; border-bottom:2px solid transparent; border-radius:0; color:var(--dim); padding:6px 10px; margin-bottom:-1px }
+.dlg-tabs button:hover { color:var(--fg) }
+.dlg-tabs button.on { color:var(--fg); border-bottom-color:var(--accent) }
+.spane { max-height:62vh; overflow:auto }
+.spane > h4:first-child { margin-top:2px }
+.hide { display:none }
 .picker ul { list-style:none; padding:0; margin:8px 0; max-height:50vh; overflow:auto; font-family:var(--font-mono); font-size:13px }
 .picker li { padding:3px 6px; cursor:pointer; border-radius:3px } .picker li:hover { background:var(--sel) }
 .kv { display:grid; grid-template-columns:110px 1fr; gap:6px 12px; font-size:13px; align-items:baseline } .kv b { color:var(--dim); font-weight:500 }
 .kv .dim { display:block; margin-top:2px }
 .err { color:var(--err) }
-/* Settings > Models: one row per downloadable checkpoint, its own scroller so
-   the dialog stays a dialog however many models the catalog grows to. */
-.models { display:flex; flex-direction:column; gap:6px; max-height:34vh; overflow:auto }
+/* Settings > Models: one row per downloadable checkpoint. The panel around it
+   is the scroller, so the list itself just grows with the catalog. */
+.models { display:flex; flex-direction:column; gap:6px }
 .modelrow { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:10px; align-items:center; border:1px solid var(--line); border-radius:6px; padding:8px 10px }
 .modelrow .mi { display:flex; flex-direction:column; gap:2px; min-width:0 }
 .modelrow .mh { display:flex; align-items:center; gap:8px; min-width:0 }

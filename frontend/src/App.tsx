@@ -195,6 +195,14 @@ export default function App() {
   const dlBusy = () => dlJob() !== null;
   const [confirmOpen, setConfirmOpen] = createSignal(false);
   const [settingsOpen, setSettingsOpen] = createSignal(false);
+  /** Which Settings panel to open on: a hint about weights or the token
+      opens the one that fixes it, the ⚙ button opens the first. */
+  const [settingsTab, setSettingsTab] = createSignal<SettingsTab>("general");
+  const openSettings = (t: SettingsTab = "general") => {
+    setSettingsTab(t);
+    setSettingsOpen(true);
+    refetchModels();
+  };
   /** Per stage, the last Run that finished cleanly. Apply replays its report
       (`--from_report`) instead of re-running the tagger/SAM3 pass that produced
       it, so it writes exactly the text the diff showed -- and only while the
@@ -630,6 +638,7 @@ export default function App() {
   function adoptDownload(job: Job) {
     const rest = job.stage.slice(DOWNLOAD_STAGE.length);
     attachDownload(job.id, rest === "missing" ? [] : rest.split(",").filter(Boolean));
+    setSettingsTab("models");
     setSettingsOpen(true);
   }
 
@@ -674,10 +683,7 @@ export default function App() {
             <button
               class="link warn"
               title="The tagger backbone and SAM3 are gated on the Hub — set a token in Settings"
-              onClick={() => {
-                setSettingsOpen(true);
-                refetchModels();
-              }}
+              onClick={() => openSettings("models")}
             >
               ⚠ no HF token
             </button>
@@ -690,14 +696,7 @@ export default function App() {
               while the dialog it belongs to is closed. */}
           <span class="badge running">downloading</span>
         </Show>
-        <button
-          onClick={() => {
-            setSettingsOpen(true);
-            refetchModels();
-          }}
-        >
-          ⚙ Settings
-        </button>
+        <button onClick={() => openSettings()}>⚙ Settings</button>
       </header>
 
       <DatasetTree
@@ -778,10 +777,7 @@ export default function App() {
               undoBlocked={undoBlocked()}
               onCancel={() => jobId() && api.cancel(jobId()!)}
               missingModels={missingModels().map((m) => m.title)}
-              onSettings={() => {
-                setSettingsOpen(true);
-                refetchModels();
-              }}
+              onSettings={() => openSettings("models")}
               help={help()}
               onHelp={() => setHelp(!help())}
             />
@@ -854,6 +850,7 @@ export default function App() {
 
       <SettingsDialog
         open={settingsOpen()}
+        initialTab={settingsTab()}
         info={info()}
         roots={roots()}
         fields={settingFields()}
@@ -888,6 +885,15 @@ export default function App() {
   );
 }
 
+/** The Settings dialog's panels. One flat form was getting long enough that the
+    roots you edit once a year sat above the download buttons you press weekly. */
+const SETTINGS_TABS = [
+  ["general", "General"],
+  ["advanced", "Advanced"],
+  ["models", "Models"],
+] as const;
+type SettingsTab = (typeof SETTINGS_TABS)[number][0];
+
 interface SettingsOut {
   token: string | null;
   roots: Record<string, string> | null;
@@ -899,6 +905,9 @@ interface SettingsOut {
 
 function SettingsDialog(props: {
   open: boolean;
+  /** Which panel to land on; the entry point picks it (the header's token
+      warning and an adopted download both mean Models). */
+  initialTab?: SettingsTab;
   info?: Info;
   roots?: DatasetRoots;
   /** One argparse Field per Settings-bound stage flag. */
@@ -927,10 +936,15 @@ function SettingsDialog(props: {
   /** The preflight form's edits, keyed by dest. Seeded from the saved values on
       open and diffed on OK, so an untouched block sends nothing. */
   const [pre, setPre] = createStore<Record<string, unknown>>({});
+  const [tab, setTab] = createSignal<SettingsTab>("general");
   createEffect(
     on(
       () => props.open,
-      (open) => open && setPre(reconcile(structuredClone(props.preprocessValues))),
+      (open) => {
+        if (!open) return;
+        setPre(reconcile(structuredClone(props.preprocessValues)));
+        setTab(props.initialTab ?? "general");
+      },
     ),
   );
   /** Fields the preflight block shows: the same filter the stage forms use, so
@@ -978,151 +992,178 @@ function SettingsDialog(props: {
         <span class="sp" />
         <HelpToggle open={props.help} onToggle={props.onHelp} />
       </h3>
-      <div class="kv">
-        <b>Home</b>
-        <span class="mono">{props.info?.home}</span>
-        <b>Models dir</b>
-        <span class="mono">{props.info?.models_dir}</span>
-      </div>
 
-      <h4>Dataset roots</h4>
-      <Show when={props.help}>
-        <p class="dim" style="margin:0 0 8px">
-          Relative to the curation home; the three trees are joined by the same relative path.
-        </p>
-      </Show>
-      <div class="kv">
-        <For each={ROOT_NAMES}>
-          {(n) => (
-            <>
-              <b>{n}</b>
-              <span>
-                <input
-                  type="text"
-                  ref={(el) => (rootEls[n] = el)}
-                  value={current(n)?.path ?? props.roots?.defaults[n] ?? ""}
-                  placeholder={props.roots?.defaults[n]}
-                />
-                <span classList={{ dim: true, err: current(n) ? !current(n)!.exists : false }}>
-                  {current(n) && !current(n)!.exists ? "missing — " : ""}
-                  {ROOT_HELP[n]}
+      {/* Every panel stays mounted -- the inputs are uncontrolled and read off
+          their refs on Save, so a hidden panel still has to be there to read. */}
+      <nav class="dlg-tabs">
+        <For each={SETTINGS_TABS}>
+          {([id, label]) => (
+            <button type="button" classList={{ on: tab() === id }} onClick={() => setTab(id)}>
+              {label}
+              <Show when={id === "models" && missing().length}>
+                <span class="badge miss">{missing().length}</span>
+              </Show>
+            </button>
+          )}
+        </For>
+      </nav>
+
+      <div classList={{ spane: true, hide: tab() !== "general" }}>
+        <div class="kv">
+          <b>Home</b>
+          <span class="mono">{props.info?.home}</span>
+          <b>Models dir</b>
+          <span class="mono">{props.info?.models_dir}</span>
+        </div>
+
+        <h4>Dataset roots</h4>
+        <Show when={props.help}>
+          <p class="dim" style="margin:0 0 8px">
+            Relative to the curation home; the three trees are joined by the same relative path.
+          </p>
+        </Show>
+        <div class="kv">
+          <For each={ROOT_NAMES}>
+            {(n) => (
+              <>
+                <b>{n}</b>
+                <span>
+                  <input
+                    type="text"
+                    ref={(el) => (rootEls[n] = el)}
+                    value={current(n)?.path ?? props.roots?.defaults[n] ?? ""}
+                    placeholder={props.roots?.defaults[n]}
+                  />
+                  <span classList={{ dim: true, err: current(n) ? !current(n)!.exists : false }}>
+                    {current(n) && !current(n)!.exists ? "missing — " : ""}
+                    {ROOT_HELP[n]}
+                  </span>
                 </span>
-              </span>
-            </>
-          )}
-        </For>
+              </>
+            )}
+          </For>
+        </div>
       </div>
 
-      <h4>Stage defaults</h4>
-      <Show when={props.help}>
-        <p class="dim" style="margin:0 0 8px">
-          Filled into every stage that takes them, so no stage form re-asks. Leave one blank for the
-          CLI's own default. <code>--device</code> is not here on purpose: each stage auto-detects
-          it.
-        </p>
-      </Show>
-      <div class="kv">
-        <For each={props.fields}>
-          {(f) => (
+      <div classList={{ spane: true, hide: tab() !== "advanced" }}>
+        <h4>Stage defaults</h4>
+        <Show when={props.help}>
+          <p class="dim" style="margin:0 0 8px">
+            Filled into every stage that takes them, so no stage form re-asks. Leave one blank for
+            the CLI's own default. <code>--device</code> is not here on purpose: each stage
+            auto-detects it.
+          </p>
+        </Show>
+        <div class="kv">
+          <For each={props.fields}>
+            {(f) => (
+              <>
+                <b>{f.setting}</b>
+                <span>
+                  <input
+                    type="text"
+                    ref={(el) => (defEls[f.setting!] = el)}
+                    value={props.defaults[f.setting!] ?? ""}
+                    placeholder={f.default == null ? "(none)" : String(f.default)}
+                  />
+                  <span class="dim">{f.help}</span>
+                </span>
+              </>
+            )}
+          </For>
+        </div>
+
+        <Show when={props.preprocess}>
+          {(pre_) => (
             <>
-              <b>{f.setting}</b>
-              <span>
-                <input
-                  type="text"
-                  ref={(el) => (defEls[f.setting!] = el)}
-                  value={props.defaults[f.setting!] ?? ""}
-                  placeholder={f.default == null ? "(none)" : String(f.default)}
-                />
-                <span class="dim">{f.help}</span>
-              </span>
+              <h4>{pre_().title}</h4>
+              <Show when={props.help}>
+                <p class="dim" style="margin:0 0 8px">
+                  {pre_().notes} Runs over the same images the stage does, so a per-image Apply
+                  resizes just that image. Already-current images are skipped, so a re-run is
+                  near-free. Tiers must match the trainer's <code>target_res</code>.
+                </p>
+              </Show>
+              <For each={preFields()}>
+                {(f) => (
+                  <FieldRow
+                    field={f}
+                    value={pre[f.dest] ?? f.default}
+                    dirty={pre[f.dest] !== undefined && String(pre[f.dest]) !== String(f.default)}
+                    setValue={(v) => setPre(f.dest, v)}
+                  />
+                )}
+              </For>
             </>
           )}
-        </For>
+        </Show>
       </div>
 
-      <Show when={props.preprocess}>
-        {(pre_) => (
-          <>
-            <h4>{pre_().title}</h4>
+      <div classList={{ spane: true, hide: tab() !== "models" }}>
+        <h4>Hugging Face</h4>
+        <div class="kv">
+          <b>Token</b>
+          <span>
+            {props.info?.hf_token ? "present" : "missing"}
+            <input
+              ref={tokenEl}
+              type="password"
+              placeholder="hf_… (stored by huggingface_hub, never shown again)"
+              style="margin-top:4px"
+            />
             <Show when={props.help}>
-              <p class="dim" style="margin:0 0 8px">
-                {pre_().notes} Runs over the same images the stage does, so a per-image Apply
-                resizes just that image. Already-current images are skipped, so a re-run is
-                near-free. Tiers must match the trainer's <code>target_res</code>.
-              </p>
+              <span class="dim">
+                The tagger backbone and SAM3 weights are gated on the Hub — a token with read access
+                is needed on first run.
+              </span>
             </Show>
-            <For each={preFields()}>
-              {(f) => (
-                <FieldRow
-                  field={f}
-                  value={pre[f.dest] ?? f.default}
-                  dirty={pre[f.dest] !== undefined && String(pre[f.dest]) !== String(f.default)}
-                  setValue={(v) => setPre(f.dest, v)}
-                />
-              )}
-            </For>
-          </>
-        )}
-      </Show>
+          </span>
+        </div>
 
-      <h4>Hugging Face</h4>
-      <div class="kv">
-        <b>Token</b>
-        <span>
-          {props.info?.hf_token ? "present" : "missing"}
-          <input
-            ref={tokenEl}
-            type="password"
-            placeholder="hf_… (stored by huggingface_hub, never shown again)"
-            style="margin-top:4px"
-          />
-          <Show when={props.help}>
-            <span class="dim">
-              The tagger backbone and SAM3 weights are gated on the Hub — a token with read access
-              is needed on first run.
+        <h4>Models</h4>
+        <Show when={props.help}>
+          <p class="dim" style="margin:0 0 8px">
+            Every stage fetches what it needs on first use — these buttons only move the wait, and
+            any gated-repo refusal, to a moment you picked. A download runs as a job: one at a time,
+            and it reports here, not in the stage bar, so this dialog can stay open over it.
+          </p>
+        </Show>
+        <div class="models">
+          <For each={props.models?.models}>
+            {(m) => (
+              <ModelRow
+                m={m}
+                busy={props.busy}
+                active={inFlight(m)}
+                onDownload={props.onDownload}
+              />
+            )}
+          </For>
+        </div>
+        <div class="dlbar">
+          <button
+            type="button"
+            disabled={props.busy || !missing().length}
+            onClick={() => props.onDownload([])}
+          >
+            {missing().length
+              ? `Download all ${missing().length} missing`
+              : "Every model is installed"}
+          </button>
+          <Show when={props.downloading}>
+            <button type="button" onClick={props.onCancelDownload}>
+              Cancel
+            </button>
+          </Show>
+          <Show when={props.progress.text}>
+            <span class="status" title={props.progress.text}>
+              <Show when={props.progress.state}>
+                <span class={`badge ${props.progress.state}`}>{props.progress.state}</span>{" "}
+              </Show>
+              {props.progress.text}
             </span>
           </Show>
-        </span>
-      </div>
-
-      <h4>Models</h4>
-      <Show when={props.help}>
-        <p class="dim" style="margin:0 0 8px">
-          Every stage fetches what it needs on first use — these buttons only move the wait, and any
-          gated-repo refusal, to a moment you picked. A download runs as a job: one at a time, and
-          it reports here, not in the stage bar, so this dialog can stay open over it.
-        </p>
-      </Show>
-      <div class="models">
-        <For each={props.models?.models}>
-          {(m) => (
-            <ModelRow m={m} busy={props.busy} active={inFlight(m)} onDownload={props.onDownload} />
-          )}
-        </For>
-      </div>
-      <div class="dlbar">
-        <button
-          type="button"
-          disabled={props.busy || !missing().length}
-          onClick={() => props.onDownload([])}
-        >
-          {missing().length
-            ? `Download all ${missing().length} missing`
-            : "Every model is installed"}
-        </button>
-        <Show when={props.downloading}>
-          <button type="button" onClick={props.onCancelDownload}>
-            Cancel
-          </button>
-        </Show>
-        <Show when={props.progress.text}>
-          <span class="status" title={props.progress.text}>
-            <Show when={props.progress.state}>
-              <span class={`badge ${props.progress.state}`}>{props.progress.state}</span>{" "}
-            </Show>
-            {props.progress.text}
-          </span>
-        </Show>
+        </div>
       </div>
 
       <div class="dlg-actions">
