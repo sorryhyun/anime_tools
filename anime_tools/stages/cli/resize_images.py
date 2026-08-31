@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Resize the caption master into the bucket-resolution tree every stage reads.
 
 ``autotag`` / ``position`` / ``correct`` all walk ``--dst`` (the resized tree),

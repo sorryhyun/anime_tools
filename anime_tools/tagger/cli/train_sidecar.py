@@ -1,4 +1,3 @@
-#!/usr/bin/env python
 """Train the dbv4 sidecar head — copyright / dataset-only characters /
 renamed general tags / people-count — on cached backend features.
 

@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Rewrite multi-subject captions into position clauses (SAM3 + Anima Tagger).
 
 Thin CLI over ``anime_tools.stages.position_captions``: loads SAM3 and the Anima

@@ -49,6 +49,8 @@ from pathlib import Path
 from anime_tools._env import resolve_path
 from anime_tools.path_filter import filter_paths_by_glob
 
+from ._caption_io import read_caption, write_caption
+
 # The replay pass writes here, never over the dry run's ``report.json`` — the
 # usual invocation points ``--from_report`` and ``--report_dir`` at the same
 # directory, and clobbering the input would make a re-run impossible.
@@ -85,12 +87,11 @@ class ReplaySpec:
     before_field: str = "existing"
     after_field: str = "proposed"
     target_root: str = "src"
-    # ``audit_multiview`` writes a trailing newline; the other two do not. Kept
-    # byte-exact so a replay and a native apply produce identical files.
+    # Both are passed straight to ``_caption_io.write_caption``, which is where
+    # the invariants they encode are spelled out: ``audit_multiview`` writes a
+    # trailing newline and the other two do not, and a rewrite of the derived
+    # caption must drop its ``{stem}.variants.txt`` sidecar.
     newline: bool = False
-    # The clause rewrite must drop ``{stem}.variants.txt`` — the sidecar wins
-    # over ``{stem}.txt`` at encode time, so a stale one keeps training the
-    # pre-clause caption no matter how fresh the caption is.
     drop_variants: bool = False
 
 
@@ -217,15 +218,71 @@ def _keep_by_pattern(
     return filter_paths_by_glob(paths, str(dst), pattern)
 
 
-def _write_caption(path: Path, text: str, spec: ReplaySpec) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(text + ("\n" if spec.newline else ""), encoding="utf-8")
-    if spec.drop_variants:
-        from anime_tools.captions.variants import variants_sidecar_path
+# The one drift-guarded write. Everything :func:`apply_one` can answer, in the
+# order it decides them; ``written``/``would-write`` are the two outcomes that
+# are not a skip.
+APPLY_STATUSES = (
+    "no-proposal",
+    "missing-caption",
+    "already-applied",
+    "drifted",
+    "would-write",
+    "written",
+)
 
-        sidecar = variants_sidecar_path(path)
-        if sidecar.exists():
-            sidecar.unlink()
+
+def apply_one(
+    target: Path,
+    before: str,
+    after: str,
+    *,
+    apply: bool,
+    newline: bool = False,
+    drop_variants: bool = False,
+) -> str:
+    """Write one proposal if — and only if — the file still says what it said.
+
+    The single drift ladder: four stages had written this same sequence of
+    checks by hand, and the interesting failures are the ones in the middle.
+
+    ``no-proposal``
+        There is nothing to write, or the proposal equals the before-text.
+    ``missing-caption``
+        The target is gone. Legitimate only where the proposing pass also saw
+        no file — autotag's ``missing`` mode *creates* the master caption — so
+        an absent target with a non-empty before-text is refused, not created.
+    ``already-applied``
+        The file already holds the proposal. Idempotent: a crashed apply can be
+        re-run without inventing drift.
+    ``drifted``
+        The file holds neither the before-text nor the proposal, so something
+        edited it since the proposal was computed. Never overwritten.
+    ``would-write`` / ``written``
+        The write is safe; ``apply`` decides whether it happens.
+
+    Both texts are stripped, so trailing whitespace on either side of a round
+    trip cannot read as drift.
+    """
+    before = (before or "").strip()
+    after = (after or "").strip()
+    if not after or after == before:
+        return "no-proposal"
+
+    if target.exists():
+        current = read_caption(target)
+    elif before:
+        return "missing-caption"
+    else:
+        current = ""
+
+    if current == after:
+        return "already-applied"
+    if current != before:
+        return "drifted"
+    if not apply:
+        return "would-write"
+    write_caption(target, after, newline=newline, drop_variants=drop_variants)
+    return "written"
 
 
 def replay_rows(
@@ -272,42 +329,29 @@ def replay_rows(
         out.append(entry)
 
         if not caption_path:
+            # The only check that is the report's problem rather than the
+            # file's, so it stays here rather than in ``apply_one``.
             entry.status = "skip:no-caption-path"
             stats.skip("no-caption-path")
             continue
-        if not after or after == before:
-            entry.status = "skip:no-proposal"
-            stats.skip("no-proposal")
-            continue
 
-        target = root / caption_path
-        if not target.exists():
-            # An absent file is legitimate only where the dry run also saw none
-            # (autotag's ``missing`` mode creates the master caption).
-            if before:
-                entry.status = "skip:missing-caption"
-                stats.skip("missing-caption")
-                continue
-            current = ""
-        else:
-            current = target.read_text(encoding="utf-8").strip()
-
-        if current == after:
-            entry.status = "skip:already-applied"
-            stats.skip("already-applied")
-            continue
-        if current != before:
-            entry.status = "skip:drifted"
-            stats.skip("drifted")
-            continue
-
-        if apply:
-            _write_caption(target, after, spec)
-            entry.status = "written"
+        status = apply_one(
+            root / caption_path,
+            before,
+            after,
+            apply=apply,
+            newline=spec.newline,
+            drop_variants=spec.drop_variants,
+        )
+        if status == "written":
+            entry.status = status
             stats.written += 1
-        else:
-            entry.status = "would-write"
+        elif status == "would-write":
+            entry.status = status
             stats.would_write += 1
+        else:
+            entry.status = f"skip:{status}"
+            stats.skip(status)
 
     return out, stats
 

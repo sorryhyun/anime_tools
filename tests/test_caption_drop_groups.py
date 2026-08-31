@@ -19,25 +19,21 @@ from anime_tools.captions.tag_drop_groups import (
 def _kb(tmp_path: Path):
     path = tmp_path / "tags.csv"
     path.write_text(
-        "\n".join(
-            [
-                "name,category,post_count,description",
-                '1girl,0,10,"[인물 > 인원수] count"',
-                'solo,0,10,"[인물 > 인원수] count"',
-                'hatsune_miku,4,10,"[캐릭터 > 보컬로이드/버추얼] character"',
-                'vocaloid,3,10,"[작품/출처 > 게임] copyright"',
-                'sincos,1,10,"[아티스트 > 개인] artist"',
-                'highres,5,10,"[메타 > 화질/해상도] meta"',
-                'long_hair,0,10,"[머리카락 > 머리 길이] hair"',
-                'school_uniform,0,10,"[의상 > 상의] clothing"',
-                'backlighting,0,10,"[효과/연출 > 조명] lighting"',
-                'speech_bubble,0,10,"[효과/연출 > 텍스트/말풍선] text"',
-                'sitting,0,10,"[포즈/구도 > 포즈] pose"',
-                'from_above,0,10,"[포즈/구도 > 시점/앵글] angle"',
-                'elf,0,10,"[인물 > 종족/비인간] species"',
-                "mystery_tag,0,10,no taxonomy path here",
-            ]
-        ),
+        """name,category,post_count,description
+1girl,0,10,"[인물 > 인원수] count"
+solo,0,10,"[인물 > 인원수] count"
+hatsune_miku,4,10,"[캐릭터 > 보컬로이드/버추얼] character"
+vocaloid,3,10,"[작품/출처 > 게임] copyright"
+sincos,1,10,"[아티스트 > 개인] artist"
+highres,5,10,"[메타 > 화질/해상도] meta"
+long_hair,0,10,"[머리카락 > 머리 길이] hair"
+school_uniform,0,10,"[의상 > 상의] clothing"
+backlighting,0,10,"[효과/연출 > 조명] lighting"
+speech_bubble,0,10,"[효과/연출 > 텍스트/말풍선] text"
+sitting,0,10,"[포즈/구도 > 포즈] pose"
+from_above,0,10,"[포즈/구도 > 시점/앵글] angle"
+elf,0,10,"[인물 > 종족/비인간] species"
+mystery_tag,0,10,no taxonomy path here""",
         encoding="utf-8",
     )
     return load_tag_knowledge_base(path)

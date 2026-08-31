@@ -326,10 +326,16 @@ def main() -> None:
         proposal = None
         if ok:
 
-            def sink(i: int, position: str, crop: Image.Image, _stem=stem) -> str:
+            def sink(
+                i: int,
+                position: str,
+                crop: Image.Image,
+                _stem=stem,
+                _crops=crops,
+            ) -> str:
                 name = f"crops/{_stem}_{i}_{position.replace(' ', '-')}.png"
                 _fit(crop, CROP).save(out_dir / name)
-                crops.append({"path": name, "position": position})
+                _crops.append({"path": name, "position": position})
                 return name
 
             proposal = propose_for_image(

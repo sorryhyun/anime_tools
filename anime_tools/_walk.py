@@ -22,16 +22,20 @@ IMAGE_EXTENSIONS.extend([ext.upper() for ext in IMAGE_EXTENSIONS])
 
 # Optional-plugin formats, mirrored from the trainer's image_utils so both
 # walkers see the same files (the parity test pins this).
+# Deliberately blind: these are optional third-party Pillow plugins with native
+# dependencies, and a broken one raising something exotic at import must degrade
+# to "that format is not walkable here", never take the walker (and with it
+# every stage) down. Narrowing to ImportError would re-open exactly that.
 try:
     import pillow_avif  # noqa: F401
 
     IMAGE_EXTENSIONS.extend([".avif", ".AVIF"])
-except Exception:
+except Exception:  # noqa: BLE001, S110
     pass
 for _jxl_plugin in ("jxlpy", "pillow_jxl"):
     try:
         __import__(_jxl_plugin)
-    except Exception:
+    except Exception:  # noqa: BLE001, S112
         continue
     IMAGE_EXTENSIONS.extend([".jxl", ".JXL"])
 

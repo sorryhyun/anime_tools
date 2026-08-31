@@ -61,7 +61,9 @@ from anime_tools.captions.position_clauses import (
 )
 from anime_tools.stages.instance_detection import Detection, crop_instance
 
+from ._walk_captions import iter_captions
 from .position_captions import PositionCaptionOptions, detect_subjects
+from .replay import apply_one
 
 # The audit population, named by `is_candidate`'s own reason string. Keeping the
 # link explicit means the two can't drift apart: whatever that function starts
@@ -501,30 +503,18 @@ def run_multiview_audit(
 ) -> tuple[list[MultiviewFinding], MultiviewAuditStats]:
     """Walk the resized tree and report every under-counted caption.
 
-    Same caption resolution as ``run_position_captions`` — derived caption first,
-    master as the fallback for an unmirrored image — but ``caption_path`` is
-    reported relative so the caller can decide which tree to edit. Nothing here
-    writes.
+    Shares :func:`anime_tools.stages._walk_captions.iter_captions` with
+    ``run_position_captions`` — derived caption first, master as the fallback
+    for an unmirrored image — but ``caption_path`` is reported relative so the
+    caller can decide which tree to edit. Nothing here writes.
     """
-    from anime_tools._walk import walk_images
-
     options = options or PositionCaptionOptions()
     stats = MultiviewAuditStats()
     rows: list[MultiviewFinding] = []
 
-    images = walk_images(resized_dir, recursive=True, pattern=path_pattern)
-    stats.seen = len(images)
-
-    for index, image_path in enumerate(images, 1):
-        rel = image_path.relative_to(resized_dir).with_suffix(".txt")
-        dst_caption = resized_dir / rel
-        caption_path = dst_caption if dst_caption.exists() else source_dir / rel
-        if progress is not None:
-            progress(index, len(images), str(rel))
-        if not caption_path.exists():
-            stats.skip("no-caption")
-            continue
-        caption = caption_path.read_text(encoding="utf-8").strip()
+    for image_path, rel, _dst_caption, caption in iter_captions(
+        resized_dir, source_dir, path_pattern, stats, progress
+    ):
         ok, reason = is_audit_target(caption)
         if not ok:
             stats.skip(reason)
@@ -542,10 +532,19 @@ def run_multiview_audit(
 
             save_crop = _crop_sink(crops_dir, rel)
 
-        def crop_sink(i: int, pos: str, crop: Image.Image) -> str:
+        # ``held``/``save_crop`` are rebuilt per image, and the sink is consumed
+        # inside this iteration — bound as defaults so that stays true by
+        # construction rather than by reading the call order.
+        def crop_sink(
+            i: int,
+            pos: str,
+            crop: Image.Image,
+            _held: list[Image.Image] = held,
+            _save=save_crop,
+        ) -> str:
             if sheets_dir is not None:
-                held.append(crop.copy())
-            return save_crop(i, pos, crop) if save_crop is not None else ""
+                _held.append(crop.copy())
+            return _save(i, pos, crop) if _save is not None else ""
 
         with Image.open(image_path) as handle:
             image = handle.convert("RGB")
@@ -594,8 +593,16 @@ def apply_findings(
     source_dir: Path,
     verdicts: Sequence[str] = (MULTIPLE_VIEWS,),
     confidences: Sequence[str] = ("strong",),
-) -> list[tuple[str, str, str]]:
-    """Write proposed captions into the **master** tree. Returns (rel, before, after).
+) -> tuple[list[tuple[str, str, str]], Counter]:
+    """Write proposed captions into the **master** tree.
+
+    Returns ``(written, skipped)``: the ``(rel, before, after)`` triples that
+    were written, and a count per :func:`~anime_tools.stages.replay.apply_one`
+    status for the gated rows that were not. Every write goes through
+    ``apply_one``, so this shares one drift ladder with the replay path — a
+    master caption edited since the audit is reported ``drifted`` and left
+    alone, and a row whose text is already in place is ``already-applied``
+    rather than a silent no-op.
 
     The master is the right target here, unlike the clause rewrite: a missing
     ``multiple views`` is a fact about the picture, not a derived re-phrasing, and
@@ -606,20 +613,24 @@ def apply_findings(
     the verbatim before-text.
     """
     written: list[tuple[str, str, str]] = []
+    skipped: Counter = Counter()
     for finding in findings:
         if finding.verdict not in verdicts or finding.confidence not in confidences:
             continue
-        if not finding.proposed or finding.proposed == finding.caption:
-            continue
-        target = source_dir / finding.caption_path
-        if not target.exists():
-            continue
-        before = target.read_text(encoding="utf-8").strip()
-        if before != finding.caption:
-            continue  # caption moved under us since the audit — leave it alone
-        target.write_text(finding.proposed + "\n", encoding="utf-8")
-        written.append((finding.caption_path, before, finding.proposed))
-    return written
+        status = apply_one(
+            source_dir / finding.caption_path,
+            finding.caption,
+            finding.proposed,
+            apply=True,
+            newline=True,
+        )
+        if status == "written":
+            written.append(
+                (finding.caption_path, finding.caption.strip(), finding.proposed)
+            )
+        else:
+            skipped[status] += 1
+    return written, skipped
 
 
 def curated_proposal(row: dict) -> tuple[str, str] | None:
@@ -642,6 +653,14 @@ def curated_proposal(row: dict) -> tuple[str, str] | None:
         tag = MULTIPLE_VIEWS
     proposed = propose_caption(caption, tag)
     return None if proposed == caption.strip() else (tag, proposed)
+
+
+# :func:`apply_one`'s vocabulary read from the revert direction.
+_REVERT_STATUS = {
+    "written": "reverted",
+    "would-write": "would-revert",
+    "already-applied": "already-reverted",
+}
 
 
 def apply_curated(
@@ -680,22 +699,13 @@ def apply_curated(
             entry["status"] = "no-edit"
             continue
         entry["tag"], entry["after"] = derived
-        target = source_dir / row["caption_path"]
-        if not target.exists():
-            entry["status"] = "missing-caption"
-            continue
-        current = target.read_text(encoding="utf-8").strip()
-        if current == entry["after"]:
-            entry["status"] = "already-applied"
-            continue
-        if current != row["caption"]:
-            entry["status"] = "drifted"
-            continue
-        if apply:
-            target.write_text(entry["after"] + "\n", encoding="utf-8")
-            entry["status"] = "written"
-        else:
-            entry["status"] = "would-write"
+        entry["status"] = apply_one(
+            source_dir / row["caption_path"],
+            row["caption"],
+            entry["after"],
+            apply=apply,
+            newline=True,
+        )
     return manifest, unmatched
 
 
@@ -717,18 +727,15 @@ def revert_curated(
         if not entry.get("after"):
             outcome["status"] = f"no-edit ({entry.get('status')})"
             continue
-        target = source_dir / entry["caption_path"]
-        if not target.exists():
-            outcome["status"] = "missing-caption"
-            continue
-        current = target.read_text(encoding="utf-8").strip()
-        if current == entry["before"]:
-            outcome["status"] = "already-reverted"
-        elif current != entry["after"]:
-            outcome["status"] = "drifted"
-        elif apply:
-            target.write_text(entry["before"] + "\n", encoding="utf-8")
-            outcome["status"] = "reverted"
-        else:
-            outcome["status"] = "would-revert"
+        # A revert is an apply with the two texts swapped, so it reuses the
+        # same ladder; only the names of the two success-adjacent outcomes
+        # differ (``already-applied`` means "already back to before").
+        status = apply_one(
+            source_dir / entry["caption_path"],
+            entry["after"],
+            entry["before"],
+            apply=apply,
+            newline=True,
+        )
+        outcome["status"] = _REVERT_STATUS.get(status, status)
     return results

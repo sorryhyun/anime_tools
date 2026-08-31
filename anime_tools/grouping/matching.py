@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """PE-Spatial dense grid matching (library primitive).
 
 Promoted out of the near-twin miner engine so any dataset-level tool — near-twin

@@ -40,6 +40,8 @@ from PIL import Image
 from anime_tools.captions.position_clauses import compose_caption, parse_caption
 from anime_tools.captions.taxonomy import RATING_LITERALS
 
+from ._caption_io import read_caption, write_caption
+
 MODES = ("missing", "merge", "overwrite")
 
 
@@ -160,7 +162,7 @@ def run_autotag_captions(
 
         existing = ""
         if caption_path.exists():
-            existing = caption_path.read_text(encoding="utf-8").strip()
+            existing = read_caption(caption_path)
         if existing and options.mode == "missing":
             stats.skip("has-caption")
             continue
@@ -196,8 +198,9 @@ def run_autotag_captions(
         rows.append(proposal)
         stats.proposed += 1
         if apply:
-            caption_path.parent.mkdir(parents=True, exist_ok=True)
-            caption_path.write_text(proposal.proposed, encoding="utf-8")
+            # The master, so no sidecar to drop and no trailing newline — the
+            # replay of this report writes the same bytes.
+            write_caption(caption_path, proposal.proposed)
             stats.written += 1
 
     return rows, stats

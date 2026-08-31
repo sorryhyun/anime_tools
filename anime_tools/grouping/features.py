@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """PE-Spatial image-feature extraction + per-image cache (library primitive).
 
 Promoted out of the near-twin miner engine so any dataset-level tool — near-twin
@@ -139,8 +138,8 @@ def gather_members(
     by_artist: dict[str, list[Member]] = {}
     for (artist, _), m in seen.items():
         by_artist.setdefault(artist, []).append(m)
-    for artist in by_artist:
-        by_artist[artist].sort(key=lambda m: m.stem)
+    for members in by_artist.values():
+        members.sort(key=lambda m: m.stem)
     return by_artist
 
 

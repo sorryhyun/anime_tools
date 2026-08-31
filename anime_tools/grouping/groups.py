@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Dataset image grouping — connected-components clustering on PE-Spatial grids.
 
 A *curation* primitive (distinct from ``library/preprocess``, which makes data

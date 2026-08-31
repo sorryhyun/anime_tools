@@ -79,14 +79,17 @@ def _font(size: int, bold: bool = False) -> ImageFont.ImageFont:
         names.insert(
             0, str(mpl / ("DejaVuSans-Bold.ttf" if bold else "DejaVuSans.ttf"))
         )
-    except Exception:
+    except (ImportError, AttributeError, TypeError):
+        # No matplotlib, or one installed as a namespace package with no
+        # ``__file__`` to hang the bundled DejaVu off.
         pass
     if bold:
         names.insert(0, "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf")
     for name in names:
         try:
             return ImageFont.truetype(name, size)
-        except Exception:
+        except OSError:
+            # Not there, or not a font PIL can parse — try the next candidate.
             continue
     return ImageFont.load_default()
 

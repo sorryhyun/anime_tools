@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Merge masks from multiple sources by taking the pixel-wise minimum (union of masked regions).
 
 Walks each input mask directory recursively and keys merges by

@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Group dataset images by PE-Spatial visual similarity → groups.json manifest.
 
 A curation tool (not a preprocess/training step): clusters near-identical /

@@ -514,11 +514,11 @@ class AnimaTagger:
                 self._sidecar.bce_indices, dtype=torch.long
             )
             self._supported[self._sidecar_bce_idx] = True
-            if self._sidecar.people_count_labels:
-                if list(self._sidecar.people_count_labels) != self.people_count_labels:
-                    raise ValueError(
-                        "sidecar people_count_labels disagree with vocab.json"
-                    )
+            if (
+                self._sidecar.people_count_labels
+                and list(self._sidecar.people_count_labels) != self.people_count_labels
+            ):
+                raise ValueError("sidecar people_count_labels disagree with vocab.json")
         logger.info(
             "AnimaTagger[dbv4]: %s → %d/%d vocab tags supported (unmatched by "
             "category: %s); sidecar=%s",

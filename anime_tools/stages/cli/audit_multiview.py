@@ -253,11 +253,13 @@ def main() -> None:
     del sam_processor, sam_model
 
     written: list[tuple[str, str, str]] = []
+    apply_skipped: dict[str, int] = {}
     if args.apply:
         verdicts, confidences = _gate(args)
-        written = apply_findings(
+        written, skipped = apply_findings(
             rows, source_dir=src, verdicts=verdicts, confidences=confidences
         )
+        apply_skipped = dict(skipped.most_common())
 
     summary = {
         # The header carries the roots so ``--from_report`` can refuse to replay
@@ -280,6 +282,10 @@ def main() -> None:
             "tagger-only": sum(1 for r in rows if r.source == "tagger-only"),
         },
         "written": len(written),
+        # Why a gated row was not written — ``drifted`` (the master moved since
+        # the audit) and ``already-applied`` used to be indistinguishable from
+        # "the gate rejected it".
+        "apply_skipped": apply_skipped,
         "part_prompts": list(options.part_prompts),
         "part_recovered": sum(
             1 for r in rows if any(c.source != "subject" for c in r.crops)

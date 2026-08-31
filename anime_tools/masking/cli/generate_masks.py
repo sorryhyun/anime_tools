@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Generate text/speech-bubble masks for training images using SAM3."""
 
 import argparse

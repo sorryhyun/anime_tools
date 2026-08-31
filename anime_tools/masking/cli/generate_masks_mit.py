@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Generate text segmentation masks for training images.
 
 Model: https://huggingface.co/a-b-c-x-y-z/Manga-Text-Segmentation-2025

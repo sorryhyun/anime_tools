@@ -66,7 +66,8 @@ def build_erasure_token_pool(
     excl = {t.lower() for t in exclude} if exclude else set()
     try:
         vocab = qwen3_tokenizer.get_vocab()
-    except Exception:
+    except (AttributeError, TypeError):
+        # Duck-typed tokenizer without the expected API — no pool, no variants.
         return []
     # Qwen3-single candidates (cheap, pure vocab): leading-space lowercase ascii.
     candidates = sorted(
@@ -82,7 +83,7 @@ def build_erasure_token_pool(
     # Keep only those that are also a single T5 token in a ``", "``-joined caption.
     try:
         t5_base = len(t5_tokenizer(", ", add_special_tokens=False)["input_ids"])
-    except Exception:
+    except (AttributeError, KeyError, TypeError):
         return []
     pool: list[str] = []
     for word in candidates:

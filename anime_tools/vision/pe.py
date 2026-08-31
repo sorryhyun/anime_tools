@@ -322,7 +322,8 @@ class PEVisionTransformer(nn.Module):
         heads: int,
         mlp_ratio: float,
         act_layer: Callable = nn.GELU,
-        norm_layer: Callable = partial(nn.LayerNorm, eps=1e-5),
+        # Vendored upstream signature — kept verbatim so this stays diffable.
+        norm_layer: Callable = partial(nn.LayerNorm, eps=1e-5),  # noqa: B008
         use_ln_pre: bool = True,
         use_ln_post: bool = True,
         ls_init_value: float | None = None,

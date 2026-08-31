@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Replace censored sincos webp with their matched uncensored counterparts.
 
 Reads the manifest produced by match_decensored.py and, for each selected match,

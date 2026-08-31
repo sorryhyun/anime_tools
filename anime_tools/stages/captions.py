@@ -25,6 +25,8 @@ from anime_tools.captions.variants import (
     write_variants_sidecar,
 )
 
+from ._caption_io import read_caption, write_caption
+
 
 @dataclass
 class PreprocessCaptionStats:
@@ -224,10 +226,10 @@ def write_corrected_preprocess_captions(
                 stats.variants_removed += 1
             continue
 
-        raw = src_caption.read_text(encoding="utf-8").strip()
+        raw = read_caption(src_caption)
         corrected = correct_caption(raw, kb, options=options).text if correct else raw
         if dst_caption.exists() and not has_clauses(corrected):
-            existing = dst_caption.read_text(encoding="utf-8").strip()
+            existing = read_caption(dst_caption)
             if has_clauses(existing):
                 corrected = _reattach_clauses(corrected, existing)
                 stats.clauses_preserved += 1
@@ -261,8 +263,9 @@ def write_corrected_preprocess_captions(
         if e.dst.exists() and e.dst.read_text(encoding="utf-8") == e.corrected:
             stats.unchanged += 1
         else:
-            e.dst.parent.mkdir(parents=True, exist_ok=True)
-            e.dst.write_text(e.corrected, encoding="utf-8")
+            # No ``drop_variants``: the sidecar is this pass's own output and
+            # is rebuilt (or removed) a few lines down.
+            write_caption(e.dst, e.corrected)
             stats.written += 1
 
         sidecar = variants_sidecar_path(e.dst)

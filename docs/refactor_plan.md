@@ -92,12 +92,28 @@ canonical wording (autotag printed `report → …` and a lowercase dry-run line
 verdict/confidence gate closed over at replay time, so `test_gui_proposals`
 pins it by object comparison like the other two instead of scraping the source.
 
-## Phase 2 — caption write + apply semantics (`stages/`)
+## Phase 2 — caption write + apply semantics (`stages/`) — **done**
 
 The byte-exactness contract ("`audit_multiview` writes a trailing newline; the
-other two do not") is currently enforced by comments across four files, and
-the drift-guarded apply loop (read target → compare recorded before →
-`already-applied` / `drifted` / write) is written four times.
+other two do not") was enforced by comments across four files, and the
+drift-guarded apply loop (read target → compare recorded before →
+`already-applied` / `drifted` / write) was written four times.
+
+Landed as `stages/_caption_io.py` (`read_caption` / `write_caption`),
+`stages/_walk_captions.py` (`resolve_caption` / `iter_captions`) and
+`replay.apply_one`. `replay_rows`, `apply_findings`, `apply_curated` and
+`revert_curated` are now loops over `apply_one`; the audit's walk is the shared
+`iter_captions` instead of a hand-rolled copy under a comment claiming it
+matched. New standing test: `tests/test_multiview_apply.py`.
+
+Deviation from the item-3 sketch below: **`autotag` and the two review CLIs did
+not adopt `iter_captions`**, and deliberately so — the derived-first rule is not
+their rule. `autotag` reads (and writes) the master; `ab_position_captions`
+reads the master on purpose, since after one `--apply` the derived side already
+carries clauses and every rule in it would skip; `review_position_captions`
+reads master and derived as the two *sides* of its diff. They adopted
+`read_caption`/`write_caption` only, and `_walk_captions`'s docstring records
+why the walk stops there.
 
 1. **`stages/_caption_io.py::write_caption(path, text, *, newline=False,
    drop_variants=False)`** — the mkdir/write/unlink-variants triplet from
@@ -122,6 +138,14 @@ the drift-guarded apply loop (read target → compare recorded before →
 
 Guards: the replay tests already pin byte-exactness; add one test asserting
 `apply_findings` reports the drifted/already-applied statuses.
+
+Outcome: `apply_findings` returns `(written, skipped)` where `skipped` is a
+`Counter` over `apply_one`'s statuses, surfaced as the audit report's new
+`summary.apply_skipped` — every existing key is unchanged, and a gated row that
+was refused because the master drifted is no longer indistinguishable from one
+the verdict/confidence gate rejected. One behaviour change rode along, in
+`revert_curated`: reverting *to* an empty before-text now reports `no-proposal`
+instead of blanking the caption file.
 
 ## Phase 3 — give `masking/` a package core
 

@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Auto-tag the dataset with the Anima Tagger and write the caption master.
 
 Thin CLI over ``anime_tools.stages.autotag``: loads the tagger (auto-downloading

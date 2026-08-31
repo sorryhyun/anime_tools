@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Write corrected captions next to resized preprocessing images."""
 
 from __future__ import annotations

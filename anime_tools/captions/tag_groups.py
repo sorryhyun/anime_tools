@@ -149,7 +149,10 @@ def _group_from_body(name: str, body: object, tag_to_group: dict[str, str]) -> T
     uniqueness — can't drift between the two paths. Mutates ``tag_to_group``.
     """
     if not isinstance(body, dict):
-        raise ValueError(
+        # ValueError, not TypeError: every validation in this module raises one
+        # class so a caller loading a config can catch it once (pinned by
+        # tests/test_tag_groups.py).
+        raise ValueError(  # noqa: TRY004
             f"group {name!r}: expected a mapping with 'mode' / 'tags', "
             f"got {type(body).__name__}"
         )

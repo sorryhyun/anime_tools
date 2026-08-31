@@ -1,4 +1,3 @@
-#!/usr/bin/env python
 """Build a dbv4-backed AnimaTagger checkpoint dir from an existing PE checkpoint.
 
 The new dir carries **only our data** — vocab / rules / groups / dataset split

@@ -16,7 +16,8 @@ import pytest
 
 pytest.importorskip("fastapi")
 
-from anime_tools.gui import proposals as P  # noqa: E402
+# Imported after the skip so a fastapi-less env skips rather than errors.
+from anime_tools.gui import proposals as P
 
 
 def _png(path: Path) -> None:

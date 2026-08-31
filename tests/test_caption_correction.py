@@ -13,21 +13,18 @@ from anime_tools.captions.correction import (
 
 def _csv(path: Path) -> Path:
     path.write_text(
-        "\n".join(
-            [
-                "name,category,post_count,description",
-                '1girl,0,10,"[인물 > 인원수] count"',
-                'solo,0,10,"[인물 > 인원수] count"',
-                'hatsune_miku,4,10,"[캐릭터 > vocaloid] character"',
-                'vocaloid,3,10,"[작품 > series] copyright"',
-                'sincos,1,10,"[작가 > illustrator] artist"',
-                'best_quality,5,10,"[메타 > 화질] quality"',
-                'highres,5,10,"[메타 > 화질] resolution meta"',
-                'commentary,5,10,"[메타 > 정보_요청] artist commentary"',
-                'long_hair,0,10,"[머리카락 > 머리 길이] general"',
-                'copyright_notice,0,10,"[메타 > 정보_요청] misleading description"',
-            ]
-        ),
+        """name,category,post_count,description
+1girl,0,10,"[인물 > 인원수] count"
+solo,0,10,"[인물 > 인원수] count"
+hatsune_miku,4,10,"[캐릭터 > vocaloid] character"
+vocaloid,3,10,"[작품 > series] copyright"
+sincos,1,10,"[작가 > illustrator] artist"
+best_quality,5,10,"[메타 > 화질] quality"
+highres,5,10,"[메타 > 화질] resolution meta"
+commentary,5,10,"[메타 > 정보_요청] artist commentary"
+long_hair,0,10,"[머리카락 > 머리 길이] general"
+copyright_notice,0,10,"[메타 > 정보_요청] misleading description"
+""",
         encoding="utf-8",
     )
     return path
@@ -228,14 +225,11 @@ def test_describe_returns_body_category_and_post_count(tmp_path):
 def test_ranked_infos_orders_by_post_count_and_is_cached(tmp_path):
     path = _csv(tmp_path / "tags.csv")
     path.write_text(
-        "\n".join(
-            [
-                "name,category,post_count,description",
-                'rare_tag,0,5,"[머리카락 > x] rare"',
-                'common_tag,0,9000,"[머리카락 > x] common"',
-                'mid_tag,0,500,"[머리카락 > x] mid"',
-            ]
-        ),
+        """name,category,post_count,description
+rare_tag,0,5,"[머리카락 > x] rare"
+common_tag,0,9000,"[머리카락 > x] common"
+mid_tag,0,500,"[머리카락 > x] mid"
+""",
         encoding="utf-8",
     )
     kb = load_tag_knowledge_base(path)

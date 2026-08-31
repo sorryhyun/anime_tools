@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Build a method-agnostic typed-tag index from caption sidecars.
 
 Walks caption ``.txt`` sidecars under a source dir, classifies each tag
@@ -323,10 +322,8 @@ def build_index(
             for tag in typed[axis]:
                 groups[axis].setdefault(tag, []).append(key)
 
-    for axis in groups:
-        groups[axis] = {
-            tag: sorted(stems) for tag, stems in sorted(groups[axis].items())
-        }
+    for axis, by_tag in groups.items():
+        groups[axis] = {tag: sorted(stems) for tag, stems in sorted(by_tag.items())}
 
     vstat = os.stat(vocab_path)
     return {

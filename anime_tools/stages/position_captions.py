@@ -32,7 +32,7 @@ Per-rule evidence and the knob table live in
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterator, Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -73,6 +73,9 @@ from anime_tools.stages.instance_detection import (
     mask_containment,
     merge_part_detections,
 )
+
+from ._caption_io import write_caption
+from ._walk_captions import iter_captions
 
 # Convenience re-exports: the canonical homes are the modules imported above,
 # but every consumer of this pipeline (the CLI, the A/B tool, the NMS probe, the
@@ -571,39 +574,6 @@ def _save_skip_overlay(
 # ---------------------------------------------------------------------------
 
 
-def _iter_captions(
-    resized_dir: Path,
-    source_dir: Path,
-    path_pattern: str | None,
-    stats: PositionCaptionStats,
-    progress: Callable[[int, int, str], None] | None = None,
-) -> Iterator[tuple[Path, Path, Path, str]]:
-    """Yield ``(image_path, rel, dst_caption, caption)`` for the walked tree.
-
-    Shared by both passes so they can't disagree on which caption file is
-    authoritative: the derived caption (already order-corrected, and carrying an
-    earlier run's clauses so ``is_candidate`` skips it) with the master as the
-    read-only fallback for an image the caption step has not mirrored yet.
-    ``stats.seen``, the ``no-caption`` skip, and the progress callback (over
-    *every* walked image, not only the captioned ones) are handled here.
-    """
-    from anime_tools._walk import walk_images
-
-    images = walk_images(resized_dir, recursive=True, pattern=path_pattern)
-    stats.seen = len(images)
-    for index, image_path in enumerate(images, 1):
-        rel = image_path.relative_to(resized_dir).with_suffix(".txt")
-        dst_caption = resized_dir / rel
-        caption_path = dst_caption if dst_caption.exists() else source_dir / rel
-        if progress is not None:
-            progress(index, len(images), str(rel))
-        if not caption_path.exists():
-            stats.skip("no-caption")
-            continue
-        caption = caption_path.read_text(encoding="utf-8").strip()
-        yield image_path, rel, dst_caption, caption
-
-
 def run_position_captions(
     *,
     resized_dir: Path,
@@ -638,7 +608,7 @@ def run_position_captions(
     stats = PositionCaptionStats()
     rows: list[ImageProposal] = []
 
-    walked = list(_iter_captions(resized_dir, source_dir, path_pattern, stats))
+    walked = list(iter_captions(resized_dir, source_dir, path_pattern, stats))
     for index, (image_path, rel, dst_caption, caption) in enumerate(walked, 1):
         if progress is not None:
             progress(index, len(walked), str(rel))
@@ -681,26 +651,10 @@ def run_position_captions(
         if token_count_fn is not None and proposal.proposed:
             proposal.tokens = token_count_fn(proposal.proposed)
         if apply:
-            _write_derived_caption(dst_caption, proposal.proposed)
+            write_caption(dst_caption, proposal.proposed, drop_variants=True)
             stats.written += 1
 
     return rows, stats
-
-
-def _write_derived_caption(dst_caption: Path, text: str) -> None:
-    """Write a caption into the resized tree and drop its variant sidecar.
-
-    GOTCHA: the sidecar wins over ``{stem}.txt`` at encode time, so leaving a
-    pre-clause one behind would keep training the pre-clause caption regardless
-    of how fresh ``{stem}.txt`` is.
-    """
-    from anime_tools.captions.variants import variants_sidecar_path
-
-    dst_caption.parent.mkdir(parents=True, exist_ok=True)
-    dst_caption.write_text(text, encoding="utf-8")
-    sidecar = variants_sidecar_path(dst_caption)
-    if sidecar.exists():
-        sidecar.unlink()
 
 
 def flatten_captions(
@@ -726,7 +680,7 @@ def flatten_captions(
     """
     stats = PositionCaptionStats()
     rows: list[dict] = []
-    for _, rel, dst_caption, original in _iter_captions(
+    for _, rel, dst_caption, original in iter_captions(
         resized_dir, source_dir, path_pattern, stats
     ):
         if not has_clauses(original):
@@ -746,6 +700,6 @@ def flatten_captions(
             }
         )
         if apply:
-            _write_derived_caption(dst_caption, flattened)
+            write_caption(dst_caption, flattened, drop_variants=True)
             stats.written += 1
     return rows, stats

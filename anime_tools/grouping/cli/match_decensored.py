@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Match censored sincos training images to their uncensored ("decensored") counterparts.
 
 Filenames don't correspond (sincos = gelbooru post IDs, decensored = pixiv IDs) and
