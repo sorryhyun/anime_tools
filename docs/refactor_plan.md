@@ -256,9 +256,14 @@ count gate now drops for that caption, as it always did for the space form.
 underscore members of `caption_layout`'s `LAYOUT_TAGS`, now unreachable through
 `flat_tag_set` but still correct for a direct caller holding raw tags.
 
-## Phase 5 — captions/grouping/tagger structural strays
+## Phase 5 — captions/grouping/tagger structural strays — **done**
 
-Grab-bag of medium items, each independent:
+Grab-bag of medium items, each independent. Landed as `captions/vocab_io.py`,
+`tag_groups.resolved_from_dict`, `tagger/data.TaggerCheckpoint`, a rewritten
+`tagger/feature_cache.py`, `grouping/cli/_decensored.py` and `_json.py`; new
+standing tests `tests/test_vocab_io.py`, `tests/test_tagger_checkpoint.py`,
+`tests/test_json_io.py` plus four walk-parity cases in
+`tests/test_grouping_features.py`.
 
 1. **`captions/vocab_io.py`** (torch-free): `load_vocab(path)`,
    `names_by_category(vocab)`, and `resolved_from_dict(...)` — the missing
@@ -302,6 +307,39 @@ Grab-bag of medium items, each independent:
    version)`** — unify `match_decensored.build`'s `.npz` cache lifecycle with
    `embed_members`'s; `match_decensored` also stops missing non-`.webp`
    sources by using the shared walk. Lowest urgency in this phase.
+
+
+Outcome: no caption byte, report key or contract format changed. Four things
+moved that are worth knowing about.
+
+- **Two comparisons got wider, on purpose.** `grouping/features.IMAGE_EXTS` is
+  now derived from `_walk.IMAGE_EXTENSIONS`, so grouping sees `.bmp` (and stops
+  claiming `.jxl`/`.avif` when no Pillow plugin can decode them) — the same
+  pool the stages and the GUI see. `tagger/cli/constants.IMAGE_EXTS` keeps its
+  preference order for `find_image_for_caption` but appends the walker's
+  remainder, so a caption whose only sibling is a `.bmp` is no longer dropped
+  from the vocab build. `match_decensored` walks through the same glob instead
+  of filtering to `.webp`.
+- **Four JSON files change byte shape** (not content): `caption_index.json`,
+  the A/B and review report artifacts and the mask probe's `probe.json` were
+  written at `indent=1` and are now at the canonical `indent=2`. Eight
+  checkpoint reads that used a bare `open(path)` — the platform locale
+  codepage, which is not UTF-8 on Windows — now read UTF-8 explicitly, and
+  `groups.json` + the sidecar meta stop escaping non-ASCII paths to `\uXXXX`.
+- **`feature_cache.py` lost its dead half.** The `feature_cache_root` /
+  `cache_dir_for` helpers addressed the PE token caches, which were reclaimed
+  with that trainer in 2026-08; nothing imported them. The module is now the
+  dbv4 hidden-state cache it claimed to own.
+- **Item 8 was not done as written, deliberately.** A shared
+  `cached_descriptors(paths, compute, cache_path, version)` would have had one
+  caller: `embed_members`' cache is per-image, content-addressed, unsigned and
+  written from a thread pool mid-stream, while `match_decensored`'s is one
+  whole-directory blob stamped `(newest mtime, count, version)`. They share the
+  words "npz cache" and nothing else, so unifying them would have invented an
+  abstraction rather than removed a copy. What was real in that item — the
+  `.webp`-only walk — is fixed, and `build`'s cache read now leaves its handle
+  closed and treats a corrupt cache as "recompute" instead of raising, which is
+  the stance the rest of the package's caches take.
 
 ## Phase 6 — GUI backend + frontend
 

@@ -27,6 +27,8 @@ from pathlib import Path
 import numpy as np
 from PIL import Image
 
+from anime_tools._walk import glob_images_pathlib
+
 from ._decensored import DECEN_DIR, OUT_DIR, SINCOS_DIR
 
 WORKERS = min(12, (os.cpu_count() or 4))
@@ -112,18 +114,35 @@ def _worker(path_str: str):
 
 
 def build(dir_path: Path, label: str) -> dict[str, dict]:
-    files = sorted(p for p in dir_path.iterdir() if p.suffix.lower() == ".webp")
+    """``filename -> descriptor`` for every image in ``dir_path``, cached whole.
+
+    The walk is the shared curation glob, not a ``.webp`` filter: a censored
+    original saved as ``.png`` used to be invisible here and so could never be
+    paired. Descriptors are keyed by filename (extension included), so a mixed
+    directory is fine.
+
+    One ``.npz`` for the whole directory, stamped with ``(newest mtime, count,
+    CACHE_VER)`` — unlike the PE feature cache next door, which is per image and
+    content-addressed. Anything wrong with the stamp, or with the file itself,
+    means "recompute", never an error.
+    """
+    files = glob_images_pathlib(dir_path, recursive=False)
     cache = OUT_DIR / f"_desc_{label}.npz"
     sig = max((p.stat().st_mtime for p in files), default=0.0)
     if cache.exists():
-        z = np.load(cache, allow_pickle=True)
-        if (
-            float(z["sig"]) == sig
-            and int(z["n"]) == len(files)
-            and int(z.get("ver", 0)) == CACHE_VER
-        ):
+        try:
+            with np.load(cache, allow_pickle=True) as z:
+                fresh = (
+                    float(z["sig"]) == sig
+                    and int(z["n"]) == len(files)
+                    and int(z["ver"]) == CACHE_VER
+                )
+                data = z["data"].item() if fresh else None
+        except (OSError, ValueError, KeyError):
+            data = None
+        if data is not None:
             print(f"[{label}] {len(files)} images -> loaded cached descriptors")
-            return z["data"].item()
+            return data
     print(
         f"[{label}] {len(files)} images -> computing descriptors on {WORKERS} workers"
     )
