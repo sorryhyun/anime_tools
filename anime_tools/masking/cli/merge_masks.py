@@ -13,6 +13,8 @@ import numpy as np
 from PIL import Image
 from tqdm import tqdm
 
+from anime_tools.masking._masks import iter_masks
+
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
@@ -37,9 +39,7 @@ def main() -> None:
     for d in mask_dirs:
         if not d.exists():
             continue
-        for p in d.rglob("*_mask.png"):
-            rel = p.parent.relative_to(d)
-            rel_str = "" if str(rel) in ("", ".") else str(rel)
+        for rel_str, p in iter_masks(d):
             by_rel.setdefault((rel_str, p.name), []).append(p)
 
     if not by_rel:

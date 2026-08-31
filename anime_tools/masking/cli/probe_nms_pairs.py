@@ -26,14 +26,6 @@ from collections import deque
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
-import numpy as np
-
-# Monkey-patch numpy for sam3 compatibility (upstream pins numpy<2 and uses np.bool)
-if not hasattr(np, "bool"):
-    np.bool = np.bool_
-
-PREFETCH_DEPTH = 4
-
 from PIL import Image
 
 from anime_tools._device import resolve_device
@@ -43,12 +35,15 @@ from anime_tools.downloads import DEFAULT_SAM3_CHECKPOINT
 from anime_tools.stages.cli.position_captions import build_detect_fn
 from anime_tools.stages.instance_detection import (
     DEFAULT_SUBJECT_PROMPT_EMBED,
+    mask_box_fill,
 )
 from anime_tools.stages.position_captions import (
     box_containment,
     box_iou,
     drop_small_boxes,
 )
+
+PREFETCH_DEPTH = 4
 
 
 def parse_args() -> argparse.Namespace:
@@ -79,25 +74,6 @@ def parse_args() -> argparse.Namespace:
     args = p.parse_args()
     args.device = resolve_device(args.device)
     return args
-
-
-def mask_fill(det, size: tuple[int, int]) -> float | None:
-    """Fraction of the detection's own box that its mask actually claims."""
-    if det.mask is None:
-        return None
-    mask = np.asarray(det.mask)
-    if mask.ndim == 3:
-        mask = mask[0]
-    width, height = size
-    x1, y1, x2, y2 = det.box
-    box = (
-        max(0, int(x1)),
-        max(0, int(y1)),
-        min(width, int(x2)),
-        min(height, int(y2)),
-    )
-    window = mask[box[1] : box[3], box[0] : box[2]] > 0.5
-    return float(window.mean()) if window.size else 0.0
 
 
 def replay_nms(dets: list, iou_threshold: float) -> list[tuple]:
@@ -151,7 +127,7 @@ def main() -> None:
         )
         rel = str(path.relative_to(dst))
         width, height = image.size
-        fills = {id(det): mask_fill(det, image.size) for det in dets}
+        fills = {id(det): mask_box_fill(det) for det in dets}
         for det in dets:
             x1, y1, x2, y2 = det.box
             proposals.append(

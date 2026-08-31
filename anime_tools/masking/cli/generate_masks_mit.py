@@ -29,12 +29,20 @@ if TYPE_CHECKING:
     from torch import nn
 
 from anime_tools._device import resolve_device
-from anime_tools._walk import walk_images
 
 # The repo/filename live in the download catalog so the GUI can pre-fetch this
 # net; the loader below reads it straight out of the hub cache either way.
 from anime_tools.downloads import MIT_TEXT_FILENAME as _HF_FILENAME
 from anime_tools.downloads import MIT_TEXT_REPO as _HF_REPO
+from anime_tools.masking._masks import (
+    add_device_arg,
+    add_force_arg,
+    add_mask_dir_args,
+    add_walk_args,
+    add_workers_arg,
+    plan_mask_jobs,
+    write_ignore_mask,
+)
 
 _ENCODER = "tu-efficientnetv2_rw_m"
 
@@ -144,10 +152,6 @@ def _detect_mask(
     return mask
 
 
-def save_mask(path: Path, alpha_mask: np.ndarray) -> None:
-    Image.fromarray(alpha_mask, mode="L").save(path)
-
-
 def _load_ctd(onnx_path: str, device: str = "cuda"):
     """Return forward(canvas_1024_rgb) -> raw output list.
 
@@ -238,22 +242,15 @@ def _ctd_text_boxes(
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--image-dir", type=str, required=True, help="Image directory")
-    parser.add_argument(
-        "--mask-dir", type=str, required=True, help="Output mask directory"
-    )
+    add_mask_dir_args(parser)
     parser.add_argument(
         "--model-path",
         type=str,
         default=None,
         help="Path to model.pth (downloads from HuggingFace if not specified)",
     )
-    parser.add_argument(
-        "--force", action="store_true", help="Regenerate existing masks"
-    )
-    parser.add_argument(
-        "--device", type=str, default=None, help="cuda|cpu (default: auto)"
-    )
+    add_force_arg(parser)
+    add_device_arg(parser)
     parser.add_argument(
         "--text-threshold",
         type=float,
@@ -263,9 +260,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--dilate", type=int, default=3, help="Mask dilation in pixels (default: 5)"
     )
-    parser.add_argument(
-        "--workers", type=int, default=4, help="I/O workers (default: 4)"
-    )
+    add_workers_arg(parser)
     parser.add_argument(
         "--ctd-gate",
         action=argparse.BooleanOptionalAction,
@@ -282,24 +277,7 @@ def build_parser() -> argparse.ArgumentParser:
         default="models/mit/comictextdetector.pt.onnx",
         help="comictextdetector onnx for --ctd-gate (from make download-models)",
     )
-    parser.add_argument(
-        "--recursive",
-        action="store_true",
-        help=(
-            "Walk subfolders under --image-dir. Mask output mirrors the source "
-            "subdir structure under --mask-dir."
-        ),
-    )
-    parser.add_argument(
-        "--path-pattern",
-        type=str,
-        default=None,
-        help=(
-            "fnmatch glob (| to OR-combine) on each image's path relative to "
-            "--image-dir, restricting which images get masked. Same semantics "
-            "as the training path_pattern."
-        ),
-    )
+    add_walk_args(parser)
     return parser
 
 
@@ -328,28 +306,13 @@ def main() -> None:
     masks_dir = Path(args.mask_dir)
     masks_dir.mkdir(parents=True, exist_ok=True)
 
-    # walk_images enforces per-subfolder stem uniqueness (same-folder stem
-    # collisions would overwrite each other's mask); same stem across folders
-    # is fine — the nested output layout disambiguates by subdir.
-    image_files = walk_images(
+    work_items = plan_mask_jobs(
         image_dir,
+        masks_dir,
         recursive=args.recursive,
         pattern=args.path_pattern,
+        force=args.force,
     )
-
-    work_items = []
-    for image_path in image_files:
-        try:
-            rel = image_path.parent.relative_to(image_dir)
-        except ValueError:
-            rel = Path("")
-        rel_str = str(rel)
-        target_dir = masks_dir / rel if rel_str not in ("", ".") else masks_dir
-        mask_path = target_dir / f"{image_path.stem}_mask.png"
-        if mask_path.exists() and not args.force:
-            continue
-        target_dir.mkdir(parents=True, exist_ok=True)
-        work_items.append((image_path, mask_path))
 
     total = len(work_items)
     if total == 0:
@@ -392,10 +355,7 @@ def main() -> None:
         if dilate_kernel is not None:
             combined_mask = cv2.dilate(combined_mask, dilate_kernel, iterations=1)
 
-        # Invert: detected=1 → alpha=0 (ignore), no detection → alpha=255 (train)
-        alpha_mask = ((1 - combined_mask) * 255).astype(np.uint8)
-
-        pool.submit(save_mask, mask_path, alpha_mask)
+        write_ignore_mask(mask_path, combined_mask, pool=pool)
 
         h, w = img_np.shape[:2]
         masked_pct = 100 * np.count_nonzero(combined_mask) / (w * h)

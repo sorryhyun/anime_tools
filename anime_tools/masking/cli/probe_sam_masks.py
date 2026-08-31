@@ -27,17 +27,17 @@ import re
 from pathlib import Path
 
 import numpy as np
-
-# Monkey-patch numpy for sam3 compatibility (upstream pins numpy<2 and uses np.bool)
-if not hasattr(np, "bool"):
-    np.bool = np.bool_
-
 from PIL import Image, ImageDraw
 
 from anime_tools._device import resolve_device
 from anime_tools._env import resolve_path
 from anime_tools._walk import walk_images
 from anime_tools.downloads import DEFAULT_SAM3_CHECKPOINT
+
+# Imported for `load_sam3`, and for the numpy<2 `np.bool` alias sam3 needs,
+# which is that module's import side effect.
+from anime_tools.masking._sam3 import load_sam3
+from anime_tools.stages.instance_detection import Detection, mask_box_fill
 
 COLORS = [
     (255, 60, 60),
@@ -188,14 +188,13 @@ def probe_one(
         flat = raw[0] if raw.ndim == 3 else raw
         aligned = flat.shape == (image.height, image.width)
         binary = flat > 0.5
-        bx = [
-            max(0, int(coords[0])),
-            max(0, int(coords[1])),
-            min(image.width, int(coords[2])),
-            min(image.height, int(coords[3])),
-        ]
-        in_box = binary[bx[1] : bx[3], bx[0] : bx[2]]
-        rec["box_fill"] = round(float(in_box.mean()) if in_box.size else 0.0, 4)
+        # Same fill the pipeline's NMS tie-break sees, so a number printed here
+        # is the number `dedupe_detections` would have ranked on. It clamps the
+        # box to the *mask's* shape, which is the point when `aligned` is False.
+        fill = mask_box_fill(
+            Detection(box=tuple(coords), score=float(score), mask=flat)
+        )
+        rec["box_fill"] = round(fill or 0.0, 4)
         rec["aligned"] = bool(aligned)
         records.append(rec)
 
@@ -247,8 +246,6 @@ def render(overlay: np.ndarray, boxes, path: Path) -> None:
 def main() -> None:
     args = parse_args()
     import torch
-    from sam3.model.sam3_image_processor import Sam3Processor
-    from sam3.model_builder import build_sam3_image_model
 
     prompts = parse_prompts(args.prompts)
     if not prompts:
@@ -262,13 +259,11 @@ def main() -> None:
         f"{len(paths)} image(s) x {len(prompts)} prompt(s): {[p for _, p in prompts]}"
     )
 
-    model = build_sam3_image_model(
-        device=args.device,
-        eval_mode=True,
-        checkpoint_path=str(resolve_path(args.checkpoint)),
-        load_from_HF=False,
+    _model, processor = load_sam3(
+        resolve_path(args.checkpoint),
+        args.device,
+        confidence_threshold=args.threshold,
     )
-    processor = Sam3Processor(model, confidence_threshold=args.threshold)
 
     summary: list[dict] = []
     for path, name in zip(paths, out_names(paths)):

@@ -31,6 +31,7 @@ from anime_tools._env import curation_home, resolve_path
 from anime_tools._walk import IMAGE_EXTENSIONS, glob_images_pathlib
 from anime_tools.captions.position_clauses import parse_caption
 from anime_tools.captions.variants import read_variants_sidecar, variants_sidecar_path
+from anime_tools.masking._masks import mask_name
 from anime_tools.path_filter import filter_paths_by_glob
 
 SETTINGS_KEY = "dataset"
@@ -204,8 +205,15 @@ def rel_for_image(roots: Roots, image: str) -> str | None:
 
 
 def mask_path(roots: Roots, rel: Path) -> Path | None:
-    """``masks/<subdir>/{stem}_mask.png``, or the legacy flat one."""
-    name = f"{rel.stem}_mask.png"
+    """``masks/<subdir>/{stem}_mask.png``, or the legacy flat one.
+
+    The name comes from :func:`anime_tools.masking._masks.mask_name`, the same
+    one the generators write, so the two sides cannot drift. The flat fallback
+    is this reader's alone: the generators have mirrored the source subdir
+    since they grew ``--recursive``, but a mask tree made before that is still
+    a valid one to browse.
+    """
+    name = mask_name(rel.stem)
     nested = roots.masks / rel.parent / name
     if nested.is_file():
         return nested

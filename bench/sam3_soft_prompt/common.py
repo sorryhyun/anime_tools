@@ -17,14 +17,13 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-import numpy as np
-
-# sam3 pins numpy<2 and still spells np.bool
-if not hasattr(np, "bool"):
-    np.bool = np.bool_
-
 import torch
 from safetensors.torch import save_file
+
+# The one SAM3 entry point, and (as its import side effect) the numpy<2
+# `np.bool` alias sam3 needs — which is why every module under this directory
+# gets it for free by importing this one.
+from anime_tools.masking._sam3 import load_sam3 as _load_sam3
 
 # Canonical home is library/ — bench/ is in scripts/update.py's PRESERVE_DIRS,
 # so anything the shipped preprocess path needs cannot live only here.
@@ -38,32 +37,19 @@ MASK_RES = 288  # native `pred_masks` resolution
 
 
 def load_sam3(checkpoint: str | Path, device: str = "cuda"):
-    """Frozen SAM3 image model + processor (processor built at a low floor —
-    the score gate is re-applied by the caller, see `build_detect_fn`)."""
-    from sam3.model.sam3_image_processor import Sam3Processor
-    from sam3.model_builder import build_sam3_image_model
+    """Frozen SAM3 image model + processor, built the bench's way.
 
-    model = build_sam3_image_model(
-        device=device,
-        eval_mode=True,
-        checkpoint_path=str(checkpoint),
-        load_from_HF=False,
+    The shared loader plus the two things only a *trainer* wants: every
+    parameter frozen (the learnable object is the prompt, not the trunk) and
+    activation checkpointing off, so SAM3's two eval-mode recompute paths do
+    not run inside our backward for nothing. The processor floor is 0.0 — the
+    score gate is re-applied by the caller, see `build_detect_fn`.
+    """
+    model, processor = _load_sam3(
+        checkpoint, device, confidence_threshold=0.0, disable_act_ckpt=True
     )
     for p in model.parameters():
         p.requires_grad_(False)
-    # SAM3 leaves two activation-checkpoint paths on even in eval mode (the
-    # maskformer pixel decoder + the MHA in `model_misc`); they recompute the
-    # forward inside our backward for nothing — the trunk is frozen and VRAM
-    # is not the bottleneck at the batch sizes the prompt trainer uses.
-    n = 0
-    for m in model.modules():
-        for attr in ("act_ckpt", "use_act_checkpoint"):
-            if getattr(m, attr, False) is True:
-                setattr(m, attr, False)
-                n += 1
-    if n:
-        print(f"sam3: disabled activation checkpointing on {n} modules", flush=True)
-    processor = Sam3Processor(model, confidence_threshold=0.0)
     return model, processor
 
 

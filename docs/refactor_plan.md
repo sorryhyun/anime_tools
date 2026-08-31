@@ -147,11 +147,17 @@ the verdict/confidence gate rejected. One behaviour change rode along, in
 `revert_curated`: reverting *to* an empty before-text now reports `no-proposal`
 instead of blanking the caption file.
 
-## Phase 3 — give `masking/` a package core
+## Phase 3 — give `masking/` a package core — **done**
 
-`masking/` has zero non-CLI modules, which is the root cause of ~85 lines of
+`masking/` had zero non-CLI modules, which was the root cause of ~85 lines of
 copied skeleton between `generate_masks.py` and `generate_masks_mit.py`, four
 copies of SAM3 construction, and nine copies of the `np.bool` shim.
+
+Landed as `masking/_sam3.py` (`load_sam3` / `make_processor`, and the shim as
+that module's import side effect) and `masking/_masks.py` (the flag blocks, the
+plan, the write tail, the read side); net −157 lines across the five masking
+CLIs, the four stage CLIs and the seven bench scripts. New standing test:
+`tests/test_masking_plan.py`.
 
 1. **`masking/_sam3.py::load_sam3(checkpoint, device, *,
    confidence_threshold=None, disable_act_ckpt=False)`** — one constructor
@@ -175,6 +181,25 @@ copies of SAM3 construction, and nine copies of the `np.bool` shim.
 
 Guards: masking has thinner test coverage; add a `plan_mask_jobs` unit test
 (mirroring + force semantics) as part of the move.
+
+Outcome: the two generators' argparse schemas are byte-identical (checked
+against `HEAD` through `gui.stages.dump_schemas`, for every stage), which is why
+`_masks.py` exposes five small contiguous flag blocks rather than one
+`add_mask_io_args` — the two parsers interleave their own flags between them and
+declaration order is what the GUI form follows. Deviations from the sketch:
+`write_ignore_mask` is a thin wrapper over a `write_mask(path, keep)` primitive,
+because the SAM3 generator's `focus_prompts` path writes the *keep* mask
+directly and only the inversion is worth naming; and `gui/dataset.mask_path`
+adopted `mask_name` alone rather than `mask_path_for`, since it starts from a
+dataset-relative path rather than an image under an `--image-dir`. The
+`np.bool` shim went from nine copies to one: only `_sam3.py` still spells it,
+and the seven bench scripts get it by importing `bench/sam3_soft_prompt/
+common.py`, whose own `load_sam3` is now the shared loader plus the two things
+only a trainer wants (frozen parameters, activation checkpointing off).
+`probe_sam_masks`'s inline box-fill became a `Detection` handed to
+`mask_box_fill`, so the number it prints is the one `dedupe_detections` ranks on
+— it clamps to the mask's shape rather than the image's, which is the point when
+the probe is reporting a misaligned mask.
 
 ## Phase 4 — one tag-shape vocabulary (`captions/taxonomy.py`)
 

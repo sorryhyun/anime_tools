@@ -29,12 +29,6 @@ import json
 import textwrap
 from pathlib import Path
 
-import numpy as np
-
-# Monkey-patch numpy for sam3 compatibility (upstream pins numpy<2 and uses np.bool)
-if not hasattr(np, "bool"):
-    np.bool = np.bool_
-
 from PIL import Image, ImageDraw
 
 from anime_tools._device import resolve_device

@@ -46,12 +46,12 @@ from pathlib import Path
 
 import numpy as np
 
-# Monkey-patch numpy for sam3 compatibility (upstream pins numpy<2 and uses np.bool)
-if not hasattr(np, "bool"):
-    np.bool = np.bool_
-
 from anime_tools._device import resolve_device
 from anime_tools._env import resolve_path
+
+# The one SAM3 entry point: `load_sam3`/`make_processor`, and (as this module's
+# import side effect) the numpy<2 `np.bool` alias sam3 needs before it loads.
+from anime_tools.masking._sam3 import load_sam3, make_processor
 from anime_tools.stages.cli._args import (
     add_apply_args,
     add_dataset_args,
@@ -375,8 +375,6 @@ def build_detect_fn(args: argparse.Namespace, *, model=None, processor=None):
     the prompt as an argument; ``detect`` is pinned to ``args.prompt``.
     """
     import torch
-    from sam3.model.sam3_image_processor import Sam3Processor
-    from sam3.model_builder import build_sam3_image_model
 
     floor = min(
         args.score_threshold, args.retry_score_threshold, args.part_score_threshold
@@ -384,14 +382,13 @@ def build_detect_fn(args: argparse.Namespace, *, model=None, processor=None):
     device = resolve_device(args.device)
     if model is None:
         print("Loading SAM3...", flush=True)
-        model = build_sam3_image_model(
-            device=device,
-            eval_mode=True,
-            checkpoint_path=str(resolve_path(args.checkpoint)),
-            load_from_HF=False,
+        model, fresh = load_sam3(
+            resolve_path(args.checkpoint), device, confidence_threshold=floor
         )
+        if processor is None:
+            processor = fresh
     if processor is None or processor.confidence_threshold > floor:
-        processor = Sam3Processor(model, confidence_threshold=floor)
+        processor = make_processor(model, floor)
     soft_prompt = None
     embed_path = resolve_prompt_embed(getattr(args, "prompt_embed", None))
     if embed_path is not None:

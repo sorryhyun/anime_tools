@@ -4,28 +4,32 @@ import argparse
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
-import numpy as np
-
-# Monkey-patch numpy for sam3 compatibility (upstream pins numpy<2 and uses np.bool)
-if not hasattr(np, "bool"):
-    np.bool = np.bool_
-
 import cv2
+import numpy as np
 import yaml
 from PIL import Image
 from tqdm import tqdm
 
 from anime_tools._device import resolve_device
-from anime_tools._walk import walk_images
+from anime_tools.masking._masks import (
+    add_device_arg,
+    add_force_arg,
+    add_mask_dir_args,
+    add_walk_args,
+    add_workers_arg,
+    plan_mask_jobs,
+    write_ignore_mask,
+    write_mask,
+)
+
+# Imported for `load_sam3`, and for the numpy<2 `np.bool` alias sam3 needs,
+# which is that module's import side effect.
+from anime_tools.masking._sam3 import load_sam3
 from anime_tools.path_filter import filter_paths_by_glob
 
 
 def load_image(path: Path) -> Image.Image:
     return Image.open(path).convert("RGB")
-
-
-def save_mask(path: Path, alpha_mask: np.ndarray) -> None:
-    Image.fromarray(alpha_mask, mode="L").save(path)
 
 
 def build_rules(config: dict) -> list[dict]:
@@ -92,48 +96,23 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--config", type=str, required=True, help="YAML config with prompts and params"
     )
-    parser.add_argument("--image-dir", type=str, required=True, help="Image directory")
-    parser.add_argument(
-        "--mask-dir", type=str, required=True, help="Output mask directory"
-    )
-    parser.add_argument(
-        "--force", action="store_true", help="Regenerate existing masks"
-    )
+    add_mask_dir_args(parser)
+    add_force_arg(parser)
     parser.add_argument(
         "--checkpoint", type=str, default=None, help="Local SAM3 checkpoint path"
     )
-    parser.add_argument(
-        "--device", type=str, default=None, help="cuda|cpu (default: auto)"
-    )
-    parser.add_argument(
-        "--workers",
-        type=int,
-        default=4,
-        help="I/O workers for loading/saving (default: 4)",
-    )
+    add_device_arg(parser)
+    add_workers_arg(parser, help="I/O workers for loading/saving (default: 4)")
     parser.add_argument(
         "--batch-size",
         type=int,
         default=1,
         help="Images to process in parallel (default: 1)",
     )
-    parser.add_argument(
-        "--recursive",
-        action="store_true",
-        help=(
-            "Walk subfolders under --image-dir. Mask output mirrors the source "
-            "subdir structure under --mask-dir."
-        ),
-    )
-    parser.add_argument(
-        "--path-pattern",
-        type=str,
-        default=None,
-        help=(
-            "fnmatch glob (| to OR-combine) on each image's path relative to "
-            "--image-dir, restricting which images get masked. Same semantics "
-            "as the training path_pattern. Overrides the YAML's path_pattern "
-            "when given; falls back to it otherwise."
+    add_walk_args(
+        parser,
+        pattern_help=(
+            " Overrides the YAML's path_pattern when given; falls back to it otherwise."
         ),
     )
     return parser
@@ -152,21 +131,14 @@ def main() -> None:
     path_pattern = args.path_pattern or config.get("path_pattern")
 
     import torch
-    from sam3.model.sam3_image_processor import Sam3Processor
-    from sam3.model_builder import build_sam3_image_model
 
     image_dir = Path(args.image_dir)
     masks_dir = Path(args.mask_dir)
     masks_dir.mkdir(parents=True, exist_ok=True)
 
-    build_kwargs = {"device": args.device, "eval_mode": True}
-    if args.checkpoint:
-        build_kwargs["checkpoint_path"] = args.checkpoint
-        build_kwargs["load_from_HF"] = False
-
     print("Loading SAM3 model...")
-    model = build_sam3_image_model(**build_kwargs)
-    processor = Sam3Processor(model)
+    # The processor owns the model; nothing here touches it directly.
+    _model, processor = load_sam3(args.checkpoint or None, args.device)
 
     def detect_union(inference_state, prompt_list, shape, threshold) -> np.ndarray:
         """OR-combine SAM3 detections for every prompt into one binary mask."""
@@ -185,27 +157,13 @@ def main() -> None:
                 out = np.maximum(out, (mask_np > 0.5).astype(np.uint8))
         return out
 
-    # walk_images raises on same-stem collisions within one folder (cross-folder
-    # stems are fine — the nested output layout disambiguates by folder).
-    image_files = walk_images(
+    work_items = plan_mask_jobs(
         image_dir,
+        masks_dir,
         recursive=args.recursive,
         pattern=path_pattern,
+        force=args.force,
     )
-
-    work_items = []
-    for image_path in image_files:
-        try:
-            rel = image_path.parent.relative_to(image_dir)
-        except ValueError:
-            rel = Path("")
-        rel_str = str(rel)
-        target_dir = masks_dir / rel if rel_str not in ("", ".") else masks_dir
-        mask_path = target_dir / f"{image_path.stem}_mask.png"
-        if mask_path.exists() and not args.force:
-            continue
-        target_dir.mkdir(parents=True, exist_ok=True)
-        work_items.append((image_path, mask_path))
 
     total = len(work_items)
     if total == 0:
@@ -282,8 +240,7 @@ def main() -> None:
                         continue
                     # Keep ONLY the focus subject, minus any ignore-prompt regions.
                     trainable = focus_mask * (1 - ignore_mask)
-                    alpha_mask = (trainable * 255).astype(np.uint8)
-                    save_futures.append(pool.submit(save_mask, mask_path, alpha_mask))
+                    save_futures.append(write_mask(mask_path, trainable, pool=pool))
                     train_pct = 100 * np.count_nonzero(trainable) / (w * h)
                     pbar.set_postfix_str(f"{image_path.name}: train {train_pct:.1f}%")
                     continue
@@ -292,9 +249,9 @@ def main() -> None:
                     pbar.set_postfix_str(f"{image_path.name}: skipped")
                     continue
 
-                # Invert: detected=1 → alpha=0 (ignore), no detection → alpha=255 (train)
-                alpha_mask = ((1 - ignore_mask) * 255).astype(np.uint8)
-                save_futures.append(pool.submit(save_mask, mask_path, alpha_mask))
+                save_futures.append(
+                    write_ignore_mask(mask_path, ignore_mask, pool=pool)
+                )
                 masked_pct = 100 * np.count_nonzero(ignore_mask) / (w * h)
                 pbar.set_postfix_str(f"{image_path.name}: {masked_pct:.1f}%")
 

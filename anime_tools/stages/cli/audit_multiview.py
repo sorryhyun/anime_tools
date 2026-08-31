@@ -28,12 +28,6 @@ import json
 from dataclasses import asdict, replace
 from pathlib import Path
 
-import numpy as np
-
-# Monkey-patch numpy for sam3 compatibility (upstream pins numpy<2 and uses np.bool)
-if not hasattr(np, "bool"):
-    np.bool = np.bool_
-
 from anime_tools._env import resolve_path
 from anime_tools.stages.cli._args import (
     add_apply_args,
