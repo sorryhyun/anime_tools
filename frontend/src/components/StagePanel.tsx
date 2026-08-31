@@ -86,7 +86,6 @@ export function StagePanel(props: {
               </For>
             </span>
           </Show>
-          <span class="dim mono">{cur()?.module}</span>
           <Show when={props.missingModels?.length}>
             <button
               class="link warn"
