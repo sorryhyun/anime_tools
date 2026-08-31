@@ -164,6 +164,72 @@ def test_rerun_skips_outputs_already_at_their_bucket(tmp_path):
     assert sum(again.buckets.values()) == 1
 
 
+def test_a_settled_rerun_never_decodes_the_source(tmp_path, monkeypatch):
+    """The skip is decided from headers alone — nothing above it may decode.
+
+    This is the load-bearing half of "a re-run is near-free": the GUI runs this
+    pass as a preflight in front of every stage that opens an image, so on a
+    settled dataset almost every call ends at the skip. Deciding *not* to write
+    used to cost a full decode of the source (``exif_transpose`` copies, and a
+    copy loads), which is ~100 ms an image — a minute and a half of nothing on a
+    3k-image master, before every batch run.
+    """
+    from anime_tools.stages import resize as R
+
+    src, dst = tmp_path / "master", tmp_path / "resized"
+    _write_image(src / "0001.png", (1600, 900))
+    run_resize_images(src=src, dst=dst, workers=1)
+
+    def _explode(_img):
+        raise AssertionError("the skip path decoded the source image")
+
+    monkeypatch.setattr(R.ImageOps, "exif_transpose", _explode)
+    stats = run_resize_images(src=src, dst=dst, workers=1)
+
+    assert (stats.written, stats.skipped_current) == (0, 1)
+
+
+def test_a_changed_source_still_re_resizes(tmp_path):
+    # The header-only skip carries a *size hint* into the worker; a source
+    # rewritten under the same name must still land on its new bucket.
+    src, dst = tmp_path / "master", tmp_path / "resized"
+    _write_image(src / "0001.png", (1600, 900))
+    run_resize_images(src=src, dst=dst, workers=1)
+
+    _write_image(src / "0001.png", (900, 1600))
+    stats = run_resize_images(src=src, dst=dst, workers=1)
+
+    assert stats.written == 1
+    with Image.open(dst / "0001.png") as im:
+        assert im.size == select_bucket(900, 1600)[1]
+
+
+def test_exif_rotation_is_read_off_the_header(tmp_path):
+    # The one thing orientation does to a size is swap it, so the skip check
+    # can read it from the header — but it has to actually do so, or a rotated
+    # image would be measured on the wrong aspect and land on the wrong bucket.
+    from anime_tools.stages.resize import _oriented_size
+
+    src, dst = tmp_path / "master", tmp_path / "resized"
+    src.mkdir(parents=True)
+    img = Image.new("RGB", (1600, 900), (30, 60, 90))
+    exif = img.getexif()
+    exif[0x0112] = 6  # rotate 90° CW → the displayed image is 900x1600
+    img.save(src / "0001.jpg", exif=exif)
+
+    with Image.open(src / "0001.jpg") as raw:
+        assert _oriented_size(raw) == (900, 1600)
+
+    stats = run_resize_images(src=src, dst=dst, workers=1)
+
+    assert stats.written == 1
+    with Image.open(dst / "0001.png") as out:
+        assert out.size == select_bucket(900, 1600)[1]
+    # ...and it is skipped on the next pass, i.e. the header estimate agreed
+    # with the geometry the decoded path chose.
+    assert run_resize_images(src=src, dst=dst, workers=1).skipped_current == 1
+
+
 def test_overwrite_forces_a_rewrite(tmp_path):
     src, dst = tmp_path / "master", tmp_path / "resized"
     _write_image(src / "0001.png", (1600, 900))
@@ -200,6 +266,11 @@ def test_min_pixels_skips_small_images_instead_of_upscaling(tmp_path):
 
     assert stats.written == 1 and stats.skipped_small == 1
     assert not (dst / "small.png").exists()
+    # A skip here is invisible to *every* stage, not just to training: the
+    # resized tree is what masking, grouping and the tagger all walk. So the
+    # dropped image is named, the way a failure is, not merely counted.
+    assert len(stats.too_small) == 1
+    assert "small.png" in stats.too_small[0] and "200x200" in stats.too_small[0]
     assert run_resize_images(src=src, dst=dst, workers=1, min_pixels=0).written == 1
 
 
@@ -357,6 +428,7 @@ def test_cli_writes_the_tree_and_a_report(tmp_path):
     }
     assert report["target_res"] == [1024]
     assert sum(report["buckets"].values()) == 1
+    assert len(report["too_small"]) == 1
 
 
 def test_cli_rejects_an_unknown_tier(tmp_path):

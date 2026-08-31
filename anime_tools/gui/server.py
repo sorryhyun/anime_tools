@@ -578,7 +578,7 @@ def create_app(
         masks: str = "",
         pattern: str = "",
         q: str = "",
-        limit: int = 2000,
+        limit: int = D.MAX_ITEMS,
     ) -> dict[str, Any]:
         return D.list_items(
             roots_for(load_settings(), src=src, dst=dst, masks=masks),

@@ -140,7 +140,9 @@ def test_device_is_never_on_the_form_or_the_argv():
         _, fs = _stage(stage_id)
         device = next(f for f in fs if f["dest"] == "device")
         assert device["auto"] is True
-        argv = S.build_argv(fs, {**required, "device": "cuda"}, roots={"src": "i"})
+        argv = S.build_argv(
+            fs, {**required, "device": "cuda"}, roots={"src": "i", "dst": "d"}
+        )
         assert "--device" not in argv and "cuda" not in argv
 
 
@@ -169,8 +171,10 @@ def test_required_field_is_enforced():
 
 def test_boolean_optional_action_and_positional_list():
     _, fs = _stage("masks_mit")
-    argv = S.build_argv(fs, {"mask_dir": "m", "ctd_gate": False}, roots={"src": "i"})
-    assert argv == ["--image-dir", "i", "--mask-dir", "m", "--no-ctd-gate"]
+    # --image-dir is bound to `dst`: the mask is cut from the same pixels the
+    # trainer's loader will rescale it onto.
+    argv = S.build_argv(fs, {"mask_dir": "m", "ctd_gate": False}, roots={"dst": "d"})
+    assert argv == ["--image-dir", "d", "--mask-dir", "m", "--no-ctd-gate"]
     _, fs = _stage("masks_merge")
     argv = S.build_argv(fs, {"mask_dirs": "a\nb\n"}, roots={"masks": "o"})
     assert argv == ["--output-dir", "o", "a", "b"]
@@ -186,12 +190,17 @@ def test_the_sam3_checkpoint_is_one_setting_for_three_stages():
         assert ckpt["setting"] == "checkpoint", stage_id
         assert ckpt["default"] == "models/sam3/sam3.pt", stage_id
         argv = S.build_argv(
-            fs, required, settings={"checkpoint": "w.pt"}, roots={"src": "i"}
+            fs,
+            required,
+            settings={"checkpoint": "w.pt"},
+            roots={"src": "i", "dst": "d"},
         )
         assert _opt(argv, "--checkpoint") == "w.pt", stage_id
         # A path stranded in a saved form never stands in for the setting.
         assert "--checkpoint" not in S.build_argv(
-            fs, {**required, "checkpoint": "stale.pt"}, roots={"src": "i"}
+            fs,
+            {**required, "checkpoint": "stale.pt"},
+            roots={"src": "i", "dst": "d"},
         )
 
 
@@ -535,8 +544,9 @@ def test_resize_is_not_a_dock_panel():
 
 def test_only_resized_tree_stages_get_the_preflight():
     """A stage bound to ``dst`` reads the resized tree, so it needs resize in
-    front of it; the ``src``-only ones (masks, groups) read the originals, and
-    ``export`` is bound to ``dst`` but publishes it rather than consuming it."""
+    front of it — which is every pixel-reading stage now that the resized tree
+    is the one decode substrate. ``export`` is bound to ``dst`` but publishes it
+    rather than consuming it, and ``audit_apply`` reads no pixels at all."""
     got = {s.id: S.preprocess_for(s.id) for s in S.STAGES}
     assert got["export"] is None and "dst" in S.ROOT_FIELDS["export"].values()
     assert {k for k, v in got.items() if v == "resize"} == {
@@ -544,9 +554,13 @@ def test_only_resized_tree_stages_get_the_preflight():
         "position",
         "correct",
         "audit",
+        "masks_sam",
+        "masks_mit",
+        "groups",
     }
     assert got["resize"] is None  # never its own preflight
-    assert got["masks_sam"] is None and got["groups"] is None
+    # Rewrites captions the audit already found; never opens an image.
+    assert got["audit_apply"] is None
 
 
 def test_a_dst_bound_stage_runs_resize_first(client, monkeypatch):

@@ -63,9 +63,15 @@ default, so the view reads exactly the file the **Groups** stage writes.
 ``tests/test_gui_groups.py`` pins the two together."""
 
 MAX_ITEMS = 20000
-"""Hard cap on one listing. The sidebar renders lazily per folder, but the JSON
-still has to cross the wire — past this the answer is ``path_pattern``, not a
-bigger payload."""
+"""Hard cap on one listing, and the default: a listing shows the whole dataset.
+
+The sidebar renders lazily per folder, but the JSON still has to cross the wire
+— past this the answer is ``path_pattern``, not a bigger payload. It used to sit
+behind a 2000 default that nothing overrode, which made the cap unreachable and
+truncated any real dataset silently. It is one number because the tree and the
+group orderings draw the *same* listing (see the module docstring): a cap that
+differed between them would make "truncated" mean two things.
+"""
 
 
 class DatasetError(ValueError):
@@ -336,7 +342,11 @@ def caption_paths(roots: Roots, rel: Path) -> dict[str, Path]:
 
 
 def list_items(
-    roots: Roots, *, pattern: str | None = None, query: str = "", limit: int = 2000
+    roots: Roots,
+    *,
+    pattern: str | None = None,
+    query: str = "",
+    limit: int = MAX_ITEMS,
 ) -> dict[str, Any]:
     """Flat, sorted image list for the sidebar; the client nests it by folder.
 

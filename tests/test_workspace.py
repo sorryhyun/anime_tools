@@ -114,6 +114,39 @@ def test_the_resized_default_is_the_dst_root():
     assert dst == WS.DEFAULT_ROOTS["dst"] == WS.RESIZED
 
 
+def test_grouping_reads_the_resized_tree_by_default():
+    """The resized tree is the one decode substrate, not just the caption
+    stages' input: ``build_groups`` walks it too, so grouping sees the pixels
+    training sees and shares the geometry every other stage embeds."""
+    assert (
+        _defaults("anime_tools.grouping.cli.build_groups")["source_dir"] == WS.RESIZED
+    )
+
+
+def test_every_pixel_reading_stage_is_bound_to_the_resized_tree():
+    """The GUI half of the same rule.
+
+    A stage that opens an image reads ``dst``; ``src`` is left to the two that
+    read *captions* out of the master (``autotag``'s fallback, ``audit_apply``)
+    and to Export, which publishes back over it. Pinned because the binding is
+    also what earns each stage its resize preflight — drop one back to ``src``
+    and it silently walks a tree nothing else agrees with.
+    """
+    pixel_stages = {
+        "autotag",
+        "position",
+        "correct",
+        "audit",
+        "masks_sam",
+        "masks_mit",
+        "groups",
+    }
+    for stage_id in pixel_stages:
+        bound = S.ROOT_FIELDS[stage_id]
+        assert "dst" in bound.values(), f"{stage_id} does not read the resized tree"
+    assert "dst" not in S.ROOT_FIELDS["audit_apply"].values()
+
+
 # ---- migrate ------------------------------------------------------------
 
 

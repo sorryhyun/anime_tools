@@ -5,9 +5,13 @@ pair mining, dataset grouping/clustering, dedup — can share one PE-Spatial
 embedding path and one on-disk feature cache. Each image is encoded at PE's
 native 512x512 bucket → a global CLS descriptor + a 32x32 patch grid pooled to
 16x16 (both L2-normed), cached per-image as ``.npz`` under ``$NEAR_TWIN_CACHE``
-(default ``~/.cache/near_twin/``), keyed by parent-dir hash + stem. The cache key
-is encoder-agnostic in name but the features are PE-Spatial-B16-512 specific —
-consumers that change the encoder must use a fresh cache root.
+(default ``~/.cache/near_twin/``), keyed by parent-dir hash + stem and stamped
+with the source's ``(size, mtime_ns)`` + :data:`FEATURE_CACHE_VER`. The key is
+addressed by *location*, so it does not move when the pixels under it are
+rewritten — the stamp is what turns that into a miss rather than a stale hit,
+which is what lets stages read the regenerated ``workspace/resized/`` tree. The
+cache key is encoder-agnostic in name but the features are PE-Spatial-B16-512
+specific — consumers that change the encoder must use a fresh cache root.
 
 The encoder is passed in as an :class:`Embedder` (``.device`` / ``.dtype`` +
 ``__call__(batch) -> (cls, grid16)``); the trainer's PE-Spatial implementation
@@ -48,6 +52,7 @@ IMAGE_EXTS: tuple[str, ...] = tuple(sorted({e.lower() for e in IMAGE_EXTENSIONS}
 PE_NATIVE = 512  # PE-Spatial-B16-512 square bucket → 32x32 patch grid
 GRID_NATIVE = 32
 GRID_CACHE = 16  # cached pooled grid edge; any pooled grid <= 16 pools down from here
+FEATURE_CACHE_VER = 1  # bump to invalidate every cached .npz when the schema changes
 
 
 def read_tags(txt_path: Path) -> set[str]:
@@ -156,6 +161,24 @@ def _cache_path(member: Member) -> Path:
     return CACHE_ROOT / _dir_hash(member.image_path.parent) / f"{member.stem}.npz"
 
 
+def _source_stamp(path: Path) -> tuple[int, int]:
+    """``(size, mtime_ns)`` of the source image; ``(-1, -1)`` if unreadable.
+
+    The cache key is content-addressed by *location* (parent-dir hash + stem),
+    not by content, so nothing in the key changes when the pixels underneath it
+    are rewritten — which is exactly what happens when a stage reads the
+    regenerated ``workspace/resized/`` tree. The stamp is what makes a rewrite
+    visible: same key, different bytes, so the entry is a miss instead of a
+    silent stale hit. ``(-1, -1)`` never matches a real stat, so an unreadable
+    source recomputes rather than trusting whatever was cached for it.
+    """
+    try:
+        st = path.stat()
+    except OSError:
+        return (-1, -1)
+    return (st.st_size, st.st_mtime_ns)
+
+
 def _load_512(image_path: Path) -> torch.Tensor:
     """PIL → [3, 512, 512] in [-1, 1] (PE's Normalize(0.5, 0.5))."""
     with Image.open(image_path) as im:
@@ -215,9 +238,44 @@ class Feature:
     grid16: np.ndarray  # [16, 16, 768] float16
 
 
-def _save_feature(cache_path: Path, f: Feature) -> None:
+def _save_feature(cache_path: Path, f: Feature, stamp: tuple[int, int]) -> None:
+    """Write one cached feature, stamped with its source's ``(size, mtime_ns)``.
+
+    ``stamp`` is captured before the decode rather than read here: a source
+    rewritten mid-run then stores the *old* stamp against the new pixels, so the
+    next run re-embeds. Stat-ing at save time would store the new stamp against
+    the old pixels and the entry would never be revisited.
+    """
     cache_path.parent.mkdir(parents=True, exist_ok=True)
-    np.savez(cache_path, cls=f.cls.astype(np.float32), grid16=f.grid16)
+    size, mtime_ns = stamp
+    np.savez(
+        cache_path,
+        cls=f.cls.astype(np.float32),
+        grid16=f.grid16,
+        size=size,
+        mtime_ns=mtime_ns,
+        ver=FEATURE_CACHE_VER,
+    )
+
+
+def _load_feature(cache_path: Path, stamp: tuple[int, int]) -> Feature | None:
+    """Cached feature for ``stamp``, or ``None`` to recompute.
+
+    Anything wrong — no file, an unreadable or truncated ``.npz``, a
+    pre-stamp entry, a bumped :data:`FEATURE_CACHE_VER`, or a source whose size
+    or mtime moved — means "recompute", never an error.
+    """
+    if not cache_path.is_file():
+        return None
+    try:
+        with np.load(cache_path) as z:
+            if int(z["ver"]) != FEATURE_CACHE_VER:
+                return None
+            if (int(z["size"]), int(z["mtime_ns"])) != stamp:
+                return None
+            return Feature(cls=z["cls"].astype(np.float32), grid16=z["grid16"])
+    except (OSError, ValueError, KeyError, EOFError):
+        return None
 
 
 def embed_members(
@@ -243,7 +301,8 @@ def embed_members(
     ``root`` the key is the bare ``stem`` (legacy — only safe when the caller's
     member scope guarantees unique stems, e.g. one flat artist dir). A member
     whose image fails to decode is omitted. The on-disk cache is unaffected:
-    it is already keyed by parent-dir hash + stem.
+    it is already keyed by parent-dir hash + stem, and stamped with each
+    source's ``(size, mtime_ns)`` so a rewritten image re-embeds.
     """
 
     def _key(m: Member) -> str:
@@ -253,14 +312,14 @@ def embed_members(
 
     feats: dict[str, Feature] = {}
     todo: list[Member] = []
+    stamps: dict[int, tuple[int, int]] = {}  # index into ``todo`` -> source stamp
     for m in members:
-        cp = _cache_path(m)
-        if cp.is_file():
-            with np.load(cp) as z:
-                feats[_key(m)] = Feature(
-                    cls=z["cls"].astype(np.float32), grid16=z["grid16"]
-                )
+        stamp = _source_stamp(m.image_path)
+        cached = _load_feature(_cache_path(m), stamp)
+        if cached is not None:
+            feats[_key(m)] = cached
         else:
+            stamps[len(todo)] = stamp
             todo.append(m)
     if not todo:
         return feats
@@ -292,7 +351,7 @@ def embed_members(
                     continue
                 f = Feature(cls=cls_b[k], grid16=grid_b[k])
                 feats[_key(todo[i])] = f
-                saver.submit(_save_feature, _cache_path(todo[i]), f)
+                saver.submit(_save_feature, _cache_path(todo[i]), f, stamps[i])
             pbar.update(len(idxs))
     pbar.close()
     return feats

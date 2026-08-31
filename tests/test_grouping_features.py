@@ -12,6 +12,8 @@ Two regressions:
 
 from __future__ import annotations
 
+import os
+
 import numpy as np
 import torch
 from PIL import Image
@@ -183,3 +185,87 @@ def test_gather_members_uses_the_same_glob(tmp_path):
     by_artist = F.gather_members([tmp_path], None)
     assert [m.stem for m in by_artist["artist_a"]] == ["s1", "s2"]
     assert by_artist["artist_a"][1].txt_path.name == "s2.txt"
+
+
+# ---------------------------------------------------------------------------
+# cache staleness
+
+
+def test_cached_feature_is_reused_when_the_source_is_untouched(tmp_path, monkeypatch):
+    """The stamp must not defeat the cache it guards: an unchanged file is
+    still a hit, so a re-run stays free."""
+    monkeypatch.setattr(F, "CACHE_ROOT", tmp_path / "cache")
+    root = tmp_path / "src"
+    _write_png(root / "a" / "1.png", 0)
+    members = [Member("a", "1", root / "a" / "1.png", root / "a" / "1.txt")]
+
+    embed_members(FakeEmbedder(), members, batch_size=1, num_workers=0, root=root)
+
+    class CountingEmbedder(FakeEmbedder):
+        """Subclass, not an instance attribute: ``embedder(batch)`` resolves
+        ``__call__`` on the *type*, so patching the instance would not fire."""
+
+        calls = 0
+
+        def __call__(self, batch):
+            type(self).calls += 1
+            return super().__call__(batch)
+
+    embed_members(CountingEmbedder(), members, batch_size=1, num_workers=0, root=root)
+    assert CountingEmbedder.calls == 0  # served entirely from the cache
+
+
+def test_rewritten_source_re_embeds_instead_of_a_stale_hit(tmp_path, monkeypatch):
+    """The reason the resized tree can be the one decode substrate.
+
+    The cache key is the image's *location* (parent-dir hash + stem), which does
+    not move when ``resize`` regenerates the tree at a different tier. Without
+    the ``(size, mtime_ns)`` stamp the second pass would hand back the features
+    of pixels that no longer exist.
+    """
+    monkeypatch.setattr(F, "CACHE_ROOT", tmp_path / "cache")
+    root = tmp_path / "src"
+    path = root / "a" / "1.png"
+    _write_png(path, 0)
+    members = [Member("a", "1", path, root / "a" / "1.txt")]
+
+    first = embed_members(
+        FakeEmbedder(), members, batch_size=1, num_workers=0, root=root
+    )
+
+    # Same path, same stem, same parent — different pixels.
+    _write_png(path, 255)
+    os.utime(path, ns=(0, 0))  # a mtime that cannot collide with the original
+    second = embed_members(
+        FakeEmbedder(), members, batch_size=1, num_workers=0, root=root
+    )
+    assert not np.allclose(first["a/1.png"].cls, second["a/1.png"].cls)
+
+
+def test_pre_stamp_cache_entry_is_a_miss(tmp_path, monkeypatch):
+    """A ``.npz`` written before the stamp existed has no ``ver``/``size`` keys.
+    That is "recompute", never a crash."""
+    monkeypatch.setattr(F, "CACHE_ROOT", tmp_path / "cache")
+    root = tmp_path / "src"
+    path = root / "a" / "1.png"
+    _write_png(path, 0)
+    member = Member("a", "1", path, root / "a" / "1.txt")
+
+    legacy = F._cache_path(member)
+    legacy.parent.mkdir(parents=True, exist_ok=True)
+    np.savez(
+        legacy,
+        cls=np.zeros(4, dtype=np.float32),
+        grid16=np.zeros((16, 16, 4), dtype=np.float16),
+    )
+    assert F._load_feature(legacy, F._source_stamp(path)) is None
+
+    feats = embed_members(
+        FakeEmbedder(), [member], batch_size=1, num_workers=0, root=root
+    )
+    assert not np.allclose(feats["a/1.png"].cls, 0)
+
+
+def test_unreadable_source_never_takes_a_cached_hit(tmp_path, monkeypatch):
+    monkeypatch.setattr(F, "CACHE_ROOT", tmp_path / "cache")
+    assert F._source_stamp(tmp_path / "gone.png") == (-1, -1)

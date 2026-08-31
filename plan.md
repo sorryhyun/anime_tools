@@ -1,6 +1,6 @@
 # Workspace + Export
 
-Status: **Phases 1 and 3 done**, 2026-08-31. Phases 4 and 2 pending, in that order. Reframes the curation side around a
+Status: **Phases 1, 3 and 5 done**, 2026-08-31. Phases 4 and 2 pending, in that order. Reframes the curation side around a
 **workspace** the tools own, and an explicit **Export** that publishes from it.
 
 ## The idea
@@ -323,3 +323,79 @@ can name `master`.
 
 That last one is the invariant at the top of this document, made enforceable —
 the same trick `tests/test_boundary.py` plays on the import graph.
+
+---
+
+## Phase 5 — the resized tree is the one decode substrate ✅
+
+Done 2026-08-31, out of band: it depends on nothing in Phase 2 or 4 and they
+depend on nothing in it.
+
+### What was wrong
+
+The pipeline had two input trees, and which one a stage read was historical
+rather than decided. The caption stages walk `workspace/resized/` on purpose —
+`stages/autotag.py` says why in one line: *"Tagging runs on the resized image
+because that is the pixel data training sees."* Masking and grouping walked the
+master, for no reason beyond nobody having extended the rule.
+
+That is not merely inelegant. `docs/contract.md`'s mask row has the trainer's
+loader NEAREST-resize each mask onto the latent's pixel size, so a mask cut from
+master pixels is rescaled onto resized geometry. Free-fit preserves aspect and
+leaves a sub-patch crop residual, so that rescale is *nearly* free — except when
+the `max_ratio` 4.0 clamp fires, where the crop is real and the mask lands off
+the subject. Long strips and banners are exactly the images you would want a
+mask on.
+
+### The move
+
+`ROOT_FIELDS` binds `groups` / `masks_sam` / `masks_mit` to `dst` instead of
+`src`, and `build_groups --source-dir` defaults to `WS.RESIZED`. That is the
+whole change; `preprocess_for` then gives all three the resize preflight for
+free, because it keys off the `dst` binding. The masking CLIs keep `--image-dir`
+`required=True` — the CLI stays pointable at any tree, the *GUI binding* is the
+policy.
+
+`audit_apply` stays on `src`: it rewrites captions the audit already found and
+never opens an image. `export` stays in `NO_PREFLIGHT` for the reason Phase 3
+gave.
+
+### The two prerequisites, both landed
+
+**The near-twin feature cache needed a staleness stamp.** It is keyed by
+parent-dir hash + stem — a *location*, which does not move when `resize`
+regenerates the tree at a different tier or crop anchor. Over the master that
+was sound by construction (those bytes never change); over `resized/` it would
+have served features for pixels that no longer exist, with no symptom. Entries
+now carry `(size, mtime_ns)` + `FEATURE_CACHE_VER`, checked by `_load_feature`;
+anything wrong means recompute, never an error, so pre-stamp `.npz` files are
+just misses. The stamp is captured *before* the decode, not at save time: a file
+rewritten mid-run then stores the old stamp against new pixels and re-embeds
+next run, which is the safe direction to be wrong in.
+
+**`min_pixels` became a pipeline-wide filter.** `resize` skips sub-0.5MP images
+rather than upscaling them. That used to mean "not in training"; it now means
+"invisible to masking, grouping and the tagger too". Rather than change the
+policy — those images were already never seen by the trainer, so dropping them
+is the honest reading — the skip was made *legible*: `ResizeStats.too_small`
+records `"<path>: <W>x<H>"` per skip the way `failures` does, the CLI prints
+each one, and it lands in `report.json`.
+
+### Pinned by
+
+- `tests/test_workspace.py` — `build_groups`' default is `WS.RESIZED`, and every
+  pixel-reading stage is bound to `dst` (`audit_apply` is not).
+- `tests/test_gui.py::test_only_resized_tree_stages_get_the_preflight` — the
+  preflight set, now seven stages.
+- `tests/test_grouping_features.py` — a rewritten source re-embeds; an unchanged
+  one is still a cache hit (both mutation-checked); a pre-stamp entry is a miss.
+- `tests/test_resize_images.py` — `too_small` names the file and its size, and
+  reaches `report.json`.
+
+### Not done, and deliberately
+
+`max_ratio` 4.0 is still the clamp, so a >4:1 image is still cropped before
+anything embeds it — which for grouping means a long strip can lose the part
+that would have twinned it. That is an argument for revisiting the clamp, not
+for keeping grouping on a second tree, and it is now the same crop every other
+stage sees rather than a discrepancy between two.

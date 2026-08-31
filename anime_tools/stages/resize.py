@@ -212,6 +212,14 @@ class ResizeStats:
     written: int = 0
     skipped_small: int = 0
     """Below ``min_pixels``."""
+    too_small: list[str] = field(default_factory=list)
+    """``"<path>: <W>x<H>"`` per skip, so a dropped image is named, not counted.
+
+    Named for the same reason :attr:`failures` is: the resized tree is what
+    every other stage walks, so an image that never lands in it is invisible to
+    masking, grouping and the tagger, not merely absent from training. A bare
+    count leaves the user hunting for which files those were.
+    """
     skipped_current: int = 0
     """A resized PNG already at the target bucket (pass ``overwrite`` to force)."""
     failed: int = 0
@@ -264,6 +272,39 @@ def _metadata_signature(options: ResizeOptions) -> dict[str, str]:
     }
 
 
+def _oriented_size(src: Image.Image) -> tuple[int, int]:
+    """``(W, H)`` as :func:`PIL.ImageOps.exif_transpose` would leave it, from the
+    header alone.
+
+    The skip check needs the target bucket, the bucket needs the size, and the
+    only thing EXIF orientation does to a size is swap it — so reading that off
+    the header is what lets an already-resized image be skipped without a
+    decode. ``getexif()`` is consulted only when the file actually carries an
+    EXIF block, because ``PngImageFile.getexif`` *loads the image* to go looking
+    for one, which is the decode this exists to avoid.
+    """
+    w, h = src.size
+    if "exif" not in src.info:
+        return w, h
+    try:
+        orientation = src.getexif().get(0x0112)  # ExifTags.Base.Orientation
+    except Exception:  # noqa: BLE001 — malformed EXIF is just "no orientation"
+        return w, h
+    return (h, w) if orientation in (5, 6, 7, 8) else (w, h)
+
+
+def _bucket_for_size(size: tuple[int, int], options: ResizeOptions) -> tuple[int, int]:
+    """Target ``(W, H)`` for an already-oriented source size."""
+    box = margin_box(size[0], size[1], options.crop_margins)
+    _, bucket = select_bucket(
+        box[2] - box[0],
+        box[3] - box[1],
+        options.target_res,
+        max_ratio=options.max_ratio,
+    )
+    return bucket
+
+
 def _is_current(
     out_path: Path, bucket: tuple[int, int], signature: dict[str, str]
 ) -> bool:
@@ -272,6 +313,13 @@ def _is_current(
         with Image.open(out_path) as existing:
             if existing.size != bucket:
                 return False
+            if not signature:
+                # Default geometry stamps no keys, so the size is the whole
+                # answer — and reading ``.text`` off a PNG decodes it, because
+                # tEXt/zTXt may sit after IDAT. Costing a full decode of the
+                # output to compare an empty dict is what made a fully-cached
+                # re-run as expensive as the first one.
+                return True
             text = getattr(existing, "text", {}) or {}
             return all(text.get(k) == v for k, v in signature.items())
     except Exception:  # noqa: BLE001 — a missing/corrupt output is just "not current"
@@ -285,6 +333,7 @@ def process_image(
     rel_dir: str = "",
     copy_captions: bool = False,
     overwrite: bool = False,
+    size_hint: tuple[int, int] | None = None,
 ) -> tuple[str, tuple[int, int], bool]:
     """Resize one image into ``out_dir / rel_dir / {stem}.png``.
 
@@ -292,10 +341,34 @@ def process_image(
     ``ProcessPoolExecutor`` worker. Returns ``(name, bucket, skipped)``; unless
     ``overwrite`` is set an output already at the target bucket is left alone,
     so a re-run is near-free and a tier change re-resizes only what moved.
+
+    "Near-free" is the whole point and it is load-bearing: the GUI runs this
+    pass as a preflight in front of every stage that opens an image, so on a
+    settled dataset almost every call ends at the skip below. Nothing above that
+    line may decode — not the source (``exif_transpose`` copies, and a copy
+    loads) and not the output (``.text`` on a PNG loads) — which is why the
+    geometry is decided from the header via :func:`_oriented_size`, and the
+    metadata read and the transpose sit *after* the skip rather than before it.
+
+    ``size_hint`` is that oriented size when the caller already read it — the
+    min-pixel gate in :func:`run_resize_images` opens every header anyway, so it
+    hands the answer down instead of making the worker re-open the file.
     """
     target_dir = out_dir / rel_dir if rel_dir else out_dir
     out_path = target_dir / f"{image_path.stem}.png"
     signature = _metadata_signature(options)
+
+    if not overwrite:
+        if size_hint is None:
+            try:
+                with Image.open(image_path) as probe:
+                    size_hint = _oriented_size(probe)
+            except Exception:  # noqa: BLE001 — let the real open below report it
+                size_hint = None
+        if size_hint is not None:
+            bucket = _bucket_for_size(size_hint, options)
+            if _is_current(out_path, bucket, signature):
+                return out_path.name, bucket, True
 
     with Image.open(image_path) as src:
         save_kwargs = _collect_metadata(src)
@@ -306,6 +379,9 @@ def process_image(
             work_w, work_h, options.target_res, max_ratio=options.max_ratio
         )
 
+        # Re-checked against the decoded size: the header estimate above can
+        # only differ for a source whose orientation is not in its EXIF block
+        # (XMP), and this is the one place the exact geometry is known.
         if not overwrite and _is_current(out_path, bucket, signature):
             return out_path.name, bucket, True
 
@@ -330,6 +406,39 @@ def process_image(
                 shutil.copy2(sidecar, target_dir / f"{image_path.stem}{ext}")
 
     return out_path.name, bucket, False
+
+
+def _probe(
+    image_path: Path,
+) -> tuple[Path, tuple[int, int] | None, tuple[int, int] | None, str]:
+    """``(path, raw size, oriented size, error)`` from the header alone.
+
+    Module-level and picklable so :func:`_probe_sizes` can run it in the pool.
+    """
+    try:
+        with Image.open(image_path) as im:
+            return image_path, im.size, _oriented_size(im), ""
+    except Exception as exc:  # noqa: BLE001 — one bad file must not abort the pass
+        return image_path, None, None, str(exc)
+
+
+def _probe_sizes(
+    images: list[Path], workers: int
+) -> list[tuple[Path, tuple[int, int] | None, tuple[int, int] | None, str]]:
+    """Read every source header, in the pool — source order preserved.
+
+    Not the cheap prelude it looks like: ``Image.open`` on a webp demuxes the
+    whole file (~2 ms each on a typical master), so once the skip path stopped
+    decoding, *this* became the pass — 3k images is seconds of it, all in the
+    parent, in front of a preflight the GUI runs before every stage. It is pure
+    per-file CPU, so threads do nothing (the GIL is held inside the decoder) and
+    the process pool is the only thing that helps. ``map`` keeps input order, so
+    the gate below and the report it fills read exactly as the serial walk did.
+    """
+    if workers <= 1 or len(images) < 2:
+        return [_probe(p) for p in images]
+    with ProcessPoolExecutor(max_workers=workers) as pool:
+        return list(pool.map(_probe, images, chunksize=16))
 
 
 def _rel_dir_of(image_path: Path, src: Path) -> str:
@@ -368,22 +477,21 @@ def run_resize_images(
     images = walk_images(src, recursive=recursive, pattern=path_pattern)
     stats.seen = len(images)
 
-    pending: list[Path] = []
-    for image_path in images:
-        if min_pixels <= 0:
-            pending.append(image_path)
-            continue
-        try:
-            with Image.open(image_path) as im:
-                width, height = im.size
-        except Exception as exc:  # noqa: BLE001 — one bad file must not abort the pass
+    # ``(path, oriented size)``: one header read per image, done once here and
+    # carried into ``process_image``, which would otherwise re-open the file to
+    # ask the same question. The min-pixel gate and the bucket want the same
+    # number, so the file is opened for both or for neither.
+    pending: list[tuple[Path, tuple[int, int] | None]] = []
+    for image_path, raw, size, error in _probe_sizes(images, workers):
+        if error or raw is None:
             stats.failed += 1
-            stats.failures.append(f"{image_path}: {exc}")
+            stats.failures.append(f"{image_path}: {error}")
             continue
-        if width * height < min_pixels:
+        if min_pixels > 0 and raw[0] * raw[1] < min_pixels:
             stats.skipped_small += 1
+            stats.too_small.append(f"{image_path}: {raw[0]}x{raw[1]}")
             continue
-        pending.append(image_path)
+        pending.append((image_path, size))
 
     dst.mkdir(parents=True, exist_ok=True)
     total = len(pending)
@@ -400,8 +508,8 @@ def run_resize_images(
             progress(index, total, f"{name} {'skip' if skipped else '→ ' + key}")
 
     args = [
-        (p, dst, options, _rel_dir_of(p, src), copy_captions, overwrite)
-        for p in pending
+        (p, dst, options, _rel_dir_of(p, src), copy_captions, overwrite, size)
+        for p, size in pending
     ]
 
     if workers <= 1:

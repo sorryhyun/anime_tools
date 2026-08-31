@@ -148,9 +148,15 @@ ROOT_FIELDS: dict[str, dict[str, str]] = {
     "correct": {"src": "src", "dst": "dst"},
     "audit": {"src": "src", "dst": "dst"},
     "audit_apply": {"source": "src"},
-    "groups": {"source_dir": "src"},
-    "masks_sam": {"image_dir": "src"},
-    "masks_mit": {"image_dir": "src"},
+    # Grouping and the two mask generators read the *resized* tree, like the
+    # caption stages above: one decode substrate, one geometry. A mask cut from
+    # master pixels is rescaled onto the resized latent by the trainer's loader
+    # (``docs/contract.md`` §mask), which is only sound while free-fit's crop
+    # stays sub-patch — for a ratio-clamped image it is not, and the mask lands
+    # off the subject. Cutting it from the same pixels removes that case.
+    "groups": {"source_dir": "dst"},
+    "masks_sam": {"image_dir": "dst"},
+    "masks_mit": {"image_dir": "dst"},
     # Only the *merged* output is the masks root; each generator's --mask-dir
     # is an intermediate that has to differ from it, so it stays on the form.
     "masks_merge": {"output_dir": "masks"},
@@ -315,9 +321,10 @@ def preprocess_for(stage_id: str) -> str | None:
     """The stage that must run before ``stage_id``, or ``None``.
 
     A stage bound to the ``dst`` root reads the resized tree, so it needs
-    :data:`PREPROCESS_STAGE` in front of it. The ones bound only to ``src``
-    (masks, groups, the audit apply) read the originals and need nothing, and
-    :data:`NO_PREFLIGHT` names the two that are bound to ``dst`` anyway.
+    :data:`PREPROCESS_STAGE` in front of it — which since the resized tree
+    became the one decode substrate is every stage except ``audit_apply`` (it
+    rewrites captions the audit already found and reads no pixels) and the two
+    :data:`NO_PREFLIGHT` names.
     """
     if stage_id in NO_PREFLIGHT:
         return None

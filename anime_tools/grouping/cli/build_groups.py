@@ -2,7 +2,9 @@
 
 A curation tool (not a preprocess/training step): clusters near-identical /
 same-concept images per artist so the GUI Dataset tab can filter by group and
-near-duplicates are easy to spot. Uses the **same near-twin grid gate as the
+near-duplicates are easy to spot. Walks ``workspace/resized/`` by default, like
+every other stage that opens an image — one decode substrate, one geometry, so a
+group is drawn over the pixels the rest of the pipeline (and training) sees. Uses the **same near-twin grid gate as the
 miner** — two images group when ``match_frac >= --match-frac-min`` at per-cell
 floor ``--cell-match-min``. Argparse shell over
 ``anime_tools.grouping.groups.build_groups``; driven by ``make curate-group``
@@ -43,7 +45,12 @@ def load_embedder(spec: str | None, *, device: str | None):
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument(
-        "--source-dir", default="image_dataset", help="Native source image tree"
+        "--source-dir",
+        default=WS.RESIZED,
+        help=(
+            "Image tree to group. Defaults to the resized tree, which is the "
+            "pixel data every other stage reads (and what training sees)"
+        ),
     )
     p.add_argument(
         "--out",

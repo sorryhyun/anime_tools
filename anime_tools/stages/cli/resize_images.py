@@ -195,6 +195,7 @@ def main() -> None:
         },
         "buckets": dict(sorted(stats.buckets.items())),
         "failures": stats.failures,
+        "too_small": stats.too_small,
     }
     write_stage_report(report_dir, report)
 
@@ -206,6 +207,10 @@ def main() -> None:
     )
     for line in stats.failures:
         print(f"  fail: {line}")
+    # Every stage walks the resized tree, so a skip here is not "left out of
+    # training", it is "invisible to the rest of the pipeline". Name them.
+    for line in stats.too_small:
+        print(f"  too small: {line}")
     if stats.buckets:
         print("Bucket distribution:")
         for reso, count in sorted(stats.buckets.items()):

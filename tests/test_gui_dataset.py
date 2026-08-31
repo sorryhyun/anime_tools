@@ -88,6 +88,26 @@ def test_listing_filters(client):
     assert trimmed["truncated"] and len(trimmed["items"]) == 1 and trimmed["total"] == 2
 
 
+def test_the_listing_default_is_the_cap_not_a_smaller_number():
+    """A listing shows the whole dataset; only ``MAX_ITEMS`` truncates it.
+
+    The default used to be 2000 with nothing overriding it, so the 20000 cap was
+    unreachable and any real dataset came back quietly short — in the group
+    ordering too, since both orderings draw this one listing. Pinned in both
+    spellings, because the route and the function each carry the default.
+    """
+    import inspect
+
+    from anime_tools.gui import dataset as D
+    from anime_tools.gui import server as SRV
+
+    assert inspect.signature(D.list_items).parameters["limit"].default == D.MAX_ITEMS
+    route = next(
+        r for r in SRV.create_app().routes if getattr(r, "path", "") == "/api/dataset"
+    )
+    assert inspect.signature(route.endpoint).parameters["limit"].default == D.MAX_ITEMS
+
+
 def test_missing_source_root_is_reported_not_raised(client, home):
     c, _ = client
     body = c.get("/api/dataset", params={"src": "nowhere"}).json()
