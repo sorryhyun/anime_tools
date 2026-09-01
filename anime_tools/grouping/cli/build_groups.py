@@ -1,13 +1,10 @@
 """Group dataset images by PE-Spatial visual similarity → groups.json manifest.
 
-A curation tool (not a preprocess/training step): clusters near-identical /
-same-concept images per artist so the GUI Dataset tab can filter by group.
-Walks ``workspace/resized/`` by default, like every other stage that opens an
-image, so a group is drawn over the pixels the rest of the pipeline sees. Uses
-the **same near-twin grid gate as the miner** — two images group when
-``match_frac >= --match-frac-min`` at per-cell floor ``--cell-match-min``.
-Reuses the shared PE-Spatial feature cache, so a re-run — or a re-run at
-different thresholds — is cheap.
+A curation tool, not a preprocess/training step: it clusters near-identical
+images per artist so the GUI Dataset tab can filter by group, and writes nothing
+else. Two images group when ``match_frac >= --match-frac-min`` at per-cell floor
+``--cell-match-min``. Re-runs reuse the shared PE-Spatial feature cache, so
+retuning the thresholds is cheap.
 """
 
 import argparse
@@ -25,8 +22,7 @@ from anime_tools.grouping.groups import (
     build_groups,
 )
 
-# By string so the CLI stays importable without torch; ``--embedder`` swaps in
-# any other ``module:callable(device=…)`` factory.
+# By string so the CLI stays importable without torch.
 DEFAULT_EMBEDDER = "anime_tools.grouping.embedder:pe_spatial_embedder"
 
 
@@ -107,8 +103,7 @@ def build_parser() -> argparse.ArgumentParser:
 def main() -> None:
     args = build_parser().parse_args()
 
-    # Anchor bare relatives under the curation home like every stage CLI does,
-    # so `--out` lands in the dataset tree rather than wherever the shell was.
+    # Anchor bare relatives under the curation home, not the shell's cwd.
     source_dir, out = resolve_path(args.source_dir), resolve_path(args.out)
 
     embedder = load_embedder(args.embedder, device=args.device)

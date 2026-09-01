@@ -3,7 +3,7 @@
 dbv4 (``animetimm/*.dbv4-full``) has no copyright category, none of our dataset
 OCs, and a 2025 danbooru namespace that renamed a few of our general tags
 (``black shoes`` → ``black footwear``). Those rows plus the 8-way people-count
-bucket are what this head emits; ``@artist`` is deliberately excluded.
+bucket are what this head emits; ``@artist`` is excluded.
 
 Four resumable stages, each skipped when its output exists: **cache** (one dbv4
 forward per ``dataset.json`` image → the fp16 MLP-head hidden feature plus the

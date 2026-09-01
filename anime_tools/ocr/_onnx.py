@@ -1,43 +1,11 @@
-"""The only place a PP-OCRv6 model is constructed — detection and recognition.
+"""PP-OCRv6 detection and recognition: the only place the two ONNX sessions are built.
 
-:mod:`anime_tools.masking._sam3` seen from the OCR side: one module owns loading
-the two ONNX sessions, the pre/post-processing that surrounds them, and the two
-paths the download catalog writes to, so a Download button can never put a
-checkpoint somewhere the loader will not look. Like the MIT stage's ``--ctd-gate``
-net, the weights have **no flag**: a ``--det-dir`` you could point elsewhere is a
-Download button aimed at the wrong directory.
-
-Deliberately **not PaddlePaddle**. PP-OCRv6 ships an official ONNX mirror of both
-halves, and ``inference.yml`` beside each carries everything the wrapping code
-needs — the recognizer's 18,708-character dictionary and the detector's DB
-thresholds — so nothing is reverse-engineered and no second deep-learning
-framework enters a py3.13 / ``numpy>=2`` / torch stack for one 19M-parameter
-model. ``onnxruntime`` and ``opencv`` are already here.
-
-Two upstream details are reproduced rather than corrected, because matching
-PaddleOCR is the point and being right about them is not:
-
-* both models are fed **BGR**, and the detector's ImageNet mean/std are applied
-  in that order — the constants are RGB ones, and upstream applies them to a
-  ``cv2.imread`` array anyway;
-* the recognizer is normalized ``(x/255 - 0.5) / 0.5`` and padded, never
-  stretched, to the batch's widest aspect ratio.
-
-What is *not* reproduced is upstream's habit of feeding each session whatever
-shape the image happens to have. ONNX Runtime's CUDA provider re-plans on every
-shape change, which on a bucketed resized tree is most of the run time; both
-sessions here are held at one shape instead. :func:`_pad_to` has the numbers.
-
-The one thing done differently is DB's *unclip*, and only because the difference
-is invisible: upstream offsets the polygon with ``pyclipper``, which for the
-rotated **rectangle** ``minAreaRect`` just produced is exactly "grow both sides by
-``2·area·ratio/perimeter``". The corners come out square instead of round and the
-very next call takes ``minAreaRect`` of the result, so the two agree — and a
-dependency that exists to round four corners nobody reads does not get added.
-
-Every heavy import is deferred into a function, so importing this module stays
-cheap and torch-free: :mod:`anime_tools.gui.stages` dumps the stage's argparse in
-a child interpreter and expects that to cost about 0.2 seconds.
+Both models are fed **BGR**, with the ImageNet mean/std applied in that order (matching
+upstream), and the recognizer is normalized ``(x/255 - 0.5) / 0.5`` and padded, never
+stretched, to the batch's widest aspect ratio. Both sessions are held at a fixed input
+shape because ORT's CUDA provider re-plans on every shape change (:func:`_pad_to`). The
+weights paths come from :mod:`anime_tools.downloads` and have no CLI flag. Every heavy
+import is deferred into a function, so importing this module stays cheap and torch-free.
 """
 
 from __future__ import annotations
@@ -54,17 +22,11 @@ from anime_tools.downloads import default_ppocr_det_dir, default_ppocr_rec_dir
 
 ONNX_NAME = "inference.onnx"
 CONFIG_NAME = "inference.yml"
-"""What each Hub repo ships and what the catalog rows fetch: the graph and the
-config that describes how to feed it. The two *directories* they land in are
-:mod:`anime_tools.downloads`', imported rather than restated for the reason the
-PE tower and the CTD net import theirs: a download and a load that spell the
-same path twice can drift, and the symptom is a Download button that appears to
-do nothing."""
+"""What each Hub repo ships: the graph, and the config describing how to feed it."""
 
 DET_LIMIT_SIDE = 960
 """PaddleOCR's ``DetResizeForTest`` default: the longest side is scaled down to
-this before detection, and both sides are then rounded to a multiple of 32. The
-``inference.yml`` says ``DetResizeForTest: null``, which *is* this."""
+this before detection, and both sides are then rounded to a multiple of 32."""
 
 REC_HEIGHT = 48
 REC_MIN_WIDTH = 320
@@ -81,23 +43,13 @@ DET_STRIDE = 32
 def _pad_to(limit_side: int) -> int:
     """The square canvas a GPU detector session is fed, for every image.
 
-    ONNX Runtime's CUDA provider re-plans the graph on **every input-shape
-    change** — not once per shape, every change: cycling three sizes costs the
-    re-plan three times per round. Measured on the shipped detector, a
-    960-limited page is 12 ms of forward behind 70 ms of re-planning, and a
-    bucketed resized tree hands it a different ``(H, W)`` for almost every
-    image. The same applies to the recognizer, where the crop width *and* the
-    batch size move: 8 ms of forward, 108 ms whenever either changes.
-
-    So both sessions are fed **one shape for the whole run** when they are on
-    the GPU: the detector pads every image onto this canvas, the recognizer
-    quantizes width to a multiple of :data:`REC_MIN_WIDTH` and pads every batch
-    to :attr:`TextRecognizer.batch_size`. Padding is not free — a 640x960 page
-    becomes 960x960, about 25% more convolution — and it is nowhere near the
-    cost it removes.
-
-    The CPU provider has no such penalty (and is ~40x slower regardless), so it
-    keeps the native shape and pays nothing for the padding.
+    ORT's CUDA provider re-plans the graph on every input-shape change, and a bucketed
+    resized tree hands it a different ``(H, W)`` per image: measured at 12 ms of forward
+    behind 70 ms of re-planning for the detector, 8 ms behind 108 ms for the recognizer.
+    So on the GPU both sessions are held at one shape — the detector pads every image onto
+    this canvas, the recognizer quantizes width to a multiple of :data:`REC_MIN_WIDTH` and
+    pads every batch to :attr:`TextRecognizer.batch_size`. The CPU provider has no such
+    penalty and keeps the native shape.
     """
     return max(round(limit_side / DET_STRIDE) * DET_STRIDE, DET_STRIDE)
 
@@ -105,9 +57,8 @@ def _pad_to(limit_side: int) -> int:
 def _is_gpu(session) -> bool:
     """Whether this session actually landed on an accelerator.
 
-    ``device`` says what was *asked* for; :func:`_session` warns and continues on
-    the CPU when the CUDA provider is missing, so only the session knows — and
-    padding a CPU run to a square canvas would be pure loss.
+    ``device`` says what was *asked* for; :func:`_session` warns and continues on the CPU
+    when the CUDA provider is missing, so only the session knows.
     """
     return any(p != "CPUExecutionProvider" for p in session.get_providers())
 
@@ -116,14 +67,9 @@ def _is_gpu(session) -> bool:
 def _cv2_single_threaded() -> Iterator[None]:
     """Take OpenCV's own thread pool away for the duration.
 
-    :meth:`OcrEngine.read_many` already spreads whole images across a pool, so
-    OpenCV splitting each ``resize`` and ``warpPerspective`` inside that is a
-    second layer of threads over the same cores — on a 12-core box, four workers
-    each fanning out twelve ways. The outer split is the useful one: it has whole
-    images to work on and it overlaps the session thread.
-
-    Restored on the way out, because this is a process-wide setting and the GUI
-    is not the only caller in the process.
+    :meth:`OcrEngine.read_many` already spreads whole images across a pool; OpenCV
+    fanning out inside each one is a second layer of threads over the same cores.
+    Restored on the way out — this is a process-wide setting.
     """
     import cv2
 
@@ -147,9 +93,7 @@ def _load_config(model_dir: Path) -> dict[str, Any]:
 class OcrWeightsMissing(RuntimeError):
     """A model directory the catalog has not filled yet.
 
-    Its own class so the CLI can turn it into the one instruction that fixes it
-    rather than a stack trace, the way the tagger's ``from_dir`` names the mode
-    that builds a missing checkpoint.
+    Its own class so the CLI can turn it into the one instruction that fixes it.
     """
 
     def __init__(self, model_dir: Path) -> None:
@@ -163,10 +107,9 @@ class OcrWeightsMissing(RuntimeError):
 def _preload_cuda_libs(ort: Any) -> None:
     """Put the ``nvidia-*`` wheels' CUDA/cuDNN libraries on the loader path.
 
-    Idempotent, so calling it once per session costs nothing, and swallowing
-    is the right failure: a preload that raises leaves the provider list
-    exactly as it was, which the caller already knows how to warn about. Absent
-    on the CPU wheel and on onnxruntime < 1.21, hence the ``getattr``.
+    Idempotent. A failed preload leaves the provider list exactly as it was, which the
+    caller already warns about. Absent on the CPU wheel and on onnxruntime < 1.21, hence
+    the ``getattr``.
     """
     preload = getattr(ort, "preload_dlls", None)
     if preload is None:  # pragma: no cover - depends on the install
@@ -180,16 +123,13 @@ def _preload_cuda_libs(ort: Any) -> None:
 def _session(onnx_path: Path, device: str):
     """An ``InferenceSession`` on the GPU when one was asked for and is there.
 
-    The CUDA provider is a separate wheel (``onnxruntime-gpu``), so asking for it
-    where only the CPU build is installed must warn and continue rather than
-    fail: this stage is worth running slowly. The same stance, and nearly the
-    same sentence, as the MIT stage's CTD gate.
+    The CUDA provider is a separate wheel (``onnxruntime-gpu``), so asking for it where
+    only the CPU build is installed warns and continues.
 
-    ``preload_dlls()`` first, and it is not optional: the CUDA and cuDNN
-    libraries the provider links against ship as their own ``nvidia-*`` wheels,
-    and nothing puts them on the loader path. Without the preload the provider
-    ``.so`` fails to open and ``get_available_providers()`` reports the *CPU*
-    build's list — an onnxruntime-gpu install that silently runs on the CPU.
+    ``preload_dlls()`` first, and it is not optional: the CUDA and cuDNN libraries the
+    provider links against ship as their own ``nvidia-*`` wheels and nothing else puts
+    them on the loader path. Without it the provider ``.so`` fails to open and
+    ``get_available_providers()`` reports the *CPU* build's list.
     """
     try:
         import onnxruntime as ort
@@ -260,18 +200,14 @@ class TextDetector:
     def _preprocess(self, bgr):
         """Scale the longest side under the limit, round both to a multiple of 32.
 
-        Returns the tensor, the two scale factors, and the *live* region inside
-        the tensor. The scale factors are kept apart because the 32-rounding
-        makes them differ: a box is mapped back through the axis it was found
-        on, not through one average ratio.
+        Returns the tensor, the two scale factors, and the *live* region inside the
+        tensor. The scale factors are kept apart because the 32-rounding makes them
+        differ: a box is mapped back through the axis it was found on.
 
-        With :attr:`pad_to` the tensor is that live region sitting in the
-        top-left of a square canvas, so the session sees one shape all run
-        (:func:`_pad_to`). The pad is ``BORDER_REPLICATE`` rather than a
-        constant: DB is fully convolutional and is entitled to find a text box
-        along any hard edge in its field of view, and a border that continues
-        the image is not one. The band is cut off the probability map before the
-        contour pass regardless, so nothing found in it can survive.
+        With :attr:`pad_to` the live region sits in the top-left of a square canvas
+        (:func:`_pad_to`). The pad is ``BORDER_REPLICATE`` rather than a constant, so DB
+        finds no text box along the border's hard edge; the band is cut off the
+        probability map before the contour pass regardless.
         """
         import cv2
         import numpy as np
@@ -295,9 +231,9 @@ class TextDetector:
     def _mini_box(contour):
         """``minAreaRect`` as four points ordered TL, TR, BR, BL, plus its short side.
 
-        The ordering is upstream's and is load-bearing twice over: the perspective
-        crop maps these four onto a rectangle's corners in this order, and the
-        unclip re-derives the rect from them.
+        The ordering is upstream's and is load-bearing twice over: the perspective crop
+        maps these four onto a rectangle's corners in this order, and the unclip
+        re-derives the rect from them.
         """
         import cv2
 
@@ -326,11 +262,10 @@ class TextDetector:
         return float(cv2.mean(prob[y0 : y1 + 1, x0 : x1 + 1], mask)[0])
 
     def _unclip(self, box):
-        """Grow the rectangle by DB's offset distance, without ``pyclipper``.
+        """Grow the rectangle by DB's offset distance.
 
-        For a rectangle the polygon offset is exactly a rectangle whose sides
-        each moved out by ``d``; see the module docstring on why the rounded
-        corners upstream would produce do not survive to be compared.
+        For a rectangle the polygon offset is exactly a rectangle whose sides each moved
+        out by ``d``, so it is computed directly rather than through a clipper.
         """
         import cv2
         import numpy as np
@@ -350,19 +285,14 @@ class TextDetector:
     def probs_batch(self, prepared: Sequence[tuple]) -> list:
         """The probability map for each prepared image — **forward passes only**.
 
-        This is the one method that must run on the calling thread, because it
-        is the one that touches the session. Everything either side of it, the
-        normalize before and the contour pass after, is the caller's to hand to
-        a pool; returning raw maps rather than boxes is what makes that
-        possible.
+        The one method that touches the session, so it must run on the calling thread;
+        returning raw maps rather than boxes lets the caller hand the normalize before and
+        the contour pass after to a pool. ``prepared`` is what :meth:`_preprocess`
+        returned for each image.
 
-        ``prepared`` is what :meth:`_preprocess` returned for each image.
-
-        One image per forward, deliberately. The detector's activations are
-        full-resolution, so a batch of four is four times the work rather than
-        four for the price of one — measured at 64 ms against 4x15 ms — and it
-        would put a second moving axis into the input shape, which is the thing
-        :func:`_pad_to` exists to hold still.
+        One image per forward: the detector's activations are full-resolution, so a batch
+        of four is four times the work (64 ms against 4x15 ms) and would put a second
+        moving axis into the input shape (:func:`_pad_to`).
         """
         name = self.session.get_inputs()[0].name
         return [self.session.run(None, {name: x})[0][0, 0] for x, _, _, _ in prepared]
@@ -377,14 +307,9 @@ class TextDetector:
     ) -> list:
         """DB's contour pass over one probability map — the CPU half of detection.
 
-        Split out of :meth:`detect` so :meth:`probs_batch`'s callers can run it
-        per image off the session thread: it is all OpenCV and NumPy, and it is
-        the larger half of what detection costs once the GPU is doing the
-        convolutions.
-
-        ``live`` is the ``(h, w)`` the image actually occupies in the map; the
-        rest is :meth:`_preprocess`'s replicated pad, and cropping it away here
-        is what keeps the canvas invisible to everything downstream.
+        Split out of :meth:`detect` so :meth:`probs_batch`'s callers can run it per image
+        off the session thread. ``live`` is the ``(h, w)`` the image actually occupies in
+        the map; the rest is :meth:`_preprocess`'s replicated pad, cropped away here.
         """
         import cv2
         import numpy as np
@@ -453,11 +378,9 @@ class TextRecognizer:
     def _vocab(chars: list[str], session) -> list[str]:
         """``['blank'] + chars`` plus the space upstream appends, if the graph wants it.
 
-        Which of the two it is, is read off the model's own output width rather
-        than assumed: an off-by-one here does not fail, it silently shifts every
-        character by one and returns fluent-looking garbage. The shipped medium
-        model answers 18,710 against a 18,708-entry dictionary, i.e. blank *and*
-        space.
+        Read off the model's own output width rather than assumed: an off-by-one here
+        does not fail, it silently shifts every character by one. The shipped medium model
+        answers 18,710 against a 18,708-entry dictionary, i.e. blank *and* space.
         """
         classes = session.get_outputs()[0].shape[-1]
         if not isinstance(classes, int):
@@ -474,11 +397,9 @@ class TextRecognizer:
     def _width(self, max_ratio: float) -> int:
         """The width a batch of this aspect ratio is padded to.
 
-        Upstream's is ``max(320, ceil(48 * max_ratio))`` — one width per batch,
-        which on the GPU is one re-plan per batch. Rounding it up to the next
-        multiple of :data:`REC_MIN_WIDTH` collapses that to a two- or three-rung
-        ladder, and a line long enough to reach the second rung is rare enough
-        that the padding costs nothing on average.
+        Upstream's is ``max(320, ceil(48 * max_ratio))`` — one width per batch, which on
+        the GPU is one re-plan per batch. Rounding up to the next multiple of
+        :data:`REC_MIN_WIDTH` collapses that to a two- or three-rung ladder.
         """
         need = max(REC_MIN_WIDTH, math.ceil(REC_HEIGHT * max_ratio))
         if not self.fixed_shape:
@@ -502,9 +423,8 @@ class TextRecognizer:
         """Greedy CTC: argmax, collapse repeats, drop blank, index the vocabulary."""
         import numpy as np
 
-        # One reduction, not two: the winning class and its score come from the
-        # same argmax. `logits.max(axis=2)` would sweep an (N, T, 18710) field a
-        # second time, and that field is the largest array in the pipeline.
+        # One reduction, not two: the winning class and its score come from the same
+        # argmax. `logits.max(axis=2)` would sweep the (N, T, 18710) field a second time.
         idx = logits.argmax(axis=2)
         prob = np.take_along_axis(logits, idx[:, :, None], axis=2)[:, :, 0]
         out: list[tuple[str, float]] = []
@@ -520,9 +440,9 @@ class TextRecognizer:
     def _batch(self, crops: Sequence, chunk: Sequence[int]):
         """The padded tensor for one aspect-sorted run of crops.
 
-        Its own method so the pool builds all of a chunk's batches at once:
-        this is ``cv2.resize`` plus a normalize per crop, which is CPU that has
-        no business being serialized behind the thread doing the forwards.
+        Its own method so the pool builds all of a chunk's batches at once — this is
+        ``cv2.resize`` plus a normalize per crop, and it should not serialize behind the
+        thread doing the forwards.
         """
         import numpy as np
 
@@ -532,9 +452,8 @@ class TextRecognizer:
         )
         width = self._width(max_ratio)
         rows = [self._resize(crops[i], width) for i in chunk]
-        # The last chunk of a run is short, and a batch size that moves is an
-        # input shape that moves. Padding it out and dropping the tail after the
-        # decode is a few blank crops against a re-plan.
+        # A batch size that moves is an input shape that moves, so the short last chunk
+        # is padded out and its tail dropped after the decode.
         if self.fixed_shape and len(rows) < self.batch_size:
             rows.extend([np.zeros_like(rows[0])] * (self.batch_size - len(rows)))
         return np.stack(rows)
@@ -542,9 +461,9 @@ class TextRecognizer:
     def recognize(self, crops: Sequence, pool=None) -> list[tuple[str, float]]:
         """Recognize every crop, batched by aspect ratio so padding stays cheap.
 
-        With a ``pool``, the two CPU halves — building each padded batch, and the
-        CTC decode over an 18,710-wide logit field — run on it, leaving this
-        thread with nothing but ``session.run``.
+        With a ``pool``, the two CPU halves — building each padded batch, and the CTC
+        decode over an 18,710-wide logit field — run on it, leaving this thread with
+        nothing but ``session.run``.
         """
         if not crops:
             return []
@@ -578,13 +497,10 @@ class TextRecognizer:
 def crop_quad(bgr, box):
     """The perspective-corrected strip a quad encloses, uprighted if it is tall.
 
-    A box taller than 1.5× its width is rotated a quarter turn, which is
-    upstream's rule and is what makes a rotated *sign* readable. It is also this
-    pipeline's known weak point: it turns genuinely **vertical** Japanese — glyphs
-    stacked down a column, which manga is full of — into a row of glyphs each
-    lying on its side, and the recognizer answers junk at a low score. The score
-    floor is what keeps that out of the sidecar; reading it properly needs a
-    per-glyph column split, which is not here.
+    A box taller than 1.5× its width is rotated a quarter turn (upstream's rule). Known
+    weak point: genuinely **vertical** Japanese becomes a row of glyphs each lying on its
+    side, and the recognizer answers junk at a low score — the score floor is what keeps
+    that out of the sidecar.
     """
     import cv2
     import numpy as np
@@ -612,10 +528,8 @@ def crop_quad(bgr, box):
 def reading_order(lines: list[OcrLine]) -> list[OcrLine]:
     """Sort top-to-bottom, then left-to-right within a band.
 
-    The band is half the median line height, so two captions side by side on one
-    row read across rather than down — the same reason the position stage sorts
-    subjects by row before column, at a scale where the tolerance has to be
-    derived from the content rather than fixed.
+    The band is half the median line height, so two captions side by side on one row read
+    across rather than down.
     """
     if not lines:
         return []
@@ -634,18 +548,15 @@ class OcrEngine:
     min_box_px: int = 12
     max_boxes: int = 64
     chunk_size: int = 32
-    """How many images :meth:`read_many` holds in flight at once. It buys the
-    recognizer every chunk's crops in one pool of lines instead of one or two at
-    a time, at the price of holding that many decoded images — and, while the
-    next chunk prefetches, two chunks' worth — in RAM."""
+    """How many images :meth:`read_many` holds in flight at once: the recognizer gets
+    every chunk's crops in one pool of lines, at the price of holding that many decoded
+    images — two chunks' worth while the next prefetches — in RAM."""
 
     workers: int = 4
-    """Threads for the decode / normalize / contour work around the two
-    sessions. Every one of those is OpenCV or NumPy and releases the GIL, so
-    they genuinely overlap — with each other and with a ``session.run`` on
-    another thread, which is what keeps the GPU fed. Four, because OpenCV's own
-    threading is off inside them (:func:`_cv2_single_threaded`) and past four
-    the run is waiting on the detector rather than on a core."""
+    """Threads for the decode / normalize / contour work around the two sessions. All of
+    it is OpenCV or NumPy and releases the GIL, so it overlaps a ``session.run`` on
+    another thread. Four, because OpenCV's own threading is off inside them
+    (:func:`_cv2_single_threaded`) and past four the run waits on the detector."""
 
     def read(self, image_path: Path) -> list[OcrLine]:
         """Every line of text in one image, filtered, in reading order."""
@@ -654,24 +565,15 @@ class OcrEngine:
     def read_many(self, image_paths: Sequence[Path]) -> list[list[OcrLine]]:
         """:meth:`read` over many images, batching what is batchable.
 
-        Per image the work splits three ways, and one image is the wrong unit
-        for all three: decoding and DB post-processing are CPU that should
-        overlap the GPU, detection is one small forward whose cost is dwarfed by
-        re-planning if its input shape moves (:func:`_pad_to`), and recognition
-        is typically **one or two** line crops — a forward whose fixed cost
-        dwarfs its content unless the crops of thirty images queue up together.
+        A chunk is decoded and normalized on the pool, detected one image per forward,
+        post-processed on the pool, and then *all* of its crops are recognized as one pool
+        of lines — recognition is typically one or two crops per image, and its fixed cost
+        dwarfs its content unless a whole chunk's crops queue up together. Results are
+        scattered back by index, so this returns what a ``read``-per-path loop would have.
 
-        So a chunk is decoded and normalized on the pool, detected one image per
-        forward, post-processed on the pool, and then *all* of its crops are
-        recognized as one pool of lines. Results are scattered back by index, so
-        this returns exactly what a ``read``-per-path loop would have.
-
-        The decode of chunk *n+1* is launched before chunk *n* reaches the
-        sessions, which is what finally makes the overlap real: it is the one
-        piece of per-image CPU with no dependency on the forward in front of it,
-        and it is about as expensive as that forward. It is submitted to a
-        thread of its own rather than to ``pool`` — a pool task that waits on the
-        same pool deadlocks at ``workers=1``.
+        Chunk *n+1* is decoded before chunk *n* reaches the sessions, on a thread of its
+        own rather than on ``pool`` — a pool task that waits on the same pool deadlocks at
+        ``workers=1``.
         """
         from concurrent.futures import ThreadPoolExecutor
 
@@ -702,11 +604,8 @@ class OcrEngine:
     def _read_chunk(
         self, paths: Sequence[Path], loaded: list, pool
     ) -> list[list[OcrLine]]:
-        # Only the two `session.run` loops below stay on this thread. The DB
-        # contour pass and the cropping go to the pool, the decode came off it
-        # a chunk ago — they are the bulk of the work, they are OpenCV and
-        # NumPy, and leaving them here is what leaves the GPU idle behind one
-        # saturated core.
+        # Only the two `session.run` loops below stay on this thread; the DB contour pass
+        # and the cropping go to the pool, and the decode came off it a chunk ago.
         live = [i for i, item in enumerate(loaded) if item is not None]
         prepared = [loaded[i][1] for i in live]
 
@@ -721,9 +620,9 @@ class OcrEngine:
             )
         )
 
-        # One flat pool of crops for the whole chunk, and the map back: `owner`
-        # says which image each crop came from, so one recognizer call serves
-        # every image at once and the strings still land where they belong.
+        # One flat pool of crops for the whole chunk: `owner` says which image each crop
+        # came from, so one recognizer call serves every image and the strings still land
+        # where they belong.
         crops: list = []
         owner: list[int] = []
         kept: list[list] = [[] for _ in paths]
@@ -741,8 +640,7 @@ class OcrEngine:
     def _load(self, image_path: Path):
         """Decode one image and normalize it for the detector, or ``None``.
 
-        Both halves here so the thread pool does them in one hop, and because
-        what the batched detector needs is the tensor rather than the image.
+        Both halves here so the thread pool does them in one hop.
         """
         import cv2
         import numpy as np
@@ -756,9 +654,9 @@ class OcrEngine:
     def _crops(self, bgr, prob, prepared) -> tuple[list, list]:
         """One image's kept boxes and their crops, from its probability map.
 
-        The whole CPU tail of detection in one call — DB's contour pass, the
-        size filters, and the perspective crops — so the pool runs it per image
-        while the session is busy with the next batch.
+        The whole CPU tail of detection in one call — DB's contour pass, the size filters,
+        and the perspective crops — so the pool runs it per image while the session is
+        busy with the next batch.
         """
         _, sx, sy, live = prepared
         boxes, crops = [], []
@@ -774,9 +672,8 @@ class OcrEngine:
     def _select(self, boxes: Sequence) -> list:
         """The boxes worth recognizing: big enough, and the largest few.
 
-        The filters live here rather than in the caller because two of the three
-        save work — a box under ``min_box_px`` never becomes a crop, and
-        ``max_boxes`` caps what a screentone misread as a wall of text can cost.
+        Two of the three filters save work — a box under ``min_box_px`` never becomes a
+        crop, and ``max_boxes`` caps what a screentone misread as a wall of text costs.
         Only the score floor has to wait for the recognizer.
         """
 
@@ -808,8 +705,8 @@ class OcrEngine:
                     text=text,
                 )
             )
-        # Numbered only once the order is final, so a sidecar's sequence always
-        # reads top-to-bottom rather than recording detection order.
+        # Numbered only once the order is final, so a sidecar's sequence reads
+        # top-to-bottom rather than recording detection order.
         return [
             OcrLine(seq=i, box=ln.box, score=ln.score, text=ln.text)
             for i, ln in enumerate(reading_order(lines), 1)

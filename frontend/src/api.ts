@@ -56,7 +56,7 @@ export const api = {
     req<Job>("/api/jobs", json("POST", { stage, values, apply, rel: rel ?? "" })),
   cancel: (id: string) => req<{ cancelled: boolean }>(`/api/jobs/${id}/cancel`, { method: "POST" }),
   report: (id: string) => req<{ path: string; report: unknown }>(`/api/jobs/${id}/report`),
-  /** Which images a finished Run wants to change -- the index only. */
+  /** Which images a finished Run changed -- the index only. */
   proposals: (id: string) => req<ProposalIndex>(`/api/jobs/${id}/proposals`),
   /** One image's before/after, both already parsed server-side. */
   proposal: (id: string, rel: string) =>
@@ -64,7 +64,7 @@ export const api = {
   undo: (id: string) => req<UndoResult>(`/api/jobs/${id}/undo`, { method: "POST" }),
   ls: (path: string) => req<Listing>(`/api/ls?path=${encodeURIComponent(path)}`),
   /** Ask the host to open its own chooser, starting from `path`. Localhost
-      only, by the server's rule — see `PickResult.available`. */
+      only, by the server's rule. */
   pick: (kind: "dir" | "file", path: string, title: string) =>
     req<PickResult>("/api/pick", json("POST", { kind, path, title })),
   fileUrl: (path: string) => `/api/files?path=${encodeURIComponent(path)}`,

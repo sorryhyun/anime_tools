@@ -1,9 +1,5 @@
-"""``TaggerCheckpoint.from_dir`` — one read of a checkpoint dir.
-
-Five CLIs opened ``config.json`` / ``vocab.json`` / ``dataset.json`` by hand,
-each with its own spelling of the missing-file exit and its own idea of which
-files were optional. These pin the parts they disagreed on.
-"""
+"""``TaggerCheckpoint.from_dir``: which of ``config.json`` / ``vocab.json`` /
+``dataset.json`` are required, and how a missing one exits."""
 
 from __future__ import annotations
 
@@ -51,7 +47,7 @@ def test_reads_every_present_file_even_when_only_one_is_required(tmp_path):
 
 
 def test_an_unrequired_absent_file_is_none_not_an_exit(tmp_path):
-    """`derive_groups` merely *prefers* the manifest — no manifest, caption scan."""
+    """An unrequired absent file reads as ``None``."""
     _ckpt(tmp_path)
     ckpt = TaggerCheckpoint.from_dir(tmp_path, require=("vocab",))
     assert ckpt.dataset is None and ckpt.config is None
@@ -70,8 +66,7 @@ def test_backend_check_implies_reading_the_config(tmp_path):
     _ckpt(tmp_path, config={"backend": "pe"})
     with pytest.raises(SystemExit, match="is not a dbv4-backed checkpoint"):
         TaggerCheckpoint.from_dir(tmp_path, backend="dbv4")
-    # …and a checkpoint with no config.json at all fails on the file, not a
-    # None-deref inside the backend test.
+    # No config.json at all fails on the file, not a None-deref in the backend test.
     (tmp_path / "bare").mkdir()
     _ckpt(tmp_path / "bare", vocab=VOCAB)
     with pytest.raises(SystemExit, match="config.json"):
@@ -96,7 +91,7 @@ def test_manifest_revives_the_already_read_dataset(tmp_path):
     assert isinstance(m, TaggerManifest)
     assert m.val_stems == ["b"]
     assert m.stem_index() == {"a": 0, "b": 1}
-    # Same object as the path-based reader, which now delegates to from_dict.
+    # Same object as the path-based reader.
     (tmp_path / "dataset.json").write_text(json.dumps(DATASET), encoding="utf-8")
     assert TaggerManifest.from_path(tmp_path / "dataset.json") == m
 

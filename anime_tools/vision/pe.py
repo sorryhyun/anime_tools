@@ -1,10 +1,9 @@
 """Vendored Perception Encoder (PE) vision tower — Meta AI, FAIR.
 
 Source: facebookresearch/perception_models @ core/vision_encoder/{pe,rope}.py.
-Trimmed to the vision-only path (CLIP / text tower removed). Owned by
-``anime_tools`` since the curation split (Phase 2, 2026-08-30); the trainer's
-``library.models.pe`` re-exports it for REPA / CMMD / PE caching. Self-contained: depends on torch + einops + timm.layers.DropPath
-only — no xformers, no perception_models package, no `core.*` imports.
+Trimmed to the vision-only path (CLIP / text tower removed). The trainer's
+``library.models.pe`` re-exports these names. Depends on torch + einops +
+``timm.layers.DropPath`` only — no xformers, no ``core.*`` imports.
 
 License: see ``perception_models/LICENSE.PE`` (FAIR Noncommercial Research).
 """
@@ -27,9 +26,8 @@ from torch.nn.init import constant_, xavier_uniform_
 from torch.nn.parameter import Parameter
 from torch.utils.checkpoint import checkpoint
 
-# Where the PE-Spatial weights come from and land is the download catalog's
-# business (torch-free, so the GUI can offer a Download button for exactly this
-# file); re-exported here because this module is where callers look for them.
+# Weight repo/filename/path live in the torch-free download catalog; re-exported
+# here because this module is where callers look for them.
 from anime_tools.downloads import (
     PE_SPATIAL_FILENAME,
     PE_SPATIAL_REPO,
@@ -311,7 +309,7 @@ class _Transformer(nn.Module):
 
 class PEVisionTransformer(nn.Module):
     """PE vision tower — patch tokens out of ``forward_features``, pooled CLIP
-    embedding out of ``forward``. Both available; pick what you need.
+    embedding out of ``forward``.
     """
 
     def __init__(
@@ -488,9 +486,9 @@ class PEVisionTransformer(nn.Module):
     def load_pe_checkpoint(self, ckpt_path: str, verbose: bool = True) -> None:
         """Load Meta's official ``.pt`` (CLIP-format) weights into this vision tower.
 
-        The released ``.pt`` is a full CLIP state_dict — text, vision, and a
-        logit scale all in one. We strip ``module.`` and ``visual.`` so the
-        vision tower keys match this module's namespace, and drop the rest.
+        The released ``.pt`` is a full CLIP state_dict (text, vision, logit
+        scale); ``module.``/``visual.`` are stripped so the vision keys match
+        this module's namespace, and the rest is dropped.
         """
         sd = torch.load(ckpt_path, weights_only=True, map_location="cpu")
         if isinstance(sd, dict) and "state_dict" in sd:
@@ -512,7 +510,7 @@ class PEVisionTransformer(nn.Module):
             )
 
 
-# Configs (only the ones we actually use — extend as needed)
+# Configs
 
 
 @dataclass(frozen=True)
@@ -547,9 +545,8 @@ PE_CONFIGS: dict[str, PEConfig] = {
         use_cls_token=True,
         pool_type="attn",
     ),
-    # Spatial variant: no CLIP projection / LN-post / pool head — Meta's
-    # spatial fine-tune drops PE-Core's global-alignment plumbing, and we only
-    # consume the patch token sequence (last_hidden_state).
+    # Spatial variant: no CLIP projection / LN-post / pool head; only the patch
+    # token sequence (last_hidden_state) is consumed.
     "PE-Spatial-B16-512": PEConfig(
         image_size=512,
         patch_size=16,
@@ -562,8 +559,7 @@ PE_CONFIGS: dict[str, PEConfig] = {
         pool_type="none",
         use_ln_post=False,
     ),
-    # Large spatial variant (same drop-the-head recipe as B16; 448px native,
-    # patch 14 → the same 32x32 = 1024 patch grid + CLS).
+    # Large spatial variant: 448px native, patch 14 → the same 32x32 grid + CLS.
     "PE-Spatial-L14-448": PEConfig(
         image_size=448,
         patch_size=14,
@@ -606,9 +602,6 @@ def build_pe_vision(name: str = "PE-Core-L14-336") -> PEVisionTransformer:
 
 # ---------------------------------------------------------------------------
 # PE-Spatial-B16-512 loader (the grouping / near-twin embedder backbone).
-
-# The architecture key; the repo / filename / default path it pairs with are
-# imported from anime_tools.downloads at the top of this module.
 PE_SPATIAL_CONFIG = "PE-Spatial-B16-512"
 
 
@@ -620,8 +613,8 @@ def load_pe_spatial(
 ) -> PEVisionTransformer:
     """Build PE-Spatial-B16-512 and load Meta's ``.pt`` (auto-fetched from the
     Hub into ``model_path``'s directory when missing). Eval mode, frozen, cast
-    once from the fp32 checkpoint to ``dtype`` (bf16 default — matches the
-    trainer's live PE path and the pre-split grouping feature cache)."""
+    once from the fp32 checkpoint to ``dtype``; bf16 default, which is what
+    existing grouping feature-cache entries were written with."""
     import shutil
     from pathlib import Path
 

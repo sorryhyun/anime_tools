@@ -1,7 +1,6 @@
-"""Small standalone web GUI over the curation stages (``anime-tools-gui``).
+"""Web GUI over the curation stages (``anime-tools-gui``).
 
-FastAPI + uvicorn are plain dependencies. The server process never imports
-torch; stages run as ``python -m`` subprocesses.
+The server process never imports torch; stages run as ``python -m`` subprocesses.
 """
 
 

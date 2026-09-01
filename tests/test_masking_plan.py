@@ -1,12 +1,6 @@
-"""``masking/_masks.py``: the plan every generator runs before its model loads.
-
-Both mask generators used to hand-roll the walk → mirror → skip loop, which is
-the piece that decides *where a mask lands* and *whether an existing one is
-overwritten*. Neither had a test; both wrote to the same layout the merge step
-and the GUI read back by convention. These pin that convention from the write
-side, so the mirror rule and the ``--force`` semantics are checked rather than
-mirrored by eye.
-"""
+"""``masking/_masks.py``: the walk → mirror → skip plan every generator runs
+before its model loads — where a mask lands, and when an existing one is
+overwritten."""
 
 from __future__ import annotations
 
@@ -37,7 +31,7 @@ def make_image(path: Path, size: tuple[int, int] = (8, 6)) -> Path:
 
 @pytest.fixture
 def tree(tmp_path: Path) -> tuple[Path, Path]:
-    """Two artists plus a root-level image — the shape a real dataset has."""
+    """Two artists plus a root-level image."""
     images = tmp_path / "images"
     make_image(images / "a.png")
     make_image(images / "artist_x" / "one.png")
@@ -65,7 +59,7 @@ def test_plan_covers_the_tree_and_creates_its_directories(tree):
         "artist_x/two_mask.png",
         "artist_y/one_mask.png",
     ]
-    # Same stem in two folders is not a collision — the mirror disambiguates.
+    # Same stem in two folders is not a collision: the mirror disambiguates.
     assert len({p for _, p in jobs}) == len(jobs)
     # Every output directory exists, so a caller's write loop is a plain save.
     assert all(p.parent.is_dir() for _, p in jobs)
@@ -126,14 +120,9 @@ def test_iter_masks_keys_by_relative_dir(tree):
 
 
 def test_the_merge_reads_exactly_what_the_two_generators_write():
-    """One fact split across three CLIs.
-
-    Each generator writes its *own* tree — sharing one would have the second
-    run overwrite the first, since both name a mask ``{stem}_mask.png`` at the
-    same relative path — and ``merge_masks`` unions them into the ``masks``
-    root. So the merge's default inputs have to be the generators' default
-    outputs; they are all written in terms of :mod:`anime_tools.workspace`, and
-    this is the pairing that keeps them there.
+    """Each generator writes its own tree (both name a mask ``{stem}_mask.png``
+    at the same relative path), and the merge's default inputs are exactly those
+    two outputs, unioned into the ``masks`` root.
     """
     from anime_tools import workspace as WS
     from anime_tools.masking.cli import generate_masks, generate_masks_mit, merge_masks
@@ -153,8 +142,7 @@ def test_the_merge_reads_exactly_what_the_two_generators_write():
 
 
 def run_args(images: Path, masks: Path, **over) -> argparse.Namespace:
-    """The flags ``mask_run`` reads back — every one of them declared in the
-    same module, which is the point of reading them there."""
+    """The flags ``mask_run`` reads back."""
     return argparse.Namespace(
         **{
             "image_dir": str(images),
@@ -180,8 +168,7 @@ def test_the_run_resolves_both_roots_and_plans_the_walk(tree, capsys):
             "artist_x/two_mask.png",
             "artist_y/one_mask.png",
         ]
-        # The pool is the run's, so `write_mask(..., pool=run.pool)` is the
-        # generators' whole I/O story.
+        # The pool is the run's: `write_mask(..., pool=run.pool)`.
         run.pool.submit(write_mask, run.items[0][1], np.ones((2, 2), np.uint8)).result()
         run.advance()
         run.note(run.items[0][0], "41.2%")
@@ -198,9 +185,8 @@ def test_the_run_narrows_by_the_same_walk_flags(tree):
 
 
 def test_nothing_to_do_is_a_sentence_not_a_directory(tmp_path, capsys):
-    """An empty plan is not an error and not an early return: the caller's loop
-    runs zero times, and the closing line says so rather than naming a tree
-    nothing landed in."""
+    """An empty plan is not an error: the loop runs zero times and the closing
+    line says so rather than naming an empty tree."""
     images = tmp_path / "images"
     images.mkdir()
     masks = tmp_path / "masks"
@@ -215,8 +201,7 @@ def test_nothing_to_do_is_a_sentence_not_a_directory(tmp_path, capsys):
 
 
 def test_a_run_that_raised_does_not_sign_off(tree, capsys):
-    """The closing line is past the ``finally``: the pool and the bar still
-    close, but a traceback is not followed by "Masks saved to"."""
+    """The pool and bar still close, but a raise prints no "Masks saved to"."""
     images, masks = tree
     with pytest.raises(RuntimeError), mask_run(run_args(images, masks)) as run:
         assert run.total == 4
@@ -225,8 +210,7 @@ def test_a_run_that_raised_does_not_sign_off(tree, capsys):
 
 
 def test_coverage_is_the_masks_own_denominator(tmp_path):
-    """Polarity-blind and shape-blind: the three call sites mean different
-    things by the number, and none of them passes a ``(w, h)`` to transpose."""
+    """``coverage_pct`` is polarity-blind and takes no ``(w, h)``."""
     m = np.zeros((4, 8), dtype=np.uint8)  # non-square, so a transpose would show
     assert coverage_pct(m) == 0.0
     m[:, :2] = 1
@@ -238,13 +222,9 @@ def test_coverage_is_the_masks_own_denominator(tmp_path):
 
 
 def test_a_gated_group_names_its_switch_where_the_gui_reads_it():
-    """``gated_group`` and ``gui.stages.fields_of`` are one fact in two files.
-
-    The GUI draws a *drawer* — a group folded away behind one checkbox — off an
-    attribute stamped on the argparse group, and ``gui/stages.py`` spells that
-    attribute rather than importing it, so it stays free of every stage's
-    dependencies. Two spellings would mean a group that renders as a flat
-    fieldset with a stray boolean in it, which is not an error anywhere.
+    """``masking._masks.GATE_ATTR`` and ``gui.stages.GATE_ATTR`` are the same
+    spelling: the GUI draws a drawer off that attribute but does not import the
+    stage that stamps it.
     """
     import argparse
 
@@ -259,18 +239,14 @@ def test_a_gated_group_names_its_switch_where_the_gui_reads_it():
     group.add_argument("--knob", type=int, default=1)
 
     fields = {f.dest: f for f in S.fields_of(parser)}
-    # The gate names itself, which is how the form tells the switch from what it
-    # switches; everything else in the group names the gate.
+    # The gate names itself; everything else in the group names the gate.
     assert fields["use_thing"].gate == "use_thing"
     assert fields["knob"].gate == "use_thing"
     assert fields["use_thing"].negate == "--no-use-thing"
 
 
 def test_the_text_stage_runs_two_detectors_behind_two_switches():
-    """The panel's shape *is* the CLI's: one drawer per detector, and the knobs
-    that only mean something while it runs live inside it. A flag that drifted
-    out of its group would show up on the form whether or not its detector was
-    on."""
+    """One drawer per detector, with each detector's own knobs inside it."""
     from anime_tools.masking.cli import generate_masks_mit as mit
 
     parser = mit.build_parser()
@@ -297,8 +273,7 @@ def test_the_text_stage_runs_two_detectors_behind_two_switches():
     assert not gated & {"image_dir", "mask_dir", "dilate", "recursive", "path_pattern"}
 
     args = parser.parse_args(["--image-dir", "i"])
-    # The segmenter is the stage's historical behaviour and stays on; SAM3 is a
-    # second set of weights, so it is opt-in — with the one prompt it is for
+    # The segmenter is on by default; SAM3 is opt-in, with its one prompt
     # already typed into the drawer.
     assert (args.use_mit, args.ctd_gate) == (True, True)
     assert args.use_sam is False
@@ -306,8 +281,7 @@ def test_the_text_stage_runs_two_detectors_behind_two_switches():
 
 
 def test_the_text_stage_refuses_a_run_with_no_detector():
-    """Both drawers shut is a run that loads nothing, walks the tree and writes
-    nothing — the one shape of this form that means "do not run me"."""
+    """Both drawers shut is refused, not a walk that writes nothing."""
     from anime_tools.masking.cli import generate_masks_mit as mit
 
     parser = mit.build_parser()
@@ -323,7 +297,6 @@ def test_the_text_stage_refuses_a_run_with_no_detector():
     )
     with pytest.raises(SystemExit):
         check(["--no-use-mit"])
-    # `none` is how a prompt field says "none of them" — the GUI would send a
-    # blank one back as its default.
+    # `none` is how a prompt field says "none of them".
     with pytest.raises(SystemExit):
         check(["--use-sam", "--sam-prompts", "none"])

@@ -24,9 +24,9 @@ export const ROOT_NAMES: RootName[] = ["src", "master", "dst", "masks", "out"];
 const rootHelp = (n: RootName) => t().settings.rootHelp[n];
 
 /** One `label / input / hint` row of a `.kv` grid — the roots block and the
- * stage-defaults block are the same row twice. The input is deliberately
- * uncontrolled and read off its `ref` on Save, so nothing is stored per
- * keystroke and Cancel is free.
+ * stage-defaults block are the same row twice. The input is uncontrolled and
+ * read off its `ref` on Save, so nothing is stored per keystroke and Cancel is
+ * free.
  */
 function SettingRow(props: {
   label: string;
@@ -37,15 +37,14 @@ function SettingRow(props: {
   /** Marks the hint as a problem (a root that is not there yet). */
   err?: boolean;
   /** Give a path row the same `…` browse button the stage forms have; omit it
-      and the row is the bare input it always was. */
+      for a bare input. */
   onPick?: () => void;
 }) {
   return (
     <>
       <b>{props.label}</b>
       <span>
-        {/* .pathrow is the stage form's wrapper, reused: a browsed root and a
-            browsed stage flag are the same widget in both places. */}
+        {/* .pathrow is the stage form's wrapper, reused. */}
         <div classList={{ pathrow: !!props.onPick }}>
           <input type="text" ref={props.ref} value={props.value} placeholder={props.placeholder} />
           <Show when={props.onPick}>
@@ -60,15 +59,10 @@ function SettingRow(props: {
   );
 }
 
-/** The three Settings dialogs. Each entry point opens *one* of them and only
-    that one: the ☰ menu lists them separately, a missing-weights hint opens
-    `models`, and there is no strip of tabs to wander off along. They were one
-    tabbed dialog, which meant every route into Settings put the dataset roots
-    you edit once a year one click from the download buttons you press weekly —
-    and made every Save a save of all three blocks at once.
-
-    So a pane is also the unit of what OK writes: only the open one's inputs are
-    even mounted, and :type:`SettingsOut` carries `null` for the other two. */
+/** The three Settings dialogs. Each entry point opens *one* of them: the ☰ menu
+    lists them separately and a missing-weights hint opens `models`. A pane is
+    also the unit of what OK writes — only the open one's inputs are mounted, and
+    `SettingsOut` carries `null` for the other two. */
 export const SETTINGS_PANES = ["general", "advanced", "models"] as const;
 export type SettingsPane = (typeof SETTINGS_PANES)[number];
 
@@ -83,9 +77,8 @@ export interface SettingsOut {
 
 export function SettingsDialog(props: {
   open: boolean;
-  /** Which of the three dialogs this is — the entry point picks it (the
-      header's token warning and a missing-weights hint both mean Models), and
-      nothing in here can change it. */
+  /** Which of the three dialogs this is — the entry point picks it, and nothing
+      in here can change it. */
   pane: SettingsPane;
   info?: Info;
   roots?: DatasetRoots;
@@ -109,27 +102,25 @@ export function SettingsDialog(props: {
   onCancelDownload: () => void;
   onClose: (out: SettingsOut | null) => void;
 }) {
-  /** Only mounted on the `models` pane, so it is genuinely optional now. */
+  /** Only mounted on the `models` pane, so it is optional. */
   let tokenEl: HTMLInputElement | undefined;
   const rootEls: Partial<Record<RootName, HTMLInputElement>> = {};
   const defEls: Record<string, HTMLInputElement> = {};
   /** The preflight form's edits, keyed by dest. Seeded from the saved values on
       open and diffed on OK, so an untouched block sends nothing. */
   const [pre, setPre] = createStore<Record<string, unknown>>({});
-  /** Which root row's fallback browser is open -- only the hosts with no
-      chooser of their own get here. A pick is written straight onto the
-      (uncontrolled) input, the way typing would be. */
+  /** Which root row's fallback browser is open -- only hosts with no chooser of
+      their own get here. A pick is written straight onto the (uncontrolled)
+      input. */
   const [picking, setPicking] = createSignal<RootName | null>(null);
   createEffect(
     on(
       () => props.open,
       (open) => {
         if (!open) return;
-        // `unwrap` first: this arrives as a slice of `config.settings`, which is
-        // a store, and a store is a Proxy -- `structuredClone` refuses one with
-        // a DataCloneError and takes the whole dialog down with it. Invisible
-        // while the preprocess block was absent (the `?? {}` handed over a plain
-        // literal), and a thrown open the moment anyone saved a knob in it.
+        // `unwrap` first: this arrives as a slice of `config.settings`, a
+        // store, and a store is a Proxy -- `structuredClone` refuses one with a
+        // DataCloneError and takes the whole dialog down with it.
         setPre(reconcile(structuredClone(unwrap(props.preprocessValues))));
       },
     ),
@@ -152,11 +143,10 @@ export function SettingsDialog(props: {
         open={props.open}
         class="settings"
         onClose={(v) => {
-          // Not `t`: that is the message table, which this callback is inside.
           // Each block is read only when its own pane is the one open: the
           // other two are not mounted, so their refs are `undefined` and a
-          // blanket read would post every root as "" the first time anyone
-          // saved a token.
+          // blanket read would post every root as "" the first time anyone saved
+          // a token.
           const token = tokenEl?.value.trim() ?? "";
           if (tokenEl) tokenEl.value = "";
           if (v !== "ok") return props.onClose(null);
@@ -186,11 +176,9 @@ export function SettingsDialog(props: {
           props.onClose(out);
         }}
       >
-        {/* The (?) sits against the title, because it explains *this* dialog; the
-          x is pushed to the far corner, because it leaves it. HelpToggle is
-          `type=button`, like the model rows -- every other button in here
-          submits the <form method="dialog"> and closes it, which is exactly
-          what the x wants, so it is a plain `value="cancel"` submitter. */}
+        {/* HelpToggle is `type=button`, like the model rows -- every other
+          button in here submits the <form method="dialog"> and closes it, which
+          is what the x wants, so it is a plain `value="cancel"` submitter. */}
         <h3 class="dlgh">
           {t().settings.paneTitle[props.pane]}
           <HelpToggle open={props.help} onToggle={props.onHelp} />
@@ -387,8 +375,8 @@ export function SettingsDialog(props: {
           </button>
         </div>
       </Dialog>
-      {/* A sibling of the dialog, not a child of it: <dialog> puts both in the
-        top layer so the picker still lands over the settings, while nesting its
+      {/* A sibling of the dialog, not a child: <dialog> puts both in the top
+        layer so the picker still lands over the settings, while nesting its
         <form method="dialog"> inside this one's would be a nested form. */}
       <PathPicker
         open={picking() !== null}
@@ -431,8 +419,7 @@ function ModelRow(props: {
         <span class="dim mono" title={props.m.location}>
           {props.m.repo} → {props.m.location}
         </span>
-        {/* Two-up rows are half the old width: what a model is *for* gets its
-            own wrapping line rather than a clipped tail of the title's. */}
+        {/* What a model is *for* gets its own wrapping line. */}
         <span class="dim wrap">{props.m.used_by}</span>
         <Show when={props.m.notes}>
           <span class="dim wrap">{props.m.notes}</span>

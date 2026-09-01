@@ -1,9 +1,9 @@
-"""Invariants for sentinel-augmented softmax groups + MaxSup regularization.
+"""Sentinel-augmented softmax groups + MaxSup regularization.
 
 Sentinel groups relax the softmax-group contract from "exactly one member
 present" to "at most one": a synthetic ``<none:group>`` vocab slot becomes the
-CE target on applicable samples with no member label, and decode rejects
-(emits nothing) when it wins the argmax. Guarantees pinned here:
+CE target on applicable samples with no member label, and decode emits nothing
+when it wins the argmax.
 
 1. Resolution folds the sentinel slot into ``tag_indices`` (last) and records
    ``sentinel_index``; a vocab built without the slot degrades to legacy.

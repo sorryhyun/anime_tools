@@ -32,9 +32,8 @@ function initial(): Locale {
 const [locale, setLocaleSignal] = createSignal<Locale>(initial());
 export { locale };
 
-/** Switch language. Written straight to `localStorage` rather than through a
-    `createEffect`, because this signal lives at module scope: an effect out
-    here would never be owned by a root, and there is only ever one writer. */
+/** Switch language. Written straight to `localStorage`: this signal lives at
+    module scope, where a `createEffect` would never be owned by a root. */
 export function setLocale(l: Locale) {
   localStorage.setItem(KEY, l);
   document.documentElement.lang = l;
@@ -43,16 +42,14 @@ export function setLocale(l: Locale) {
 document.documentElement.lang = locale();
 
 /** The strings, in the current language. Reading it inside JSX is what makes a
-    language switch re-render the app — every call site is `t().…`. */
+    language switch re-render the app — every call site is `t().…`, never
+    hoisted into a `const`. */
 export const t = (): Dict => DICTS[locale()];
 
-/** Render a message that has markup in the middle of it.
- *
- * Translations stay plain strings with `{0}`/`{1}` slots — a translator never
- * sees a tag — and the component says what each slot is: a `<code>`, a link, a
- * `<b>`. The alternative was splitting every such sentence into head/tail
- * fragments, which is where word order goes to die in exactly the four
- * languages this file has.
+/** Render a message that has markup in the middle of it. Translations stay
+ * plain strings with `{0}`/`{1}` slots — a translator never sees a tag, and word
+ * order stays theirs — and the component says what each slot is: a `<code>`, a
+ * link, a `<b>`.
  */
 export function slots(text: string, render: (i: number) => JSX.Element): JSX.Element {
   const out: JSX.Element[] = [];

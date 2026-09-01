@@ -1,22 +1,18 @@
 """Tag read-back — the Anima Tagger read backwards as a caption-adherence score.
 
-The *Read It Back* idea (arXiv 2607.11886): an image-conditioned prompt
-log-likelihood is a training-free text-to-image reward. Here the "prompt" is an
-Anima caption (already an atomic tag set, so no lossy VQA decomposer) and the
-"likelihood" is the tagger's own per-tag confidence:
+After *Read It Back* (arXiv 2607.11886): the "prompt" is an Anima caption and
+the "likelihood" is the tagger's own per-tag confidence:
 
     readback(x, caption) := mean over content tags t of  log σ(tag_logit_t(x))
 
-This module owns *only* the scoring math and the content-tag masking; it touches
-no dataset/feature cache. Two constraints it enforces:
+Two constraints it enforces:
 
-* **Content tags only.** Artist tags are masked (a consumer that *learns* the
-  artist would be scoring itself), as are ``metadata`` / ``deprecated`` and the
-  softmax-group sentinels. Rating and people-count are separate heads and are
-  never folded into the tag mean.
+* **Content tags only.** ``artist`` / ``metadata`` / ``deprecated`` and the
+  softmax-group sentinels are masked; rating and people-count are separate
+  heads and are never folded into the tag mean.
 * **Group-relative use only.** Absolute values across *different* captions carry
-  a per-caption base-rate/language-prior term; only comparisons holding the
-  caption fixed (one caption, N images) cancel it cleanly.
+  a per-caption base-rate term; only comparisons holding the caption fixed (one
+  caption, N images) cancel it.
 """
 
 from __future__ import annotations
@@ -36,7 +32,6 @@ logger = logging.getLogger(__name__)
 CONTENT_CATEGORIES: tuple[str, ...] = ("general", "character", "copyright", "count")
 MASKED_CATEGORIES: tuple[str, ...] = ("artist", "metadata", "deprecated")
 
-# Aggregation modes for turning per-tag logits into one scalar per (image, caption).
 AGG_LOGSIGMOID = "logsigmoid"  # mean log σ(logit) — dense, the paper's likelihood
 AGG_RECALL = "recall"  # fraction of caption tags fired above the calibrated threshold
 AGGREGATIONS: tuple[str, ...] = (AGG_LOGSIGMOID, AGG_RECALL)
@@ -45,8 +40,8 @@ AGGREGATIONS: tuple[str, ...] = (AGG_LOGSIGMOID, AGG_RECALL)
 class TagReadback:
     """Scores caption adherence by reading the frozen Anima Tagger backwards.
 
-    Wraps an :class:`AnimaTagger` purely to reuse its vocab, category typing and
-    calibrated thresholds; the judge stays frozen and this class never trains.
+    Wraps an :class:`AnimaTagger` for its vocab, category typing and calibrated
+    thresholds; never trains.
     """
 
     def __init__(
@@ -96,8 +91,7 @@ class TagReadback:
         """Map caption tag strings → content-tag logit indices.
 
         Caption tags are space-form (``long hair``), vocab keys underscore-form,
-        so both spellings are tried. Unknown / masked tags drop out silently — a
-        caption may legitimately carry artist / meta tags this score ignores.
+        so both spellings are tried. Unknown / masked tags drop out silently.
         """
         out: list[int] = []
         for t in tags:
@@ -166,20 +160,14 @@ class TagReadback:
 
     @torch.no_grad()
     def image_logits(self, pil_img) -> torch.Tensor:
-        """Encode one PIL image through the frozen tagger → ``[n_tags]`` logits.
-
-        The live path for arbitrary renders, with no cached feature.
-        """
+        """Encode one PIL image through the frozen tagger → ``[n_tags]`` logits."""
         return self.tagger.tag_logits(pil_img)
 
     @torch.no_grad()
     def readback_images(
         self, pil_images: Sequence, tags: Iterable[str], agg: str = AGG_LOGSIGMOID
     ) -> torch.Tensor:
-        """Group-relative read-back for N images against ONE caption → ``[N]``.
-
-        The canonical language-prior-cancelling form.
-        """
+        """Group-relative read-back for N images against ONE caption → ``[N]``."""
         cm = self.caption_mask(tags).unsqueeze(0)  # [1, n_tags]
         logits = torch.stack([self.image_logits(im) for im in pil_images], dim=0)
         return self.readback_from_logits(logits, cm, agg=agg)[:, 0]

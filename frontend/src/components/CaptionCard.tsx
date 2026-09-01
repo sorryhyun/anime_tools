@@ -10,16 +10,9 @@ import type { CaptionEntry, CaptionKind, Parsed, Proposal, VersionKind } from ".
  *
  * An image's captions are a *ladder* (`dataset.CAPTION_LADDER`) -- the
  * hand-written master, every version the revised caption used to be, that
- * caption itself, then the generated `v0…vN` -- not a set of unrelated files,
- * and the workspace/Export split is what makes that true: the trees are where
- * the tools keep their working copies, and Export is the moment one of them
- * becomes training data. So the panel does not ask which *tree* you meant
- * before you can type. It opens on the caption you are almost always here for
- * -- what the last run wrote, or failing that the newest writable one on disk
- * -- and the other versions are badges beside it, one click away.
- *
- * The `revised@N` badges are also why the run bar needs no Apply: a run writes,
- * and what it wrote over is right there, one badge to the left.
+ * caption itself, then the generated `v0…vN`. The panel opens on what the last
+ * run wrote, or failing that the newest writable caption on disk; the other
+ * versions are badges beside it.
  */
 
 /** A caption and the parse of it, kept together: the parse arrives ~a debounce
@@ -30,14 +23,13 @@ interface Snap {
   parsed: Parsed | null;
 }
 
-/** A rung's name. The file rungs are translated; an expanded label (`v0`,
-    `r1`, `revised@2`) is its own name in every language and is passed through.
-    A version knows which rung it came out of, so neither the label nor the
-    colour is inferred from the shape of an id. */
+/** A rung's name. The file rungs are translated; an expanded label (`v0`, `r1`,
+    `revised@2`) is passed through. A version knows which rung it came out of, so
+    neither the label nor the colour is inferred from the shape of an id. */
 const label = (k: VersionKind) => (t().caption as Record<string, unknown>)[k] as string | undefined;
 const vlabel = (e: CaptionEntry) => label(e.kind) ?? e.kind;
 /** Which of the dot hues a badge wears — the same colours the sidebar's dot
-    strip uses, so a badge and its dot are recognisably the same file. */
+    strip uses. */
 const hue = (e: CaptionEntry) => e.rung;
 /** The one line under the header saying what this version *is*, by rung. */
 const where = (e: CaptionEntry) =>
@@ -68,17 +60,14 @@ export function CaptionCard(props: {
       the editor until another Run replaces it. */
   proposal?: Proposal;
   proposalStage?: string;
-  /** The global "show explanations" preference — the same ? that folds the
-      prose in the dock and in Settings folds this card's. */
+  /** The global "show explanations" preference. */
   help: boolean;
   onSaved: (entry: CaptionEntry) => void;
 }) {
   let card!: HTMLDivElement;
 
   /** The version on screen. An explicit badge (or caption dot) wins; otherwise
-      the panel opens on what the last run touched, then on the newest writable
-      caption that exists — the working copy, never a `v3` picked for being
-      last on the ladder. */
+      what the last run touched, then the newest writable caption that exists. */
   const entry = createMemo(() => {
     const vs = props.versions;
     const pick = vs.find((v) => v.kind === props.kind);
@@ -94,10 +83,9 @@ export function CaptionCard(props: {
   const [msg, setMsg] = createSignal<{ text: string; bad?: boolean } | null>(null);
 
   /** What has been typed against each rung and not yet saved, for as long as
-      the panel stays on this image. The two-card panel kept a buffer per card,
-      and one editor has to keep that promise with one field: comparing a draft
-      against `v1` is a click, and a click must not be able to throw away what
-      you typed. A rung with no draft simply shows the file. */
+      the panel stays on this image: comparing a draft against `v1` is one click,
+      and a click must not throw away what you typed. A rung with no draft shows
+      the file. */
   const [drafts, setDrafts] = createSignal<Record<string, string>>({});
   const key = () => entry()?.kind ?? "";
   const text = () => drafts()[key()] ?? entry()?.text ?? "";
@@ -121,10 +109,9 @@ export function CaptionCard(props: {
       { defer: true },
     ),
   );
-  // The file under a draft changed — our own save, or a stage that rewrote it.
-  // The draft was an edit of text that is gone, so it goes with it. Keyed on
-  // the rung *staying the same*, or switching badges would clear the one being
-  // switched to.
+  // The file under a draft changed — our own save, or a stage that rewrote it —
+  // so the draft goes with it. Keyed on the rung *staying the same*, or
+  // switching badges would clear the one being switched to.
   createEffect(
     on(
       () => [entry()?.kind, entry()?.text] as const,
@@ -140,18 +127,15 @@ export function CaptionCard(props: {
 
   const editable = () => !!entry()?.editable;
   const dirty = () => editable() && text().trim() !== (entry()?.text ?? "").trim();
-  /** Does *that* rung hold something unsaved? Its badge says so, so a draft
-      left on another version is visible from the one you are on. */
+  /** Does *that* rung hold something unsaved? Its badge says so. */
   const dirtyIn = (k: VersionKind) => {
     const d = drafts()[k];
     const v = props.versions.find((x) => x.kind === k);
     return !!v?.editable && d !== undefined && d.trim() !== v.text.trim();
   };
   /** Which *tree* the file is in. The tail is identical for every writable rung
-      (same relative path by contract) and the crumbs above already name it, so
-      the root is the only telling part — and it rides with the prose the ?
-      folds, since it is the same answer to the same question. The full path
-      stays in the tooltip either way. */
+      (same relative path by contract), so only the root says anything; the full
+      path stays in the tooltip. */
   const root = () => {
     const p = entry()?.path ?? "";
     const tail = props.rel.replace(/\.[^./]+$/, ".txt");
@@ -199,9 +183,9 @@ export function CaptionCard(props: {
 
   return (
     <div classList={{ card: true, sel: props.kind !== "image" }} ref={card}>
-      {/* The ladder. A filled dot is a file on disk and a hollow one is not --
-          the sidebar row's readout, at the size a name fits beside it -- and
-          the badge is also the switch that puts that version in the editor. */}
+      {/* The ladder. A filled dot is a file on disk and a hollow one is not,
+          and the badge is also the switch that puts that version in the
+          editor. */}
       <div class="vbs">
         <For each={props.versions}>
           {(v) => (
@@ -253,8 +237,7 @@ export function CaptionCard(props: {
                 </button>
               </Show>
             </div>
-            {/* A history badge says *when* it stopped being the caption, which
-                is the only thing about it the path cannot say. */}
+            {/* A history badge says *when* it stopped being the caption. */}
             <Show when={e().note}>
               <div class="dim hint">{e().note}</div>
             </Show>
@@ -272,9 +255,8 @@ export function CaptionCard(props: {
               placeholder={e().exists ? "" : t().caption.empty}
               onInput={setText}
               onKeyDown={(ev) => {
-                // The core loop is typing in here; saving must not need the
-                // mouse. Cmd/Ctrl+S is caught too, or the browser offers to
-                // save the page.
+                // Cmd/Ctrl+Enter saves; Cmd/Ctrl+S is caught too, or the
+                // browser offers to save the page.
                 if (
                   (ev.metaKey || ev.ctrlKey) &&
                   (ev.key === "Enter" || ev.key.toLowerCase() === "s")

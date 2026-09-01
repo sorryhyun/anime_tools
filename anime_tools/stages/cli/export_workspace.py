@@ -1,19 +1,11 @@
 """Publish the workspace to the paths the trainer reads.
 
-    python -m anime_tools.stages.cli.export_workspace           # what would publish
-    python -m anime_tools.stages.cli.export_workspace --apply   # publish it
+The one operation in the package that writes outside ``workspace/``: resized
+images, masks and captions are copied under ``--out``.
 
-Dry-run by default: this is the one operation in the package that writes outside
-``workspace/``. It loads no model, hence no ``--from_report`` replay — an Apply
-runs the pass again and re-decides every row against disk, so a destination
-edited since the dry run is reported rather than clobbered.
-
-See :mod:`anime_tools.stages.export_workspace` for the six artifact kinds.
-Taking an export back is :func:`anime_tools.stages.export_workspace.revert_export`
-over an ``--apply`` run's report, which is what the GUI's **Undo** calls
-(``gui.proposals``); it is not a flag here, because an undo is a *second* write
-outside the workspace and belongs beside the run whose report it reads rather
-than in an argv typed by hand.
+Dry-run by default. ``--apply`` copies for real, re-deciding every row against
+the destination, so a file edited since the dry run is reported rather than
+clobbered. Taking an export back is the GUI's Undo, not a flag here.
 """
 
 from __future__ import annotations
@@ -40,8 +32,6 @@ DEFAULT_INDEX = f"{WS.REPORTS}/caption_index.json"
 
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(description=__doc__)
-    # --src and --dst keep their package-wide meanings; this is just the one
-    # stage that reads the resized tree and writes the master.
     add_dataset_args(
         p,
         src_help="Caption master dir — where a revised master publishes back to",

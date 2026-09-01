@@ -1,6 +1,5 @@
-"""Tests for the shared tag-shape primitives in
-``anime_tools.captions.taxonomy`` and the contract that the Anima Tagger vocab
-build and the caption-index builder type tag *shape* identically (no drift)."""
+"""Shared tag-shape primitives in ``anime_tools.captions.taxonomy``, and that the
+tagger vocab build and the caption-index builder type tag shape identically."""
 
 from __future__ import annotations
 
@@ -11,10 +10,7 @@ from anime_tools.captions import taxonomy as tx
 
 
 def test_taxonomy_is_torch_free():
-    # Importing the primitives must not drag torch (the caption-index script
-    # relies on staying lightweight / method-agnostic). Check in a fresh
-    # subprocess so a torch import elsewhere in the suite can't mask a
-    # regression here.
+    # In a fresh subprocess, so a torch import elsewhere in the suite can't mask it.
     import subprocess
     import sys
 
@@ -59,14 +55,7 @@ def test_is_count_tag():
 
 
 def test_the_count_regex_has_no_copies_left():
-    """One count pattern, imported — not four re-typed ones.
-
-    Three modules and one method-local ``re.compile`` used to carry their own
-    copy of :data:`taxonomy._COUNT_RE`; a copy that drops ``\\+?`` silently
-    stops matching real tags like ``6+girls``, which is the drift this used to
-    merely detect. Now the pattern is unique in the tree, and the two
-    single-subject predicates that read it are the shared ones.
-    """
+    """``taxonomy._COUNT_RE`` is the only copy of the count pattern in the tree."""
     from anime_tools.tagger.cli import derive_groups as dg
     from anime_tools.tagger.cli import role_markers as rm
 
@@ -87,12 +76,8 @@ def test_the_count_regex_has_no_copies_left():
 
 
 def test_solo_predicate_agrees_across_names_and_indices():
-    """The name side and the index side are one rule, not two.
-
-    ``1girl`` matches the multi-count pattern as much as ``2girls`` does, so the
-    single-count names have to be taken out of the multi test rather than
-    merely not counted — the precedence both halves have to share.
-    """
+    """Name side and index side share one rule: single counts are excluded from
+    the multi test, not merely uncounted (``1girl`` matches the multi pattern)."""
     assert tx.is_solo_names({"solo", "1girl", "blue eyes"})
     assert tx.is_solo_names({"1boy"})
     assert not tx.is_solo_names({"1girl", "2girls"})
@@ -126,9 +111,8 @@ def test_count_of_reads_one_number_out_of_the_bag():
 
 
 def test_caption_ratings_are_the_anima_band():
-    # The one rating vocabulary: Anima's 4-class band. The tagger's ordered
-    # RATINGS (class index for the rating head) must carry exactly the same
-    # members as the unordered CAPTION_RATINGS.
+    # The tagger's ordered RATINGS (class index for the rating head) carries
+    # exactly the members of the unordered CAPTION_RATINGS.
     from anime_tools.tagger.tagger import RATINGS
 
     assert tx.CAPTION_RATINGS == {"safe", "sensitive", "nsfw", "explicit"}
@@ -151,8 +135,7 @@ def test_legacy_booru_ratings_alias_onto_the_anima_band():
 
 
 def test_index_and_tagger_agree_on_tag_shape():
-    """The two categorization paths must classify artist/count identically —
-    both now key off the single shared primitives."""
+    """The two categorization paths classify artist/count identically."""
     from anime_tools.tagger.cli import vocab as v
 
     for tag in [
@@ -185,8 +168,7 @@ def test_constants_reexports_for_back_compat():
 def test_dedupe_count_tags_keeps_top_score_per_family():
     from anime_tools.tagger.tagger import dedupe_count_tags
 
-    # Contradictory exact girl counts: only the higher-scoring one survives;
-    # the booru-implied `multiple_girls` co-tag and other families stay.
+    # Contradictory exact girl counts: only the higher-scoring one survives.
     kept = {
         "4girls": 0.62,
         "3girls": 0.55,
@@ -210,20 +192,10 @@ def test_dedupe_count_tags_keeps_top_score_per_family():
 
 
 def test_no_stage_compares_tags_with_a_bare_lower():
-    """One tag key under ``stages/`` — :func:`normalize_tag`, not a local ``lower()``.
-
-    The underscore is the whole difference: the tagger emits ``speech bubble``
-    where a hand-written master holds ``speech_bubble``, so a ``lower()`` key
-    reads one tag as two. That is how ``autotag --mode merge`` came to append
-    the tagger's spelling of every underscored tag the caption already carried,
-    and how the caption mirror came to re-assert a moved tag in the bag *and*
-    in its clause — two shipped stages, one missing fold.
-
-    So the grep is over the whole tree rather than the sites that were wrong,
-    and the exemptions are stated here, once. Both are strings that are not tags
-    at all: an argparse enum and a CLI "off" sentinel, each matched against a
-    literal this repo spells itself, where lowercasing *is* the whole rule and
-    ``_``→`` `` would be wrong.
+    """Tags under ``stages/`` are keyed by :func:`normalize_tag`, not a bare
+    ``lower()`` — which reads ``speech bubble`` and ``speech_bubble`` as two tags.
+    The two exemptions below are not tags: an argparse enum and a CLI "off"
+    sentinel, matched against literals this repo spells itself.
     """
     package = Path(tx.__file__).parents[1]
     stages = package / "stages"

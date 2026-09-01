@@ -2,8 +2,7 @@
 
 The tag-taxonomy / caption-format constants themselves (``SLOT_ORDER``,
 ``TAG_TYPE_NAMES``, ``RATINGS``, ``PEOPLE_COUNT_LABELS``) live in
-``anime_tools/tagger/tagger.py``, so inference wrapper, CLI and downstream
-consumers all see one definition; the helpers here consume them.
+``anime_tools/tagger/tagger.py``.
 """
 
 from __future__ import annotations
@@ -12,9 +11,7 @@ from pathlib import Path
 
 from anime_tools._walk import IMAGE_EXTENSIONS
 
-# Count-tag detection and people-count bucketing live in the shared torch-free
-# tag-shape module so the vocab build, the caption-index builder and the
-# torch-free inference path can't drift; re-exported here for the CLI modes.
+# Count-tag detection and people-count bucketing; re-exported for the CLI modes.
 from anime_tools.captions.taxonomy import (
     _COUNT_RE,
     _LEADING_INT_RE,
@@ -33,8 +30,7 @@ __all__ = [
 
 # Image extensions next to each .txt caption; order is preference, first hit
 # wins. The preferred four lead, then the rest of the curation walker's list, so
-# a caption whose only sibling is a `.bmp` is still trainable rather than
-# silently dropped from the vocab build for its extension.
+# a caption whose only sibling is a `.bmp` is still trainable.
 _PREFERRED = (".webp", ".jpg", ".jpeg", ".png")
 IMAGE_EXTS: tuple[str, ...] = _PREFERRED + tuple(
     e for e in dict.fromkeys(x.lower() for x in IMAGE_EXTENSIONS) if e not in _PREFERRED

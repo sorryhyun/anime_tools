@@ -1,18 +1,14 @@
 """Anima caption tag-rules — replacements, removals, clothing-base dedup.
 
-Mirrors ``gelcrawl/postprocess.py::dedup_tags_in_file`` so the trained tagger
-can apply the same normalization at inference with no runtime dependency on
-gelcrawl. The ``rules.yaml`` snapshot in the tagger checkpoint dir is the
-canonical source at runtime.
-
-Three rule families:
+The ``rules.yaml`` snapshot in the tagger checkpoint dir is the canonical source
+at runtime. Three rule families:
 
 * ``replacements``: whole-string ``str.replace`` applied before tokenization —
   HTML-entity decode, rating normalization onto Anima's band (see
   ``taxonomy.LEGACY_RATING_ALIASES``), artist-alias rewrites. Snapshots
-  predating the band carry the old collapse (``questionable → sensitive``);
-  they stay valid for their own checkpoint because :meth:`AnimaTagger.tag`
-  holds the rating slot out of ``apply_rules``.
+  predating the band carry the old ``questionable → sensitive`` collapse and
+  stay valid: :meth:`AnimaTagger.tag` holds the rating slot out of
+  ``apply_rules``.
 * ``remove``: tag literals that are unconditionally stripped.
 * dedup map: ``{base: {variants}}`` — drop ``bra`` when ``black bra`` is
   already in the caption.
@@ -34,9 +30,12 @@ class TagRules:
     replacements: tuple[tuple[str, str], ...]
     remove: frozenset
     dedup: dict[str, frozenset]
-    # Consulted before the booru tag cache in vocab.categorize(), for tags the cache mis-types; only tags the curator lists explicitly.
+    # Consulted before the booru tag cache in vocab.categorize(), for tags the
+    # cache mis-types; only tags the curator lists explicitly.
     category_overrides: dict[str, str]
-    # Substring patterns suppressed from the build-time "top-20 uncategorized" coverage log. Logging filter only — does not change categorization. Case-sensitive (booru tags are lowercase).
+    # Substring patterns suppressed from the build-time "top-20 uncategorized"
+    # coverage log. Logging filter only — does not change categorization.
+    # Case-sensitive (booru tags are lowercase).
     coverage_ignore: tuple[str, ...]
 
     def to_dict(self) -> dict:
@@ -53,7 +52,7 @@ class TagRules:
         return out
 
 
-# Top-level YAML keys that are NOT dedup base→variants entries (load_rules and from_dict must agree on what to exclude).
+# Top-level YAML keys that are NOT dedup base→variants entries.
 _RESERVED_KEYS = frozenset(
     {
         "replacements",
@@ -65,11 +64,8 @@ _RESERVED_KEYS = frozenset(
 
 
 def load_rules(path: str | Path) -> TagRules:
-    """Load a ``tag_rules.yaml`` (gelcrawl format) into a :class:`TagRules`.
-
-    The YAML and the ``to_dict`` JSON snapshot are the same mapping, so this is
-    :func:`from_dict` over the parsed file.
-    """
+    """Load a ``tag_rules.yaml`` into a :class:`TagRules`; the YAML and the
+    ``to_dict`` JSON snapshot are the same mapping."""
     with open(path, encoding="utf-8") as f:
         return from_dict(yaml.safe_load(f) or {})
 
@@ -104,11 +100,8 @@ def apply_replacements(content: str, rules: TagRules) -> str:
 
 
 def parse_caption(content: str, rules: TagRules) -> list[str]:
-    """Split a raw caption string into a clean tag list under ``rules``.
-
-    Equivalent to gelcrawl's ``dedup_tags_in_file`` but pure: no file IO, no
-    in-place mutation. Returns the *kept* tags in their original order.
-    """
+    """Split a raw caption string into a clean tag list under ``rules``,
+    keeping the survivors in their original order."""
     content = apply_replacements(content, rules).strip()
     if not content:
         return []

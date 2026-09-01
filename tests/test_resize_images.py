@@ -1,8 +1,7 @@
 """Resize stage: free-fit geometry, the mirror layout, and the idempotent skip.
 
 The geometry assertions are the interop contract with the trainer's
-``make preprocess-resize`` — if a number here moves, resized PNGs written by one
-side stop being skipped by the other and the whole dataset re-encodes.
+``make preprocess-resize``: move a number and each side re-encodes the other's PNGs.
 """
 
 from __future__ import annotations
@@ -165,15 +164,8 @@ def test_rerun_skips_outputs_already_at_their_bucket(tmp_path):
 
 
 def test_a_settled_rerun_never_decodes_the_source(tmp_path, monkeypatch):
-    """The skip is decided from headers alone — nothing above it may decode.
-
-    This is the load-bearing half of "a re-run is near-free": the GUI runs this
-    pass as a preflight in front of every stage that opens an image, so on a
-    settled dataset almost every call ends at the skip. Deciding *not* to write
-    used to cost a full decode of the source (``exif_transpose`` copies, and a
-    copy loads), which is ~100 ms an image — a minute and a half of nothing on a
-    3k-image master, before every batch run.
-    """
+    """The skip is decided from headers alone, since the GUI runs this pass as a
+    preflight in front of every stage that opens an image."""
     from anime_tools.stages import resize as R
 
     src, dst = tmp_path / "master", tmp_path / "resized"
@@ -190,8 +182,8 @@ def test_a_settled_rerun_never_decodes_the_source(tmp_path, monkeypatch):
 
 
 def test_a_changed_source_still_re_resizes(tmp_path):
-    # The header-only skip carries a *size hint* into the worker; a source
-    # rewritten under the same name must still land on its new bucket.
+    # The header-only skip carries a size hint into the worker; a source rewritten
+    # under the same name must still land on its new bucket.
     src, dst = tmp_path / "master", tmp_path / "resized"
     _write_image(src / "0001.png", (1600, 900))
     run_resize_images(src=src, dst=dst, workers=1)
@@ -205,9 +197,8 @@ def test_a_changed_source_still_re_resizes(tmp_path):
 
 
 def test_exif_rotation_is_read_off_the_header(tmp_path):
-    # The one thing orientation does to a size is swap it, so the skip check
-    # can read it from the header — but it has to actually do so, or a rotated
-    # image would be measured on the wrong aspect and land on the wrong bucket.
+    # Orientation only swaps the size, so the skip check reads it from the header;
+    # missing it would measure a rotated image on the wrong aspect.
     from anime_tools.stages.resize import _oriented_size
 
     src, dst = tmp_path / "master", tmp_path / "resized"
@@ -266,9 +257,8 @@ def test_min_pixels_skips_small_images_instead_of_upscaling(tmp_path):
 
     assert stats.written == 1 and stats.skipped_small == 1
     assert not (dst / "small.png").exists()
-    # A skip here is invisible to *every* stage, not just to training: the
-    # resized tree is what masking, grouping and the tagger all walk. So the
-    # dropped image is named, the way a failure is, not merely counted.
+    # A skip here makes the image invisible to every stage, so it is named rather
+    # than merely counted.
     assert len(stats.too_small) == 1
     assert "small.png" in stats.too_small[0] and "200x200" in stats.too_small[0]
     assert run_resize_images(src=src, dst=dst, workers=1, min_pixels=0).written == 1
@@ -347,8 +337,8 @@ def test_non_default_geometry_stamps_the_trainer_metadata_keys(tmp_path):
 
 
 def test_default_geometry_stamps_nothing(tmp_path):
-    # Parity with the trainer, whose default-path signature is empty too: a
-    # default PNG from either side is skipped by the other on size alone.
+    # Parity with the trainer: a default PNG from either side is skipped by the
+    # other on size alone.
     src, dst = tmp_path / "master", tmp_path / "resized"
     _write_image(src / "0001.png", (1600, 900))
     run_resize_images(src=src, dst=dst, workers=1)
@@ -451,7 +441,7 @@ def test_cli_rejects_an_unknown_tier(tmp_path):
 
 
 def test_resize_stage_is_torch_free():
-    """The GUI collects this parser in a child; it must not drag torch in."""
+    """The GUI collects this parser in a child, so it must stay torch-free."""
     code = (
         "import sys, anime_tools.stages.cli.resize_images as m; "
         "m.build_parser(); assert 'torch' not in sys.modules"

@@ -7,9 +7,9 @@ optionally ``groups.yaml`` (group-aware prediction: one argmax winner per
 ``sidecar.safetensors``. See ``docs/anima_tagger.md``.
 
 Everything after the score vector — thresholds, softmax groups, count dedupe,
-character floor, top-1 copyright, slot order — is backend-agnostic
-post-processing of ``{tag: prob}``. Captions come out in ``SLOT_ORDER`` with
-underscores replaced by spaces (Anima's training-time T5 input).
+character floor, top-1 copyright, slot order — is post-processing of
+``{tag: prob}``. Captions come out in ``SLOT_ORDER`` with underscores replaced
+by spaces (Anima's training-time T5 input).
 """
 
 from __future__ import annotations
@@ -40,8 +40,7 @@ from anime_tools.tagger.dbv4_backend import (
     rename_recovery_from_rules,
 )
 
-# Torch-free in dbv4_meta so the download catalog and the ComfyUI loader can read
-# them; re-exported because every caller imports them from this module.
+# Re-exported from the torch-free dbv4_meta; callers import them from here.
 from anime_tools.tagger.dbv4_meta import (
     DBV4_OPTIONAL_FILES,
     DBV4_REQUIRED_FILES,
@@ -64,11 +63,10 @@ def ensure_tagger_checkpoint(
 ) -> Path:
     """Fetch the tagger checkpoint into ``ckpt_dir`` if any required file is missing.
 
-    Files are flattened into ``ckpt_dir`` regardless of source layout so the
-    loader's directory contract stays uniform; optional files are best-effort.
-    With ``backbone=True`` a dbv4 checkpoint also runs
+    Files are flattened into ``ckpt_dir`` regardless of source layout; optional
+    files are best-effort. With ``backbone=True`` a dbv4 checkpoint also runs
     :func:`ensure_tagger_backbone`, so the gated upstream weights are fetched
-    **here** rather than lazily on the first crop of a daemon job.
+    here rather than lazily on the first predict.
     """
     ckpt_dir = Path(ckpt_dir)
     if all((ckpt_dir / f).exists() for f in TAGGER_REQUIRED_FILES):
@@ -133,8 +131,8 @@ def ensure_tagger_backbone(ckpt_dir: str | Path) -> str:
     ever lands in the HF hub cache under the user's own token. Probes the cache
     offline first, then fetches through ``hf_download``, which turns a gated
     401/403 into a ``FileNotFoundError`` naming the accept-terms recovery.
-    Returns the repo id. ``ANIMA_TAGGER_NO_AUTOFETCH=1`` fails instead of
-    fetching (offline hosts, CI).
+    Returns the repo id; ``ANIMA_TAGGER_NO_AUTOFETCH=1`` fails instead of
+    fetching.
     """
     from anime_tools.tagger.dbv4_meta import (
         DBV4_BACKBONE_FILES,
@@ -182,9 +180,8 @@ def _is_dbv4_dir(ckpt_dir: Path) -> bool:
 _GIRLS_COUNT_RE = re.compile(r"^(\d+)\+?girls?$")
 
 # Exact people-count families ("3girls" / "2boys" / "1other", open "6+girls"
-# included). "multiple_girls"/"multiple_boys" are booru implication co-tags, not
-# exact counts — they legitimately ride alongside a digit count, so neither this
-# nor _GIRLS_COUNT_RE matches them.
+# included). "multiple_girls"/"multiple_boys" ride alongside a digit count, so
+# neither this nor _GIRLS_COUNT_RE matches them.
 _EXACT_COUNT_RES = tuple(
     re.compile(rf"^\d+\+?{noun}s?$") for noun in ("girl", "boy", "other")
 )
@@ -194,8 +191,8 @@ def dedupe_count_tags(kept: dict[str, float]) -> None:
     """Drop all but the highest-scoring exact count per family, in place.
 
     The sigmoid head has no mutual exclusion, so a near-threshold image can
-    clear both ``3girls`` and ``4girls`` — which inflates the girls-count-driven
-    character cap and trips the position-clause count-mismatch gate downstream.
+    clear both ``3girls`` and ``4girls``, inflating the girls-count character
+    cap and tripping the position-clause count-mismatch gate.
     """
     for cre in _EXACT_COUNT_RES:
         hits = sorted((n for n in kept if cre.match(n)), key=lambda n: -kept[n])
@@ -225,8 +222,7 @@ TAG_TYPE_NAMES: dict[int, str] = {
 }
 
 # Canonical class-index order, least -> most restrictive. Do not reorder without
-# rebuilding vocab.json/dataset.json. Existing checkpoints are unaffected:
-# AnimaTagger reads ratings/n_ratings from the checkpoint itself.
+# rebuilding vocab.json/dataset.json.
 RATINGS: tuple[str, ...] = ("safe", "sensitive", "nsfw", "explicit")
 
 # 8-class people-count bucket from parsed count tags (``classify_people``).
@@ -261,7 +257,6 @@ def _fix_artist_category(category: str, name: str) -> str:
 
     Those builds typed any ``@``-prefixed tag as ``artist``, sweeping up booru
     emoticons like ``@_@``; the rule needs ``@`` followed by non-whitespace.
-    Patched here so existing checkpoints don't need rebuilding.
     """
     if category != "artist":
         return category
@@ -365,8 +360,8 @@ class AnimaTagger:
             self.ckpt_dir / "thresholds.safetensors", n_tags=self.n_tags
         )
         self.thresholds_dev = self.thresholds.to(self.device)
-        # Attached to every ``predict`` output so a consumer can reason about how
-        # far a score fell short (the position-clause bag relaxation reads it).
+        # Attached to every ``predict`` output so a consumer can tell how far a
+        # score fell short (the position-clause bag relaxation reads it).
         self.threshold_map: dict[str, float] = {
             e.name: float(t) for e, t in zip(self.tag_entries, self.thresholds)
         }
@@ -464,7 +459,7 @@ class AnimaTagger:
 
         Tag logits are the projected sigmoid probs mapped back through logit();
         tags the backend cannot emit sit at ``UNSUPPORTED_LOGIT``, so they never
-        clear a threshold and never win a group argmax.
+        clear a threshold or win a group argmax.
         """
         out = self._dbv4.forward([pil_img])
         probs = torch.zeros(self.n_tags)
@@ -489,7 +484,7 @@ class AnimaTagger:
 
     @torch.no_grad()
     def tag_logits(self, pil_img: Image.Image) -> torch.Tensor:
-        """Image → raw ``[n_tags]`` tag logits (float32, cpu). The readback path."""
+        """Image → raw ``[n_tags]`` tag logits (float32, cpu)."""
         return self._heads_forward(pil_img)[0].float().cpu()
 
     @torch.no_grad()
@@ -539,8 +534,6 @@ class AnimaTagger:
         # Group-aware refinement: one argmax winner per applicable group.
         if self._group_lookup:
             kept_names = set(kept.keys())
-            # ``kept`` holds vocab names, so this name-side predicate answers
-            # exactly what the trainer's index-side one does.
             is_solo = is_solo_names(kept_names)
             group_preds: dict[str, str | None] = {}
             for name, info in self._group_lookup.items():
@@ -564,11 +557,9 @@ class AnimaTagger:
                     group_preds[name] = None
                     continue
                 winner_idx = int(idx_t[winner_local].item())
-                # dbv4 was never CE-trained on our groups, so "exactly one"
-                # is not a calibrated contract there: the winner must also
-                # clear its own threshold ("at most one"). This is what stops
-                # an all-unsupported group (e.g. @artist) from emitting its
-                # first member off a -30 logit.
+                # dbv4 was never CE-trained on our groups, so the winner must
+                # also clear its own threshold ("at most one"): otherwise an
+                # all-unsupported group emits its first member off a -30 logit.
                 if (
                     self.backend_kind == "dbv4"
                     and tag_probs_cpu[winner_idx] < self.thresholds[winner_idx]
@@ -584,9 +575,9 @@ class AnimaTagger:
         dedupe_count_tags(kept)
 
         # People-count from the emitted count tags, bucketed by the rule the
-        # vocab build labels by: it measures better than the sidecar softmax head
-        # and stays consistent with the ``Ngirls`` tags the position-clause
-        # pipeline reads. The sidecar distribution stays in ``people_count_scores``.
+        # vocab build labels by, so it agrees with the ``Ngirls`` tags the
+        # position-clause pipeline reads. The sidecar distribution stays in
+        # ``people_count_scores``.
         if self.backend_kind == "dbv4" and self.people_count_labels:
             people_idx = classify_people(n.replace(" ", "_") for n in kept)
             out["people_count"] = self.people_count_labels[people_idx]
@@ -667,8 +658,8 @@ class AnimaTagger:
             for idx, _, name in entries:
                 if idx in kept_idxs:
                     slotted.setdefault(cat, []).append(name)
-        # Re-apply tag rules at emit time as a safety net: the model can predict
-        # both `bra` and `black bra`; apply_rules drops `bra` in that case.
+        # Re-apply tag rules at emit time: the model can predict both `bra` and
+        # `black bra`; apply_rules drops `bra` in that case.
         flat: list[str] = []
         for cat in SLOT_ORDER:
             flat.extend(slotted.get(cat, []))

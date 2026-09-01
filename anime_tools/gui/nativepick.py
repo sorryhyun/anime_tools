@@ -1,16 +1,10 @@
 """The host's own folder/file chooser, behind the ``…`` on a path field.
 
-The panel is a local tool: the browser and the dataset are on one machine, so
-the desktop's own chooser is the honest answer to "which directory?". The
-``/api/ls`` browser is the fallback for the two hosts no native dialog serves —
-headless, or a browser elsewhere — which is why :func:`pick` reports *no chooser
-here* (``available=False``) rather than raising.
-
-The dialog runs in a **subprocess**, never in this process: each toolkit here
-wants the main thread, and a chooser the user leaves open must not hold a
-server thread past :data:`TIMEOUT_S`. Nothing here imports torch, and nothing
-here runs a shell — the two scripted backends (AppleScript, PowerShell) get
-their strings through :func:`_quote_as` because a path is data.
+Headless hosts and remote browsers have no native dialog, so :func:`pick` reports
+``available=False`` and the caller falls back to ``/api/ls``. The dialog runs in a
+subprocess (each toolkit wants the main thread, and an abandoned dialog must not
+hold a server thread past :data:`TIMEOUT_S`); no shell is involved, and the two
+scripted backends get their strings through :func:`_quote_as`.
 """
 
 from __future__ import annotations
@@ -23,24 +17,18 @@ from dataclasses import dataclass
 from pathlib import Path
 
 TIMEOUT_S = 300
-"""How long a chooser may stay open before the request gives up on it: an
-abandoned dialog would otherwise hold a thread and a socket forever."""
+"""How long a chooser may stay open before the request gives up on it."""
 
 MAX_TITLE = 80
-"""The window title is client text (the panel's own translated string), so it
-is trimmed to something a title bar can hold before it reaches a script."""
+"""The window title is client text, trimmed before it reaches a script."""
 
 OWNER_VAR = "$owner"
 """The PowerShell variable holding the dialog's owner window.
 
-Windows will not let a process that does not already own the foreground take
-it, and this one was spawned by a server behind the browser — so an *unowned*
-``ShowDialog()`` really does open, and really is invisible: a visible ``#32770``
-sitting behind Chrome, with the request blocked on it until :data:`TIMEOUT_S`.
-Giving it a topmost owner is what fixes that, and it fixes it without any
-foreground right: ``WS_EX_TOPMOST`` is a Z-order band, set through
-``SetWindowPos``, and an owned window is drawn above its owner — so the chooser
-lands on top of the browser whether or not the focus follows it.
+A server-spawned process cannot take the Windows foreground, so an *unowned*
+``ShowDialog()`` opens behind the browser with the request blocked on it. A
+topmost owner fixes that without a foreground right: ``WS_EX_TOPMOST`` is a
+Z-order band and an owned window is drawn above its owner.
 """
 
 WIN_TOPMOST_OWNER = (
@@ -53,24 +41,21 @@ WIN_TOPMOST_OWNER = (
     f"{OWNER_VAR}.StartPosition = 'CenterScreen';"
     f"{OWNER_VAR}.Show(); {OWNER_VAR}.Activate();"
 )
-"""The owner :data:`OWNER_VAR` is: a one-pixel, borderless, fully transparent,
-taskbar-less window whose only job is to carry the topmost band for the real
-dialog. ``Activate`` is the *nudge* for the focus and is allowed to do nothing —
-the visibility does not depend on it. Nothing pumps messages for this form, and
-nothing needs to: ``ShowDialog`` runs its own modal loop on the same thread."""
+"""A one-pixel, borderless, transparent, taskbar-less window carrying the topmost
+band for the real dialog. ``Activate`` only nudges the focus and may do nothing.
+Nothing pumps messages for this form; ``ShowDialog`` runs its own modal loop."""
 
 WIN_OWNER_CLOSE = f";{OWNER_VAR}.Close()"
-"""The owner outlives the dialog by one statement, so a cancel disposes of it
-too — a leaked transparent topmost window would sit over the desktop forever."""
+"""Closes the owner after the dialog, cancel included, so no transparent topmost
+window is leaked."""
 
 
 @dataclass(frozen=True)
 class Pick:
     """What came back from the desktop.
 
-    ``available`` is about the *host*, not the answer: ``False`` means there was
-    no chooser to open and the caller should fall back, while ``True`` with a
-    ``None`` path is an ordinary cancel and means the field keeps its value.
+    ``available`` is about the *host*: ``False`` means there was no chooser to
+    open; ``True`` with a ``None`` path is an ordinary cancel.
     """
 
     path: str | None
@@ -134,8 +119,8 @@ def _argv(kind: str, start: Path | None, title: str) -> list[str] | None:
             + WIN_OWNER_CLOSE,
         ]
 
-    # X11/Wayland: a chooser without a display is a process that never returns,
-    # so the display is part of "is there one".
+    # X11/Wayland: a chooser without a display never returns, so the display is
+    # part of "is there one".
     if not (os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY")):
         return None
     zenity = shutil.which("zenity") or shutil.which("qarma")
@@ -144,8 +129,8 @@ def _argv(kind: str, start: Path | None, title: str) -> list[str] | None:
         if kind == "dir":
             argv.append("--directory")
         if start:
-            # The trailing separator is what makes GTK open *in* the directory
-            # rather than with it typed into the name box.
+            # The trailing separator makes GTK open *in* the directory rather
+            # than with it typed into the name box.
             argv.append(f"--filename={start}{os.sep}")
         return argv
     kdialog = shutil.which("kdialog")
@@ -163,9 +148,9 @@ def available() -> bool:
 def pick(kind: str = "dir", start: Path | None = None, *, title: str = "") -> Pick:
     """Open the host's chooser and wait for it.
 
-    Blocking by design, and slow by nature -- it is as slow as the person in
-    front of the dialog -- so the route awaits it on a thread. A cancel, a
-    timeout and an empty answer are all the same ordinary "nothing chosen".
+    Blocks for as long as the person in front of the dialog takes, so the route
+    awaits it on a thread. Cancel, timeout and an empty answer all mean "nothing
+    chosen".
     """
     argv = _argv(kind if kind == "dir" else "file", start, _clean_title(title))
     if argv is None:

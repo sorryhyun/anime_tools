@@ -4,8 +4,7 @@
 form, so a dropped ``dest=``, a drifted default or a lost ``--foo-bar`` alias
 silently changes the form rather than failing anything. Declaration *order* is
 part of that contract (``fields_of`` walks ``parser._actions`` in order), so
-each helper adds its flags as one contiguous block. Where two stages say
-different things about the same flag the help text is an argument, not a fork.
+each helper adds its flags as one contiguous block.
 """
 
 from __future__ import annotations
@@ -22,8 +21,8 @@ PATTERN_HELP = "fnmatch glob (| to OR-combine) on the path relative to {root}"
 def add_path_pattern_arg(p: argparse.ArgumentParser, *, help: str) -> None:
     """``--path_pattern`` — the one scope knob the GUI narrows to a single image.
 
-    :data:`anime_tools.gui.stages.SCOPE_FIELD` looks for this ``dest``, so the
-    dual spelling and the ``dest=`` are load-bearing.
+    ``gui.stages.SCOPE_FIELD`` looks for this ``dest``, so the dual spelling and
+    the ``dest=`` are load-bearing.
     """
     p.add_argument(
         "--path_pattern",
@@ -44,8 +43,7 @@ def add_dataset_args(
     """``--src`` / ``--dst`` / ``--path_pattern``: the three dataset roots.
 
     ``pattern_root`` names the tree the glob is matched against — ``--dst`` for
-    every stage that walks the resized tree, ``--src`` for the resize stage
-    that populates it.
+    every stage that walks the resized tree, ``--src`` for resize.
     """
     p.add_argument("--src", default="image_dataset", help=src_help)
     p.add_argument("--dst", default=WS.RESIZED, help=dst_help)
@@ -55,11 +53,7 @@ def add_dataset_args(
 def add_apply_args(
     p: argparse.ArgumentParser, *, apply_help: str, from_report_help: str
 ) -> None:
-    """``--apply`` / ``--from_report``: dry-run-by-default and its replay.
-
-    Separate from :func:`add_report_dir_arg` because the multiview audit slots
-    its verdict/confidence gate between the two.
-    """
+    """``--apply`` / ``--from_report``: dry-run-by-default and its replay."""
     p.add_argument("--apply", action="store_true", help=apply_help)
     p.add_argument(
         "--from_report",
@@ -85,9 +79,9 @@ def add_model_args(p: argparse.ArgumentParser) -> None:
     """``--tagger_dir`` / ``--device``.
 
     ``--device`` defaults to ``None`` on purpose: it is in
-    :data:`anime_tools.gui.stages.AUTO_FIELDS`, never shown and never sent, and
-    each stage resolves it at the model-load site, so the torch-free
-    ``--from_report`` replay path never pays for the answer.
+    ``gui.stages.AUTO_FIELDS`` (never shown, never sent) and each stage resolves
+    it at the model-load site, so the torch-free ``--from_report`` replay path
+    never pays for the answer.
     """
     p.add_argument(
         "--tagger_dir",
@@ -103,8 +97,7 @@ def make_progress(every: int, *, first: bool = False):
     """A ``progress(index, total, detail)`` that prints one line every ``every``.
 
     The last line always prints, so a run under ``every`` images still says it
-    finished; ``first`` also prints image 1, which is what autotag wants to
-    show the model finished loading.
+    finished; ``first`` also prints image 1.
     """
 
     def progress(index: int, total: int, detail: str) -> None:

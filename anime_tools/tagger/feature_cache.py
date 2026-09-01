@@ -3,10 +3,9 @@
 One dbv4 forward per ``dataset.json`` image, kept as
 ``workspace/anima_tagger/dbv4/<arch>_hidden.safetensors``: the frozen
 backbone's penultimate features plus its own probabilities, so the sidecar head
-can be retrained (and the calibration probe re-run) without touching a GPU
-again. The stem list the cache was built for rides in the safetensors metadata
-under ``stems`` — a cache built for a different manifest is not merely stale,
-it is misaligned row-for-row, so every reader checks it.
+can be retrained without a GPU. The stem list the cache was built for rides in
+the safetensors metadata under ``stems`` — a cache built for a different
+manifest is misaligned row-for-row, so every reader checks it.
 """
 
 from __future__ import annotations
@@ -29,9 +28,8 @@ __all__ = [
     "multi_hot_from_manifest",
 ]
 
-# Decoupled from the checkpoint dir on purpose: the cache is dataset-derived and
-# bulky, so it lives in the workspace with the other dataset caches and is
-# shared across checkpoints built over the same corpus.
+# Dataset-derived, not checkpoint-derived: shared across every checkpoint built
+# over the same corpus.
 DBV4_CACHE_DIR = Path(WS.WORKSPACE) / "anima_tagger" / "dbv4"
 
 
@@ -44,8 +42,7 @@ def dbv4_cache_path(arch: str, explicit: str | Path | None = None) -> Path:
 def dbv4_cache_stems(path: str | Path) -> list[str]:
     """The stem list ``path`` was built for, from its safetensors metadata.
 
-    Metadata only — no tensor is read, so this is cheap enough to gate "rebuild
-    or reuse?" on.
+    Metadata only — no tensor is read.
     """
     with safe_open(str(path), "pt") as f:
         return json.loads(f.metadata()["stems"])
@@ -68,8 +65,7 @@ def multi_hot_from_manifest(
     sidecar trains on its own subset of the vocab, so its columns are not vocab
     indices); an index absent from the map contributes nothing. Without it the
     vocab index is the column, and any index ``>= n_cols`` is dropped rather
-    than raising — a manifest built against a wider vocab is a stale-input
-    problem its own reader reports, not an IndexError from here.
+    than raising.
     """
     out = torch.zeros(len(tag_indices), n_cols)
     for row, idxs in enumerate(tag_indices):

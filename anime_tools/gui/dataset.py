@@ -1,23 +1,20 @@
 """Dataset browsing for the web GUI: the image/caption tree behind the sidebar.
 
-Torch-free like the rest of ``anime_tools.gui``. The trees it joins are keyed by
-the *same relative path* in each (:mod:`anime_tools.workspace` owns the layout):
+The trees it joins are keyed by the *same relative path* in each
+(:mod:`anime_tools.workspace` owns the layout):
 
 ``src``     ``image_dataset/<rel>``            source image + hand-written master caption
 ``master``  ``workspace/master/<rel>``         the revised master overlay (empty until Phase 2 fills it)
 ``dst``     ``workspace/resized/<rel>``        resized image + revised caption + ``.variants.txt`` + ``.history.txt``
 ``masks``   ``workspace/masks/<rel>``          ``{stem}_mask.png`` (nested; flat is the legacy fallback)
-``out``     ``post_image_dataset/``            the export destination -- browsed by nothing, written by Export
+``out``     ``post_image_dataset/``            the export destination, written by Export
 
-An image's captions are a **ladder**, not a set of unrelated files
-(:data:`CAPTION_LADDER`): the hand-written master, the versions the revised
-caption used to be, that caption itself, then the generated variants. That order
-is declared once here and travels to the browser twice -- as the dots on a
-sidebar row (:func:`_row`) and as the badges over the one caption editor
-(:func:`caption_versions`) -- so a rung is added in one place rather than three.
-Only the rungs marked ``editable`` can be written; ``.variants.txt`` is
-generated, and editing the caption above it makes the sidecar stale, which
-:func:`write_caption` reports so the UI can say so out loud.
+An image's captions are a **ladder** (:data:`CAPTION_LADDER`): the hand-written
+master, the versions the revised caption used to be, that caption itself, then the
+generated variants. That order feeds both the dots on a sidebar row (:func:`_row`)
+and the badges over the caption editor (:func:`caption_versions`). Only rungs marked
+``editable`` can be written; editing the caption above ``.variants.txt`` makes that
+sidecar stale, which :func:`write_caption` reports.
 """
 
 from __future__ import annotations
@@ -52,23 +49,17 @@ SETTINGS_KEY = "dataset"
 DEFAULT_ROOTS = WS.DEFAULT_ROOTS
 OUTPUT_ROOTS = WS.OUTPUT_ROOTS
 EXPORT_ROOTS = WS.EXPORT_ROOTS
-"""Imported rather than restated, so the GUI and the migrate CLI cannot drift
-about where the workspace is."""
 
 
 @dataclass(frozen=True)
 class Rung:
     """One rung of the caption ladder: a caption file and what may be done to it.
 
-    ``root`` names the :class:`Roots` field the file lives in, so the ladder is
-    also the whole answer to "where is this caption" -- there is no second table
-    mapping a kind to a tree.
-
-    ``expand`` marks the two rungs that are not one caption but a *sidecar* of
-    many: ``"variants"`` holds the generated ``v0``/``v1``/``r1`` … samples and
-    ``"history"`` the versions a write superseded. Both are one file on disk and
-    one dot on a sidebar row, and both open out into a badge apiece in the
-    panel (:func:`caption_versions`).
+    ``root`` names the :class:`Roots` field the file lives in. ``expand`` marks a
+    rung that is a *sidecar* of many captions rather than one: ``"variants"`` holds
+    the generated ``v0``/``v1``/``r1`` samples, ``"history"`` the versions a write
+    superseded. Each is one file and one sidebar dot, expanded into a badge apiece
+    by :func:`caption_versions`.
     """
 
     kind: str
@@ -78,9 +69,8 @@ class Rung:
     """``"variants"`` / ``"history"`` — the sidecar beside the caption, not the
     caption."""
     of: str = ""
-    """Which rung a history sidecar records the past of. Its badges wear that
-    rung's name (``revised@2``), so the two are named here together rather than
-    the panel inferring one from the other."""
+    """Which rung a history sidecar records the past of; its badges wear that
+    rung's name (``revised@2``)."""
 
 
 CAPTION_LADDER: tuple[Rung, ...] = (
@@ -91,17 +81,10 @@ CAPTION_LADDER: tuple[Rung, ...] = (
 )
 """The captions of one image, oldest first.
 
-``history`` sits *above* ``revised`` because that is what it is: the versions
-that caption used to be, oldest first, back to the cap in
-:mod:`anime_tools.captions.history`. It is what makes a stage run safe to write
-straight to disk -- the run bar has no Apply gate, so the text a run replaces
-survives as a badge rather than only as an Undo.
-
-A revised-master overlay, should one land, is one more rung between ``master``
-and ``history`` plus ``master`` flipped to ``editable=False``, and that is the
-whole GUI half of it: the sidebar strip, the panel's badges and
-:func:`write_caption`'s guard all read this tuple. It needs a name of its own --
-``revised`` is the ``dst`` rung.
+``history`` sits above ``revised`` because it holds the versions that caption used
+to be. The run bar has no Apply gate, so the text a run replaces survives as a
+badge here. The sidebar strip, the panel's badges and :func:`write_caption`'s guard
+all read this tuple.
 """
 
 CAPTION_KINDS = tuple(r.kind for r in CAPTION_LADDER if r.editable)
@@ -111,36 +94,29 @@ _SIDECAR_PATH = {
     "variants": variants_sidecar_path,
     "history": history_sidecar_path,
 }
-"""``Rung.expand`` → the sidecar path beside a caption. The one place a rung
-that is a sidecar becomes a filename."""
+"""``Rung.expand`` → the sidecar path beside a caption."""
 
 HISTORY_OF = {r.of: r.kind for r in CAPTION_LADDER if r.expand == "history"}
-"""Editable rung → the history rung recording it, for the writers that push a
-version before overwriting one. Empty for a rung the ladder gives no history."""
+"""Editable rung → the history rung recording it, for writers that push a version
+before overwriting one. Empty for a rung the ladder gives no history."""
 
 
 def ladder_schema() -> list[dict[str, Any]]:
     """:data:`CAPTION_LADDER` as the listing hands it to the browser.
 
-    The sidebar's dot strip is drawn from this rather than from a copy of the
-    rung names in the frontend, so the strip and :func:`_row`'s ``captions`` map
-    cannot come apart. Only the *root* stays server-side: the panel names the
-    tree from the path it is given.
+    The sidebar's dot strip is drawn from this, so it cannot come apart from
+    :func:`_row`'s ``captions`` map. The ``root`` stays server-side.
     """
     return [{"kind": r.kind, "editable": r.editable} for r in CAPTION_LADDER]
 
 
 GROUPS_SUBPATH = "groups/groups.json"
-"""The grouping manifest's tail under the Settings ``report_root`` — the same
-split ``stages.report_subpath`` makes of ``build_groups``' own ``--out``
-default, pinned to it by ``tests/test_gui_groups.py``."""
+"""The grouping manifest's tail under the Settings ``report_root``; the same split
+``stages.report_subpath`` makes of ``build_groups``' own ``--out`` default."""
 
 MAX_ITEMS = 20000
-"""Hard cap on one listing, and the default: a listing shows the whole dataset.
-
-Past this the answer is ``path_pattern``, not a bigger payload. One number for
-both sidebar orderings, since they draw the *same* listing.
-"""
+"""Hard cap on one listing, and the default. Past this the answer is
+``path_pattern``, not a bigger payload."""
 
 
 class DatasetError(ValueError):
@@ -151,8 +127,7 @@ class DatasetError(ValueError):
 class Roots:
     """The five dataset roots of one request, resolved and containment-checked.
 
-    Field order is :data:`DEFAULT_ROOTS`' order, which :meth:`items` walks, so a
-    sixth root would only have to be declared once.
+    Field order is :data:`DEFAULT_ROOTS`' order, which :meth:`items` walks.
     """
 
     src: Path
@@ -174,10 +149,9 @@ class Roots:
 def lexical(path: str | Path) -> Path:
     """``resolve_path`` with ``..`` collapsed, and nothing else.
 
-    Lexical (``normpath``), not ``resolve()``: a dataset root is routinely a
-    symlink, and following it would report the tree under a name the user never
-    typed — and defeat the containment test below, which compares the path given
-    against the trees the user said they use.
+    ``normpath``, not ``resolve()``: a dataset root is routinely a symlink, and
+    following it would report the tree under a name the user never typed and
+    defeat the containment test below.
     """
     return Path(os.path.normpath(resolve_path(path)))
 
@@ -186,15 +160,9 @@ def dataset_bases() -> tuple[Path, ...]:
     """Every tree this panel may reach: the curation home, plus any dataset root
     the **saved** settings pin outside it.
 
-    What the panel may list, thumbnail and serve is *the dataset it is showing*,
-    and no home contains both a curation tree and a sibling checkout's
-    ``image_dataset`` without swallowing everything beside them.
-
-    **Saved**, never a request's own root overrides: a root outside the home
-    widens what may be read, so only the explicit Settings save that means it
-    gets to do the widening (:func:`resolve_roots` with ``trusted``). A query
-    param can still name any root it likes, but it is checked against these
-    bases like every other path.
+    Saved only — a request's own root overrides never widen this, since a root
+    outside the home widens what may be read. Only the Settings save does that
+    (:func:`resolve_roots` with ``trusted``); every other path is checked here.
     """
     home = curation_home()
     bases = [home]
@@ -226,12 +194,9 @@ def rel_to_home(p: Path) -> str:
     """A path as the panel shows it: home-relative under the home, ``../``-style
     for the sibling tree beside it, absolute anywhere else.
 
-    The sibling case is the documented layout -- ``anime_tools/`` beside
-    ``anima_lora/``, whose ``image_dataset`` is the ordinary ``src`` -- and
-    spelling it absolute meant every path in the panel repeated the home's own
-    prefix back at the reader. One level up only: deeper than that, ``../../..``
-    says less than the absolute path does. ``lexical`` collapses the ``..``
-    again on the way back in, so a path that goes out this way comes back.
+    One level up only; deeper than that the absolute path says more. ``lexical``
+    collapses the ``..`` again on the way back in, so a path that goes out this
+    way comes back.
     """
     home = curation_home()
     if p.is_relative_to(home):
@@ -248,10 +213,8 @@ def resolve_roots(
     strings fall back too, so an emptied field means "default".
 
     ``trusted`` is the Settings **save** and nothing else: that request is what
-    *defines* :func:`dataset_bases`, so it cannot be checked against them — a
-    root outside the home could never be set a first time. Every other caller is
-    checked, which keeps a query param from pointing the listing at a stranger's
-    tree.
+    *defines* :func:`dataset_bases`, so it cannot be checked against them. Every
+    other caller is.
     """
     got = values or {}
     check = lexical if trusted else reachable
@@ -263,26 +226,18 @@ def resolve_roots(
 
 
 def owned(p: Path) -> bool:
-    """Is this a directory the panel may *create*?
-
-    The panel reads the trees you point it at and creates only what is under its
-    own home. A root outside the home already exists, and a typo in one is a
-    missing root the Settings row reports as missing, not a new empty directory
-    out in the filesystem.
-    """
+    """Is this a directory the panel may *create*? Only under its own home, so a
+    typo in an external root is a missing root rather than a new empty tree."""
     return p.is_relative_to(curation_home())
 
 
 def ensure_roots(roots: Roots) -> list[str]:
     """Create the root directories, returning the names actually made.
 
-    Every root but :data:`EXPORT_ROOTS`' — an ``out`` tree that exists should
-    mean an export happened — and only the ones this panel :func:`owned`.
-
-    Only ever called from an *explicit write* (saving the Settings dialog),
-    never from :func:`resolve_roots`, which every read request goes through: a
-    listing must keep reporting a missing root as missing instead of quietly
-    conjuring an empty tree behind a typo.
+    Every root but :data:`EXPORT_ROOTS`' (an ``out`` tree that exists should mean
+    an export happened), and only the ones this panel :func:`owned`. Called from
+    an explicit write (the Settings save) only — never from :func:`resolve_roots`,
+    so a read keeps reporting a missing root as missing.
     """
     made = []
     for name, p in roots.items():
@@ -298,7 +253,7 @@ def ensure_output_dir(path: str | Path) -> Path | None:
     """Best-effort mkdir for a directory a job is about to *write* to.
 
     ``None`` when the path is not one the panel :func:`owned` or could not be
-    created — the stage's own mkdir or its loud failure beats a 500 from here.
+    created; the stage's own mkdir or failure covers that case.
     """
     try:
         p = reachable(path)
@@ -326,16 +281,13 @@ def _rel_key(rel: str) -> Path:
 def item_pattern(rel: str) -> str:
     """A ``path_pattern`` matching exactly the one dataset image ``rel``.
 
-    Narrowing the glob the stages already take keeps a one-image run and a batch
-    run on the identical code path, a replay included. ``<dir>/<stem>.*``, not
-    the full filename, because the stage matches against the *resized* tree
-    where the extension may differ (:func:`_sibling_image`); that cannot widen
-    the match, since ``_walk.assert_unique_stems`` refuses two images sharing a
-    stem in one folder.
+    ``<dir>/<stem>.*``, not the full filename, because the stage matches against
+    the *resized* tree where the extension may differ (:func:`_sibling_image`);
+    that cannot widen the match, since ``_walk.assert_unique_stems`` refuses two
+    images sharing a stem in one folder.
 
     fnmatch metacharacters are escaped; ``|`` cannot be, since it separates the
-    pattern's own alternatives, so such a name is refused outright rather than
-    silently selecting nothing.
+    pattern's own alternatives, so such a name is refused outright.
     """
     p = _rel_key(rel)
     if "|" in p.as_posix():
@@ -377,9 +329,8 @@ def rel_for_image(roots: Roots, image: str) -> str | None:
 def mask_path(roots: Roots, rel: Path) -> Path | None:
     """``masks/<subdir>/{stem}_mask.png``, or the legacy flat one.
 
-    The name comes from ``masking._masks.mask_name``, the one the generators
-    write. The flat fallback is this reader's alone: generators mirror the
-    source subdir now, but an older mask tree is still browsable.
+    The name comes from ``masking._masks.mask_name``. The flat fallback is this
+    reader's alone, so an older mask tree stays browsable.
     """
     name = mask_name(rel.stem)
     nested = roots.masks / rel.parent / name
@@ -390,11 +341,8 @@ def mask_path(roots: Roots, rel: Path) -> Path | None:
 
 
 def caption_paths(roots: Roots, rel: Path) -> dict[str, Path]:
-    """Every rung's file, keyed by rung kind.
-
-    The one place a caption kind becomes a path — :data:`CAPTION_LADDER` names
-    the root, so there is no second table to keep in step with it.
-    """
+    """Every rung's file, keyed by rung kind; :data:`CAPTION_LADDER` names the
+    root each lives in."""
     txt = rel.with_suffix(".txt")
     out: dict[str, Path] = {}
     for r in CAPTION_LADDER:
@@ -455,14 +403,10 @@ def list_items(
 def _row(roots: Roots, rel: Path, name: str) -> dict[str, Any]:
     """One sidebar row: the image plus which of its siblings exist.
 
-    ``captions`` is one flag per :data:`CAPTION_LADDER` rung — the dot strip is
-    the ladder seen from the sidebar, so a new rung appears here and in
-    :func:`caption_versions` from the same declaration. A stat apiece, so this
-    stays cheap enough for a whole-dataset listing.
-
-    ``resized`` is matched on *stem* (:func:`_sibling_image`) and is a row flag
-    rather than a caption dot: nothing selects it, it only says whether the
-    stages downstream of resize can see this image.
+    ``captions`` is one flag per :data:`CAPTION_LADDER` rung, one stat apiece so
+    this stays cheap for a whole-dataset listing. ``resized`` is matched on *stem*
+    (:func:`_sibling_image`) and is a row flag rather than a caption dot: it says
+    whether the stages downstream of resize can see this image.
     """
     caps = caption_paths(roots, rel)
     parent = rel.parent.as_posix()
@@ -480,7 +424,7 @@ def _row(roots: Roots, rel: Path, name: str) -> dict[str, Any]:
 def item_rows(roots: Roots, rels: list[str]) -> list[dict[str, Any]]:
     """:func:`list_items` rows for named images only, so a run that touched 40
     captions costs 40 stats rather than a walk of the source root. An unreadable
-    or vanished rel is dropped rather than raising."""
+    or vanished rel is dropped."""
     out = []
     for raw in rels:
         try:
@@ -496,10 +440,9 @@ def item_rows(roots: Roots, rels: list[str]) -> list[dict[str, Any]]:
 def load_groups(report_root: str) -> dict[str, Any]:
     """The grouping manifest under ``report_root``, as the sidebar's group view.
 
-    Rels only: the group view joins them against the one ``/api/dataset``
-    listing the tree view already has. A missing manifest is not an error — the
-    **Groups** stage has simply not run yet — but one built against another
-    source tree joins onto nothing, so ``source_dir`` rides along to say so.
+    Rels only: the group view joins them against the one ``/api/dataset`` listing
+    the tree view already has. A missing manifest is not an error, but one built
+    against another source tree joins onto nothing, so ``source_dir`` rides along.
     """
     path = reachable(f"{report_root}/{GROUPS_SUBPATH}")
     out: dict[str, Any] = {
@@ -520,8 +463,8 @@ def load_groups(report_root: str) -> dict[str, Any]:
     src = str(data.get("source_dir") or "")
     out.update(
         missing=False,
-        # A v1 manifest still lists usable components; it is the knobs that
-        # moved, so this is a "rebuild me" note, not a reason to show nothing.
+        # A v1 manifest still lists usable components, so this is a "rebuild me"
+        # note rather than a reason to show nothing.
         stale=data.get("version") != MANIFEST_VERSION,
         source_dir=rel_to_home(Path(src)) if src else "",
         groups=[
@@ -541,13 +484,9 @@ def load_groups(report_root: str) -> dict[str, Any]:
 def _image_info(p: Path | None, *, min_pixels: int = 0) -> dict[str, Any] | None:
     """One image file as the panel gets it: where it is, how big, how many pixels.
 
-    ``min_pixels`` is the resize floor this image is measured against, and only
-    the *source* image is measured at all -- the resized copy and the mask are
-    outputs of that decision, so asking it of them would answer a question
-    nobody posed. ``too_small`` is the whole reason the count is here: an image
-    under the floor never reaches ``workspace/resized/``, and every stage walks
-    that tree, so a run over it sees zero images and writes nothing. That reads
-    as a broken stage unless the panel says so where the size is shown.
+    ``min_pixels`` is the resize floor, applied to the *source* image only. An
+    image under it never reaches ``workspace/resized/``, which every stage walks,
+    so ``too_small`` is what keeps a run that sees zero images legible.
     """
     if p is None or not p.is_file():
         return None
@@ -563,9 +502,8 @@ def _image_info(p: Path | None, *, min_pixels: int = 0) -> dict[str, Any] | None
         info["width"] = info["height"] = None
     size = (info["width"], info["height"])
     info["pixels"] = size[0] * size[1] if None not in size else None
-    # ``None`` is not "fine", it is *unmeasured*: no floor was applied here, or
-    # the header would not read. The panel shows no chip for it, which is the
-    # honest answer -- a green one would claim an image passed a test nobody ran.
+    # ``None`` means *unmeasured* (no floor applied, or the header would not
+    # read), not "fine"; the panel shows no chip for it.
     info["too_small"] = (
         below_min_pixels(size, min_pixels)
         if min_pixels > 0 and None not in size
@@ -578,9 +516,8 @@ def parsed_caption(text: str) -> dict[str, Any]:
     """The caption grammar as JSON: flat bag + position clauses + where each tag
     sits in the string, never a ``split(",")`` on the client.
 
-    ``spans`` is what lets the caption editor draw a box around every tag inside
-    the textarea without knowing the grammar: the browser slices the text it is
-    already holding at offsets the parse handed it.
+    ``spans`` lets the caption editor draw a box around every tag inside the
+    textarea by slicing the text it holds at offsets the parse handed it.
     """
     parsed = parse_caption(text)
     return {
@@ -612,26 +549,16 @@ def _version_entry(
     rung: str = "",
     note: str = "",
 ) -> dict[str, Any]:
-    """One caption version as the panel gets it — the badge's wire shape, and
-    the one place it is spelled.
+    """One caption version as the panel gets it — the badge's wire shape.
 
-    Every badge on the item panel is one of these, whether its text is a whole
-    caption file (:func:`_caption_entry`) or one row inside a sidecar that holds
-    many (:func:`caption_versions`). Those two differ only in how they came by
-    the text -- one goes to disk per entry, the other cannot -- never in which
-    keys they hand over, so a key added here reaches the whole badge row rather
-    than half of it.
+    ``rung`` is the :data:`CAPTION_LADDER` row this entry came out of, which is not
+    always its ``kind``: an expanded sidecar entry is called ``v1`` or ``revised@2``.
+    It defaults to ``kind``. ``note`` is the one extra line a badge can carry (a
+    history entry's who and when).
 
-    ``rung`` is the :data:`CAPTION_LADDER` row this entry came out of, which is
-    not always its ``kind``: an expanded sidecar entry is called ``v1`` or
-    ``revised@2`` and would otherwise leave the panel guessing which badge
-    colour and which label it wears. It defaults to ``kind`` because for every
-    unexpanded rung that is what it is. ``note`` is the one extra line a badge
-    can carry (a history entry's *who and when*).
-
-    ``exists`` is told, not read off ``text``: an empty caption file is a
-    caption that says nothing, which is a different answer from a rung nobody
-    ever wrote, and only the second one draws hollow.
+    ``exists`` is told, not read off ``text``: an empty caption file is a caption
+    that says nothing, a different answer from a rung nobody ever wrote, and only
+    the second draws hollow.
     """
     return {
         "kind": kind,
@@ -651,9 +578,8 @@ def _caption_entry(
 ) -> dict[str, Any]:
     """One caption *file* as a version: read it, or say it is not there.
 
-    An absent file is still an entry, hollow, so the rung keeps its place on the
-    badge row and can say what is missing. Whether the editor over it is a field
-    or a read-out is ``editable``, which is the rung's, not the file's.
+    An absent file is still a (hollow) entry, so the rung keeps its place on the
+    badge row. ``editable`` is the rung's property, not the file's.
     """
     exists = p.is_file()
     return _version_entry(
@@ -671,10 +597,8 @@ def _caption_entry(
 def _expanded(rung: Rung, sidecar: Path) -> list[tuple[str, str, str]]:
     """A sidecar rung's captions as ``(label, note, text)``, oldest first.
 
-    The two sidecars are read by their own modules and differ only in what a
-    label is worth saying about: a variant's label *is* its name (``v0``), while
-    a history entry is the ``revised`` caption at a moment, so it wears that
-    rung's name plus its sequence, and its note says who replaced it and when.
+    A variant's label *is* its name (``v0``); a history entry wears the rung's
+    name plus its sequence, with a note saying who replaced it and when.
     """
     if rung.expand == "history":
         return [(e.label(rung.of), e.note(), e.text) for e in read_history(sidecar)]
@@ -684,16 +608,10 @@ def _expanded(rung: Rung, sidecar: Path) -> list[tuple[str, str, str]]:
 def caption_versions(roots: Roots, rel: Path) -> list[dict[str, Any]]:
     """Every caption this image has, oldest first — the panel's badge row.
 
-    :data:`CAPTION_LADDER` in order, with a sidecar rung *expanded* into one
-    entry per caption it holds — ``v0``, ``v1``, ``r1``… for the variants, and
-    ``revised@1``, ``revised@2``… for the versions a write superseded — because
-    those are versions of the caption in exactly the sense the rungs above them
-    are. An absent sidecar still contributes its one hollow rung, so the badge
-    that would hold them keeps its place and can say what is missing.
-
-    Every entry arrives parsed. A variant is a caption like any other and the
-    browser is not allowed to split one, so the spans its boxes are drawn from
-    come from here rather than from a round trip per badge.
+    :data:`CAPTION_LADDER` in order, with a sidecar rung *expanded* into one entry
+    per caption it holds (``v0``, ``v1``… for variants, ``revised@1``, ``revised@2``…
+    for superseded versions). An absent sidecar still contributes one hollow rung.
+    Every entry arrives parsed, since the browser may not split a caption.
     """
     caps = caption_paths(roots, rel)
     out: list[dict[str, Any]] = []
@@ -703,9 +621,8 @@ def caption_versions(roots: Roots, rel: Path) -> list[dict[str, Any]]:
         if not rows:
             out.append(_caption_entry(r.kind, p, editable=r.editable))
             continue
-        # The sidecar is one file, however many captions it holds: it is stat'd
-        # and named once, here, and each row then arrives with its text already
-        # in hand -- which is why these entries are built rather than read.
+        # The sidecar is one file however many captions it holds: stat'd and
+        # named once, with each row's text already in hand.
         mtime = p.stat().st_mtime
         home = rel_to_home(p)
         out.extend(
@@ -727,19 +644,9 @@ def caption_versions(roots: Roots, rel: Path) -> list[dict[str, Any]]:
 def ocr_lines(roots: Roots, rel: Path) -> list[dict[str, Any]]:
     """The image's ``{stem}.ocr.txt`` from the OCR tree, or ``[]``.
 
-    Deliberately **not** a rung of :data:`CAPTION_LADDER`, and not even in the
-    same tree: ``variants`` and ``history`` hold *captions* — texts that could be
-    written back into the file above them, which is what a rung's badge offers —
-    and this holds the words that are in the picture. Expanding it into the
-    version badges would put ``こんにちは`` in the list of things clicking could
-    make the caption say.
-
-    Joined to the item by the same relative path every other root is, so the
-    panel needs no state to find it.
-
-    A missing sidecar is an image with no text found in it, which is the common
-    case here and not an error; the reader
-    (:func:`anime_tools.captions.ocr_sidecar.read_ocr`) already answers ``[]``.
+    Not a :data:`CAPTION_LADDER` rung: it holds the words *in the picture*, not a
+    text that could be written back into the caption. Joined by the same relative
+    path as every other root. A missing sidecar means no text was found.
     """
     txt = rel.with_suffix(".txt")
     sidecar = ocr_sidecar_path(workspace_dir() / WS.OCR_SUBDIR / txt)
@@ -752,9 +659,8 @@ def item_detail(
     """One image and everything hanging off it, for the item panel.
 
     ``min_pixels`` is the resize preflight's floor (the Settings *Preprocess*
-    block), threaded in rather than read here because it is a setting and this
-    module is a reader of trees. It rides along as well as being applied, so the
-    panel can say *what* the floor was and not merely that one was missed.
+    block), threaded in by the caller. It rides along in the answer as well as
+    being applied, so the panel can say what the floor was.
     """
     rel = _rel_key(rel_str)
     src_image = roots.src / rel
@@ -779,13 +685,8 @@ def write_caption(roots: Roots, rel_str: str, kind: str, text: str) -> dict[str,
     """Write one caption file. The ladder's editable rungs only.
 
     A caption is a single line by contract, so newlines fold to spaces. An empty
-    body is refused rather than treated as a delete — losing a caption should
-    take more than a stray select-all.
-
-    A hand edit supersedes a version exactly the way a stage run does, so it
-    pushes the same history — a rung the ladder gives no history rung simply
-    gets none (:data:`HISTORY_OF`), rather than this being the second place that
-    decides which rungs keep one.
+    body is refused rather than treated as a delete. A hand edit pushes history
+    like a stage run does, for the rungs :data:`HISTORY_OF` gives one.
     """
     if kind not in CAPTION_KINDS:
         raise DatasetError(f"not an editable caption: {kind!r}")

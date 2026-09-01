@@ -7,20 +7,15 @@ import type { JobStatus, Stage, Values } from "../types";
 
 /** The stage runner's body: the run bar + the schema-driven form for the
     current stage. The dock's button strip (in App) picks a *panel*; when that
-    panel holds more than one stage the bar leads with a picker for them, which
-    is why several CLIs can share one button.
+    panel holds more than one stage the bar leads with a picker for them.
 
-    The bar is two buttons and a way back: **Run** the selected image, **Run
-    batch** every image the Settings `path_pattern` names, **Undo** what the
-    last one wrote, out of the report it wrote. A Run *writes* — there is no
-    Apply in front of it, because the caption ladder is what that gate was
-    standing in for: the text a run replaces becomes a version badge beside the
-    caption (`revised@2`), so what a run did is read after it, on the caption,
-    rather than agreed to before it in a dialog. */
+    The bar is three buttons: **Run** the selected image, **Run batch** every
+    image the Settings `path_pattern` names, and **Undo** what the last one
+    wrote, out of the report it wrote. A Run writes; the text it replaces becomes
+    a version badge beside the caption (`revised@2`). */
 export function StagePanel(props: {
   cur?: Stage;
-  /** Every stage under the open dock button, including the current one: the
-      bar picks between them when the panel holds more than one. */
+  /** Every stage under the open dock button, including the current one. */
   siblings?: Stage[];
   onPick: (id: string) => void;
   error?: unknown;
@@ -42,7 +37,7 @@ export function StagePanel(props: {
   undoBlocked: string;
   onCancel: () => void;
   /** Titles of the catalog models this stage needs that are not installed --
-      the bar warns before a Run stalls on a surprise first-use fetch. */
+      the bar warns before a Run stalls on a first-use fetch. */
   missingModels?: string[];
   onSettings: () => void;
   help: boolean;

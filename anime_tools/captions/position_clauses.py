@@ -9,9 +9,7 @@ clauses that bind attributes to subjects::
 
 GOTCHA: the **period** is the clause delimiter; commas separate tags *within* a
 segment. A naive ``caption.split(",")`` glues the header onto the previous tag
-(``"white socks. On the left"``), silently shredding every clause a downstream
-``tag.startswith("On the ")`` check relies on. Pure stdlib, and every caption
-consumer parses through here so they cannot drift.
+(``"white socks. On the left"``), shredding the clause. Pure stdlib.
 """
 
 from __future__ import annotations
@@ -23,14 +21,12 @@ from dataclasses import dataclass
 
 from anime_tools.captions.taxonomy import is_artist_tag, normalize_tag
 
-# Clause headers the convention uses, in canonical emission form. ``In the`` is
-# accepted on read (it appears in a handful of hand-written captions for scene
-# regions) but never emitted.
+# Clause headers, in canonical emission form. ``In the`` is accepted on read
+# (hand-written captions use it for scene regions) but never emitted.
 CLAUSE_PREFIXES = ("On the ", "In the ")
 
 # ``. `` immediately before a clause header is the segment delimiter. Matched
-# case-insensitively on read so a hand-written ``on the left`` still parses;
-# emission always uses the canonical capitalized form.
+# case-insensitively on read so a hand-written ``on the left`` still parses.
 _CLAUSE_SPLIT_RE = re.compile(r"\.\s*(?=(?:On|In)\s+the\s)", re.IGNORECASE)
 _CLAUSE_HEADER_RE = re.compile(r"^(On|In)\s+the\s+(.+)$", re.IGNORECASE)
 
@@ -45,8 +41,8 @@ _ORDINALS = (
     "eighth",
     "ninth",
 )
-# Row words, indexed by (n_rows, row_index). Beyond 3 rows there is no natural
-# vocabulary, so the caller falls back to pure left→right ordering.
+# Row words, indexed by (n_rows, row_index). Beyond 3 rows the caller falls
+# back to pure left→right ordering.
 _ROW_WORDS = {
     1: ("",),
     2: ("top", "bottom"),
@@ -57,11 +53,8 @@ MAX_ROWS = max(_ROW_WORDS)
 
 @dataclass(frozen=True)
 class PositionClause:
-    """One ``On the <position>, <tags>`` segment.
-
-    ``prefix`` is the header verb kept verbatim from the source so a round-trip
-    of a hand-written ``In the background`` clause stays byte-stable.
-    """
+    """One ``On the <position>, <tags>`` segment; ``prefix`` is the header verb
+    kept verbatim, so ``In the background`` round-trips byte-stable."""
 
     position: str
     tags: tuple[str, ...]
@@ -91,10 +84,9 @@ class ParsedCaption:
     def tag_keys(self) -> frozenset[str]:
         """The flat bag as a lookup set, in :func:`normalize_tag` form.
 
-        Every "does the caption already say this?" test keys off this form. The
-        shared normalizer, not a local ``lower()``, because the two sides
-        disagree on the underscore: the tagger emits ``speech bubble`` where a
-        hand-written caption may hold ``speech_bubble``.
+        Every "does the caption already say this?" test keys off this form: the
+        tagger emits ``speech bubble`` where a hand-written caption may hold
+        ``speech_bubble``.
         """
         return frozenset(normalize_tag(t) for t in self.flat_tags)
 
@@ -106,17 +98,13 @@ class ParsedCaption:
 class TagSpan:
     """One tag's half-open ``[start, end)`` slice of the raw caption string.
 
-    The offsets are what a tag list cannot give and an editor needs: the GUI
-    draws a box around every tag *inside* the textarea the caption is typed in,
-    and a box is a pair of offsets into the string being typed. Leading and
-    trailing whitespace, the comma and the caption-terminating period all fall
-    outside the span, so the box hugs exactly the characters the parse reads as
-    the tag.
+    Whitespace, the comma and the caption-terminating period fall outside the
+    span, so it covers exactly the characters the parse reads as the tag.
 
     ``kind`` is ``"header"`` for a clause header (``On the left``), ``"artist"``
     for an Anima artist handle and ``"tag"`` otherwise; ``clause`` is ``-1`` in
-    the flat bag and otherwise the index of the owning
-    :class:`PositionClause` — a header carries the index of the clause it opens.
+    the flat bag and otherwise the index of the owning :class:`PositionClause`,
+    a header carrying the index of the clause it opens.
     """
 
     start: int
@@ -144,9 +132,9 @@ def _split_tags(segment: str) -> list[str]:
 def is_clause_header(tag: str) -> bool:
     """True for a bare clause header token (``"On the left"``).
 
-    GOTCHA: deliberately case-SENSITIVE, unlike ``_CLAUSE_SPLIT_RE`` — with no
-    period to delimit it, a lowercase ``on the beach`` mid-bag is a scene tag,
-    not a header. The period-delimited form has the delimiter to go on, so
+    GOTCHA: case-SENSITIVE, unlike ``_CLAUSE_SPLIT_RE`` — with no period to
+    delimit it, a lowercase ``on the beach`` mid-bag is a scene tag, not a
+    header. The period-delimited form has the delimiter to go on, so
     :func:`parse_caption` accepts either case there.
     """
     return tag.startswith(CLAUSE_PREFIXES)
@@ -162,9 +150,8 @@ def has_clauses(caption: str) -> bool:
 def tag_spans(caption: str) -> tuple[TagSpan, ...]:
     """Every tag in ``caption``, in reading order, with where it sits.
 
-    The one walk of the caption string: :func:`parse_caption` is written on top
-    of this, so a span can never disagree with the parse about where a tag ends
-    or which clause owns it.
+    :func:`parse_caption` is written on top of this, so a span can never
+    disagree with the parse about where a tag ends or which clause owns it.
     """
     spans: list[TagSpan] = []
     clause = -1
@@ -180,9 +167,8 @@ def tag_spans(caption: str) -> tuple[TagSpan, ...]:
                 return out
             at = comma + 1
 
-    # ``_CLAUSE_SPLIT_RE.split`` drops the delimiter it matched, so the segments
-    # are the slices between the matches; walking the matches keeps each one's
-    # offset, which the split cannot give back.
+    # ``_CLAUSE_SPLIT_RE.split`` drops the delimiter it matched; walking the
+    # matches instead keeps each segment's offset.
     bounds: list[tuple[int, int]] = []
     pos = 0
     for m in _CLAUSE_SPLIT_RE.finditer(caption):
@@ -207,8 +193,7 @@ def tag_spans(caption: str) -> tuple[TagSpan, ...]:
             # GOTCHA: trust segment position, not ``is_clause_header``, for
             # whether a segment starts a clause — that check is case-sensitive,
             # and a hand-written ``safe. on the left, red hair.`` must not drop
-            # its clause into the flat bag. Within a segment only the comma form
-            # introduces a header, and that stays strict.
+            # its clause into the flat bag.
             header = (i > 0 and j == 0) or (
                 is_clause_header(text) and (j == 0 or i == 0)
             )
@@ -232,10 +217,9 @@ def tag_spans(caption: str) -> tuple[TagSpan, ...]:
 def parse_caption(caption: str) -> ParsedCaption:
     """Split ``caption`` into its flat tag bag and its position clauses.
 
-    Accepts both written forms: the canonical period-delimited one and the
-    comma form where the header happens to be its own comma token. A caption
-    with no clauses round-trips to ``flat_tags`` alone, so callers can parse
-    unconditionally.
+    Accepts the canonical period-delimited form and the comma form where the
+    header is its own comma token. A caption with no clauses round-trips to
+    ``flat_tags`` alone, so callers can parse unconditionally.
     """
     flat: list[str] = []
     clauses: list[list] = []
@@ -267,8 +251,7 @@ def flat_tag_set(caption: str) -> frozenset[str]:
 def flatten_caption(caption: str) -> str:
     """Merge every clause's tags back into the flat bag, dropping the clauses.
 
-    The inverse of the clause rewrite, which *moves* a tag rather than deleting
-    it. Bag order first, then each clause left-to-right, duplicates dropped.
+    Bag order first, then each clause left-to-right, duplicates dropped.
 
     NOTE: order is not byte-identical to the pre-rewrite caption (a moved tag
     returns at the end, not its original slot), but the tag *set* is restored.
@@ -278,7 +261,7 @@ def flatten_caption(caption: str) -> str:
     flat: list[str] = []
     for tag in (*parsed.flat_tags, *(t for c in parsed.clauses for t in c.tags)):
         # Same key as `tag_keys`: a tag moved out in space form must not come
-        # back beside its own underscore spelling in the bag.
+        # back beside its own underscore spelling.
         key = normalize_tag(tag)
         if key and key not in seen:
             seen.add(key)
@@ -291,8 +274,8 @@ def compose_caption(
 ) -> str:
     """Render a flat tag bag + clauses back into the hand-written convention.
 
-    Inverse of :func:`parse_caption` (modulo whitespace around commas). With no
-    clauses this is a plain ``", "`` join, so every caption can route through it.
+    Inverse of :func:`parse_caption` modulo whitespace around commas; with no
+    clauses it is a plain ``", "`` join.
     """
     flat = ", ".join(t for t in flat_tags if t)
     parts = [c.render() for c in clauses if c.tags or c.position]
@@ -308,11 +291,9 @@ def compose_caption(
 
 
 def horizontal_names(n: int) -> list[str]:
-    """Left→right position words for ``n`` subjects in one row.
-
-    ``left/right``, ``left/middle/right``, then ``leftmost / second from left /
-    … / rightmost`` — the vocabulary the hand-written captions use.
-    """
+    """Left→right position words for ``n`` subjects in one row: ``left/right``,
+    ``left/middle/right``, then ``leftmost / second from left / … /
+    rightmost``."""
     if n <= 0:
         return []
     if n == 1:
@@ -331,15 +312,10 @@ def horizontal_names(n: int) -> list[str]:
 
 # A lone box in a group is qualified with the end it hugs ("top left") only
 # when it sits within _EDGE_HUG of that end of the subjects' combined extent
-# AND leaves at least _EDGE_CLEAR of the other end empty — a full-height
-# subject beside stacked panels stays bare "right", and two same-height girls
-# stay bare "left"/"right" however their boxes wobble.
+# AND leaves at least _EDGE_CLEAR of the other end empty.
 #
-# _EDGE_CLEAR is calibrated on two curated judgment calls and the margin is
-# thin: bottom gap 0.488 reads "top left", a near-identical 0.452 reads bare
-# "left" ("qualify only when the panel stops clearly above the halfway line").
-# Both sit within box-jitter of the threshold; if a review sweep shows flapping,
-# resolve it toward those calls.
+# _EDGE_CLEAR is calibrated on two curated judgment calls, and the margin is
+# thin: bottom gap 0.488 reads "top left", 0.452 reads bare "left".
 _EDGE_HUG = 0.15
 _EDGE_CLEAR = 0.47
 
@@ -350,10 +326,9 @@ def _cluster_intervals(
     """Single-linkage grouping of 1-D intervals by fractional overlap.
 
     Two intervals share a group when they overlap by at least ``min_overlap``
-    of the narrower one, and groups chain through a shared member (a full-height
-    box bridges every panel it overlaps — exactly the signal that they are NOT
-    stacked rows; center-distance clustering misnames that a ``top``/``bottom``
-    split). Returns a group index per input, group 0 = lowest coordinate.
+    of the narrower one, and groups chain through a shared member — a
+    full-height box bridging every panel it overlaps is the signal that they are
+    NOT stacked rows. Returns a group index per input, group 0 = lowest.
     """
     if not intervals:
         return []
@@ -374,21 +349,18 @@ def _cluster_intervals(
     return groups
 
 
-# Two subjects share a lane (column) when their center-x gap is under
-# _LANE_GAP of the NARROWER box's width. Deliberately not interval overlap:
-# a wide panel whose content bleeds under the neighbouring subject (a leg
-# drawn across the sheet) overlaps that subject's x-extent completely, but its
-# center still sits squarely in its own lane — overlap-chaining would glue such
-# a layout into one column and degrade it to left/middle/right.
+# Two subjects share a lane (column) when their center-x gap is under _LANE_GAP
+# of the NARROWER box's width. Not interval overlap: a wide panel whose content
+# bleeds under its neighbour overlaps that subject's x-extent completely while
+# its center still sits in its own lane.
 _LANE_GAP = 0.5
 
 
 def _cluster_lanes(intervals: Sequence[tuple[float, float]]) -> list[int]:
     """Lane grouping of 1-D intervals by center gap vs the narrower width.
 
-    Adjacent-in-center-order comparison, chained: a new lane starts when the
-    gap to the previous interval's center exceeds ``_LANE_GAP`` of the
-    narrower of the two. Returns a group index per input, lane 0 = leftmost.
+    A new lane starts when the gap to the previous interval's center exceeds
+    ``_LANE_GAP`` of the narrower of the two. Lane 0 = leftmost.
     """
     if not intervals:
         return []
@@ -412,12 +384,10 @@ def _cluster_lanes(intervals: Sequence[tuple[float, float]]) -> list[int]:
 def _layout(boxes: Sequence[Sequence[float]], tol: float) -> tuple[str, list[int]]:
     """Group boxes along the axis that actually separates them.
 
-    Rows first (grid sheets read row-major, matching the hand-written
-    convention), by y-interval overlap — rows only exist where nothing spans
-    them. When every box lands in one y-group — the magazine layout: a
-    full-height subject bridging a column of stacked panels — the x-axis is
-    grouped into center-gap lanes instead (see :func:`_cluster_lanes` for why
-    not overlap). Returns ``("row"|"column", group_index_per_box)``.
+    Rows first (grid sheets read row-major), by y-interval overlap. When every
+    box lands in one y-group — the magazine layout: a full-height subject
+    bridging a column of stacked panels — the x-axis is grouped into center-gap
+    lanes instead. Returns ``("row"|"column", group_index_per_box)``.
     """
     y_groups = _cluster_intervals([(float(b[1]), float(b[3])) for b in boxes], tol)
     if max(y_groups) + 1 >= 2:
@@ -453,19 +423,17 @@ def assign_positions(
     """Position phrase per box, ordered to match ``boxes``.
 
     Boxes are grouped by *interval overlap* (``row_tol`` = the minimum
-    fractional overlap of the narrower extent), rows first: row groups are
-    named ``top``/``bottom`` with left→right names inside a row, and a row's
-    lone subject takes the bare row word — plus the side it hugs when it leaves
-    the other side clear (a diagonal pair reads ``top left`` / ``bottom
-    right``). When everything shares one row — the magazine layout: a
-    full-height subject beside a column of stacked panels — columns are named
-    left→right instead, a stacked column takes ``top left``/``bottom left``,
-    and the full-height subject stays bare ``right``. Degrades to the plain
-    horizontal names when nothing separates, or when a grouping outgrows the
-    row vocabulary (:data:`MAX_ROWS`).
+    fractional overlap of the narrower extent), rows first: row groups are named
+    ``top``/``bottom`` with left→right names inside a row, and a row's lone
+    subject takes the bare row word plus the side it hugs when it leaves the
+    other side clear (a diagonal pair reads ``top left`` / ``bottom right``).
+    When everything shares one row — the magazine layout — columns are named
+    left→right instead, a stacked column takes ``top left``/``bottom left``, and
+    the full-height subject stays bare ``right``. Degrades to the plain
+    horizontal names when nothing separates, or when a grouping outgrows the row
+    vocabulary (:data:`MAX_ROWS`).
 
-    ``size`` is unused (the frame is the subjects' own combined extent) but
-    kept for signature stability.
+    ``size`` is unused — the frame is the subjects' own combined extent.
     """
     if not boxes:
         return []
@@ -498,8 +466,8 @@ def assign_positions(
                 (i for i in range(n) if groups[i] == r), key=lambda i: centers_x[i]
             )
             if len(members) == 1:
-                # Bare "top" reads better than "top center"; the side is added
-                # only when it genuinely places the subject ("top left").
+                # Bare "top", with a side added only when it genuinely places
+                # the subject ("top left").
                 idx = members[0]
                 side = _end_word(
                     float(boxes[idx][0]),
@@ -541,9 +509,8 @@ def assign_positions(
 def ordered_indices(
     boxes: Sequence[Sequence[float]], size: tuple[int, int], *, row_tol: float = 0.25
 ) -> list[int]:
-    """Reading order for ``boxes`` — row-major (left→right within a row), or
-    column-major (top→bottom within a column) on a magazine layout, matching
-    the grouping :func:`assign_positions` names by."""
+    """Reading order for ``boxes`` — row-major, or column-major on a magazine
+    layout, matching the grouping :func:`assign_positions` names by."""
     if not boxes:
         return []
     centers_x = [(float(b[0]) + float(b[2])) / 2 for b in boxes]
@@ -551,7 +518,7 @@ def ordered_indices(
     axis, groups = _layout(boxes, tol=row_tol)
     # One undivided group means neither axis separates (nested/overlapping
     # boxes): assign_positions names that fallback left→right, so it must also
-    # READ left→right — sorting it by center-y would open with "On the right".
+    # READ left→right.
     if axis == "row" or max(groups) == 0:
         minor = centers_x
     else:

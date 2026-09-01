@@ -4,18 +4,15 @@ import { REPLAY_FIELD } from "../types";
 import type { Field, Stage, Values } from "../types";
 import { browsePath, PathPicker } from "./PathPicker";
 
-/** Group fields by argparse group, preserving order. Fields bound to a dataset
-    root, to a Settings stage default or to the Settings `report_root` /
-    `mask_root` are left out: the server fills them from Settings, so no two
-    forms can disagree about them. So is `--device`, which the stage
-    auto-detects. And so are the two the run bar owns -- `--apply` and
-    `--from_report`: a stale path left in a form field would quietly turn the
-    next Run into a replay of an old one.
+/** Group fields by argparse group, preserving order. Left out: fields bound to
+    a dataset root, a Settings stage default or the Settings `report_root` /
+    `mask_root` (the server fills them); `--device`, which the stage
+    auto-detects; and the run bar's own `--apply` / `--from_report`, since a
+    stale path in a form field would turn the next Run into a replay.
 
-    An `overridable` field is the one bound kind that stays: Export publishes
-    outside the workspace and where it publishes is a per-run choice, so its
-    `default` arrives already resolved from Settings and typing over it wins for
-    that run. */
+    An `overridable` field is the one bound kind that stays: its `default`
+    arrives already resolved from Settings and typing over it wins for that
+    run. */
 export function grouped(fields: Field[]): [string, Field[]][] {
   const m = new Map<string, Field[]>();
   for (const f of fields) {
@@ -31,8 +28,7 @@ export function grouped(fields: Field[]): [string, Field[]][] {
 const str = (v: unknown) => (v == null ? "" : Array.isArray(v) ? v.join("\n") : String(v));
 
 /** One labelled input for one argparse action. Shared by the stage forms and
-    the Settings dialog's Preprocess block, so a hidden stage's knobs are typed
-    into exactly the same widgets as a visible one's. */
+    the Settings dialog's Preprocess block. */
 export function FieldRow(props: {
   field: Field;
   value: unknown;
@@ -118,20 +114,9 @@ export function FieldRow(props: {
 }
 
 /** One argparse group as a `<fieldset>`, and the fold over its own advanced
-    fields.
-
-    The fold is per *group* and lives on that group's bottom edge, the way its
-    title lives on the top one: the knobs a run changes its mind about stay in
-    the fieldset that names them, and what a threshold sweep produced is one
-    click below them rather than in a bin at the foot of the form. It is also
-    per *field* rather than per group — `position` and `audit` keep their
-    research parameters in the same `detection` fieldset as the prompt and the
-    threshold you actually retune, and `correct`, `groups` and `masks_sam`
-    declare no groups at all, so folding whole groups would leave the three
-    flattest forms exactly as long as they were.
-
-    Local, unsaved state: it is a look at one group of one stage, not a
-    preference about how you work. */
+    fields. The fold is per group and sits on that group's bottom edge, and which
+    fields it covers is per *field* — the server marks them, so a group can hold
+    both retuned knobs and folded sweep parameters. Local, unsaved state. */
 function FieldGroup(props: {
   title: string;
   fields: Field[];
@@ -151,7 +136,7 @@ function FieldGroup(props: {
   const shown = createMemo(() => body().filter((f) => adv() || !f.advanced));
   const folded = createMemo(() => body().filter((f) => f.advanced));
   /** A folded field that is no longer at its default still reaches the argv, so
-      the fold says so rather than letting a value act from out of sight. */
+      the fold badges it. */
   const foldedDirty = createMemo(() => (adv() ? 0 : folded().filter(props.dirty).length));
 
   return (
@@ -170,9 +155,8 @@ function FieldGroup(props: {
           )}
         </Show>
       </legend>
-      {/* Two-up: the dock is wide and short, so a single column of knobs
-          scrolled far more than it had to. Same wrapper the Settings preflight
-          block uses. */}
+      {/* Two-up: the dock is wide and short. Same wrapper the Settings
+          preflight block uses. */}
       <Show when={open()}>
         <div class="twoup">
           <For each={shown()}>
@@ -187,9 +171,8 @@ function FieldGroup(props: {
             )}
           </For>
         </div>
-        {/* Only while the drawer is open: a shut one shows nothing of its own,
-            and an advanced fold hanging off an empty group would be a second
-            switch for the same knobs. */}
+        {/* Only while the drawer is open: a fold hanging off a shut group would
+            be a second switch for the same knobs. */}
         <Show when={folded().length}>
           <button
             class="advfold"
@@ -215,8 +198,8 @@ export function StageForm(props: {
   help: boolean;
   onHelp: () => void;
 }) {
-  /** Which field's fallback browser is open. Only a host with no chooser of
-      its own gets here -- see `browsePath`. */
+  /** Which field's fallback browser is open. Only a host with no chooser of its
+      own gets here -- see `browsePath`. */
   const [picking, setPicking] = createSignal<string | null>(null);
   const groups = createMemo(() => grouped(props.stage.fields));
   const value = (f: Field) => props.values[f.dest] ?? f.default;
@@ -229,10 +212,8 @@ export function StageForm(props: {
 
   return (
     <>
-      {/* The prose lives behind the stage bar's (?), and the notes go with it.
-          Nothing is lost by collapsing them: the (?) is warn-tinted while it
-          hides a stage's notes, which is the signal. Echoing them on the form
-          as well spent a row above every field of every stage. */}
+      {/* The prose lives behind the stage bar's (?), and the notes go with it;
+          the (?) is warn-tinted while it hides a stage's notes. */}
       <Show when={props.help}>
         <div class="doc">{props.stage.doc.trim()}</div>
         <Show when={props.stage.notes}>

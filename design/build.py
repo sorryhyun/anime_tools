@@ -3,15 +3,13 @@
 
 Each ``boards/<Name>.html`` is one artboard's body. This wraps it in the Design
 Component envelope, inlines ``helmet.html`` with the Pretendard subset as a
-base64 ``@font-face`` (the artboard iframe has no network egress, so the font
-has to ride inside the file, exactly as ``frontend/build.ts`` does for the GUI),
-and writes ``build/<Name>.dc.html``.
+base64 ``@font-face`` (the artboard iframe has no network egress), and writes
+``build/<Name>.dc.html``.
 
-Seeding and publishing are the /design skill's job -- it ships the canvas
-editor payload and the ``seed-canvas.mjs`` helper, which live in a bundled-skill
-directory whose path changes with the Claude Code version. Point this at it with
-``--seeder`` or ``$DESIGN_SKILL_DIR``, or run the assemble step alone and seed
-by hand. Nothing here reads or writes the published artifact.
+Seeding and publishing belong to the /design skill, whose ``seed-canvas.mjs``
+lives in a bundled-skill directory whose path changes with the Claude Code
+version: point at it with ``--seeder`` or ``$DESIGN_SKILL_DIR``, or run the
+assemble step alone. Nothing here reads or writes the published artifact.
 """
 
 from __future__ import annotations

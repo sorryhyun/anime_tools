@@ -1,9 +1,9 @@
 """anime_tools — dataset curation for anime diffusion training.
 
 Sub-packages (import what you need; the top level stays torch-free):
-``anime_tools.captions`` (the caption grammar, tag taxonomy + correction,
-variants sidecars, the caption index), ``anime_tools.tagger`` (the Anima
-Tagger and its CLIs), ``anime_tools.stages`` (the caption-master stages).
+``anime_tools.captions`` (grammar, taxonomy + correction, sidecars, index),
+``anime_tools.tagger`` (the Anima Tagger and its CLIs), ``anime_tools.stages``
+(the caption-master stages).
 
 The trainer (``anima_lora``) depends on this package; this package never
 imports the trainer (``docs/contract.md``).

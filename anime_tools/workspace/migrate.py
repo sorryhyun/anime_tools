@@ -1,20 +1,11 @@
 """Move a pre-workspace tree into ``workspace/``.
 
-``python -m anime_tools.workspace.migrate [--apply]``
-
-An install predating the workspace has ``post_image_dataset/{resized,masks,
-captions,groups}`` on the wrong side of the tools-write / Export-publishes line.
-This moves those four directories.
-
-Dry-run by default and ``--apply`` for real, like every stage CLI. It is a
-directory *rename*, not a copy, so a large resized tree moves instantly on one
-volume and the operation is its own undo. It never merges: an existing
-destination is reported and skipped, because picking a per-file winner is not
-this script's call.
-
-It deliberately does **not** rewrite the GUI settings file — a root explicitly
-pinned to a legacy path is named on the way past and left alone, rather than
-silently edited out from under the user who typed it.
+Moves ``post_image_dataset/{resized,masks,captions,groups}`` — the four
+directories an install predating the workspace left on the Export side of the
+line. Dry-run by default; ``--apply`` moves for real. It is a directory rename
+and never a merge: an existing destination is reported and skipped. A dataset
+root pinned to a legacy path in the GUI settings file is named but not rewritten,
+so clear it yourself in ⚙ Settings.
 """
 
 from __future__ import annotations
@@ -30,8 +21,8 @@ from anime_tools.workspace import EXPORT_ROOT, LEGACY_DIRS, LEGACY_ROOTS
 def plan_moves(home: Path, workspace: Path) -> list[tuple[str, Path, Path, str]]:
     """``(what, from, to, status)`` for every directory the workspace claims.
 
-    Status is decided here, not at the move, so the dry run and the ``--apply``
-    see the same rows and differ only in whether :func:`shutil.move` runs.
+    Status is decided here, not at the move, so the dry run and ``--apply`` see
+    the same rows.
     """
     legacy = {Path(v).name: home / v for v in LEGACY_ROOTS.values()}
     legacy.update({name: home / EXPORT_ROOT / name for name in LEGACY_DIRS})
@@ -91,8 +82,7 @@ def main(argv: list[str] | None = None) -> int:
         arrow = f"{src.relative_to(home)} -> {dst.relative_to(home)}"
         print(f"  {status:12} {name:10} {arrow}")
 
-    # Late and defensive: the GUI may never have run here, and a warning is not
-    # worth failing a migration over.
+    # Imported late: the GUI may never have run here.
     try:
         from anime_tools.gui.dataset import SETTINGS_KEY
         from anime_tools.gui.settings import load_settings, settings_path

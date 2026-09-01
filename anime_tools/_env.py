@@ -1,15 +1,9 @@
 """Curation-side environment: home dir, path anchoring, ``.env``, logging.
 
-This package must not import the trainer's ``library.env`` / ``library.log``,
-so it carries its own copy. Home-directory resolution (``docs/contract.md`` §4):
-
-1. ``ANIME_TOOLS_HOME`` — explicit curation home (standalone installs).
-2. ``ANIMA_HOME`` — the trainer's home, so an in-tree run anchors identically.
-3. The current working directory — a standalone run anchors on the dataset tree
-   it is invoked from.
-
-There is no "checkout root" fallback: once installed, this file lives in
-site-packages, not in a project tree.
+Home-directory resolution (``docs/contract.md`` §4): ``ANIME_TOOLS_HOME``, then
+``ANIMA_HOME`` (the trainer's home, so an in-tree run anchors identically), then
+the current working directory. There is no checkout-root fallback — once
+installed this file lives in site-packages.
 """
 
 from __future__ import annotations
@@ -32,8 +26,7 @@ def curation_home() -> Path:
 def resolve_path(path) -> Path:
     """Anchor a bare relative path under :func:`curation_home`.
 
-    Absolute and ``~`` paths pass through; idempotent, so it is safe at every
-    layer of a call chain.
+    Absolute and ``~`` paths pass through; idempotent.
     """
     p = Path(path).expanduser()
     if p.is_absolute():
@@ -43,12 +36,7 @@ def resolve_path(path) -> Path:
 
 def workspace_dir() -> Path:
     """Where the tools write (``ANIME_TOOLS_WORKSPACE`` overrides; default
-    ``<home>/workspace``).
-
-    The curation half produces nothing outside this directory; publishing to
-    the trainer's paths is Export's job alone. ``anime_tools.workspace`` lays
-    out the subdirectories.
-    """
+    ``<home>/workspace``). Nothing but Export writes outside it."""
     override = os.environ.get("ANIME_TOOLS_WORKSPACE")
     if override:
         return Path(override).expanduser().resolve()
@@ -57,7 +45,7 @@ def workspace_dir() -> Path:
 
 def models_dir() -> Path:
     """Where curation model checkpoints live (``ANIME_TOOLS_MODELS`` overrides;
-    default ``<home>/models``, i.e. the trainer's tree when run in-tree)."""
+    default ``<home>/models``)."""
     override = os.environ.get("ANIME_TOOLS_MODELS")
     if override:
         return Path(override).expanduser().resolve()

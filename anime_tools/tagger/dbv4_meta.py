@@ -2,12 +2,8 @@
 
 Our half of the tagger (vocab / rules / thresholds / sidecar) ships from
 ``sorryhyun/anima-tagger`` into ``models/captioners/``; the backbone ships from
-a **gated, GPL-3.0** upstream repo into the HuggingFace hub cache under the
-user's own token, which is also their record of accepting the terms.
-
-These facts live here, not in the torch-importing :mod:`dbv4_backend`, because
-the download catalog, the ComfyUI loader and :mod:`anime_tools.tagger.tagger`
-all need them torch-free. ``tagger.py`` re-exports every name below.
+a gated, GPL-3.0 upstream repo into the HuggingFace hub cache under the user's
+own token. ``tagger.py`` re-exports every name below.
 """
 
 from __future__ import annotations
@@ -23,10 +19,9 @@ DEFAULT_DBV4_IMG_SIZE = 384
 # Everything :class:`Dbv4Backend` pulls from the backbone repo.
 DBV4_BACKBONE_FILES = ("model.safetensors", "selected_tags.csv", "meta.json")
 
-# Our half of the tagger: auto-fetched when ckpt_dir is missing required files
-# (mirrors the ComfyUI loader). The live checkpoint is the `dbv4/` subfolder —
-# vocab / rules / groups / thresholds / sidecar only; the GPL-3.0 backbone
-# weights come from the upstream gated repo.
+# Our half of the tagger: auto-fetched when ckpt_dir is missing required files.
+# The live checkpoint is the `dbv4/` subfolder — vocab / rules / groups /
+# thresholds / sidecar only.
 TAGGER_HF_REPO = "sorryhyun/anima-tagger"
 TAGGER_HF_SUBFOLDER = "dbv4"
 TAGGER_REQUIRED_FILES = ("config.json", "model.safetensors", "vocab.json", "rules.yaml")
@@ -47,8 +42,7 @@ def backbone_repo_for(ckpt_dir: str | Path) -> str:
     """Backbone repo the checkpoint at ``ckpt_dir`` was built against.
 
     Reads ``config.json["dbv4"]["repo"]``; falls back to the default when the
-    checkpoint is absent or doesn't name one. A checkpoint built against
-    another ``animetimm/*.dbv4-full`` variant must resolve *that* backbone.
+    checkpoint is absent or doesn't name one.
     """
     try:
         cfg = read_json(Path(ckpt_dir) / "config.json")

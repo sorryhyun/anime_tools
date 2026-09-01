@@ -1,18 +1,11 @@
 """Grouping feature primitives: caption-grammar tag reads + collision-free keys.
 
-Three regressions:
-
-- ``read_tags`` used to hand-``split(",")`` the sidecar, so a position clause
-  leaked garbage tags (``"white socks. on the left"``) into the grouping tag
-  set. It now goes through ``position_clauses.parse_caption``.
-- ``match_decensored.has_censor_tag`` was the second copy of that same split,
-  and the one place it mattered most: a caption is *tiered* on the answer, so a
-  clause header read as a tag, or ``convenient_hair`` unmatched for its
-  underscore, decides whether an image gets decensored at all. It reads through
-  ``read_tags`` and keys through ``normalize_tag`` now.
-- ``embed_members`` used to key its result by bare ``stem`` while nothing
-  enforces unique stems tree-wide, so two subfolders' ``1.png`` silently shared
-  one embedding. Keyed by rel-posix path (``root=``) now.
+- ``read_tags`` parses through ``position_clauses.parse_caption``, so a clause
+  leaks no garbage tags into the grouping tag set.
+- ``match_decensored.has_censor_tag`` reads through ``read_tags`` and keys
+  through ``normalize_tag``.
+- ``embed_members`` keys by rel-posix path (``root=``), since stems are not
+  unique tree-wide.
 """
 
 from __future__ import annotations
@@ -46,7 +39,6 @@ def test_read_tags_excludes_position_clauses(tmp_path):
     )
     tags = read_tags(txt)
     assert tags == {"safe", "2girls", "white socks"}
-    # The old split(",") glued the clause header onto the previous tag.
     assert not any("on the" in t for t in tags)
     assert "akita neru" not in tags  # clause-bound, not in the flat bag
 
@@ -59,7 +51,7 @@ def test_read_tags_empty_and_missing(tmp_path):
 
 
 # ---------------------------------------------------------------------------
-# match_decensored.has_censor_tag — the same read, one tier decision downstream
+# match_decensored.has_censor_tag
 
 
 def _sincos(monkeypatch, tmp_path, stem: str, caption: str):
@@ -71,18 +63,15 @@ def _sincos(monkeypatch, tmp_path, stem: str, caption: str):
 
 
 def test_has_censor_tag_ignores_a_clause_header(monkeypatch, tmp_path):
-    """``split(",")`` glued the header on: ``"censored. on the left"`` was a
-    'tag', and every clause-bearing caption after a censor tag stayed true for
-    the wrong reason — while ``"...censored"`` mid-clause made an uncensored
-    image look censored."""
+    """A clause header is not a tag, and a censor word inside a clause is not a
+    whole-image censor."""
     M = _sincos(
         monkeypatch,
         tmp_path,
         "a",
         "safe, 2girls, white socks. On the left, akita neru, censored bikini.",
     )
-    # The censor word only appears inside a position clause: whole-image
-    # censoring is a flat-bag property, so this image is not censored.
+    # Whole-image censoring is a flat-bag property.
     assert M.has_censor_tag("a") is False
 
     _sincos(
@@ -95,9 +84,7 @@ def test_has_censor_tag_ignores_a_clause_header(monkeypatch, tmp_path):
 
 
 def test_has_censor_tag_matches_the_underscore_spelling(monkeypatch, tmp_path):
-    """``convenient_hair`` is the danbooru form; a private ``.lower()`` never
-    folded the underscore, so the one censor tag with no 'censor' in it was
-    invisible. ``normalize_tag`` keys both spellings the same."""
+    """``normalize_tag`` keys ``convenient_hair`` and ``convenient hair`` the same."""
     M = _sincos(monkeypatch, tmp_path, "a", "safe, 1girl, convenient_hair")
     assert M.has_censor_tag("a") is True
     assert M.is_censor_tag("convenient_hair") is True
@@ -155,8 +142,7 @@ def test_embed_members_same_stem_in_two_subfolders(tmp_path, monkeypatch):
     assert set(feats) == {"a/1.png", "b/1.png"}
     assert not np.allclose(feats["a/1.png"].cls, feats["b/1.png"].cls)
 
-    # Second pass is served from the cache — still two distinct entries (the
-    # cache is keyed by parent-dir hash + stem, so it never collided).
+    # Second pass is served from the cache — still two distinct entries.
     cached = embed_members(
         FakeEmbedder(), members, batch_size=2, num_workers=0, root=root
     )
@@ -175,8 +161,7 @@ def test_embed_members_legacy_stem_keys_without_root(tmp_path, monkeypatch):
 
 
 def test_build_groups_survives_stem_collision(tmp_path, monkeypatch):
-    """Two artists sharing a stem: each keeps its own embedding, and the twin
-    pair inside one artist still groups. Manifest members stay rel-posix."""
+    """Two artists sharing a stem keep separate embeddings; members stay rel-posix."""
     monkeypatch.setattr(F, "CACHE_ROOT", tmp_path / "cache")
     root = tmp_path / "src"
     _write_png(root / "a" / "1.png", 0)
@@ -197,13 +182,12 @@ def test_build_groups_survives_stem_collision(tmp_path, monkeypatch):
 
 
 # --------------------------------------------------------------------------- #
-# One walk: grouping enumerates images through ``_walk``, not its own tuple.
+# Grouping enumerates images through ``_walk``.
 # --------------------------------------------------------------------------- #
 
 
 def test_image_exts_is_the_curation_walkers_list():
-    """The two used to disagree in both directions — grouping had no ``.bmp``
-    and claimed ``.jxl``/``.avif`` even with no Pillow plugin to decode them."""
+    """``F.IMAGE_EXTS`` is ``_walk.IMAGE_EXTENSIONS``."""
     from anime_tools._walk import IMAGE_EXTENSIONS
 
     assert set(F.IMAGE_EXTS) == {e.lower() for e in IMAGE_EXTENSIONS}
@@ -218,7 +202,7 @@ def test_iter_images_sees_what_the_stages_see(tmp_path):
     from anime_tools._walk import walk_images
 
     _touch(tmp_path / "a" / "one.png")
-    _touch(tmp_path / "a" / "two.bmp")  # was invisible to grouping
+    _touch(tmp_path / "a" / "two.bmp")
     _touch(tmp_path / "b" / "three.webp")
     (tmp_path / "a" / "one.txt").write_text("1girl", encoding="utf-8")
 
@@ -249,8 +233,7 @@ def test_gather_members_uses_the_same_glob(tmp_path):
 
 
 def test_cached_feature_is_reused_when_the_source_is_untouched(tmp_path, monkeypatch):
-    """The stamp must not defeat the cache it guards: an unchanged file is
-    still a hit, so a re-run stays free."""
+    """An unchanged file is still a cache hit; the stamp must not defeat the cache."""
     monkeypatch.setattr(F, "CACHE_ROOT", tmp_path / "cache")
     root = tmp_path / "src"
     _write_png(root / "a" / "1.png", 0)
@@ -259,8 +242,7 @@ def test_cached_feature_is_reused_when_the_source_is_untouched(tmp_path, monkeyp
     embed_members(FakeEmbedder(), members, batch_size=1, num_workers=0, root=root)
 
     class CountingEmbedder(FakeEmbedder):
-        """Subclass, not an instance attribute: ``embedder(batch)`` resolves
-        ``__call__`` on the *type*, so patching the instance would not fire."""
+        """A subclass, since ``embedder(batch)`` resolves ``__call__`` on the type."""
 
         calls = 0
 
@@ -273,13 +255,8 @@ def test_cached_feature_is_reused_when_the_source_is_untouched(tmp_path, monkeyp
 
 
 def test_rewritten_source_re_embeds_instead_of_a_stale_hit(tmp_path, monkeypatch):
-    """The reason the resized tree can be the one decode substrate.
-
-    The cache key is the image's *location* (parent-dir hash + stem), which does
-    not move when ``resize`` regenerates the tree at a different tier. Without
-    the ``(size, mtime_ns)`` stamp the second pass would hand back the features
-    of pixels that no longer exist.
-    """
+    """The cache key is the image's location, which does not move when ``resize``
+    rewrites the file; the ``(size, mtime_ns)`` stamp is what catches that."""
     monkeypatch.setattr(F, "CACHE_ROOT", tmp_path / "cache")
     root = tmp_path / "src"
     path = root / "a" / "1.png"
@@ -300,8 +277,7 @@ def test_rewritten_source_re_embeds_instead_of_a_stale_hit(tmp_path, monkeypatch
 
 
 def test_pre_stamp_cache_entry_is_a_miss(tmp_path, monkeypatch):
-    """A ``.npz`` written before the stamp existed has no ``ver``/``size`` keys.
-    That is "recompute", never a crash."""
+    """A ``.npz`` with no ``ver``/``size`` keys is a recompute, never a crash."""
     monkeypatch.setattr(F, "CACHE_ROOT", tmp_path / "cache")
     root = tmp_path / "src"
     path = root / "a" / "1.png"

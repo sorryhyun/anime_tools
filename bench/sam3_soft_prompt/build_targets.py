@@ -1,19 +1,10 @@
-"""Phase 0a — pseudo-labels + splits for the SAM3 soft-prompt bench.
+"""Pseudo-label targets + splits for the SAM3 soft-prompt bench.
 
-No human girl masks exist in this repo (`post_image_dataset/masks/` are
-speech-bubble masks), so training targets come from SAM3 itself, filtered
-hard enough that they are the *uncontroversial* subset:
-
-- caption count is exactly ``1girl`` (or ``2girls``), no ``multiple views``;
-- under the shipped ``girl`` prompt at the primary 0.5 floor, NMS leaves
-  exactly that many survivors, every one with box fill ≥ ``--min_fill`` and
-  area fraction ≤ ``--max_area`` (the multiview audit's "clean figure" band).
-
-Those survivors (normalized xyxy box + 288² mask) are the targets. Everything
-the prompt is supposed to *fix* is kept out of training and forms the eval
-sets: ``zero_girl`` (no survivor under ``girl`` @0.5) and ``disagree``
-(``girl`` and ``anime girl`` survivor counts differ @0.5 — the 466-image
-population §5.5 flagged). One image encode, two prompt passes per image.
+Targets are SAM3's own ``girl`` survivors (normalized xyxy box + 288² mask) on
+images where the caption count, the survivor count, ``--min_fill`` and
+``--max_area`` all agree — self-labelled, since the repo has no human girl
+masks. Images the prompt is meant to fix are kept out of training and become
+the eval sets: ``zero_girl`` and ``disagree``.
 
     make daemon-run ARGS="bench/sam3_soft_prompt/build_targets.py"
 """

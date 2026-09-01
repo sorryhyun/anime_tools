@@ -1,18 +1,9 @@
-"""A/B two SAM3 subject prompts side by side — text vs text, or text vs a
-learned soft prompt — as contact sheets plus a numeric report.
+"""A/B two SAM3 subject prompts as contact sheets plus a numeric report.
 
-Same shape as `anime_tools.stages.cli.ab_position_captions`: one image encode,
-one grounding pass per side, a sheet only where the sides disagree, and an
-`index.html` ordered most-changed-first. Sides are ``--a`` / ``--b``; a side
-ending in ``.safetensors`` is loaded as a soft prompt, anything else is text.
-
-Image set comes from a `build_targets.py` manifest via ``--which``:
-``disagree`` (girl vs anime-girl survivor count differs @0.5), ``zero_girl``
-(no survivor under girl @0.5), ``train``, or ``all``; ``--path_pattern``
-narrows further. The report counts, per side: zero-survivor images, survivors,
-degenerate survivors (fill < 0.15), whole-canvas junk (area ≥ 0.95 & fill <
-0.10), and — for images whose caption count is unambiguous — how often the
-survivor count matches the caption.
+Sides are ``--a`` / ``--b``; a side ending in ``.safetensors`` is loaded as a
+soft prompt, anything else is text. The image set comes from a
+`build_targets.py` manifest via ``--which``, narrowed by ``--path_pattern``.
+Sheets are written only where the sides disagree, ordered most-changed-first.
 
     make daemon-run ARGS="bench/sam3_soft_prompt/ab_sam3_prompt.py \\
         --b bench/sam3_soft_prompt/results/<run>/soft_prompt.safetensors --which disagree"

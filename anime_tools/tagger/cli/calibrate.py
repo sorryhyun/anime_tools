@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import torch
 
-# The one sweep, so callers cannot spell their own and drift.
 DEFAULT_SWEEP = torch.arange(0.05, 0.951, 0.05)
 
 
@@ -26,15 +25,13 @@ def calibrate_thresholds(
     """Per-tag F1-optimal threshold sweep.
 
     Returns ``(thresholds[n_tags], best_f1[n_tags])``. Tags with fewer than
-    ``min_support`` positives in the val split keep ``default``: with a handful
-    of positives the F1-optimal threshold is noise and the sweep routinely lands
-    on hair-trigger values that then over-fire at inference (e.g. `shaded face`
-    at 0.20 off a single positive). Same fallback for tags whose best achievable
-    F1 is 0 (the model never predicts them at any threshold).
+    ``min_support`` positives in the val split keep ``default``: off a handful
+    of positives the sweep lands on hair-trigger values that over-fire at
+    inference. Same fallback for tags whose best achievable F1 is 0.
 
-    ``skip_indices`` is the trainer-side hint that some tags belong to a
-    softmax group and shouldn't be sigmoid-thresholded (inference uses
-    argmax). Those keep ``default`` and ``best_f1=0``.
+    ``skip_indices`` names tags that belong to a softmax group and shouldn't be
+    sigmoid-thresholded (inference uses argmax); those keep ``default`` and
+    ``best_f1=0``.
     """
     n_tags = scores.shape[1]
     K = sweep.shape[0]

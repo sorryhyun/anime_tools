@@ -1,9 +1,8 @@
 """Subject instances: box geometry, duplicate suppression, mask-blanked crops.
 
 The detector-side primitives of the position-clause pipeline and the multiview
-audit: a :class:`Detection` record, the geometry around it, the NMS pass that
-turns raw detector output into one box per subject, the body-part fallback
-merge, and the crop the tagger sees.
+audit: a :class:`Detection` record, the geometry around it, the NMS pass, the
+body-part fallback merge, and the crop the tagger sees.
 
 Detector-agnostic — nothing here imports SAM3.
 """
@@ -19,8 +18,8 @@ from PIL import Image
 
 # Shipped SAM3 soft prompt for the subject pass (textual inversion of ``anime
 # girl``): keeps ``anime girl``'s recall with ``girl``'s junk profile. Part
-# prompts stay textual. The path comes from the download catalog (torch-free, so
-# the import stays cheap) and the CLIs import it from here.
+# prompts stay textual. The path comes from the download catalog, which is
+# torch-free, and the CLIs import it from here.
 from anime_tools.downloads import DEFAULT_SUBJECT_PROMPT_EMBED
 
 _PROMPT_EMBED_OFF = {"", "none", "off", "text"}
@@ -51,8 +50,8 @@ def resolve_prompt_embed(spec: str | None) -> Path | None:
     raise FileNotFoundError(f"--prompt_embed {spec!r} not found at {path}")
 
 
-# Keys a SAM3 soft prompt is stored under (SAM3 encodes a text prompt into this
-# triple and the rest of the model only ever sees it).
+# Keys a SAM3 soft prompt is stored under: SAM3 encodes a text prompt into this
+# triple and the rest of the model only ever sees it.
 SOFT_PROMPT_KEYS = ("language_features", "language_mask", "language_embeds")
 
 
@@ -77,8 +76,7 @@ class Detection:
     """One detected subject: box in pixels, score, and optional instance mask.
 
     ``source`` is which pass produced the box — ``"subject"`` for the ``girl``
-    prompt, else the part prompt itself — and rides into the report so a
-    reviewer can tell the two apart.
+    prompt, else the part prompt itself — and rides into the report.
     """
 
     box: tuple[float, float, float, float]
@@ -102,15 +100,12 @@ def box_area(box: Sequence[float]) -> float:
 def box_containment(a: Sequence[float], b: Sequence[float]) -> float:
     """Intersection over the *smaller* box — how nested the pair is.
 
-    IoU is blind to nesting: a box wholly inside another scores tiny, so an
-    inset icon and a group box spanning every subject both hide from it while
+    IoU is blind to nesting: a box wholly inside another scores tiny while
     scoring ~1.0 here.
 
-    GOTCHA: suppressing on this is off by default — a *real* second subject
-    (one girl in front of another) is just as nested as a group box, and
-    ablation found far more of the former. :func:`drop_small_boxes` handles the
-    inset case instead, and a surviving group box only costs one
-    `count-mismatch` skip.
+    GOTCHA: suppressing on this is off by default — a *real* second subject (one
+    girl in front of another) is just as nested as a group box, and ablation
+    found far more of the former.
     """
     ix = max(0.0, min(a[2], b[2]) - max(a[0], b[0]))
     iy = max(0.0, min(a[3], b[3]) - max(a[1], b[1]))
@@ -131,12 +126,10 @@ def _binary_mask(det: Detection) -> np.ndarray | None:
 def mask_containment(a: Detection, b: Detection) -> float | None:
     """Intersection over the *smaller* mask — how nested the pair really is.
 
-    The mask analogue of :func:`box_containment`, and the discriminator that one
-    cannot provide: two boxes nest identically whether the inner detection is a
-    fragment of the outer figure or a second girl standing in front of her, but
-    their *masks* do not — SAM3 segments an occluding subject separately from
-    the figure behind it. Measured pairs land above 0.98 or below 0.02 with no
-    middle ground, so the 0.8 default is not a tuned edge.
+    Unlike :func:`box_containment` this separates a fragment of the outer figure
+    from a second girl standing in front of her, since SAM3 segments an
+    occluding subject separately. Measured pairs land above 0.98 or below 0.02
+    with no middle ground, so the 0.8 default is not a tuned edge.
 
     KNOWN FAILURE: when SAM3 emits a *group* mask spanning both girls, an
     individual's mask is a subset of it and gets suppressed
@@ -190,24 +183,20 @@ def dedupe_detections(
     than fully inside something else — leaving plain-IoU behaviour.
 
     ``mask_containment_threshold`` suppresses on :func:`mask_containment`
-    instead of box geometry, and unlike the box rule it ships **on** (0.8): the
-    box rule is a settled negative because it cannot tell a fragment from a real
-    second subject, and the mask rule mostly can. A pair with no usable mask
-    falls back to the box rules, so stub detections and part boxes are
-    unaffected.
+    instead of box geometry, and unlike the box rule it ships **on** (0.8). A
+    pair with no usable mask falls back to the box rules, so stub detections and
+    part boxes are unaffected.
 
     ``fill_ratio_threshold`` > 0 enables the mask-quality tie-break
-    (``docs/multiview_audit.md``; the default is 2.0):
-    when a candidate collides with a kept box and its :func:`mask_box_fill`
-    beats the kept box's by at least this ratio, it *replaces* that box instead
-    of being dropped. SAM3's score is box-level confidence and says nothing
-    about mask coherence, so a near-empty duplicate can outscore the clean mask
-    by a hair and hand every consumer a blank crop. Instance count is invariant:
-    the swap only picks which of two matched duplicates represents the object.
-    Deliberately NOT an absolute fill gate (settled negative: clean figures live
-    at fill ~0.27), and a missing mask falls back to score-only suppression.
-    Single-pass: the swapped-in geometry is not re-checked against other kept
-    boxes (bounded, order-stable; no cascade observed over the full corpus).
+    (``docs/multiview_audit.md``; the default is 2.0): when a candidate collides
+    with a kept box and its :func:`mask_box_fill` beats the kept box's by at
+    least this ratio, it *replaces* that box instead of being dropped. SAM3's
+    score is box-level confidence and says nothing about mask coherence, so a
+    near-empty duplicate can outscore the clean mask and hand every consumer a
+    blank crop. Instance count is invariant. Not an absolute fill gate — clean
+    figures live at fill ~0.27 — and a missing mask falls back to score-only
+    suppression. Single-pass: the swapped-in geometry is not re-checked against
+    other kept boxes.
     """
 
     def matches(det: Detection, kept: Detection) -> bool:
@@ -256,8 +245,7 @@ def merge_part_detections(
 
     Containment is applied here even though :func:`dedupe_detections` leaves it
     off by default: a *part* nested in a subject is that subject's own body,
-    never a real second subject, so typing the rule to the part pass gets
-    duplicate suppression without the false positives the global rule costs.
+    never a real second subject.
 
     Subjects are kept unconditionally; parts go highest-score first against
     everything kept so far, so duplicate part boxes on one panel collapse.

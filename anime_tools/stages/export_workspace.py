@@ -1,8 +1,5 @@
 """Publish the workspace to the paths the trainer reads.
 
-The workspace is where every stage writes; this is the one thing that leaves it,
-so until it runs a curation pass is a proposal the trainer cannot see.
-
 Six artifact kinds, and where each lands (``docs/contract.md`` §2 is the
 destination side of this table):
 
@@ -13,19 +10,16 @@ destination side of this table):
 ``master``    ``workspace/master/<rel>.txt``        → ``image_dataset/<rel>.txt``
 ``index``     ``workspace/captions/caption_index.json`` → ``post_image_dataset/captions/…``
 
-``master`` is the odd one: it publishes back over the *input* tree, because
-that is where the contract says the master lives. The only row that writes
-outside ``--out`` and the only one that can overwrite something a human
-hand-wrote — hence copied only when the overlay holds a revision, with its
-previous text recorded for the revert.
+``master`` publishes back over the *input* tree, where the contract says the
+master lives: the only row that writes outside ``--out`` and the only one that
+can overwrite hand-written text, so it is copied only when the overlay holds a
+revision, with its previous text recorded for the revert.
 
-**Always copies**, never links, so the export tree is independent bytes that
-survive the workspace being cleared. Re-exporting is cheap anyway: an identical
-destination is skipped and :func:`shutil.copy2` preserves mtime, so a second
-export is a walk and a stat apiece.
+**Always copies**, never links, so the export tree survives the workspace being
+cleared. An identical destination is skipped and :func:`shutil.copy2` preserves
+mtime, so a second export is a walk and a stat apiece.
 
-Rows are per *artifact*, not per image, each decided on its own — so a caption
-that changed publishes without recopying the pixels beside it.
+Rows are per *artifact*, not per image, each decided on its own.
 
 Torch-free.
 """
@@ -46,21 +40,16 @@ KINDS = ("image", "caption", "variants", "mask", "master", "index")
 """Every artifact kind, in the order :func:`plan_export` emits them per image."""
 
 TEXT_KINDS = frozenset({"caption", "variants", "master", "index"})
-"""Kinds compared (and reverted) by content rather than by stat.
-
-Captions are small and a byte compare is exact; pixels go by ``(size,
-mtime_ns)``, because hashing a resized tree on every dry run would cost more
-than ``copy2`` already gives in certainty.
-"""
+"""Kinds compared (and reverted) by content rather than by stat. Captions are
+small enough for a byte compare; pixels go by ``(size, mtime_ns)``."""
 
 
 @dataclass(frozen=True)
 class ExportPaths:
     """The six directories one export reads from and writes to.
 
-    ``src`` and ``out`` are destinations here, not sources: this stage runs the
-    pipeline backwards, but the names keep the meaning they have everywhere else
-    (``src`` the caption master tree, ``out`` the export root).
+    ``src`` (the caption master tree) and ``out`` (the export root) are
+    destinations here, not sources, but keep their usual names.
     """
 
     resized: Path
@@ -113,8 +102,7 @@ def _same(src: Path, dst: Path, *, text: bool) -> bool:
     """Is the destination already this file?
 
     Pixels are compared by ``(size, mtime_ns)``, which :func:`shutil.copy2`
-    makes true again on every copy — so an unchanged image compares equal on the
-    next export without either side being read.
+    preserves, so an unchanged image compares equal without being read.
     """
     try:
         if text:
@@ -150,11 +138,8 @@ def _row(rel: Path, kind: str, src: Path, dst: Path) -> ExportRow:
 
 
 def _mask_source(paths: ExportPaths, image: Path, rel: Path) -> Path:
-    """The mask for ``rel``: the mirrored layout, or the legacy flat one.
-
-    Same two-step lookup ``gui.dataset.mask_path`` does — a flat mask tree is
-    still a valid one to publish.
-    """
+    """The mask for ``rel``: the mirrored layout, or the legacy flat one — the
+    same two-step lookup ``gui.dataset.mask_path`` does."""
     nested = mask_path_for(image, paths.resized, paths.masks)
     if nested.is_file():
         return nested
@@ -166,13 +151,9 @@ def plan_export(
 ) -> list[ExportRow]:
     """Every artifact this export would publish, decided against disk.
 
-    Enumerates the *resized* tree, because that is what curation produced: an
-    image only in the caption master was never resized, and publishing it would
-    just re-publish the input.
-
-    An artifact absent from the workspace contributes no row rather than a
-    ``missing-source`` one, which is left for the report's own replay — where a
-    file that vanished between the plan and the apply is worth saying aloud.
+    Enumerates the *resized* tree, which is what curation produced. An artifact
+    absent from the workspace contributes no row at all; ``missing-source`` is
+    left for a replay of the report, where the file vanished after the plan.
     """
     rows: list[ExportRow] = []
     for image in walk_images(paths.resized, recursive=True, pattern=path_pattern):
@@ -218,8 +199,8 @@ def plan_export(
 def export_one(row: ExportRow, *, apply: bool) -> str:
     """Copy one artifact, or say what copying it would do.
 
-    Re-decides against disk first, which on an ``--apply`` of an older report is
-    the guard that a destination edited since is reported, not clobbered blind.
+    Re-decides against disk first, so an ``--apply`` of an older report reports
+    a destination edited since rather than clobbering it.
     """
     _decide(row)
     if row.status in ("identical", "missing-source"):
@@ -314,10 +295,8 @@ def revert_export(
     text recorded at the time. Both are guarded: the destination must still hold
     what the export put there, or it is left alone as ``drifted``.
 
-    A **pixel** row it overwrote cannot be put back — the previous bytes were
-    not kept, and keeping them would mean snapshotting the resized tree for an
-    operation whose source still sits in the workspace. Those report
-    ``not-undoable``; re-exporting is the idempotent way back.
+    A **pixel** row it overwrote reports ``not-undoable`` — the previous bytes
+    were never kept.
     """
     stats = RevertStats(rows=len(rows))
     for row in rows:

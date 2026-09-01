@@ -4,11 +4,8 @@ import { t } from "./i18n";
 import type { Job, JobStatus } from "./types";
 
 /** A signal mirrored into `localStorage` under `key`: read once at creation,
- * written on every change.
- *
- * The dock *height* deliberately does not use this: it changes on every
- * pointermove of a drag, and writing `localStorage` at frame rate is not free,
- * so it saves once on pointerup instead.
+ * written on every change. Values that move on every pointermove of a drag (the
+ * dock height, the caption column) save once on pointerup instead.
  */
 export function persisted<T>(
   key: string,
@@ -27,12 +24,10 @@ export const asFlag = (raw: string) => raw !== "0";
 export const fromFlag = (v: boolean) => (v ? "1" : "0");
 
 /** A job being followed over SSE: its id, whether it is still going, and the
- * newest line as a status.
- *
- * There are two of these — the stage runner in the dock and the weights
- * download inside the Settings dialog — and they are the same three
- * transitions (close any previous stream, take the new job, clear it on done or
- * error); only what to *say* differs, which is what the callbacks are for.
+ * newest line as a status. Two exist — the dock's stage runner and the Settings
+ * dialog's weights download — sharing the three transitions (close any previous
+ * stream, take the new job, clear it on done or error); the callbacks are what
+ * differs.
  */
 export function createJobFollower(opts: {
   /** The newest line as a status, or null to leave the current one standing. */

@@ -1,29 +1,16 @@
 #!/usr/bin/env python
 """Re-score the saved position-caption probe crops with an external tagger.
 
-Takes the artifacts of ``bench/position_captions/probe_autocaption.py`` (SAM3
-instance crops + hand-written clause GT in ``per_image.json``) and
-``probe_binding.py`` (counterbalanced left/right renders) and asks an external
-timm tagger the same two questions the pipeline asks the Anima Tagger per
-crop:
-
-  * hair-color winner — argmax over the ``hair_color`` group (names from the
-    anima-tagger vocab) vs the GT clause's hair color;
-  * character — does the crop keep the GT clause's character name (external:
-    prob >= its per-tag ``best_threshold``)?
-
-plus the binding probe's side test (p(want hair) > p(other hair) per half).
-Ours is re-read from the saved artifacts so both arms score the same crops.
+Asks an external timm tagger the hair-color and character questions the
+pipeline asks the Anima Tagger, over the crops ``probe_autocaption.py`` and
+``probe_binding.py`` already saved — both arms therefore score the same crops.
+Run it from the trainer checkout: it reads the trainer's
+``bench/position_captions/results/``, resolved against ``ANIMA_HOME`` / CWD.
+The external tagger loads through
+:class:`~anime_tools.tagger.dbv4_backend.Dbv4Backend`, so its square-pad,
+normalisation and state-dict check cannot drift from the package's.
 
     make daemon-run ARGS="../anime_tools/bench/tagger_external/probe_position_rescore.py --label dbv4"
-
-(run from the trainer checkout: the probe reads the trainer's
-``bench/position_captions/results/`` artifacts, resolved against the curation
-home = ``ANIMA_HOME`` / CWD.) The external tagger is loaded through the
-package's own :class:`~anime_tools.tagger.dbv4_backend.Dbv4Backend` — the two
-are the same timm-over-``animetimm/*.dbv4-full`` load, and the copy this file
-inlined from the archived ``run_bench.py`` (curation split Phase 3b) had drifted
-into its own square-pad, its own normalisation and its own state-dict check.
 """
 
 from __future__ import annotations
@@ -51,11 +38,8 @@ log = logging.getLogger("probe_position_rescore")
 
 
 def load_external(args, device: torch.device) -> Dbv4Backend:
-    """The external tagger, through the package's own dbv4 loader.
-
-    bf16 only on CUDA — the probe scores a few hundred crops, and bf16 on CPU
-    buys nothing but noise in the probabilities it is comparing.
-    """
+    """The external tagger, through the package's own dbv4 loader. bf16 only on
+    CUDA; on CPU it would just add noise to the probabilities."""
     return Dbv4Backend(
         repo=args.external_repo,
         arch=args.external_arch,

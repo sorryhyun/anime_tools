@@ -1,13 +1,8 @@
-"""Invariants for group-conditional negative weighting in ``compute_grouped_loss``.
+"""Group-conditional negative weighting in ``compute_grouped_loss``.
 
-Two guarantees that the train-time ``--inactive_neg_weight`` λ must keep:
-
-1. λ=1.0 is **bit-identical** to the un-weighted reduction (the inert default).
-2. λ<1 down-weights **exactly** the inactive-group negative cells — positives,
-   active-group negatives, and ungrouped tags are untouched.
-
-See bench/tagger_groups/probe_group_structure.py for the Phase-0 sizing that
-motivated the λ≈0.6–0.75 operating range.
+1. λ=1.0 is bit-identical to the un-weighted reduction (the inert default).
+2. λ<1 down-weights exactly the inactive-group negative cells; positives,
+   active-group negatives and ungrouped tags are untouched.
 """
 
 from __future__ import annotations
@@ -58,8 +53,7 @@ def _sample():
 def test_lambda_one_is_bit_identical():
     mh, logits = _sample()
     router = _router(mh)
-    # No softmax groups → bce_mask is all-True, so the un-weighted reduction is a
-    # plain pos-weighted BCE mean over every cell.
+    # No softmax groups → bce_mask all-True → a plain pos-weighted BCE mean.
     ref = F.binary_cross_entropy_with_logits(
         logits, mh, pos_weight=router.bce_pos_weight, reduction="none"
     ).mean()

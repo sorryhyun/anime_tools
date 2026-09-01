@@ -8,11 +8,9 @@ import type { Config } from "./config";
 /** The stage registry and the forms over it: which stage is open, what its form
  * says, and how the dock's buttons bucket the stages.
  *
- * Every field here comes from the stage CLI's own argparse (`gui/stages.py`
- * dumps it in a child interpreter), so nothing about a flag is re-typed in the
- * browser — including the ones bound to Settings, which the server fills and
- * this never shows. Running one of these is `runner.ts`; this module only knows
- * what *would* be run.
+ * Every field comes from the stage CLI's own argparse (`gui/stages.py` dumps it
+ * in a child interpreter), so nothing about a flag is re-typed here. Running one
+ * is `runner.ts`.
  */
 export function createStages(config: Config) {
   const [all, { refetch }] = createResource<Stage[]>(api.stages);
@@ -27,8 +25,8 @@ export function createStages(config: Config) {
   // The saved forms ride in on the same settings read the config store took.
   void config.loaded.then((s) => setForms(reconcile(structuredClone(s.values ?? {}))));
 
-  /** The stages the dock offers: everything but the hidden ones, which are not
-      run by hand (`resize` runs itself, in front of the stages that need it). */
+  /** The stages the dock offers: everything but the hidden ones (`resize` runs
+      itself, in front of the stages that need it). */
   const shown = createMemo(() => (all() ?? []).filter((s) => !s.hidden));
   /** Stages, in registry order, bucketed into the dock's panels. One button
       per panel; which of its stages runs is picked inside the panel. */
@@ -39,12 +37,11 @@ export function createStages(config: Config) {
   });
   const curPanel = createMemo(() => cur()?.panel ?? "");
   /** Per panel, the stage last picked in it, so re-opening a panel comes back
-      to where you left it instead of always its first stage. */
+      to where you left it. */
   const [lastInPanel, setLastInPanel] = createStore<Record<string, string>>({});
 
   /** One Field descriptor per Settings-bound dest, first stage that has it
-      wins: the input's label, help and placeholder all come from the real
-      argparse action, so Settings never re-describes a flag. */
+      wins: label, help and placeholder come from the real argparse action. */
   const settingFields = createMemo(() => {
     const m = new Map<string, Field>();
     for (const st of shown())
@@ -52,7 +49,7 @@ export function createStages(config: Config) {
     return [...m.values()];
   });
   /** The hidden preflight stage, so Settings can render its form: it has no
-      dock panel of its own, and its knobs apply to every stage it precedes. */
+      dock panel, and its knobs apply to every stage it precedes. */
   const preprocessStage = createMemo(() =>
     (all() ?? []).find((s) => s.hidden && s.id === "resize"),
   );
@@ -64,16 +61,15 @@ export function createStages(config: Config) {
 
   createEffect(
     on(all, (ss) => {
-      // A hidden stage is never the landing stage: it has no dock button to
-      // show it, so selecting one would open the dock on nothing.
+      // A hidden stage is never the landing stage: it has no dock button, so
+      // selecting one would open the dock on nothing.
       if (ss && !shown().some((s) => s.id === curId()))
         setCurId(shown().find((s) => s.available)?.id ?? "");
     }),
   );
   // A panel field's default is the Settings value the server resolved into it
   // (`stages.PANEL_FIELDS`), so a saved root or stage default makes the schemas
-  // stale -- Export's destinations would keep showing the old ones. Deferred:
-  // the first read of each is the resource's own first fetch.
+  // stale. Deferred: the first read of each is the resource's own first fetch.
   createEffect(
     on(
       [config.roots, config.stageDefaults],

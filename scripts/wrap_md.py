@@ -1,18 +1,15 @@
 """Semantic-wrap markdown prose to a column cap, in place.
 
-Only ever *splits* a line, never joins two -- so a paragraph that is already
-hand-wrapped is left exactly as it was found, and a second run is a no-op.
-That is what makes this safe to point a failing test at.
+Only ever *splits* a line, never joins two: already hand-wrapped prose is left
+as found and a second run is a no-op.
 
-Breaks land on sentence and clause boundaries rather than at column CAP: a
-greedy fill means editing one sentence re-wraps every line after it, and the
-diff is a cascade again. Candidate positions are scored by boundary strength
-plus how full the line is, so a sentence end a little short of the cap wins
-over a plain word break at it.
+Breaks land on sentence and clause boundaries, not at column CAP -- a greedy
+fill re-wraps every line below an edited sentence. Candidates are scored by
+boundary strength plus how full the line is.
 
 Left alone, because wrapping them changes what markdown renders: fenced code,
 table rows, headings, link reference definitions, HTML blocks and indented
-code. `tests/test_doc_width.py` exempts exactly the same set.
+code.
 """
 
 from __future__ import annotations

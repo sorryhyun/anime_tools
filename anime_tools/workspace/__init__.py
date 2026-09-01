@@ -1,7 +1,4 @@
-"""The workspace layout: where the tools write, and where Export publishes to.
-
-The workspace is what makes "curation is done" an explicit moment rather than a
-side effect of the last ``--apply``::
+"""The workspace layout: where the tools write, and where Export publishes to::
 
     <home>/
       image_dataset/                  INPUT -- read-only for the tools
@@ -17,16 +14,11 @@ side effect of the last ``--apply``::
       post_image_dataset/             OUTPUT -- written only by Export
         resized/  masks/
 
-The invariant, which ``tests/test_workspace.py`` pins on the roots and a later
-phase pins on the stages themselves:
-
-    **No stage writes outside** ``workspace/``. Export is the only thing that
-    touches ``image_dataset/`` or ``post_image_dataset/``.
+The invariant: **no stage writes outside** ``workspace/``; Export is the only
+thing that touches ``image_dataset/`` or ``post_image_dataset/``.
 
 Nothing here reads the filesystem or the settings file: these are the *default*
-paths, which ⚙ Settings may override per root. Stdlib only, torch-free, and
-imported by :mod:`anime_tools.gui.dataset` so the GUI and the migrate CLI cannot
-disagree about the layout.
+paths, which ⚙ Settings may override per root. Stdlib only, torch-free.
 """
 
 from __future__ import annotations
@@ -53,9 +45,8 @@ DEFAULT_ROOTS: dict[str, str] = {
 """The five dataset roots, home-relative.
 
 ``src`` / ``dst`` / ``masks`` are the three trees the sidebar joins by the same
-relative path, and the names ``gui.stages.ROOT_FIELDS`` binds stage flags to.
-``master`` (the revised-master overlay) and ``out`` (the export destination) are
-additive.
+relative path, and the names ``gui.stages.ROOT_FIELDS`` binds stage flags to;
+``master`` is the revised-master overlay and ``out`` the export destination.
 """
 
 OUTPUT_ROOTS = frozenset({"master", "dst", "masks"})
@@ -65,20 +56,13 @@ not ``out`` (Export-only, and it mkdirs its own destination).
 """
 
 EXPORT_ROOTS = frozenset({"out"})
-"""Roots only Export writes, and which nothing else may create on its behalf.
-
-The mirror of :data:`OUTPUT_ROOTS`, and why ⚙ Settings' "make my roots" gesture
-stops short of one root: an export tree that exists should mean an export
-happened.
-"""
+"""Roots only Export writes, and which nothing else may create on its behalf —
+⚙ Settings' "make my roots" gesture stops short of these."""
 
 REPORTS_SUBDIR = "captions"
 """The workspace subdirectory the stage reports land in, as the tail of every
 CLI's ``--report_dir`` default (``captions/autotag``, ``captions/position``, …).
-
-``gui.server.report_root`` derives the root from the parent of ``dst``; this
-constant exists so the migrate CLI knows what to move.
-"""
+``gui.server.report_root`` derives the root from the parent of ``dst``."""
 
 RESIZED = DEFAULT_ROOTS["dst"]
 MASKS = DEFAULT_ROOTS["masks"]
@@ -86,31 +70,27 @@ REPORTS = f"{WORKSPACE}/{REPORTS_SUBDIR}"
 GROUPS = f"{WORKSPACE}/groups"
 OCR_SUBDIR = "ocr"
 OCR = f"{WORKSPACE}/{OCR_SUBDIR}"
-"""The five workspace paths the CLI defaults are written in terms of.
+"""The workspace paths the CLI defaults are written in terms of.
 
 Every ``--dst`` / ``--report_dir`` / ``--out`` default is one of these plus the
-stage's own tail, so the CLI and GUI halves cannot disagree — and
-``gui.stages.report_subpath``, which drops the first component of a report
-default to get that tail, keeps seeing exactly one component in front of it.
+stage's own tail, which keeps ``gui.stages.report_subpath`` — it drops the first
+component of a report default to get that tail — seeing exactly one component in
+front of it.
 
-:data:`OCR` is a tree of its own rather than a sidecar beside each caption
-because what it holds is not a caption: it is the text that is *in the picture*,
-and keeping it out of the resized tree is what lets it be published, deleted or
-regenerated without touching a single caption.
+:data:`OCR` is its own tree, not a sidecar beside each caption: what it holds is
+text *in the picture*, so it can be published, deleted or regenerated without
+touching a caption.
 """
 
 MASKS_SAM = f"{WORKSPACE}/masks_sam"
 MASKS_MIT = f"{WORKSPACE}/masks_mit"
 """Each mask generator's own output tree, and ``merge_masks``' two inputs.
 
-Not roots, and deliberately *not* :data:`MASKS`: both generators name a mask
-``{stem}_mask.png`` under the same relative path, so one shared directory means
-the second run overwrites the first, and the merge — a pixel-wise minimum over
-the two trees, i.e. the union of what they mask — has nothing left to combine.
-:data:`MASKS` is the merged answer, the root the sidebar joins and Export
-publishes. Written here rather than left to the operator because these three
-paths are one fact in three CLIs: ``merge_masks`` reads exactly what the two
-generators write, and ``tests/test_masking_plan.py`` pins that they agree.
+Not roots, and separate from :data:`MASKS`: both generators name a mask
+``{stem}_mask.png`` under the same relative path, so a shared directory would
+have the second run overwrite the first. :data:`MASKS` holds the merge (a
+pixel-wise minimum over the two trees, i.e. the union of what they mask) and is
+the root the sidebar joins and Export publishes.
 """
 
 LEGACY_ROOTS: dict[str, str] = {
@@ -118,12 +98,9 @@ LEGACY_ROOTS: dict[str, str] = {
     "dst": f"{EXPORT_ROOT}/resized",
     "masks": f"{EXPORT_ROOT}/masks",
 }
-"""Pre-workspace defaults for the two roots that moved.
-
-An install with explicit roots saved in ⚙ Settings is unaffected by the change
-of defaults — which is why the migrate CLI *warns* about one rather than
-silently moving the tree out from under it.
-"""
+"""Pre-workspace defaults for the two roots that moved. A root explicitly saved
+in ⚙ Settings is unaffected, so the migrate CLI warns about one instead of
+moving it."""
 
 LEGACY_DIRS: tuple[str, ...] = (REPORTS_SUBDIR, "groups")
 """Workspace subdirectories that are not roots, so nothing in Settings names

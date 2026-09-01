@@ -1,9 +1,8 @@
 """The GUI's settings file: one JSON blob beside the curation home.
 
-Kept out of :mod:`anime_tools.gui.server` so a plain CLI (``workspace.migrate``)
-can read it without importing FastAPI. Stdlib plus :mod:`anime_tools._json`
-only; the *shape* of the blob stays with the code that gives it meaning
-(``gui.dataset.SETTINGS_KEY``, ``gui.stages.SETTINGS_KEY``).
+Stdlib only, so a plain CLI (``workspace.migrate``) can read it without FastAPI.
+The blob's shape lives with the code that reads it (``gui.dataset.SETTINGS_KEY``,
+``gui.stages.SETTINGS_KEY``).
 """
 
 from __future__ import annotations
@@ -22,11 +21,7 @@ def settings_path() -> Path:
 
 
 def load_settings() -> dict[str, Any]:
-    """The saved settings, or ``{}``.
-
-    Unreadable is the same as absent on purpose: a corrupted settings file must
-    not stop the server from starting, and every value in it has a default.
-    """
+    """The saved settings, or ``{}``. Unreadable counts as absent."""
     p = settings_path()
     if p.exists():
         try:

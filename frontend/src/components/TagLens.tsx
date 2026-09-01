@@ -2,13 +2,12 @@ import { createResource, createSignal, onCleanup, onMount, Show } from "solid-js
 import { api } from "../api";
 import { t } from "../i18n";
 
-/** Click a tag chip anywhere -- the caption's bag, a clause, a proposed diff --
-    and ask the Danbooru KB what it means. The trainer's Qt GUI answers this
-    with a tooltip at the cursor; the same idea, as a small floating card that
-    stays put until dismissed, so its (often long) wiki blurb can be read.
+/** Click a tag chip anywhere -- the caption's bag, a clause, a diff -- and ask
+    the Danbooru KB what it means. A floating card, not a tooltip, so its often
+    long wiki blurb can be read.
 
     The inspected tag is module state rather than a prop: chips are rendered in
-    three components at two depths, and there is only ever one card open. */
+    three components at two depths, and only one card is ever open. */
 const [target, setTarget] = createSignal<{ tag: string; x: number; y: number } | null>(null);
 
 /** Open the card on `tag`, hanging from the box the caller clicked. The chip

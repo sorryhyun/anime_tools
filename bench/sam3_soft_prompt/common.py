@@ -1,11 +1,10 @@
 """Shared SAM3 plumbing for the soft-prompt (textual inversion) bench.
 
-The learnable object is the **post-tower prompt**: SAM3 encodes a text prompt
-into ``language_features`` ``(L=32, 1, 256)`` + ``language_mask`` ``(1, 32)``
-and the rest of the model only ever sees that pair (`SAM3Image._encode_prompt`
-concatenates it in front of the geometric prompt). So a soft prompt is just a
-``(32, 1, 256)`` tensor initialised from a real phrase and moved by gradient —
-the trunk, fusion encoder, decoder and scoring stay frozen.
+The learnable object is the post-tower prompt: SAM3 encodes a text prompt into
+``language_features`` ``(L=32, 1, 256)`` + ``language_mask`` ``(1, 32)`` and the
+rest of the model only sees that pair, so a soft prompt is a ``(32, 1, 256)``
+tensor initialised from a phrase and moved by gradient. Trunk, fusion encoder,
+decoder and scoring stay frozen.
 
 Soft prompts are saved as safetensors ``{"language_features", "language_mask",
 "language_embeds"}`` plus string metadata (init phrase, steps); load with
@@ -20,13 +19,9 @@ from pathlib import Path
 import torch
 from safetensors.torch import save_file
 
-# The one SAM3 entry point, and (as its import side effect) the numpy<2
-# `np.bool` alias sam3 needs — which is why every module under this directory
-# gets it for free by importing this one.
+# Importing this also installs the `np.bool` alias sam3 needs, which every
+# module under this directory inherits by importing this one.
 from anime_tools.masking._sam3 import load_sam3 as _load_sam3
-
-# Canonical home is library/ — bench/ is in scripts/update.py's PRESERVE_DIRS,
-# so anything the shipped preprocess path needs cannot live only here.
 from anime_tools.stages.instance_detection import (
     SOFT_PROMPT_KEYS as PROMPT_KEYS,
 )
@@ -39,11 +34,9 @@ MASK_RES = 288  # native `pred_masks` resolution
 def load_sam3(checkpoint: str | Path, device: str = "cuda"):
     """Frozen SAM3 image model + processor, built the bench's way.
 
-    The shared loader plus the two things only a *trainer* wants: every
-    parameter frozen (the learnable object is the prompt, not the trunk) and
-    activation checkpointing off, so SAM3's two eval-mode recompute paths do
-    not run inside our backward for nothing. The processor floor is 0.0 — the
-    score gate is re-applied by the caller, see `build_detect_fn`.
+    Every parameter frozen and activation checkpointing off, so SAM3's eval-mode
+    recompute paths do not run inside the backward. The processor floor is 0.0;
+    the caller re-applies the score gate.
     """
     model, processor = _load_sam3(
         checkpoint, device, confidence_threshold=0.0, disable_act_ckpt=True

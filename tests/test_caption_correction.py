@@ -54,10 +54,9 @@ def test_front_region_orders_quality_meta_year_safety_and_demotes_commentary(tmp
         options=CaptionCorrectionOptions(insert_no_artist=False),
     )
 
-    # Front region: quality (best quality, score_9) → meta (highres) →
-    # year (2008) → safety (sensitive). Commentary is demoted to the general
-    # tail; quality `score_N` tags are recognized despite being absent from KB
-    # and keep their underscore spelling on emit.
+    # Front region: quality → meta → year → safety. Commentary is demoted to the
+    # general tail; `score_N` is quality despite being absent from the KB, and
+    # keeps its underscore spelling on emit.
     assert result.text == (
         "best quality, score_9, highres, 2008, sensitive, 1girl, long hair, commentary"
     )

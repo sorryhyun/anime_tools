@@ -1,14 +1,8 @@
-"""Tests for anime_tools.tagger.cli.vocab caption scanning.
+"""``anime_tools.tagger.cli.vocab`` caption scanning.
 
-Covers the two invariants a retrain depends on:
-
-* **Root-order precedence** — ``build_caption_index`` consumes paths in the
-  order ``find_caption_files`` returns them (root order), so a curated root
-  listed first shadows the raw crawl. The old behavior sorted all paths
-  globally, which made absolute corpus paths beat the relative
-  ``image_dataset/`` root regardless of caller intent.
-* **Position clauses never reach the label space** — clause-bound tags
-  (``On the left, …``) are dropped at parse time; only the flat bag trains.
+* Root-order precedence: ``build_caption_index`` consumes paths in the order
+  ``find_caption_files`` returns them, so a root listed first shadows later ones.
+* Position clauses never reach the label space; only the flat bag trains.
 """
 
 from __future__ import annotations
@@ -33,8 +27,7 @@ def _write(root: Path, stem: str, caption: str) -> None:
 
 
 def test_first_root_wins_regardless_of_path_sort(tmp_path):
-    # 'z_curated' sorts AFTER 'a_raw' lexicographically — precedence must come
-    # from root order, not path order.
+    # 'z_curated' sorts after 'a_raw': precedence is root order, not path order.
     curated = tmp_path / "z_curated"
     raw = tmp_path / "a_raw"
     _write(curated, "123", "nsfw, 1girl, curated_tag")

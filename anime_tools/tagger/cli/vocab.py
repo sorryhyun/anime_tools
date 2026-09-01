@@ -45,8 +45,8 @@ logger = logging.getLogger(__name__)
 def find_caption_files(roots: Sequence[Path]) -> list[Path]:
     """Discover all ``.txt`` caption files under the given roots.
 
-    Returns files in **root order** (sorted within each root for determinism);
-    a stem appearing under multiple roots is *not* deduped here — that's
+    Returns files in root order (sorted within each root for determinism); a
+    stem appearing under multiple roots is *not* deduped here — that is
     :func:`build_caption_index`'s job, where the earlier one wins.
     """
     out: list[Path] = []
@@ -71,10 +71,10 @@ def build_caption_index(
     """Map ``stem → (caption_path, image_path | None, parsed_tags)``.
 
     The *first* path for a stem wins, so the caller controls precedence via root
-    order. Stems with no sibling image are still indexed, so the coverage scan
-    reflects what's *captioned*, not what's *trainable*; the image-required
-    filter happens at manifest-build time. Position clauses are dropped: only
-    the flat tag bag feeds tag training.
+    order. Stems with no sibling image are still indexed (the image-required
+    filter happens at manifest-build time), so the coverage scan reflects what
+    is captioned, not what is trainable. Position clauses are dropped: only the
+    flat tag bag feeds tag training.
     """
     index: dict[str, tuple[Path, Path | None, list[str]]] = {}
     for path in paths:
@@ -102,9 +102,8 @@ def load_tag_cache(path: Path) -> dict[str, str]:
 
     Dispatched by suffix: ``.json`` is gelcrawl's ``{tag: type_id}`` corpus
     cache, ``.csv`` the public ``danbooru_tags_classified.csv`` KB, whose
-    ``category`` column carries the same numeric Danbooru type id — so the vocab
-    build can run off the downloadable KB with no private-crawl dependency.
-    Both normalize underscored keys to the space-separated caption form.
+    ``category`` column carries the same numeric Danbooru type id. Both
+    normalize underscored keys to the space-separated caption form.
     """
     path = Path(path)
     if path.suffix.lower() == ".csv":
@@ -138,9 +137,8 @@ def _load_tag_cache_csv(path: Path) -> dict[str, str]:
     return out
 
 
-# Categories assignable via ``category_overrides:`` in tag_rules.yaml. ``rating``
-# (separate corpus field) and ``count`` (regex-matched) are excluded — overriding
-# them would only create dead aliases.
+# Categories assignable via ``category_overrides:`` in tag_rules.yaml; ``rating``
+# (a separate corpus field) and ``count`` (regex-matched) are excluded.
 _OVERRIDABLE_CATEGORIES = frozenset(TAG_TYPE_NAMES.values())
 
 
@@ -184,9 +182,9 @@ def categorize(
 def validate_overrides(overrides: dict[str, str]) -> list[str]:
     """Return human-readable validation errors for overrides; empty = all good.
 
-    Catches typos like ``caracter`` and unsupported categories up front so
-    :func:`cmd_build_vocab` fails loudly rather than silently typing tags into a
-    slot the trainer doesn't understand.
+    Catches typos like ``caracter`` and unsupported categories up front, so
+    :func:`cmd_build_vocab` fails loudly instead of typing tags into a slot the
+    trainer doesn't understand.
     """
     errors: list[str] = []
     for tag, cat in overrides.items():
@@ -216,8 +214,7 @@ def build_vocab(
     for _, _, tags in caption_index.values():
         # Pull rating off the front (Anima puts it first; scan the first few
         # defensively); everything else feeds the multi-label vocab. Legacy
-        # booru spellings are folded onto the canonical band so a mixed corpus
-        # reports one distribution rather than two.
+        # booru spellings are folded onto the canonical band.
         rating_seen: str | None = None
         for t in tags[:2]:
             canon = canonical_rating(t)
@@ -313,8 +310,7 @@ def build_manifest(
 
     Stems lacking a sibling image are dropped (vocab statistics still count
     them) and the split is filtered to match. The people-count label is
-    recomputed via :func:`classify_people` so the bucketing rule stays the
-    single source of truth.
+    recomputed via :func:`classify_people`.
     """
     tag_to_idx: dict[str, int] = {t["name"]: t["index"] for t in vocab["tags"]}
     rating_to_idx: dict[str, int] = {r: i for i, r in enumerate(vocab["ratings"])}
@@ -394,9 +390,8 @@ def scan_cache_coverage(
 
     A high miss rate means ``categorize()`` falls back to ``general`` too often
     and the gelbooru API fill-in pass should run first; <5 % is safe. Tags in
-    ``category_overrides`` count as covered (typed by the curator instead), and
-    tags containing a ``coverage_ignore`` substring are skipped from both
-    tallies — noisy general descriptors the booru cache doesn't track.
+    ``category_overrides`` count as covered, and tags containing a
+    ``coverage_ignore`` substring are skipped from both tallies.
     """
     overrides = category_overrides or {}
     ignore_subs = tuple(coverage_ignore or ())
@@ -499,11 +494,10 @@ def cmd_build_vocab(args: argparse.Namespace) -> None:
 
     # Derive tag-groups from the danbooru taxonomy + the scanned captions, merged
     # onto any curated --groups (preserved verbatim), and use the result as the
-    # groups source — so one build_vocab call replaces a separate derive_groups.
+    # groups source.
     groups_src = Path(args.groups) if args.groups else None
-    # The derive write reads its own product back to validate it; that load is
-    # the one this function needs, so it is carried here instead of parsing the
-    # file we just wrote a second time.
+    # write_merged_groups reads its product back to validate it; that load is the
+    # one this function needs, so it is carried here.
     merged: tg.TagGroups | None = None
     if getattr(args, "derive_groups", False):
         from anime_tools.captions.correction import (
@@ -535,8 +529,6 @@ def cmd_build_vocab(args: argparse.Namespace) -> None:
                 load_tag_knowledge_base(csv_path),
                 rules,
                 solo_sets_from_index(index),
-                # The scan above, not a second pass over the corpus — this build
-                # already holds the index derive_groups would have to rebuild.
                 source="this build's caption scan",
             )
             derived_path = out_dir / "groups.yaml"
@@ -559,8 +551,7 @@ def cmd_build_vocab(args: argparse.Namespace) -> None:
         groups = tg.expand_category_members(groups, name_to_cat)
         # One synthetic "<none:group>" tag slot per sentinel group, appended
         # after every real tag so existing indices stay stable. Category inherits
-        # the member majority; freq=0 — the slot never appears in captions, BCE
-        # never supervises it and decode never emits it.
+        # the member majority; freq=0 — the slot never appears in captions.
         n_sentinels = 0
         for g in groups.groups:
             if not (g.sentinel and g.mode in ("softmax", "softmax_when_solo")):
@@ -635,8 +626,8 @@ def cmd_build_vocab(args: argparse.Namespace) -> None:
     vocab_path = write_json(out_dir / "vocab.json", vocab)
     logger.info("wrote %s", vocab_path)
 
-    # Snapshot groups + rules into the checkpoint dir so the inference wrapper
-    # has zero runtime dependency on the source corpus.
+    # Snapshot groups + rules into the checkpoint dir so inference has no runtime
+    # dependency on the source corpus.
     if groups_src is not None and groups_src.exists():
         groups_snap = out_dir / "groups.yaml"
         with open(groups_snap, "w") as f:

@@ -1,8 +1,5 @@
-"""Unit tests for the tag-groups loader + resolver.
-
-Smoke-coverage of the YAML schema, the cross-group uniqueness check,
-and the vocab-resolution pass that drops tags below ``min_freq``.
-"""
+"""Tag-groups loader + resolver: YAML schema, cross-group uniqueness, and the
+vocab-resolution pass that drops tags below ``min_freq``."""
 
 from __future__ import annotations
 
@@ -80,9 +77,7 @@ def test_resolve_drops_missing(tmp_path):
     """,
     )
     g = tg.load_groups(p)
-    # Mock vocab: only "blue eyes" + "red eyes" survived (no escape, no
-    # fictional eyes). The resolver must not fail; both unknown names go
-    # into ``dropped``.
+    # Only "blue eyes" + "red eyes" survived; both unknown names go into ``dropped``.
     vocab = {"blue eyes": 0, "red eyes": 1}
     resolved, dropped = tg.resolve_groups(g, vocab)
     assert len(resolved) == 1
@@ -120,8 +115,7 @@ def test_round_trip(tmp_path):
 
 
 def test_from_dict_rejects_sentinel_on_multilabel():
-    # from_dict must apply the same validations as load_groups (shared
-    # _group_from_body): sentinel only makes sense on softmax modes.
+    # from_dict validates like load_groups: sentinel only applies to softmax modes.
     with pytest.raises(ValueError, match="sentinel=true only makes sense"):
         tg.from_dict(
             {
@@ -132,15 +126,13 @@ def test_from_dict_rejects_sentinel_on_multilabel():
 
 
 def test_from_dict_rejects_non_mapping_body():
-    # A non-mapping group body used to be silently skipped by from_dict while
-    # load_groups raised; both now reject it identically.
+    # from_dict and load_groups reject a non-mapping group body identically.
     with pytest.raises(ValueError, match="expected a mapping"):
         tg.from_dict({"version": 1, "a": ["blue eyes"]})
 
 
 def test_empty_tags_allowed(tmp_path):
-    """Group with no listed tags still parses — useful for committing the
-    YAML schema before the corpus catches up."""
+    """A group with no listed tags still parses."""
     p = _write(
         tmp_path,
         """

@@ -1,5 +1,4 @@
-# Pure-stdlib path filtering, so torch-free callers (notably the GUI process)
-# can use it without paying a torch/cv2 import.
+# Pure-stdlib path filtering, so torch-free callers (the GUI process) can use it.
 
 import fnmatch
 import os

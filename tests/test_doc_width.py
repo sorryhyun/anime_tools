@@ -1,17 +1,8 @@
 """Markdown prose stays inside the column cap.
 
-The point is diff legibility, not aesthetics: before this guard, every commit
-that touched ``CLAUDE.md`` showed as ``1 insertion, 1 deletion`` because the
-``gui/`` bullet was one 9916-character line, and the diff could not say what
-had changed.
-
-The assertion is a fixpoint rather than a width check: a file passes when
-``scripts/wrap_md.py`` would not rewrite it. That way the exemptions live in
-one place (the wrapper skips fenced code, tables, headings, quotes, HTML and
-link definitions, and cannot split a line whose overflow is a single
-unbreakable token such as a long URL) instead of being restated here, and a
-line hand-wrapped *shorter* than the cap is still allowed -- the wrapper only
-ever splits lines over it, never joins two.
+The assertion is a fixpoint, not a width check: a file passes when
+``scripts/wrap_md.py`` would not rewrite it, so the exemptions live in the
+wrapper rather than being restated here.
 """
 
 from __future__ import annotations
@@ -64,8 +55,7 @@ def test_markdown_is_wrapped(path: Path):
 
 
 def test_wrapping_preserves_the_words():
-    """A wrap is a soft break: markdown folds it back to a space, so the text
-    a reader (or an agent) sees must be character-for-character what it was."""
+    """A wrap is a soft break: the words survive it character-for-character."""
     import re
 
     long = (

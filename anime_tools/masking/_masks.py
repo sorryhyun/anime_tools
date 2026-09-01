@@ -1,14 +1,9 @@
 """What every mask generator does around the model: flags, plan, run, write, read.
 
-Declaration *order* is part of the argparse contract (``gui.stages.fields_of``
-walks ``parser._actions`` in order and the form follows it), which is why the
-flag helpers come in small contiguous blocks the generators interleave their own
-flags between rather than one all-or-nothing call.
-
-The flags declared here are also read back here, in :func:`mask_run`: the walk,
-the output tree and the I/O pool are this module's own vocabulary, so a
-generator that spells one of them differently from the way it was declared is a
-mistake that cannot be made in the first place.
+Declaration *order* is part of the argparse contract (``gui.stages.fields_of`` walks
+``parser._actions`` in order and the form follows it), hence the small contiguous flag
+blocks the generators interleave their own flags between. The flags declared here are
+read back here too, in :func:`mask_run`.
 """
 
 from __future__ import annotations
@@ -28,8 +23,8 @@ from anime_tools._env import resolve_path
 from anime_tools._walk import walk_images
 
 MASK_SUFFIX = "_mask.png"
-"""The whole contract between the generators, ``merge_masks`` and the GUI's mask
-lookup is this string plus "mirror the source subdir"."""
+"""The contract between the generators, ``merge_masks`` and the GUI's mask lookup:
+this suffix plus "mirror the source subdir"."""
 
 WALK_HELP = (
     "Walk subfolders under --image-dir. Mask output mirrors the source "
@@ -53,13 +48,10 @@ def add_mask_dir_args(p: argparse.ArgumentParser, *, mask_default: str) -> None:
     """``--image-dir`` / ``--mask-dir``, the two ends of a generator's walk.
 
     ``mask_default`` is this generator's own tree
-    (:data:`anime_tools.workspace.MASKS_SAM` / ``MASKS_MIT``) and is required
-    of the caller, because the one thing a mask directory must not be is
-    *shared*: two generators writing ``{stem}_mask.png`` at the same relative
-    path would overwrite each other, and ``merge_masks`` — which unions them —
-    is what fills the ``masks`` root. Defaulted rather than bound to a dataset
-    root for the same reason, so the GUI form ships filled in and the operator
-    still owns the value.
+    (:data:`anime_tools.workspace.MASKS_SAM` / ``MASKS_MIT``) and is required of the
+    caller: a mask directory must not be *shared*, since two generators writing
+    ``{stem}_mask.png`` at the same relative path would overwrite each other.
+    ``merge_masks`` unions them into the ``masks`` root.
     """
     p.add_argument("--image-dir", type=str, required=True, help="Image directory")
     p.add_argument(
@@ -73,11 +65,10 @@ def add_mask_dir_args(p: argparse.ArgumentParser, *, mask_default: str) -> None:
 
 
 GATE_ATTR = "gui_gate"
-"""The attribute :func:`gated_group` stamps a group with, naming the dest that
-switches it on. Read back by ``anime_tools.gui.stages.fields_of``, which spells
-the string rather than importing it: that module stays free of every stage's
-dependencies, exactly as it duplicates ``REPLAY_REPORT_NAME``. The pairing is
-pinned by ``tests/test_masking_plan.py``."""
+"""The attribute :func:`gated_group` stamps a group with, naming the dest that switches
+it on. ``anime_tools.gui.stages.fields_of`` spells the same string rather than importing
+it, so that module stays free of every stage's dependencies; the two spellings are pinned
+together by ``tests/test_masking_plan.py``."""
 
 
 def gated_group(
@@ -90,16 +81,13 @@ def gated_group(
 ) -> argparse._ArgumentGroup:
     """An argument group behind an on/off flag — a *drawer* in the GUI form.
 
-    Returns the group, with the gate declared as its first argument, so the
-    flags that only matter while it is on are written inside it and the browser
-    can fold them away when it is off. Two detectors in one stage is what this
-    is for: the knobs of the one you are not running are noise on the form, and
-    :func:`anime_tools.gui.stages.build_argv` drops a shut drawer's values from
-    the argv rather than passing flags the stage would ignore.
+    Returns the group with the gate declared as its first argument, so the flags that only
+    matter while it is on are written inside it and the browser can fold them away when it
+    is off. :func:`anime_tools.gui.stages.build_argv` drops a shut drawer's values from
+    the argv.
 
-    ``gate`` is the dest (``use_sam`` → ``--use-sam`` / ``--no-use-sam``), and
-    it is what the drawer's checkbox is: it stays a plain flag, so the CLI is
-    the same shape with or without a browser in front of it.
+    ``gate`` is the dest (``use_sam`` → ``--use-sam`` / ``--no-use-sam``) and is also the
+    drawer's checkbox; it stays a plain flag either way.
     """
     g = p.add_argument_group(title)
     g.add_argument(
@@ -200,8 +188,7 @@ def write_mask(path: Path, keep: np.ndarray, *, pool=None):
 def write_ignore_mask(path: Path, detected: np.ndarray, *, pool=None):
     """Save the *inverse* of a detection mask, the polarity the trainer reads.
 
-    detected=1 → alpha=0 (ignored in the loss), no detection → alpha=255
-    (trained on). The one home for that inversion.
+    detected=1 → alpha=0 (ignored in the loss), no detection → alpha=255 (trained on).
     """
     return write_mask(path, 1 - np.asarray(detected), pool=pool)
 
@@ -212,11 +199,9 @@ def write_ignore_mask(path: Path, detected: np.ndarray, *, pool=None):
 def coverage_pct(mask: np.ndarray) -> float:
     """What share of the frame ``mask`` covers, as a percentage.
 
-    Denominated in the mask's *own* size rather than a ``(w, h)`` passed
-    alongside it: every mask here is the frame, and the one way this arithmetic
-    goes wrong is a caller handing it the transposed pair. Deliberately
-    polarity-blind — the generators call it on a keep mask and on an ignore
-    mask, and what the number is *called* on the progress line is theirs to say.
+    Denominated in the mask's *own* size rather than a ``(w, h)`` passed alongside it.
+    Polarity-blind: the generators call it on a keep mask and on an ignore mask, and what
+    the number is called on the progress line is theirs to say.
     """
     return 100 * np.count_nonzero(mask) / mask.size
 
@@ -225,11 +210,10 @@ def coverage_pct(mask: np.ndarray) -> float:
 class MaskRun:
     """One generator's pass: where it reads, where it writes, what is left to do.
 
-    ``items`` is the plan (see :func:`plan_mask_jobs`) — a list rather than an
-    iterator because a batching generator indexes ahead of the loop to prefetch.
-    ``pool`` is the shared I/O pool ``write_mask`` submits saves to; the progress
-    bar is private, reached through the two methods below, so ``tqdm`` stays out
-    of the stages entirely.
+    ``items`` is the plan (:func:`plan_mask_jobs`) — a list rather than an iterator
+    because a batching generator indexes ahead of the loop to prefetch. ``pool`` is the
+    shared I/O pool ``write_mask`` submits saves to; the progress bar is private, reached
+    through the two methods below.
     """
 
     image_dir: Path
@@ -249,8 +233,7 @@ class MaskRun:
 
     def note(self, image_path: Path, what: str) -> None:
         """``name: what`` beside the bar. ``what`` is the stage's own wording
-        (``train 41.2%``, ``skipped (ctd-gated)``, ``focus not found``); only the
-        shape of the line is shared."""
+        (``train 41.2%``, ``skipped (ctd-gated)``, ``focus not found``)."""
         self._bar.set_postfix_str(f"{image_path.name}: {what}")
 
 
@@ -260,23 +243,16 @@ def mask_run(
 ) -> Iterator[MaskRun]:
     """The scaffolding both generators wrap their inner loop in.
 
-    Owns the four things that are the same whatever the detector is: the two
-    roots are home-anchored (the ``--mask-dir`` defaults above are written
-    home-relative, so a run from another directory has to mean the same tree the
-    GUI and the merge do), the output root exists before the first write, the
-    plan is drawn from the walk flags this module declared, and the bar and the
-    pool are closed in that order — the bar first, so its line is finished
-    before the closing sentence prints over it.
+    Both roots are home-anchored (the ``--mask-dir`` defaults are home-relative, so a run
+    from another directory still means the tree the GUI and the merge do), the output root
+    exists before the first write, the plan comes from the walk flags this module
+    declared, and the bar closes before the pool so its line is finished first.
 
-    Draining those saves is the caller's, not this function's: the batching
-    generator holds futures it has to see the results of, and a future whose
-    exception nobody reads is a mask that silently did not get written. Do it
-    inside the ``with``.
+    Draining the saves is the caller's job, inside the ``with``: a future whose exception
+    nobody reads is a mask that silently did not get written.
 
-    Nothing to do is not an error and not an early return: ``items`` is empty,
-    the loop the caller writes does not run, the bar never draws (it is
-    constructed disabled) and the closing line says so instead of naming a
-    directory nothing landed in.
+    Nothing to do is not an error — ``items`` is empty, the caller's loop does not run,
+    the bar is constructed disabled and the closing line says so.
     """
     image_dir = resolve_path(args.image_dir)
     mask_dir = resolve_path(args.mask_dir)
@@ -307,9 +283,9 @@ def mask_run(
 def iter_masks(mask_dir: Path):
     """``(rel_dir, path)`` for every mask under ``mask_dir``, recursively.
 
-    ``rel_dir`` is the mirrored source subdir as a string, ``""`` at the root —
-    the key half of ``merge_masks``' ``(rel_dir, name)`` collision rule, so two
-    inputs merge only when the mask sits at the same relative path in both.
+    ``rel_dir`` is the mirrored source subdir as a string, ``""`` at the root — the key
+    half of ``merge_masks``' ``(rel_dir, name)`` collision rule, so two inputs merge only
+    when the mask sits at the same relative path in both.
     """
     for p in sorted(mask_dir.rglob(f"*{MASK_SUFFIX}")):
         rel = p.parent.relative_to(mask_dir)

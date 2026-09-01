@@ -1,20 +1,10 @@
-"""Text masks: SAM3 prompts, a per-stroke UNet++, or both.
+"""Text masks, written to ``workspace/masks_mit/``: SAM3 prompts, a per-stroke UNet++, or
+both.
 
-Two detectors over one walk, each behind its own switch, unioned before the
-dilation and the write — they answer different questions about the same thing.
-``--use-sam`` grounds SAM3 on ``--sam-prompts`` (`speech bubble` by default),
-which is a *shape*: the balloon, its tail and the white inside it, all of it
-off the loss. ``--use-mit`` runs the UNet++ text segmenter
-(https://huggingface.co/a-b-c-x-y-z/Manga-Text-Segmentation-2025), which is a
-*stroke*: the lettering itself, wherever it sits, sfx and bare captions
-included.
-
-The UNet++ half is gated by comictextdetector's text-BLOCK head (--ctd-gate):
-only mask components overlapping a detected text block survive. The UNet++
-alone systematically false-positives on decorative line art — exactly the elements
-a style LoRA should train on — while its real-text recall is solid, so the blk head
-supplies the precision and the UNet++ the stroke-accurate mask. Trade-off: sfx text
-the blk head misses is no longer masked; --no-ctd-gate restores raw UNet++ output.
+``--use-sam`` grounds SAM3 on ``--sam-prompts``; ``--use-mit`` runs the UNet++ text
+segmenter behind comictextdetector's text-block gate (``--ctd-gate``). A balloon is a
+shape and a letter is a stroke, so neither switch subsumes the other and both off is the
+one argv the stage refuses. The two are unioned before the single dilation.
 """
 
 from __future__ import annotations
@@ -34,10 +24,8 @@ from anime_tools import workspace as WS
 from anime_tools._device import add_device_arg, resolve_device
 from anime_tools._env import resolve_path
 
-# Both nets are catalog rows so the GUI can pre-fetch them. The UNet++ is read
-# out of the hub cache either way; the CTD gate is a *path*, and it is the
-# catalog's, not a flag's — a stage that let you point --ctd-onnx elsewhere is a
-# stage whose Download button can disagree with its loader.
+# Both nets are catalog rows so the GUI can pre-fetch them. The UNet++ is read out of the
+# hub cache; the CTD gate is a path, and it is the catalog's rather than a flag's.
 from anime_tools.downloads import MIT_TEXT_FILENAME as _HF_FILENAME
 from anime_tools.downloads import MIT_TEXT_REPO as _HF_REPO
 from anime_tools.downloads import default_ctd_onnx_path
@@ -64,9 +52,8 @@ from anime_tools.masking._sam3 import (
 _ENCODER = "tu-efficientnetv2_rw_m"
 
 DEFAULT_SAM_PROMPTS = "speech bubble"
-"""What ``--use-sam`` means by *text* until told otherwise. A balloon is the one
-text region SAM3 reads better than a stroke segmenter does — it is a closed
-shape, and its interior is as untrainable as the lettering in it."""
+"""What ``--use-sam`` means by *text* until told otherwise: a balloon is a closed shape,
+and its interior is as untrainable as the lettering in it."""
 
 
 def _convert_batchnorm_to_groupnorm(module: nn.Module) -> None:
@@ -94,8 +81,8 @@ def _convert_batchnorm_to_groupnorm(module: nn.Module) -> None:
 
 
 def _load_model(model_path: str | None = None, device: str = "cuda") -> nn.Module:
-    # smp costs ~2s to import (timm + torchvision eagerly), and `--help` / the
-    # GUI schema dump import this module just for its parser.
+    # smp costs ~2s to import (timm + torchvision eagerly), and `--help` / the GUI schema
+    # dump import this module just for its parser.
     import segmentation_models_pytorch as smp
     import torch
 
@@ -263,9 +250,9 @@ def _ctd_text_boxes(
 def _keep_text_blocks(ctd_forward, img: np.ndarray, mask: np.ndarray) -> np.ndarray:
     """``mask`` minus every component no comictextdetector text block overlaps.
 
-    Component-wise rather than box-wise on purpose: the blk head decides *which*
-    strokes are text, the UNet++ still decides where each of them ends, so a
-    kept letter keeps its own outline instead of the rectangle around it.
+    Component-wise rather than box-wise: the blk head decides *which* strokes are text,
+    the UNet++ still decides where each ends, so a kept letter keeps its own outline
+    instead of the rectangle around it.
     """
     boxmask = np.zeros(mask.shape, bool)
     for x0, y0, x1, y1 in _ctd_text_boxes(ctd_forward, img):
@@ -359,9 +346,8 @@ def build_parser() -> argparse.ArgumentParser:
 def detectors(parser: argparse.ArgumentParser, args) -> tuple[bool, tuple[str, ...]]:
     """``(run the segmenter, the SAM3 prompts)`` — or exit saying why not.
 
-    A shut drawer contributes nothing, so both shut is a run that would load no
-    model, walk the whole tree and write nothing. Said here, before the first
-    weight is read, rather than discovered from an empty mask directory.
+    Both drawers shut is a run that would load no model, walk the whole tree and write
+    nothing — caught here, before the first weight is read.
     """
     sam_prompts = prompt_list(args.sam_prompts) if args.use_sam else ()
     if args.use_sam and not sam_prompts:
@@ -417,10 +403,9 @@ def main() -> None:
             run.advance()
 
             text_mask = np.zeros((h, w), dtype=np.uint8)
-            # Worth distinguishing in the progress line: nothing masked because
-            # the page has no text reads the same as nothing masked because the
-            # gate threw all of it away, and only the second is a knob to
-            # reconsider.
+            # Distinguished in the progress line: a page with no text and a page whose
+            # gate threw everything away both mask nothing, and only the second is a knob
+            # to reconsider.
             gated_away = False
 
             if model is not None:
@@ -455,9 +440,8 @@ def main() -> None:
                 run.note(image_path, f"skipped{why}")
                 continue
 
-            # One dilation over the union, not one per detector: the two overlap
-            # on a lettered balloon, and dilating twice would grow that seam
-            # twice.
+            # One dilation over the union, not one per detector: the two overlap on a
+            # lettered balloon, and dilating twice would grow that seam twice.
             if dilate_kernel is not None:
                 text_mask = cv2.dilate(text_mask, dilate_kernel, iterations=1)
 

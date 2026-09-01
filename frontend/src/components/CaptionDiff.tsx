@@ -4,13 +4,10 @@ import type { Clause, Parsed, Proposal } from "../types";
 import { ClauseRow } from "./ClauseRow";
 import { Tag } from "./TagLens";
 
-/** What a finished **Run** changed about this caption — it writes, so this is a
-    record of the edit, not an offer. The version it replaced is a badge above.
-
-    Both sides arrive already parsed (`/api/jobs/{id}/proposal` runs them
-    through `parse_caption`), so the diff compares *tags and clauses* — the
-    units the grammar actually has — instead of the characters of a line the
-    browser is not allowed to split. */
+/** What a finished **Run** changed about this caption; the version it replaced
+    is a badge above. Both sides arrive already parsed
+    (`/api/jobs/{id}/proposal`), so the diff compares tags and clauses rather
+    than characters of a line the browser may not split. */
 
 /** A clause keyed the way the grammar keys it: its header names the position,
     so two clauses with the same header are the same clause, changed. */
@@ -33,9 +30,9 @@ function delta(before: string[], after: string[]): TagDelta {
 
 const empty = (d: TagDelta) => !d.added.length && !d.removed.length;
 
-/** Bag + every clause, as one flat list of labelled deltas. A clause that only
-    exists on one side shows entirely as added or removed, which is exactly what
-    the position rewrite does when it *moves* a bound tag out of the bag. */
+/** Bag + every clause, as one flat list of labelled deltas. A clause on only
+    one side shows entirely as added or removed, which is what the position
+    rewrite does when it moves a bound tag out of the bag. */
 function rows(before: Parsed | null, after: Parsed | null) {
   const b = before ?? { flat_tags: [], clauses: [] };
   const a = after ?? { flat_tags: [], clauses: [] };
@@ -55,10 +52,9 @@ function rows(before: Parsed | null, after: Parsed | null) {
 
 export function CaptionDiff(props: {
   proposal: Proposal;
-  /** The stage that proposed it, for the header ("proposed by Autotag captions"). */
+  /** The stage that wrote it, for the header. */
   stage: string;
-  /** True once the caption on disk no longer holds what the Run wrote — an
-      edit, or a later run, has moved past it, so this diff is history. */
+  /** True once the caption on disk no longer holds what the Run wrote. */
   stale?: boolean;
 }) {
   const d = createMemo(() => rows(props.proposal.before_parsed, props.proposal.after_parsed));

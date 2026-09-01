@@ -5,18 +5,14 @@ the verbatim *before* text, the exact proposed text — so an ``--apply`` pass c
 replay it instead of reloading the tagger (and SAM3) to recompute it.
 
 **Torch-free by construction**: a ``--from_report --apply`` run must never
-import a model; ``tests/test_stage_replay.py`` pins that in a subprocess.
+import a model.
 
-Three things make a replay safe to trust. **Root agreement**: the recorded
-``caption_path`` values are relative to the ``src``/``dst`` the report walked,
-so a replay whose roots differ is refused rather than writing into the wrong
-tree. **Per-row drift**: the recorded before-text is compared against disk now,
-so a caption edited between the passes is skipped (``skip:drifted``) and one
-that already holds the proposal is ``skip:already-applied``, making a crashed
-replay re-runnable. **Already-applied reports** are refused, because their
-before-text describes the pre-apply world and every row would read as drifted;
-the replay writes its own report under :data:`REPLAY_REPORT_NAME` so it never
-clobbers the dry run it reads.
+Three checks make a replay safe: the report's recorded ``src``/``dst`` must
+match this run's (``caption_path`` is relative to them); the recorded
+before-text is compared against disk per row (``skip:drifted`` /
+``skip:already-applied``); and a report from an ``--apply`` run is refused,
+since its before-text describes the pre-apply world. The replay writes its own
+report under :data:`REPLAY_REPORT_NAME`.
 """
 
 from __future__ import annotations
@@ -33,9 +29,8 @@ from anime_tools.path_filter import filter_paths_by_glob
 
 from ._caption_io import read_caption, write_caption
 
-# The replay pass writes here, never over the dry run's ``report.json``: the
-# usual invocation points ``--from_report`` and ``--report_dir`` at the same
-# directory, and clobbering the input would make a re-run impossible.
+# The replay writes here, never over the dry run's ``report.json`` — the usual
+# invocation points ``--from_report`` and ``--report_dir`` at one directory.
 REPLAY_REPORT_NAME = "apply_report.json"
 
 # Where a stage records whether its own run wrote anything.
@@ -51,8 +46,7 @@ class ReplaySpec:
     """How to read one stage's report and where its proposals get written.
 
     ``target_root`` is the tree ``caption_path`` is relative to: ``"src"`` for
-    the stages that write the caption master, ``"dst"`` for the clause rewrite,
-    which only ever touches the revised caption.
+    the stages that write the caption master, ``"dst"`` for the clause rewrite.
     """
 
     stage: str
@@ -68,10 +62,9 @@ class ReplaySpec:
     before_field: str = "existing"
     after_field: str = "proposed"
     target_root: str = "src"
-    # Passed straight to ``_caption_io.write_caption``, which spells out the
-    # invariants they encode. ``history_by`` is the name the superseded version
-    # is filed under, and naming it here is what makes a replay push the same
-    # history entry the stage's own apply would have.
+    # Passed straight to ``_caption_io.write_caption``; ``history_by`` names who
+    # the superseded version is filed under, so a replay pushes the same history
+    # entry the stage's own apply would have.
     newline: bool = False
     drop_variants: bool = False
     history_by: str | None = None
@@ -115,8 +108,7 @@ def load_report(path: Path) -> dict:
 
 def report_meta(report: Mapping[str, object]) -> dict:
     """Flatten a report's scalar metadata: autotag keeps ``src``/``dst``/``apply``
-    at the top level, the other two under ``summary``, and callers need not
-    care which."""
+    at the top level, the other two under ``summary``."""
 
     def scalars(d: Mapping[str, object]) -> dict:
         return {k: v for k, v in d.items() if not isinstance(v, (list, dict))}
@@ -189,8 +181,8 @@ def _keep_by_pattern(
 ):
     """Apply the stage's own ``--path_pattern`` to a replayed report.
 
-    Matched the way the live pass matches it — against the image path relative
-    to the resized dir — so a filtered replay selects the same subset.
+    Matched against the image path relative to the resized dir, as the live pass
+    matches it, so a filtered replay selects the same subset.
     """
     paths = [str(dst / str(r.get("image") or "")) for r in rows]
     return filter_paths_by_glob(paths, str(dst), pattern)
@@ -220,20 +212,17 @@ def apply_one(
 ) -> str:
     """Write one proposal if — and only if — the file still says what it said.
 
-    The one drift ladder, shared by every stage that writes a caption:
+    The drift ladder, shared by every stage that writes a caption:
 
     ``no-proposal``
-        There is nothing to write, or the proposal equals the before-text.
+        Nothing to write, or the proposal equals the before-text.
     ``missing-caption``
-        The target is gone. Legitimate only where the proposing pass also saw
-        no file (autotag's ``missing`` mode *creates* the master caption), so
-        an absent target with a non-empty before-text is refused, not created.
+        The target is gone. An absent target with a non-empty before-text is
+        refused; only autotag's ``missing`` mode legitimately creates one.
     ``already-applied``
-        The file already holds the proposal — idempotent, so a crashed apply
-        can be re-run without inventing drift.
+        The file already holds the proposal, so a crashed apply can be re-run.
     ``drifted``
-        Neither the before-text nor the proposal, so something edited it since.
-        Never overwritten.
+        Neither the before-text nor the proposal. Never overwritten.
     ``would-write`` / ``written``
         The write is safe; ``apply`` decides whether it happens.
 
@@ -280,7 +269,7 @@ def replay_rows(
 
     Loads no model. Rows the report did not mark writable, and rows the
     ``path_pattern`` excludes, are counted and dropped; every returned row
-    reached the on-disk check, so the caller can show exactly what drifted.
+    reached the on-disk check.
     """
     rows = report_rows(report, spec)
     root = src if spec.target_root == "src" else dst
@@ -309,8 +298,8 @@ def replay_rows(
         out.append(entry)
 
         if not caption_path:
-            # The only check that is the report's problem rather than the
-            # file's, so it stays here rather than in ``apply_one``.
+            # The report's problem rather than the file's, so not in
+            # ``apply_one``.
             entry.status = "skip:no-caption-path"
             stats.skip("no-caption-path")
             continue
@@ -351,9 +340,8 @@ def build_replay_report(
 ) -> dict:
     """The replay's own report, in the shape the stage already emits.
 
-    Container keys follow the stage, so an existing reader keeps working, plus
-    two additions: ``from_report`` and ``written`` — the relative image paths
-    actually written, which a UI reads to reload the affected items.
+    Container keys follow the stage, plus ``from_report`` and ``written`` — the
+    relative image paths actually written, which a UI reads to reload them.
     """
     meta = report_meta(source_report)
     stats_block = {
@@ -371,8 +359,7 @@ def build_replay_report(
         "would_write": stats.would_write,
         "skipped": dict(stats.skipped.most_common()),
     }
-    # Carry the knobs that shaped the proposals, so the replay report still says
-    # what produced the text it wrote.
+    # Carry the knobs that shaped the proposals.
     for key in ("mode", "min_confidence", "rewrite", "attribution_margin", "prompt"):
         if key in meta:
             stats_block[f"source_{key}"] = meta[key]
@@ -403,8 +390,7 @@ def write_replay_report(report: Mapping[str, object], report_dir: Path) -> Path:
 
 
 def print_replay(rows: Sequence[ReplayRow], stats: ReplayStats, *, apply: bool) -> None:
-    """Human summary of a replay, naming the drifted rows — they are the reason
-    a replay can be less than a full apply."""
+    """Human summary of a replay, naming the rows that were not written."""
     mark = {"written": "->", "would-write": ".."}
     for row in rows:
         if row.status in mark:
@@ -470,13 +456,10 @@ def run_replay_cli(
 ) -> tuple[list[ReplayRow], ReplayStats, Path]:
     """:func:`run_replay` wrapped in the ``--from_report`` half of a stage CLI.
 
-    Turns a :class:`StaleReportError` into a ``SystemExit`` (a stale report is a
-    user mistake, not a traceback), prints the rows and the output report, and
-    adds the stage's "now re-encode" epilogue only when an apply wrote
-    something.
-
-    ``notes`` prints extra lines before the rows; ``after_write_note`` is that
-    epilogue, as a string or a callable over the stats when it quotes a count.
+    Turns a :class:`StaleReportError` into a ``SystemExit``, prints the rows and
+    the output report, and adds the stage's "now re-encode" epilogue only when
+    an apply wrote something. ``notes`` prints extra lines before the rows;
+    ``after_write_note`` is that epilogue, a string or a callable over the stats.
     """
     try:
         rows, stats, out_path = run_replay(

@@ -1,18 +1,10 @@
 """Batch auto-tagging — mode policy and the merge invariants.
 
-The stage writes the caption master, so the invariants worth pinning are all
-about what it is *not* allowed to destroy:
-
-1. **``missing`` never touches an existing caption.** It is the default and the
-   only mode that cannot lose hand-written text.
-2. **``merge`` never re-flattens a bound tag.** A tag already inside a position
-   clause counts as present, so merging after ``caption-position`` cannot copy
-   it back into the flat bag and re-introduce the exact ambiguity clauses exist
-   to remove. Clauses themselves round-trip verbatim.
-3. **Only one rating survives a merge.** ``predict_caption`` always emits a
-   rating in slot 0; appending it to a caption that already has one produces a
-   contradiction, not an addition.
-4. **Dry run writes nothing.** ``apply`` defaults off everywhere.
+1. ``missing`` never touches an existing caption.
+2. ``merge`` never re-flattens a bound tag: a tag inside a position clause counts
+   as present, and clauses round-trip verbatim.
+3. Only one rating survives a merge (``predict_caption`` always emits one).
+4. Dry run writes nothing; ``apply`` defaults off.
 """
 
 from __future__ import annotations
@@ -96,21 +88,15 @@ def test_merge_keeps_the_rating_when_the_caption_has_none():
 
 
 def test_merge_reads_the_two_underscore_spellings_as_one_tag():
-    """The master's ``speech_bubble`` and the tagger's ``speech bubble``.
-
-    The regression: on a bare ``lower()`` key every underscored tag in the
-    caption came back as "novel" and was appended in the tagger's spelling, so
-    one ``--mode merge`` pass doubled a hand-written bag. The shared
-    :func:`normalize_tag` key is what folds the underscore, and the caption's
-    own spelling is the one that stays.
-    """
+    """The master's ``speech_bubble`` and the tagger's ``speech bubble`` are one
+    tag under :func:`normalize_tag`; the caption's own spelling stays."""
     merged, added = merge_tags(
         "1girl, long_hair, speech_bubble",
         "1girl, long hair, speech bubble, blue eyes",
     )
     assert added == ("blue eyes",)
     assert merged == "1girl, long_hair, speech_bubble, blue eyes"
-    # …and the other direction, since neither side owns the convention.
+    # …and the other direction.
     assert merge_tags("1girl, long hair", "1girl, long_hair")[1] == ()
 
 

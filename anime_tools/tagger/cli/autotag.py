@@ -5,9 +5,6 @@ on one image, and prints the predicted caption on a single sentinel-prefixed
 stdout line so the caller can parse it back out of the daemon's stdout log:
 
     ANIMA_AUTOTAG_RESULT\t<comma-separated caption>
-
-Kept separate from ``anime_tools.tagger.cli.main`` so the GUI has a thin entry
-whose only stdout contract is the sentinel line above.
 """
 
 from __future__ import annotations
@@ -24,7 +21,7 @@ from anime_tools.tagger.tagger import (
 )
 
 # Sentinel prefix the GUI greps for in the job's stdout. Tab-separated so the
-# caption (which contains commas + spaces) survives intact on one line.
+# caption (commas + spaces) survives intact on one line.
 RESULT_PREFIX = "ANIMA_AUTOTAG_RESULT\t"
 
 setup_logging()

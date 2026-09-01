@@ -44,10 +44,9 @@ class PreprocessCaptionStats:
 def _resolve_n_rand(num_variants: int, tag_randomize_rate: float) -> int:
     """Size of the identity-randomized r-family that rides alongside v0..v{N-1}.
 
-    Mirrors the TE writer: the r-family shares v0 as its anchor, so it carries
-    ``N-1`` entries (r1..r{N-1}) and only exists with >=2 variants. Must stay
-    identical, or the TE step's sidecar lines miss the ``prompt_embeds_r*`` keys
-    the loader expects.
+    The r-family shares v0 as its anchor, so it carries ``N-1`` entries and only
+    exists with >=2 variants. Must match the TE writer, or its sidecar lines
+    miss the ``prompt_embeds_r*`` keys the loader expects.
     """
     return (num_variants - 1) if (tag_randomize_rate > 0.0 and num_variants >= 2) else 0
 
@@ -95,21 +94,14 @@ def _reattach_clauses(corrected: str, existing: str) -> str:
     """Put ``existing``'s position clauses back onto a freshly corrected caption.
 
     Position clauses live in the *revised* layer, so a plain mirror would drop
-    them on the next preprocess — the master has no clauses, so the corrected
-    caption has none either.
+    them. The clause rewrite *moves* a bound tag out of the flat bag, so
+    restoring the clauses alone would re-assert every moved attribute twice; the
+    moved set is a tag the destination's clauses carry that its bag does not, and
+    is dropped from the corrected bag again.
 
-    The clause rewrite *moves* a bound tag out of the flat bag, so restoring the
-    clauses alone would re-assert every moved attribute twice. The moved set is
-    recoverable from the destination caption itself — a tag its clauses carry
-    that its own bag does not — so it is removed from the corrected bag again.
-
-    A clause the master itself carries survives the correction pass on its own;
-    this only fires when the destination has clauses and the source does not.
-
-    All three sides are keyed on :func:`normalize_tag`: the master holds the
-    hand-written spelling and the clause holds the tagger's, so a local
-    ``lower()`` read ``long_hair`` and ``long hair`` as two tags and re-asserted
-    the moved one in the bag — the duplication this function exists to prevent.
+    All three sides are keyed on :func:`normalize_tag` — the master holds the
+    hand-written spelling and the clause holds the tagger's, so any other key
+    reads ``long_hair`` and ``long hair`` as two tags.
     """
     prev = parse_caption(existing)
     prev_bag = prev.tag_keys
@@ -128,11 +120,11 @@ def _reattach_clauses(corrected: str, existing: str) -> str:
 def _sidecar_is_current(
     path: Path, corrected: str, num_variants: int, n_rand: int
 ) -> bool:
-    """True iff an on-disk variant sidecar already matches what we'd generate.
+    """True iff an on-disk variant sidecar already matches what we'd generate:
+    pristine v0 equals the corrected caption *and* the v/r counts match.
 
-    The variant draws are stochastic, so rewriting them every run would bump the
-    sidecar mtime and force a needless TE re-encode. Current means: pristine v0
-    equals the corrected caption *and* the v/r counts match.
+    The draws are stochastic, so rewriting every run would bump the sidecar
+    mtime and force a needless TE re-encode.
     """
     if not path.exists():
         return False
@@ -167,10 +159,9 @@ def write_corrected_preprocess_captions(
 ) -> PreprocessCaptionStats:
     """Write ``.txt`` captions next to already-resized images.
 
-    The source captions are never modified. The resized image tree is the
-    authority because it already reflects the resize stage's filtering and
-    scoping. Clauses already on a destination caption are **preserved** — see
-    :func:`_reattach_clauses`.
+    The source captions are never modified, and the resized tree is the
+    authority over which images are visited. Clauses already on a destination
+    caption are preserved (:func:`_reattach_clauses`).
 
     ``correct`` (default True) bucket-reorders each caption; ``correct=False``
     mirrors the raw source caption verbatim. Either way v0 lands in
@@ -179,9 +170,8 @@ def write_corrected_preprocess_captions(
     With ``num_variants > 0`` each image also gets a ``{stem}.variants.txt``
     sidecar the TE step encodes verbatim: v0 the corrected caption, v1..v{N-1}
     shuffled (+ tag-dropped at ``tag_dropout_rate``), and under
-    ``tag_randomize_rate > 0`` an r-family with per-tag identity erasure — which
-    needs the dual-single erasure pool built from both tokenizers, so passing it
-    without them is an error.
+    ``tag_randomize_rate > 0`` an r-family with per-tag identity erasure, which
+    requires both tokenizers for the dual-single erasure pool.
     """
 
     stats = PreprocessCaptionStats()
@@ -231,11 +221,8 @@ def write_corrected_preprocess_captions(
                 "tag_randomize_rate > 0 requires qwen3_tokenizer and t5_tokenizer "
                 "(load them tokenizer-only) to build the dual-single erasure pool."
             )
-        # Split rather than parsed: the corrected caption is this pass's own
-        # output and the pool only cares about the tag *set*, clauses included.
-        # Keyed the shared way anyway, so "is this pool word itself a real tag?"
-        # is asked in the one form — behaviour-neutral here, since a pool word
-        # is a single ascii word and never carries an underscore.
+        # Split rather than parsed: the pool only cares about the tag *set*,
+        # clauses included. Keyed on ``normalize_tag`` like every other tag key.
         real_tags = {
             key
             for e in entries

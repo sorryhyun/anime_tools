@@ -1,28 +1,15 @@
 """Previous versions of one caption — the ``{stem}.history.txt`` sidecar.
 
-A caption file holds one text: whatever the last write left there. That was
-survivable while a stage run was a *proposal* you inspected and then applied,
-because the moment before the write was a thing you could look at. It is not
-survivable once Run writes directly, so the write records what it replaced:
-every superseded text lands here, oldest first, and the GUI's caption ladder
-expands them into one badge apiece (``revised@1``, ``revised@2`` …) beside the
-version rungs above them.
+Every write pushes the text it replaced here, oldest first, and the GUI's
+caption ladder expands them into one badge apiece (``revised@1``,
+``revised@2`` …). It uses :mod:`anime_tools.captions._sidecar`'s format; what is
+local is the vocabulary — a record is a superseded caption, carrying a sequence,
+a moment and a hand — and the fact that a file with no entries left is deleted
+rather than written empty. The sidecar sits beside the caption, so a writer
+needs no second path.
 
-Deliberately the *same shape* as ``{stem}.variants.txt`` — a comment header and
-tab-delimited lines beside the caption it belongs to — because it is the same
-kind of thing: a generated sidecar naming captions that are not the file. That
-shape is :mod:`anime_tools.captions._sidecar`, which the two share; what is left
-here is history's own vocabulary — a record is a *superseded caption*, so it
-carries a sequence, a moment and a hand, and a file with none left is deleted
-rather than written empty. Two consequences follow from living beside the
-caption rather than in a tree of its own. The history moves with its rung
-(Phase 2 relocates the revised master and its history follows with no code
-change), and the only path a writer needs is the one it was already holding,
-which is what keeps :func:`anime_tools.stages._caption_io.write_caption` a
-function of one path.
-
-Torch-free, stdlib-only, and import-light for the same reason ``variants`` is:
-:mod:`anime_tools.stages.replay` imports it from inside a function.
+Torch-free, stdlib-only, and import-light: :mod:`anime_tools.stages.replay`
+imports it from inside a function.
 """
 
 from __future__ import annotations
@@ -45,20 +32,18 @@ HISTORY_FIELDS = 4
 HISTORY_LIMIT = 10
 """How many superseded versions one caption keeps.
 
-A cap rather than an archive: this is the "what did that run replace?" readout,
-and a badge row nobody can count is no more legible than no history at all. The
-oldest entries fall off the front; sequence numbers do **not** renumber, so a
-badge you are looking at cannot become a different version while you read it.
+The oldest entries fall off the front; sequence numbers do **not** renumber, so
+a badge cannot come to mean a different version.
 """
 
 
 @dataclass(frozen=True)
 class HistoryEntry:
-    """One superseded caption: what it said, when it stopped saying it, and what
+    """One superseded caption: what it said, when it stopped saying it, and who
     replaced it.
 
-    ``label`` is the badge — the rung's own name with the sequence appended, so
-    ``revised@3`` reads as *the third thing ``revised`` used to be*.
+    ``label`` is the badge — the rung's name with the sequence appended
+    (``revised@3``).
     """
 
     seq: int
@@ -77,8 +62,7 @@ class HistoryEntry:
 def history_sidecar_path(caption_path: Path) -> Path:
     """``{stem}.history.txt`` beside a caption (or its image).
 
-    A multi-dot stem survives (``a.b.txt`` → ``a.b.history.txt``); the rule and
-    the reason are :func:`anime_tools.captions._sidecar.sidecar_path`'s.
+    A multi-dot stem survives (``a.b.txt`` → ``a.b.history.txt``).
     """
     return sidecar_path(caption_path, HISTORY_SIDECAR_SUFFIX)
 
@@ -86,12 +70,9 @@ def history_sidecar_path(caption_path: Path) -> Path:
 def read_history(path: Path) -> list[HistoryEntry]:
     """Parse a history sidecar into an ordered list, oldest first.
 
-    ``path`` is the *sidecar*, and a missing one is simply no history — a
-    caption that has never been rewritten has none, which is not a condition
-    worth raising over. Past that, records arrive with the format's own
-    tolerance (see :mod:`anime_tools.captions._sidecar`) and this adds one of
-    its own: a record whose sequence is not an integer has no badge to wear, so
-    it is dropped the same way a malformed line is.
+    ``path`` is the *sidecar*; a missing one is simply no history. Records
+    arrive with the format's own tolerance, plus one more: a record whose
+    sequence is not an integer is dropped like a malformed line.
     """
     if not path.is_file():
         return []
@@ -108,9 +89,8 @@ def read_history(path: Path) -> list[HistoryEntry]:
 def write_history(path: Path, entries: list[HistoryEntry]) -> None:
     """Write the sidecar, or delete it when there is nothing left to say.
 
-    The delete is history's own: a caption with no superseded versions has no
-    history, and an empty file claiming otherwise is a badge row that draws
-    nothing. (The variants sidecar has no such case — v0 is always a variant.)
+    A caption with no superseded versions has no history, so the sidecar is
+    removed rather than left as an empty file.
     """
     if not entries:
         if path.is_file():
@@ -134,15 +114,12 @@ def push_history(
 
     Called with the text the caller is *about to overwrite*, so the newest entry
     is always the immediately previous caption. Returns the entry recorded, or
-    ``None`` when there was nothing worth recording:
-
-    * an empty text — a caption being created replaces nothing;
-    * a text the newest entry already holds, so a re-run that rewrites the same
-      caption twice does not push the same version twice.
+    ``None`` when there was nothing to record: an empty text, or a text the
+    newest entry already holds.
 
     Sequence numbers continue from the highest ever recorded rather than from
-    the list length, so trimming the front cannot make two different versions
-    share a badge.
+    the list length, so trimming the front cannot make two versions share a
+    badge.
     """
     body = (text or "").strip()
     if not body:
@@ -164,8 +141,7 @@ def push_history(
 
 def drop_history(caption_path: Path) -> None:
     """Delete a caption's history. Only for a caption that is itself being
-    deleted (an Undo of a run that *created* one): the versions of a file that
-    no longer exists are versions of nothing."""
+    deleted (an Undo of a run that *created* one)."""
     sidecar = history_sidecar_path(caption_path)
     if sidecar.is_file():
         sidecar.unlink()

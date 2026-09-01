@@ -1,28 +1,11 @@
 """Read the text in each image with PP-OCRv6 and record what it says.
 
-Thin CLI over ``anime_tools.stages.ocr``: walks the resized tree, detects and
-recognizes every text line, and writes ``{stem}.ocr.txt`` into the OCR tree,
-mirroring the resized tree's layout. **Dry-run is the default** — a dry run
-emits ``report.json`` carrying every line it would have written, so the sidecars
-can be eyeballed before they exist.
+Walks the resized tree, detects and recognizes every text line, and writes
+``{stem}.ocr.txt`` into the OCR tree, mirroring the resized layout. No caption is
+read or written, and no TE re-encode is needed afterwards.
 
-**No caption is read or written.** This stage used to also append a Danbooru
-script tag (``english text`` / ``chinese text``) inferred from the language of
-what it recognized, and then, for a while, to keep a ``--lang`` allowlist that
-dropped a line whose guessed script was not asked for. Both are gone, for one
-reason: the language was guessed back off the characters, and most of what it
-decided rested on two-character fragments — see ``anime_tools/stages/ocr.py``.
-So there is no ``--apply`` gate to be careful about here, no ``--from_report``
-replay, and no TE re-encode afterwards: the only thing an ``--apply`` writes is
-the sidecar tree.
-
-The weights have no flag. Both halves are read from the download catalog's
-``ppocr_det`` / ``ppocr_rec`` rows, for the reason the MIT stage's ``--ctd-gate``
-net has none: a path you could point elsewhere is a Download button aimed at a
-directory the loader does not read.
-
-    python -m anime_tools.stages.cli.ocr_captions
-    python -m anime_tools.stages.cli.ocr_captions --apply --min_score 0.7
+Dry-run by default: a dry run emits ``report.json`` carrying every line it would
+have written, and ``--apply`` writes the sidecars and nothing else.
 """
 
 from __future__ import annotations
@@ -125,8 +108,8 @@ def main() -> None:
 
     report_dir = resolve_path(args.report_dir)
 
-    # Not at import time: onnxruntime is the heaviest thing this CLI touches and
-    # `--help` should not pay for it.
+    # Deferred: onnxruntime is the heaviest thing this CLI touches, and `--help`
+    # should not pay for it.
     from anime_tools.ocr import OcrWeightsMissing, load_ocr
 
     device = resolve_device(args.device)

@@ -1,10 +1,7 @@
 """Curation-side dataset walking (pure ``pathlib`` / ``os``; torch-free).
 
-Deliberate small duplicates of the trainer's ``image_utils`` / ``walk_images``
-/ ``safe_walk`` / ``caption_key``: this package must not import trainer modules,
-and both sides walk the same caption master.
-``tests/test_curation_walk_parity.py`` pins the two copies to identical
-behaviour.
+Must stay behaviour-identical to the trainer's ``image_utils`` walkers — both
+sides walk the same caption master.
 """
 
 from __future__ import annotations
@@ -19,11 +16,9 @@ IMAGE_EXTENSIONS: list[str] = [".png", ".jpg", ".jpeg", ".webp", ".bmp"]
 IMAGE_EXTENSIONS.extend([ext.upper() for ext in IMAGE_EXTENSIONS])
 
 # Optional-plugin formats, mirrored from the trainer's image_utils so both
-# walkers see the same files (the parity test pins this).
-# Deliberately blind: these are optional third-party Pillow plugins with native
-# dependencies, and a broken one raising something exotic at import must degrade
-# to "that format is not walkable here", never take the walker (and with it
-# every stage) down. Narrowing to ImportError would re-open exactly that.
+# walkers see the same files. The excepts are blind on purpose: these Pillow
+# plugins have native dependencies, and a broken one must degrade to "that
+# format is not walkable here" rather than take every stage down.
 try:
     import pillow_avif  # noqa: F401
 

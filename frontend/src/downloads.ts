@@ -6,17 +6,14 @@ import type { Job } from "./types";
 import type { Config } from "./config";
 
 /** `/api/models/download` names its job `download:<ids>`; that prefix is the
-    only thing that tells an *adopted* job (one already running when the page
-    loaded) apart from a stage run, and the two go to different places. */
+    only thing that tells an adopted job apart from a stage run. */
 const DOWNLOAD_STAGE = "download:";
 
 export const isDownloadJob = (job: Job) => job.stage.startsWith(DOWNLOAD_STAGE);
 
-/** A weights fetch: a job like any other to the server — it takes the same
- * single slot — but it belongs to the Settings dialog, not the dock.
- *
- * Its own follower is what keeps the modal open over the pull and keeps the run
- * bar from saying "running" for a fetch no stage form started.
+/** A weights fetch: to the server a job like any other, taking the same single
+ * slot, but it belongs to the Settings dialog rather than the dock, so it gets
+ * its own follower.
  */
 export function createDownloads(config: Config) {
   const dl$ = createJobFollower({
@@ -38,9 +35,8 @@ export function createDownloads(config: Config) {
       mark the rows in flight. */
   const [ids, setIds] = createSignal<string[]>([]);
 
-  /** Follow a weights job inside the Settings dialog. Deliberately none of what
-      the dock's `attach` does: no dock, no dock status line -- the modal stays
-      open and reports the pull itself. */
+  /** Follow a weights job inside the Settings dialog: no dock, no dock status
+      line -- the modal stays open and reports the pull itself. */
   function follow(id: string, want: string[]) {
     batch(() => {
       setIds(want);

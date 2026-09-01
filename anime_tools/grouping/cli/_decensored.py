@@ -1,11 +1,8 @@
-"""Where the sincos decensor pass reads and writes.
+"""Paths shared by the sincos decensor pass.
 
-``match_decensored`` produces the manifest and ``apply_decensored`` consumes it,
-so the two agree on six paths or neither works — hence one home, resolved off
-:func:`~anime_tools._env.curation_home` at import.
-
-The tree is fixed rather than flagged on purpose: this is a one-off cleanup pass
-over one artist directory, not a stage.
+``match_decensored`` writes the manifest and ``apply_decensored`` consumes it, so
+both read these six paths, resolved off
+:func:`~anime_tools._env.curation_home` at import. Not flag-configurable.
 """
 
 from __future__ import annotations

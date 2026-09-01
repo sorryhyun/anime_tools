@@ -1,21 +1,10 @@
-"""Phase A0 — tagger-verified boy negatives for the SAM3 soft prompt.
+"""Tagger-verified boy negatives for the SAM3 soft prompt.
 
-The shipped subject prompt boxes boys: its training pool had no boy negatives and the count metric only scores pure-girl
-images. Boy-only images are useless as a source (the corpus has ~7), so the
-negatives come from the ``1boy,1girl`` images:
-
-``build`` — run a prompt (the keeper) on every ``1boy,1girl`` image, crop each
-NMS survivor (mask-blanked, as `caption-position` does) and tag the crop with
-the Anima Tagger (dbv4 backend). A crop tagged ``1boy`` and not ``1girl`` is a
-**boy box**, ``1girl`` and not ``1boy`` a **girl box**. Images with exactly one
-of each become training rows whose target is the girl box only — the boy box
-then has no Hungarian match and the focal term pushes its query down. The
-tagger is the label source, so this is independent of SAM3's self-labels.
-``--holdout N`` rows are held out for the gate and never trained on.
-
-``eval`` — score a prompt on the held-out rows: boy-box rate (a survivor
-overlaps the boy box, IoU ≥ ``--match_iou``) and girl recall (one overlaps the
-girl box). Gate A0: boy-box ≤ 0.1, girl recall ≥ 0.95.
+``build`` crops each NMS survivor on the ``1boy,1girl`` images and labels it
+with the Anima Tagger, so the boy/girl split is independent of SAM3's own
+self-labels; an image with exactly one of each becomes a training row targeting
+the girl box only. ``eval`` scores a prompt on the ``--holdout N`` rows for
+boy-box rate and girl recall.
 
     make daemon-run ARGS="bench/sam3_soft_prompt/pair_negatives.py build"
     make daemon-run ARGS="bench/sam3_soft_prompt/train_soft_prompt.py --init 'anime girl' \\

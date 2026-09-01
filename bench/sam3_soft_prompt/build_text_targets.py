@@ -1,26 +1,11 @@
 """Part B "free text / SFX" row — MIT-labelled targets for a SAM3 text prompt.
 
-Unlike the girl row, this concept has an *independent* detector: MIT
-(UNet++ stroke segmentation gated by comictextdetector's text-block head —
-exactly what `make mask` runs today via `generate_masks_mit.py`). Its output
-is the label, so the question "can a SAM3 soft prompt replace MIT" has a real
-held-out answer instead of a self-labelled one.
-
-Per image:
-
-- **positives** — every CTD text block that contains gated stroke pixels
-  becomes one instance: box = tight bbox of the strokes inside the block
-  (normalized xyxy), mask = strokes inside the block morphologically closed
-  into a glyph blob (so the 288² mask target is a region, not 1-px strokes),
-  and the full-res gated stroke mask is kept (bit-packed) for the pixel-level
-  eval.
-- **negatives** — images where neither the UNet++ nor the CTD head fires at
-  all (train rows with zero targets teach the presence head to say "no").
-- **ambiguous** (CTD fires but no strokes, or strokes with no block) — skipped.
-
-Split is a stable hash on the relative path: ``--holdout_mod`` of every N
-images go to the holdout, which `eval_text_prompt.py` scores. Output manifest
-is the same shape `train_soft_prompt.py --targets` reads.
+Labels come from MIT (UNet++ strokes gated by comictextdetector's text-block
+head), so unlike the girl row this one has a held-out answer that is not
+self-labelled. A CTD block holding gated strokes becomes one positive instance
+(box + closed glyph blob); an image where neither detector fires becomes a
+negative; the ambiguous middle is skipped. ``--holdout_mod`` splits on a stable
+path hash, and the manifest is the shape `train_soft_prompt.py --targets` reads.
 
     make daemon-run ARGS="bench/sam3_soft_prompt/build_text_targets.py"
 """
@@ -62,9 +47,9 @@ def parse_args() -> argparse.Namespace:
         "--out", default="post_image_dataset/captions/sam3_soft_prompt/text_targets"
     )
     p.add_argument("--mit_model", default="models/mit/model.pth")
-    # The stage has no such flag any more (the catalog owns the path); the bench
-    # keeps one so an ablation can point at a different net, defaulted from the
-    # same row so the two cannot drift.
+    # The stage has no such flag (the catalog owns the path); the bench keeps
+    # one so an ablation can point at a different net, defaulted from the same
+    # row so the two cannot drift.
     p.add_argument("--ctd_onnx", default=str(default_ctd_onnx_path()))
     p.add_argument("--text_threshold", type=float, default=0.8)
     p.add_argument(

@@ -1,10 +1,6 @@
-"""The multiview audit's write path shares :func:`replay.apply_one`'s drift ladder.
-
-``apply_findings`` used to ``continue`` past every row it declined, so a caller
-could not tell "the gate rejected it" from "the master moved under us". These
-pin the statuses it now reports, and that the ones it *does* write are still
-byte-for-byte what a ``--from_report`` replay of the same report would write
-(``proposed + "\\n"``).
+"""The multiview audit's write path shares :func:`replay.apply_one`'s drift
+ladder: the statuses it reports, and that a write is byte-identical to what a
+``--from_report`` replay would write (``proposed + "\\n"``).
 """
 
 from __future__ import annotations

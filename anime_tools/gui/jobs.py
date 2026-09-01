@@ -1,12 +1,10 @@
 """Run a stage as a subprocess (``python -m <module> …``) and tail its output.
 
-One job at a time — the stages share the GPU. The server process never imports
-torch; all model loading happens in the child.
-
-A job is a *sequence* of steps sharing one slot, one log and one SSE stream,
-because a stage that reads the resized tree has to be preceded by the resize
-preflight (:data:`anime_tools.gui.stages.PREPROCESS_STAGE`). A failing step
-stops the chain — there is no point tagging images that were never resized.
+One job at a time — the stages share the GPU — and all model loading happens in
+the child, keeping this process torch-free. A job is a *sequence* of steps sharing
+one slot, log and SSE stream, so a stage reading the resized tree can be preceded
+by the resize preflight (:data:`anime_tools.gui.stages.PREPROCESS_STAGE`). A
+failing step stops the chain.
 """
 
 from __future__ import annotations
@@ -56,17 +54,16 @@ class Job:
 
     @property
     def argv(self) -> list[str]:
-        """The stage's own command — the last step; the earlier ones are
-        preflight. This is what the UI labels the job with."""
+        """The stage's own command — the last step; earlier ones are preflight."""
         return self.steps[-1].command() if self.steps else []
 
     @property
     def state(self) -> str:
         if self.exit_code is None:
             return "running"
-        # `cancelled` is set by JobManager.cancel before it kills: on Windows
-        # taskkill leaves a plain non-zero exit code, indistinguishable from a
-        # stage that failed on its own. A negative code still means a signal.
+        # Windows taskkill leaves a plain non-zero code, indistinguishable from a
+        # stage that failed on its own, so `cancelled` is set before the kill. A
+        # negative code still means a signal.
         if self.cancelled or self.exit_code < 0:
             return "cancelled"
         if self.exit_code == 0:
@@ -145,9 +142,8 @@ class JobManager:
         child_env = {
             **os.environ,
             "PYTHONUNBUFFERED": "1",
-            # We decode the pipe as UTF-8 below; a child left on the
-            # locale encoding (cp949/cp1252 on Windows) would arrive
-            # mojibake, or die encoding the arrows the stages print.
+            # The pipe is decoded as UTF-8 below; a child on the locale
+            # encoding (cp949/cp1252 on Windows) would arrive mojibake.
             "PYTHONIOENCODING": "utf-8",
             "ANIME_TOOLS_HOME": str(home),
             **(env or {}),
@@ -198,7 +194,7 @@ class JobManager:
             start_new_session=(os.name != "nt"),
         )
         # Published before the first read so ``cancel`` can reach this step; a
-        # cancel that landed while we were spawning is honoured right after.
+        # cancel that landed during the spawn is honoured right after.
         job._proc = proc
         if job.cancelled:
             self._terminate(proc)
@@ -220,8 +216,7 @@ class JobManager:
         """Stop a running job: kill the current step and skip the rest.
 
         The flag is set before the kill and read by :meth:`_run` between steps,
-        so a cancel that lands in the gap between two steps still stops the
-        chain instead of letting the next one start.
+        so a cancel landing between two steps still stops the chain.
         """
         job = self.jobs[job_id]
         if job.exit_code is not None:

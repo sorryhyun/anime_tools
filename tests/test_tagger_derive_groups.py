@@ -1,14 +1,8 @@
-"""The one groups-derivation orchestration, shared by both of its callers.
+"""``derive_from_args`` + ``write_merged_groups``, shared by
+``--mode derive_groups --apply`` and ``build_vocab --derive_groups``.
 
-``--mode derive_groups --apply`` and ``build_vocab --derive_groups`` used to
-carry two copies of the same sequence: the ten-argument ``derive_rows`` call,
-``merge_apply``, a back-up-then-write spelled two different ways, and the
-``n_general`` coverage tally. They go through ``derive_from_args`` +
-``write_merged_groups`` now. What stays with each caller is what genuinely
-differs — where ``solo_sets`` comes from (the manifest, or the scan the build
-already did) and where the KB comes from (``--tag_cache``, or ``find_tag_csv()``
-with a warn-and-skip fallback) — which is what the last test here pins: give the
-two the same corpus and they derive the same groups.
+The callers differ only in where ``solo_sets`` and the KB come from; given one
+corpus they derive the same groups.
 """
 
 from __future__ import annotations
@@ -32,8 +26,8 @@ from anime_tools.tagger.cli.vocab import cmd_build_vocab
 EYE_PATH = "얼굴/눈 > 눈 색상"
 HAIR_PATH = "머리카락 > 머리 길이"
 
-# name,category,post_count,description — the KB's shape; the ``[대분류>소분류]``
-# prefix of the description is the taxonomy path groups are bucketed by.
+# The ``[대분류>소분류]`` prefix of the description is the taxonomy path groups
+# are bucketed by.
 KB_CSV = """name,category,post_count,description
 blue_eyes,0,900,"[얼굴/눈>눈 색상] 파란 눈"
 red_eyes,0,800,"[얼굴/눈>눈 색상] 붉은 눈"
@@ -89,13 +83,12 @@ def _solo_sets_from_captions() -> list[set[str]]:
 
 
 # --------------------------------------------------------------------------- #
-# derive_from_args — the ten-argument call, read off the one parser's namespace
+# derive_from_args
 # --------------------------------------------------------------------------- #
 
 
 def test_derive_from_args_reads_the_dests_the_parser_declares(monkeypatch):
-    """The knobs are lifted off ``args`` rather than respelled per call site,
-    so a renamed flag must break here rather than in one of two branches."""
+    """The knobs are lifted off ``args``, not respelled per call site."""
     monkeypatch.setattr(sys, "argv", ["prog", "--mode", "derive_groups"])
     from anime_tools.tagger.cli.main import parse_args
 
@@ -172,8 +165,7 @@ def test_write_merged_groups_writes_and_reads_back(tmp_path):
     dest = tmp_path / "groups.yaml"
     merged = write_merged_groups(_rows(tmp_path), dest, None, min_group_size=2)
 
-    # The returned object *is* the written file loaded through the real
-    # consumer, so the caller never parses it a second time.
+    # The returned object is the written file, loaded through the real consumer.
     assert {g.name for g in merged.groups} == {"eye_color", "hair_length"}
     assert merged.to_dict() == tg.load_groups(dest).to_dict()
     assert not dest.with_suffix(".yaml.bak").exists()  # nothing to back up
@@ -185,15 +177,13 @@ def test_write_merged_groups_backs_up_the_file_it_replaces(tmp_path):
     write_merged_groups(_rows(tmp_path), dest, None, min_group_size=2)
 
     backup = tmp_path / "groups.yaml.bak"
-    # Both callers used to spell this themselves — ``.with_suffix(".yaml.bak")``
-    # in one, ``dest.suffix + ".bak"`` in the other — and they agree only for a
-    # ``.yaml`` dest, which ``--out_yaml`` does not have to be.
+    # The backup suffix is appended to the dest's own suffix; ``--out_yaml`` does
+    # not have to be a ``.yaml``.
     assert backup.read_text(encoding="utf-8") == "version: 1\n"
 
 
 def test_write_merged_groups_backs_up_even_when_dest_is_preserve(tmp_path):
-    """``build_vocab`` used to skip the backup exactly here — the one case where
-    the file being overwritten is the hand-curated one."""
+    """Overwriting the hand-curated file still writes a backup."""
     dest = tmp_path / "groups.yaml"
     dest.write_text(
         "version: 1\neye_color:\n  mode: softmax\n  tags: [blue eyes, red eyes]\n",
@@ -207,11 +197,10 @@ def test_write_merged_groups_backs_up_even_when_dest_is_preserve(tmp_path):
 
 
 def test_write_merged_groups_rejects_a_merge_that_cannot_be_loaded(tmp_path):
-    """The read-back is the validation: it runs on both callers now, not one."""
+    """The read-back is the validation, on both callers."""
     rows = _rows(tmp_path)
     preserve = tmp_path / "curated.yaml"
-    # A group claiming a tag another group also claims — the loader's disjoint
-    # invariant, which only the file on disk can violate.
+    # A group claiming a tag another group claims violates the loader's disjointness.
     preserve.write_text(
         "version: 1\n"
         "one:\n  mode: multilabel\n  tags: [x]\n"
@@ -261,8 +250,7 @@ def test_build_vocab_derives_merges_and_bakes_the_groups_in(tmp_path):
 
 
 def test_build_vocab_survives_a_missing_kb(tmp_path, caplog):
-    """The tolerance that is ``vocab.py``'s own: no KB is a warning and a
-    flat-vocab build, never a raise."""
+    """No KB is a warning and a flat-vocab build, never a raise."""
     import anime_tools.captions.correction as C
 
     root, _ = _corpus(tmp_path)
@@ -281,11 +269,10 @@ def test_build_vocab_survives_a_missing_kb(tmp_path, caplog):
 
 
 def test_both_callers_derive_the_same_groups(tmp_path):
-    """The shared half is shared: given one corpus, ``build_vocab
-    --derive_groups`` and ``--mode derive_groups --apply`` write the same
-    groups. Only the co-occurrence *source* is the caller's, so the standalone
-    run is pointed at a checkpoint with no ``dataset.json`` — the caption-scan
-    fallback, which is the scan the build did inline."""
+    """Given one corpus, ``build_vocab --derive_groups`` and
+    ``--mode derive_groups --apply`` write the same groups. Only the
+    co-occurrence source differs, so the standalone run is pointed at a
+    checkpoint with no ``dataset.json`` (the caption-scan fallback)."""
     from anime_tools.tagger.cli.derive_groups import cmd_derive_groups
 
     root, kb_csv = _corpus(tmp_path)

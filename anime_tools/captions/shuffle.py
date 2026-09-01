@@ -10,18 +10,17 @@ from anime_tools.captions.position_clauses import is_clause_header
 from anime_tools.captions.taxonomy import is_artist_tag
 
 # Sentinel users can drop into captions that lack a real artist tag, so the
-# shuffle/drop boundary keeps working. Callers that feed a shuffle result to a
-# tokenizer must strip it themselves — it is kept inside the shuffle so the
-# boundary index stays consistent with the input.
+# shuffle/drop boundary keeps working. The shuffle preserves it (the boundary
+# index must stay consistent with the input); callers feeding the result to a
+# tokenizer strip it themselves.
 NO_ARTIST_SENTINEL = "@no-artist"
 
 
 def find_anima_prefix_end(tags: list[str]) -> int:
     """Index one past the trailing artist-handle in the leading run.
 
-    Returns 0 if no artist tag is present anywhere (the case the ``@no-artist``
-    sentinel exists to fix). Multi-artist captions protect the full handle run,
-    not just the first handle.
+    Returns 0 when no artist tag is present anywhere (what the ``@no-artist``
+    sentinel fixes). Multi-artist captions protect the full handle run.
     """
     split_idx = 0
     saw_artist = False
@@ -47,17 +46,15 @@ def anima_smart_shuffle_caption(flex_tokens: list[str]) -> list[str]:
       and the ``@no-artist`` sentinel both preserve the full handle run.
     - Remaining tags are split into sections by 'on the ...' / 'in the ...'
       delimiters; tags within each section are shuffled independently.
-    - The ``@no-artist`` sentinel is preserved in the output so the boundary
-      index stays usable; callers that feed the result to a tokenizer must
-      call :func:`strip_no_artist_sentinel` before joining.
+    - The ``@no-artist`` sentinel is preserved in the output; callers feeding
+      the result to a tokenizer call :func:`strip_no_artist_sentinel` first.
     """
     split_idx = find_anima_prefix_end(flex_tokens)
 
     prefix = flex_tokens[:split_idx]
     suffix = flex_tokens[split_idx:]
 
-    # Sections delimited by clause headers, via the grammar's own predicate so a
-    # new header form is one edit, not three.
+    # Sections delimited by clause headers, via the grammar's own predicate.
     sections: list[list[str]] = [[]]
     for tag in suffix:
         if is_clause_header(tag):

@@ -1,17 +1,10 @@
 """Score SAM3 prompts (text or learned) against MIT labels on the text holdout.
 
-The "can SAM3 replace MIT" gate: **MIT recall ≥ 0.9 at ≤ 0.1 FP/img**. Both are box-level (IoU ≥ 0.5 against
-the CTD-block targets from `build_text_targets.py`); FP counts survivors on
-holdout images that match no target, negatives included. Because the actual
-consumer is a training-ignore mask, the pixel view is reported too: recall
-of MIT's gated stroke pixels under the union of survivor masks, and the
-over-mask ratio (SAM pixels / MIT pixels, after both sides get the shipped
-`dilate: 3`). Every prompt is scored at several floors so the readout is a
-curve, not one operating point.
-
-A spec ending in ``.safetensors`` is a soft prompt; anything else is text.
-``--sheets N`` also writes the N worst-recall positives per prompt as
-side-by-side panels (MIT strokes | SAM masks) under the run dir.
+Recall and FP/img are box-level (IoU ≥ 0.5 against the CTD-block targets from
+`build_text_targets.py`); the pixel view is reported alongside, since the real
+consumer is a training-ignore mask. Every prompt is scored at several floors,
+so the readout is a curve rather than one operating point. A spec ending in
+``.safetensors`` is a soft prompt; anything else is text.
 
     make daemon-run ARGS="bench/sam3_soft_prompt/eval_text_prompt.py \\
         --prompts text 'sound effect text' 'handwritten text' --sheets 24"

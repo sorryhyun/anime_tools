@@ -14,8 +14,7 @@ partner list:
   pair. Leave alone; the data is correct.
 * **B_review** — everything else. Likely aliases or noisy edge cases.
 
-Read-only: prints a table and optionally writes a pasteable YAML stub. The
-"solo" predicate matches the trainer's :class:`GroupRouter` logic exactly.
+Read-only: prints a table and optionally writes a pasteable YAML stub.
 """
 
 from __future__ import annotations
@@ -62,10 +61,9 @@ def classify(
     """Bucket a candidate on its full partner distribution.
 
     Returns ``(bucket, base_or_top_partner)``: the prefix-matching base for A,
-    the top partner for C and B, an empty string for D (broad-pool by
-    definition). Order of checks matters — D is tested before A so a popular
-    character with both a costume variant and many partners lands under
-    ``remove:`` rather than in a dedup row.
+    the top partner for C and B, an empty string for D. Order of checks
+    matters — D is tested before A so a popular character with both a costume
+    variant and many partners lands under ``remove:`` rather than a dedup row.
     """
     if not partners_full or n_co == 0:
         return "B_review", ""
@@ -79,8 +77,8 @@ def classify(
         return "D_role", ""
 
     # A — costume/version variant: prefix-before-paren or drop-first-token
-    # matches a partner. That partner is the *base* when the candidate is the
-    # more specific one; otherwise the row is informational (A_base).
+    # matches a partner, which is the *base* when the candidate is the more
+    # specific one; otherwise the row is informational (A_base).
     cand_prefix = _name_prefix(name)
     cand_prefix_drop1 = _name_prefix_no_first_token(name)
     matched_partner = None
@@ -114,8 +112,8 @@ def classify(
 def _is_more_specific(a: str, b: str) -> bool:
     """True if ``a`` is the more-specific (variant) form of ``b``.
 
-    More parenthetical groups wins, longer string breaks the tie. Picks the
-    dedup direction so we emit ``base: [variant]`` and not the reverse.
+    More parenthetical groups wins, longer string breaks the tie; this picks
+    the dedup direction, so we emit ``base: [variant]``.
     """
     a_paren = a.count("(")
     b_paren = b.count("(")
@@ -218,10 +216,10 @@ def scan(
 def _yaml_safe(s: str) -> str:
     """Return ``s`` in a YAML-safe form for use as a sequence item or key.
 
-    Quotes only when needed (bare is more readable): a ``": "`` would make
-    `trailblazer (honkai: star rail)` parse as a mapping, and a leading reserved
-    indicator or internal apostrophe is likewise ambiguous. Apostrophes are
-    doubled inside the quotes per YAML 1.2 § 7.3.2.
+    Quotes only when needed: a ``": "`` would make `trailblazer (honkai: star
+    rail)` parse as a mapping, and a leading reserved indicator or internal
+    apostrophe is likewise ambiguous. Apostrophes are doubled inside the quotes
+    per YAML 1.2 § 7.3.2.
     """
     needs_quote = (
         ": " in s
@@ -258,9 +256,9 @@ def _format_table(rows: list[dict], limit: int) -> str:
 def _emit_yaml_stub(rows: list[dict], min_solo: int, min_ratio: float) -> str:
     """Build a yaml-shaped string with pasteable per-bucket sections.
 
-    The output is **not** a single valid YAML document — it is a working file
-    the curator copies snippets out of: A_costume as dedup blocks, D_role as
-    ``remove:`` items, B_review/C_pair as commented triage hints.
+    Not a single valid YAML document: a working file the curator copies
+    snippets out of — A_costume as dedup blocks, D_role as ``remove:`` items,
+    B_review/C_pair as commented triage hints.
     """
     by_bucket: dict[str, list[dict]] = {}
     for r in rows:

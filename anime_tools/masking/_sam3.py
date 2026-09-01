@@ -1,11 +1,9 @@
 """The one SAM3 entry point: model + processor construction, and the numpy shim.
 
-**The numpy shim is an import side effect of this module**: ``sam3`` pins
-``numpy<2`` upstream and still spells ``np.bool``, which numpy 2 removed, so the
-alias has to exist *before* ``import sam3``. Importing this module is the one
-place that guarantee is made — hence the sam3 imports deferred into the
-functions, which also keeps importing this module torch-free (a ``--help`` or a
-GUI schema dump costs nothing).
+**The numpy shim is an import side effect of this module**: ``sam3`` still spells
+``np.bool``, which numpy 2 removed, so the alias has to exist *before* ``import sam3``.
+The sam3 imports are deferred into the functions, which also keeps importing this module
+torch-free.
 """
 
 from __future__ import annotations
@@ -18,27 +16,23 @@ import numpy as np
 
 from anime_tools.downloads import DEFAULT_SAM3_CHECKPOINT, DEFAULT_SUBJECT_PROMPT_EMBED
 
-# Deliberately a module-level side effect — see the docstring.
+# A module-level side effect on purpose — see the docstring.
 if not hasattr(np, "bool"):
     np.bool = np.bool_
 
 SUBJECT_PROMPT = "girl"
-"""The text prompt every SAM3 stage means by *the subject*, and the phrase the
-shipped soft prompt is the textual inversion of. Named here because it is the
-hinge between two flags: it is ``--prompt``'s default, and it is what
+"""The text prompt every SAM3 stage means by *the subject*, and the phrase the shipped
+soft prompt is the textual inversion of: ``--prompt``'s default, and what
 ``--prompt_embed`` stands in for."""
 
 
 def add_checkpoint_arg(p: argparse._ActionsContainer) -> None:
     """``--checkpoint`` — SAM3 weights, defaulted from the download catalog.
 
-    Beside :func:`load_sam3` because the flag and the load are the same fact: a
-    stage must name the file the ⚙ Settings → Models row *writes*, or the
-    download button and the loader disagree. It is also a
-    :data:`anime_tools.gui.stages.SETTING_FIELDS` dest, filled once from
-    Settings — which only works while every SAM3 CLI spells it identically.
-    Takes a group as readily as a parser, like :func:`add_prompt_embed_arg`:
-    the text-mask stage declares it inside its ``use_sam`` drawer.
+    It names the file the ⚙ Settings → Models row writes, and it is a
+    :data:`anime_tools.gui.stages.SETTING_FIELDS` dest filled once from Settings — which
+    only works while every SAM3 CLI spells it identically. Takes a group as readily as a
+    parser: the text-mask stage declares it inside its ``use_sam`` drawer.
     """
     p.add_argument("--checkpoint", default=DEFAULT_SAM3_CHECKPOINT, help="SAM3 weights")
 
@@ -46,11 +40,9 @@ def add_checkpoint_arg(p: argparse._ActionsContainer) -> None:
 def add_prompt_embed_arg(p: argparse._ActionsContainer) -> None:
     """``--prompt_embed`` — the learned subject prompt, from the same catalog.
 
-    Here for the reason ``--checkpoint`` is: it names a file a ⚙ Settings →
-    Models row writes, and it is a
-    :data:`anime_tools.gui.stages.SETTING_FIELDS` dest filled once from
-    Settings — which only works while every stage that takes one spells it
-    identically. Takes a group as readily as a parser, because the detection
+    Like ``--checkpoint``: a :data:`anime_tools.gui.stages.SETTING_FIELDS` dest naming a
+    file a ⚙ Settings → Models row writes, which only works while every stage that takes
+    one spells it identically. Takes a group as readily as a parser, because the detection
     stages declare it inside their ``detection`` group.
     """
     p.add_argument(
@@ -69,10 +61,9 @@ _NO_PROMPTS = {"none", "off"}
 def prompt_list(spec: str) -> tuple[str, ...]:
     """A comma-separated prompt flag as the tuple of prompts it names.
 
-    ``none`` / ``off`` mean *no prompts*, the word ``--prompt_embed`` already
-    takes for the same job. Emptying the field is not enough to say it: the GUI
-    omits a flag whose value is blank, so a cleared prompt field would come back
-    as its default rather than as "prompt for nothing".
+    ``none`` / ``off`` mean *no prompts*. Emptying the field is not enough to say it: the
+    GUI omits a flag whose value is blank, so a cleared prompt field would come back as
+    its default.
     """
     if spec.strip().lower() in _NO_PROMPTS:
         return ()
@@ -82,10 +73,8 @@ def prompt_list(spec: str) -> tuple[str, ...]:
 def autocast(device: str):
     """The half-precision context a SAM3 pass runs under, or nothing on CPU.
 
-    ``torch.autocast(device_type="cuda")`` on a machine without one only warns
-    and disables itself, so this is not a correctness fix — but every SAM3 stage
-    wants the same answer, and a CPU run should not have to read a warning to
-    learn that it got it.
+    ``torch.autocast(device_type="cuda")`` on a machine without one only warns and
+    disables itself, so this is a warning suppressed, not a correctness fix.
     """
     import torch
 
@@ -103,15 +92,13 @@ def load_sam3(
 ):
     """Build a frozen SAM3 image model and its processor.
 
-    ``checkpoint`` names a local ``.pt``; ``None`` lets sam3 fetch its own
-    weights from HF. ``confidence_threshold`` is the processor's *own* floor,
-    applied before the caller ever sees a box — pass the lowest score any
-    consumer might ask for and re-gate on top (see ``build_detect_fn``'s
-    GOTCHA 1); ``None`` keeps the processor default.
+    ``checkpoint`` names a local ``.pt``; ``None`` lets sam3 fetch its own weights from
+    HF. ``confidence_threshold`` is the processor's *own* floor, applied before the caller
+    ever sees a box — pass the lowest score any consumer might ask for and re-gate on top
+    (see ``build_detect_fn``'s GOTCHA 1); ``None`` keeps the processor default.
 
-    ``disable_act_ckpt`` turns off the two activation-checkpoint paths SAM3
-    leaves on even in eval mode; they cost a recompute for nothing when the trunk
-    is frozen, so only the soft-prompt trainer asks for it.
+    ``disable_act_ckpt`` turns off the two activation-checkpoint paths SAM3 leaves on even
+    in eval mode; they cost a recompute for nothing when the trunk is frozen.
 
     Returns ``(model, processor)``.
     """
@@ -139,14 +126,12 @@ def load_sam3(
 def ground_with_soft_prompt(processor, model, state: dict, soft_prompt: dict) -> dict:
     """One grounding pass whose prompt is already encoded, not text.
 
-    The drop-in for ``processor.set_text_prompt(state=…, prompt=…)`` when the
-    prompt is a learned tensor: a soft prompt *is* what SAM3's text encoder
-    would have produced, so the encode is skipped and ``load_soft_prompt``'s
-    triple goes straight into the state :meth:`Sam3Processor.set_image` built.
-    Saying that means reaching past ``set_text_prompt`` into the grounding call
-    underneath it, so it is written once here rather than in each stage that
-    takes a ``--prompt_embed``. The caller still owns *which* of its prompts the
-    embed stands in for — see :data:`SUBJECT_PROMPT`.
+    The drop-in for ``processor.set_text_prompt(state=…, prompt=…)`` when the prompt is a
+    learned tensor: a soft prompt *is* what SAM3's text encoder would have produced, so
+    the encode is skipped and ``load_soft_prompt``'s triple goes straight into the state
+    :meth:`Sam3Processor.set_image` built — which means reaching past ``set_text_prompt``
+    into the grounding call underneath. The caller still owns *which* of its prompts the
+    embed stands in for (:data:`SUBJECT_PROMPT`).
     """
     state["backbone_out"].update(soft_prompt)
     state.setdefault("geometric_prompt", model._get_dummy_prompt())
@@ -165,11 +150,10 @@ def detect_union(
 ) -> np.ndarray:
     """OR-combine SAM3's detections for every prompt into one binary mask.
 
-    The whole of what a mask stage does with SAM3 between ``set_image`` and the
-    mask it writes: prompt, drop anything under ``threshold``, union. Here
-    rather than in a stage because the soft-prompt substitution rule lives here
-    too — a ``soft_prompt`` stands in for :data:`SUBJECT_PROMPT` and for no
-    other prompt, and a caller whose prompts are all textual passes ``None``.
+    The whole of what a mask stage does with SAM3 between ``set_image`` and the mask it
+    writes: prompt, drop anything under ``threshold``, union. A ``soft_prompt`` stands in
+    for :data:`SUBJECT_PROMPT` and for no other prompt; a caller whose prompts are all
+    textual passes ``None``.
     """
     import torch
 
@@ -193,8 +177,8 @@ def detect_union(
 def make_processor(model, confidence_threshold: float | None = None):
     """A ``Sam3Processor`` over an already-loaded model.
 
-    Split out so a caller holding a model can rebuild the processor at a lower
-    threshold without paying for the weights again.
+    Split out so a caller holding a model can rebuild the processor at a lower threshold
+    without paying for the weights again.
     """
     from sam3.model.sam3_image_processor import Sam3Processor
 

@@ -1,12 +1,9 @@
 """Bounded, fail-fast HuggingFace downloads.
 
-A stalled connection inside ``hf_hub_download`` blocks the whole subprocess,
-which the daemon cannot distinguish from real work. Two guards:
-
-  * pin an explicit socket timeout so a dead connection raises in seconds
-    instead of hanging (a slow *trickle* is still the stall watchdog's job);
-  * translate network failures into an error that names the missing asset and
-    the recovery command, instead of a raw urllib traceback.
+A stalled connection inside ``hf_hub_download`` blocks the whole subprocess, so
+this pins an explicit socket timeout (a slow trickle is still the stall
+watchdog's job) and translates network failures into an error naming the
+missing asset and the recovery command.
 """
 
 from __future__ import annotations
@@ -22,8 +19,7 @@ def ensure_hf_timeouts() -> None:
     """Pin huggingface_hub's socket timeouts unless the user set them.
 
     ``HF_HUB_DOWNLOAD_TIMEOUT`` bounds the streaming file-download read;
-    ``HF_HUB_ETAG_TIMEOUT`` the metadata HEAD/list call. Set explicitly so
-    behaviour is pinned regardless of the installed hub version.
+    ``HF_HUB_ETAG_TIMEOUT`` the metadata HEAD/list call.
     """
     os.environ.setdefault("HF_HUB_DOWNLOAD_TIMEOUT", _DEFAULT_TIMEOUT)
     os.environ.setdefault("HF_HUB_ETAG_TIMEOUT", _DEFAULT_TIMEOUT)
@@ -33,10 +29,9 @@ def _is_network_error(exc: BaseException) -> bool:
     """True only for *transport* failures (the ones that hang): connection and
     read timeouts, refused/reset connections.
 
-    Deliberately excludes HTTP-status errors like ``EntryNotFoundError`` /
-    ``RepositoryNotFoundError`` (HfHubHTTPError 404s) — those are *fast*
-    responses, never a hang, and callers catch them specifically (e.g. the
-    tagger's best-effort optional files), so they must propagate unchanged.
+    Excludes HTTP-status errors (``EntryNotFoundError``,
+    ``RepositoryNotFoundError``): callers catch those specifically, so they must
+    propagate unchanged.
     """
     import socket
 
@@ -66,8 +61,8 @@ def hf_download(*, what: str, hint: str = "python -m anime_tools.downloads", **k
     try:
         return hf_hub_download(**kwargs)
     except GatedRepoError as exc:
-        # A gated repo answers 401/403 fast — not a hang, but the raw hub
-        # traceback says nothing about *how* to get access.
+        # Not a hang, but the raw hub traceback says nothing about how to get
+        # access.
         repo = kwargs.get("repo_id", "?")
         raise FileNotFoundError(
             f"{what}: {repo} is a gated HuggingFace repo and this token cannot "
@@ -87,10 +82,9 @@ def hf_download(*, what: str, hint: str = "python -m anime_tools.downloads", **k
 def hf_file_cached(repo_id: str, filename: str, revision: str | None = None) -> bool:
     """True when ``filename`` from ``repo_id`` is already in the local hub cache.
 
-    A pure presence check — never touches the network, so it is safe from UI
-    code. Needed because assets fetched through plain ``hf_hub_download`` (the
-    gated dbv4 backbone) never land under ``models/``, so a path check against
-    the repo tree would report them missing forever.
+    Never touches the network, so it is safe from UI code. Assets fetched
+    through plain ``hf_hub_download`` never land under ``models/``, so a path
+    check would report them missing forever.
     """
     try:
         from huggingface_hub import try_to_load_from_cache

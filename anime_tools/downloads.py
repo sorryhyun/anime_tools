@@ -1,23 +1,14 @@
-"""Every model weight the stages need: where it comes from, where it lands, and
-whether it is already here.
+"""Catalog of every model weight the stages need: repo, destination and an
+offline installed-probe. Torch-free; the loaders import their repo / filename /
+default path from here so a Download button can't write where a loader won't
+look.
 
-Torch-free, so one answer serves the GUI's Settings dialog, this module's own
-CLI (``python -m anime_tools.downloads``, what the Download button runs) and the
-loaders themselves. :mod:`anime_tools.vision.pe`,
-:mod:`anime_tools.masking.cli.generate_masks_mit` and the SAM3 CLIs take their
-repo / filename / default path from here, so a button can never put a checkpoint
-somewhere the loader won't look for it.
-
-Two kinds of destination exist and they are **not** interchangeable:
-
-* a path under the curation home (``models/…``) — what a ``--checkpoint`` /
-  ``--tagger_dir`` flag defaults to, so the file has to be exactly *there*;
-* the HuggingFace hub cache — for assets whose loader fetches them by repo id
-  (the gated dbv4 backbone, the MIT text-mask net). Presence is probed with
-  :func:`anime_tools._hf.hf_file_cached`, never by guessing a cache path.
-
-Nothing here is auto-run: every loader still fetches what it needs on first
-use. Pre-fetching just moves the wait to a moment the user chose.
+Destinations are of two kinds: a path under the curation home (``models/…``),
+where a ``--checkpoint`` / ``--tagger_dir`` default points, so the file has to
+land exactly there; or the HuggingFace hub cache, for assets whose loader
+fetches by repo id — probed with :func:`anime_tools._hf.hf_file_cached`, never
+by guessing a cache path. Nothing here is auto-run; loaders still fetch on
+first use.
 """
 
 from __future__ import annotations
@@ -43,23 +34,22 @@ from anime_tools.tagger.dbv4_meta import (
     backbone_repo_for,
 )
 
-# SAM 3 — gated on the Hub. Our CLIs pass ``--checkpoint`` explicitly with
-# ``load_from_HF=False``, so the file has to land on this path, not merely in
-# the hub cache sam3's own downloader would use.
+# SAM 3 — gated on the Hub. The CLIs pass ``--checkpoint`` with
+# ``load_from_HF=False``, so the file must land on this path, not merely in the
+# hub cache sam3's own downloader would use.
 SAM3_REPO = "facebook/sam3"
 SAM3_FILENAME = "sam3.pt"
 SAM3_DIR = "models/sam3"
 DEFAULT_SAM3_CHECKPOINT = f"{SAM3_DIR}/{SAM3_FILENAME}"
 
-# PE-Spatial-B16-512 — the grouping embedder's frozen tower
-# (:mod:`anime_tools.vision.pe` builds the architecture, this is its weights).
+# PE-Spatial-B16-512 — weights for the grouping embedder's frozen tower
+# (:mod:`anime_tools.vision.pe` builds the architecture).
 PE_SPATIAL_REPO = "facebook/PE-Spatial-B16-512"
 PE_SPATIAL_FILENAME = "PE-Spatial-B16-512.pt"
 
-# SAM3 subject soft prompt — the textual inversion of ``anime girl`` that the
-# position stage and the multiview audit pass as ``--prompt_embed`` by default.
-# A trained artifact of the trainer repo, not a checkpoint anyone re-hosts on
-# the Hub, so it is fetched straight from GitHub.
+# SAM3 subject soft prompt — textual inversion of ``anime girl``, the default
+# ``--prompt_embed`` of the position stage and the multiview audit. Not on the
+# Hub, so it comes straight from GitHub.
 SOFT_PROMPT_GH_REPO = "sorryhyun/anima_lora"
 SOFT_PROMPT_DIR = "networks/calibration"
 SOFT_PROMPT_FILENAME = "sam3_girl_prompt.safetensors"
@@ -74,58 +64,50 @@ MIT_TEXT_REPO = "a-b-c-x-y-z/Manga-Text-Segmentation-2025"
 MIT_TEXT_FILENAME = "model.pth"
 
 # ComicTextDetector — the text-BLOCK head the MIT stage gates its UNet++ mask
-# on (``--ctd-gate``). Published as a release asset of manga-image-translator
-# rather than on the Hub, so it rides ``_fetch_http`` like the soft prompt does.
-# The stage has no flag for it: this is the one path it looks at.
+# on (``--ctd-gate``). A manga-image-translator release asset, so it rides
+# ``_fetch_http``. The stage has no flag for it: this is the one path it reads.
 CTD_GH_REPO = "zyddnys/manga-image-translator"
 CTD_ONNX_RELEASE = "beta-0.3"
 CTD_ONNX_DIR = "models/mit"
 CTD_ONNX_FILENAME = "comictextdetector.pt.onnx"
 CTD_ONNX_URL = f"https://github.com/{CTD_GH_REPO}/releases/download/{CTD_ONNX_RELEASE}"
 
-# PP-OCRv6 — text detection + recognition, as the official ONNX mirrors of the
-# Paddle inference models. ONNX and not Paddle because `inference.yml` beside
-# each graph carries everything the wrapping code needs (the recognizer's
-# 18,708-character dictionary, the detector's DB thresholds), so onnxruntime and
-# opencv — both already here — are the whole runtime, and a second deep-learning
-# framework does not enter a py3.13 / numpy>=2 / torch stack for one 19M model.
-# Like the CTD net below, neither has a flag: `anime_tools.ocr._onnx` reads these
-# paths, so a Download button cannot write where the loader does not look.
+# PP-OCRv6 — text detection + recognition, the official ONNX mirrors of the
+# Paddle inference models; `inference.yml` beside each graph supplies the
+# recognizer's dictionary and the detector's DB thresholds. Neither has a flag:
+# `anime_tools.ocr._onnx` reads these paths.
 PPOCR_DET_REPO = "PaddlePaddle/PP-OCRv6_medium_det_onnx"
 PPOCR_REC_REPO = "PaddlePaddle/PP-OCRv6_medium_rec_onnx"
 PPOCR_FILES = ("inference.onnx", "inference.yml")
 PPOCR_DIR = "models/ppocr"
 
-# Danbooru tag KB — the ~114k-row classified tag table every correction pass
-# types its tags against, and what the GUI's click-a-tag panel reads. A CSV in a
-# GitHub repo, so it rides ``_fetch_http`` like the soft prompt does. Its
-# descriptions are Korean; the English sibling is *built* from the Danbooru
-# wiki, not hosted, which is why only the base file is a row here.
+# Danbooru tag KB — the ~114k-row classified tag table the correction pass types
+# tags against and the GUI's tag panel reads. A CSV in a GitHub repo, so it
+# rides ``_fetch_http``. Its descriptions are Korean; the English sibling is
+# built, not hosted.
 DANBOORU_TAGS_GH_REPO = "Localsmile/danbooru_KR_wiki_tag_search"
 DANBOORU_TAGS_URL = f"https://raw.githubusercontent.com/{DANBOORU_TAGS_GH_REPO}/main"
 
-# The Danbooru wiki mirrored as one parquet on the Hub — an *input*, not a
-# product: the row below joins it against the base CSV and writes the English
-# sibling, so the 45 MB parquet stays in the hub cache.
+# The Danbooru wiki mirrored as one parquet on the Hub — an input to the
+# ``danbooru_tags_en`` row's join, so the 45 MB file stays in the hub cache.
 DANBOORU_WIKI_REPO = "isek-ai/danbooru-wiki-2024"
 DANBOORU_WIKI_FILE = "data/train-00000-of-00001.parquet"
 
 
 def default_pe_spatial_path() -> Path:
-    """``<models_dir>/pe/PE-Spatial-B16-512.pt`` — the trainer's ``models/pe/``
-    when run in-tree, ``ANIME_TOOLS_MODELS`` standalone."""
+    """``<models_dir>/pe/PE-Spatial-B16-512.pt``."""
     return models_dir() / "pe" / PE_SPATIAL_FILENAME
 
 
 def default_ctd_onnx_path() -> Path:
-    """``<home>/models/mit/comictextdetector.pt.onnx`` — the only place the MIT
-    stage's ``--ctd-gate`` looks, and what the catalog row writes."""
+    """``<home>/models/mit/comictextdetector.pt.onnx`` — where ``--ctd-gate``
+    looks and what the catalog row writes; there is no flag for it."""
     return resolve_path(CTD_ONNX_DIR) / CTD_ONNX_FILENAME
 
 
 def default_ppocr_det_dir() -> Path:
-    """``<home>/models/ppocr/det`` — the only place the OCR stage's detector is
-    read from, and what the ``ppocr_det`` row writes."""
+    """``<home>/models/ppocr/det`` — where the OCR detector is read from and
+    what the ``ppocr_det`` row writes."""
     return resolve_path(PPOCR_DIR) / "det"
 
 
@@ -135,8 +117,7 @@ def default_ppocr_rec_dir() -> Path:
 
 
 def http_timeout() -> float:
-    """Socket timeout for the plain-HTTPS rows, sharing ``ANIMA_HF_TIMEOUT``
-    with :mod:`anime_tools._hf`."""
+    """Socket timeout for the plain-HTTPS rows; shares ``ANIMA_HF_TIMEOUT``."""
     return float(os.environ.get("ANIMA_HF_TIMEOUT", "30"))
 
 
@@ -158,24 +139,22 @@ class Asset:
     files: tuple[str, ...]
     """Required files; all of them present means installed."""
     used_by: str
-    """Which stages stop working without it — the reason a row exists."""
+    """Which stages stop working without it."""
     stages: tuple[str, ...] = ()
-    """The same, as GUI stage ids, so the stage bar can warn before a run stalls
-    on a multi-GB first-use fetch."""
+    """The same, as GUI stage ids, so the stage bar can warn before a run."""
     dest: Path | None = None
     """Directory the files are flattened into; ``None`` = the HF hub cache."""
     url: str = ""
-    """Base URL each file hangs off, for the rows that are not on the Hub (a
-    GitHub raw prefix). Set it and ``repo`` is only a label; requires ``dest``."""
+    """Base URL each file hangs off for rows that are not on the Hub. Set it and
+    ``repo`` is only a label; requires ``dest``."""
     subfolder: str = ""
     """Path prefix inside the repo (the tagger ships under ``dbv4/``)."""
     repo_type: str = "model"
     """Hub repo kind — ``dataset`` for the Danbooru wiki mirror."""
     derived: tuple[str, ...] = ()
-    """Files this row *makes* under ``dest`` via :attr:`build`. They, not the
-    downloads, are what the row is: the probe asks for them, and the downloaded
-    inputs stay cache detail so a hub-cache sweep can't turn a built row back
-    to "missing"."""
+    """Files this row *makes* under ``dest`` via :attr:`build`. The probe asks
+    for these, not the downloads, so a hub-cache sweep can't turn a built row
+    back to "missing"."""
     build: Callable[[Path, Callable[[str], None]], None] | None = None
     """Post-fetch step that writes :attr:`derived` into ``dest``."""
     optional: tuple[str, ...] = field(default_factory=tuple)
@@ -228,8 +207,8 @@ class Asset:
         )
 
     def _fetch_http(self, log: Callable[[str], None]) -> None:
-        """Plain-HTTPS download for a ``url`` row. Bounded and fail-fast: a
-        stalled socket must raise, not hang the job slot the GUI runs this in."""
+        """Plain-HTTPS download for a ``url`` row. Bounded: a stalled socket
+        must raise, not hang the job slot the GUI runs this in."""
         import urllib.error
         import urllib.request
 
@@ -258,8 +237,8 @@ class Asset:
     def fetch(self, log: Callable[[str], None] = _say) -> None:
         """Download every required file; optional ones are best-effort.
 
-        Network and gated-repo failures come back as a ``FileNotFoundError``
-        that names the asset and the recovery instead of a hub traceback.
+        Network and gated-repo failures raise ``FileNotFoundError`` naming the
+        asset and the recovery, not a hub traceback.
         """
         from huggingface_hub.utils import EntryNotFoundError
 
@@ -273,8 +252,8 @@ class Asset:
             return
 
         hint = self._hint
-        # A built row's downloads are inputs, so they stay in the hub cache;
-        # only what ``build`` writes belongs in ``dest``.
+        # A built row's downloads are inputs and stay in the hub cache; only
+        # what ``build`` writes belongs in ``dest``.
         into = None if self.build else self.dest
         for name in (*self.files, *self.optional):
             remote = f"{self.subfolder}/{name}" if self.subfolder else name
@@ -305,8 +284,7 @@ class Asset:
             log(f"    ok  {got}  ({_size(got.stat().st_size)})")
         self._build(log)
         if into is not None and self.subfolder:
-            # Don't leave the empty `dbv4/` local_dir mirrored in the
-            # checkpoint dir after the files were moved out of it.
+            # Drop the now-empty `dbv4/` local_dir the files were moved out of.
             leftover = into / self.subfolder
             if leftover.is_dir() and not any(leftover.iterdir()):
                 leftover.rmdir()
@@ -320,19 +298,17 @@ class Asset:
 
 
 def _build_english_tag_csv(dest: Path, log: Callable[[str], None]) -> None:
-    """``danbooru_tags_en``'s post-fetch step: the wiki parquet is in the hub
-    cache by now, so this is the join that writes the English CSV."""
+    """``danbooru_tags_en``'s post-fetch step: join the cached wiki parquet
+    against the base CSV and write the English CSV."""
     from anime_tools.tagger.cli.build_english_tag_csv import build
 
     build(dest / TAG_CSV_NAME, dest / TAG_CSV_EN_NAME, revision=None, log=log)
 
 
 def catalog() -> tuple[Asset, ...]:
-    """The full catalog, resolved against the *current* curation home.
-
-    Rebuilt per call, not cached at import: the home moves with
-    ``ANIME_TOOLS_HOME`` and the backbone repo follows the installed checkpoint.
-    """
+    """The full catalog, rebuilt per call: the home moves with
+    ``ANIME_TOOLS_HOME`` and the backbone repo follows the installed
+    checkpoint."""
     tagger_dir = resolve_path(DEFAULT_TAGGER_DIR)
     backbone = backbone_repo_for(tagger_dir)
     return (

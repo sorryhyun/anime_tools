@@ -20,7 +20,7 @@ export interface RunResult {
 }
 
 /** Runs already undone, so a reload does not re-offer an Undo that would only
-    skip every row. Local, like the undo decision itself. */
+    skip every row. */
 const undone = (): string[] => {
   try {
     return JSON.parse(localStorage.getItem("undone") ?? "[]") as string[];
@@ -34,16 +34,11 @@ const markUndone = (id: string) =>
 /** Running the open stage: the **Run → versions → Undo** loop, and the one job
  * the dock is following.
  *
- * A Run writes. There is no Apply gate in front of it, because the caption
- * ladder is what a gate was standing in for: the text a run replaces is pushed
- * onto its rung's history and shows up as a badge (`revised@2`) beside the
- * caption, so "what did that just do to my caption?" is answered *after* the
- * write and by the panel, not by a diff you had to read before agreeing to one.
- *
- * The report a run writes is still read back — as the diff of what it *did*,
- * keyed by image, plus the dots on the sidebar rows it touched — and Undo is
- * that report replayed with the two texts swapped (`gui/proposals.undo`), which
- * is itself a write and so leaves its own version behind.
+ * A Run writes (`--apply`, always); there is no Apply gate. The text it replaces
+ * is pushed onto its rung's history and shows up as a badge (`revised@2`) beside
+ * the caption. Its report is read back as the diff of what it did, keyed by
+ * image, plus the dots on the sidebar rows it touched; Undo is that report
+ * replayed with the two texts swapped (`gui/proposals.undo`), itself a write.
  */
 export function createRunner(deps: {
   config: Config;
@@ -64,11 +59,10 @@ export function createRunner(deps: {
   const [dry, setDry] = createStore<Record<string, RunResult | undefined>>({});
   /** Per stage, the last run that wrote, so Undo has a report to read the
       before-text out of. Seeded from the server's job list on load (the jobs
-      outlive this page), so a reload does not silently take Undo away. */
+      outlive this page), so a reload does not take Undo away. */
   const [applied, setApplied] = createStore<Record<string, string | undefined>>({});
 
-  // Re-adopt the newest finished run per stage: the server still holds the
-  // job and its report, so Undo survives a reload instead of evaporating.
+  // Re-adopt the newest finished run per stage, so Undo survives a reload.
   // Session state is never overwritten -- this only fills gaps on load.
   createEffect(
     on(stages.all, (ss) => {
@@ -91,8 +85,7 @@ export function createRunner(deps: {
     }),
   );
 
-  /** The open stage's last Run — the diff on screen is what it wrote, so it
-      stands until another run replaces it. */
+  /** The open stage's last Run; its diff stands until another run replaces it. */
   const pending = createMemo(() => {
     const s = stages.cur();
     return (s?.replay ? dry[s.id] : undefined) ?? null;
@@ -133,8 +126,7 @@ export function createRunner(deps: {
     // A finished download job changed what the Settings rows should say.
     void config.refetchModels();
     if (job.state === "done") void finished(job);
-    // Every stage run writes, so every one of them rewrote captions, masks or
-    // pixels under our feet.
+    // Every stage run writes, so every one rewrote captions, masks or pixels.
     void reloadTouched(job);
   }
 
@@ -187,18 +179,15 @@ export function createRunner(deps: {
   }
 
   /** Start the open stage and follow it. The one place a start can fail — a
-      rejected form, or the single job slot already taken — and it says so on
-      the run bar, with the dock open so the message is visible. */
+      rejected form, or the single job slot already taken — and it says so on the
+      run bar, with the dock open so the message is visible. */
   async function startStage(v: Values, rel: string | null) {
     const s = stages.cur();
     if (!s) return null;
     try {
-      // `--apply` whenever the stage has the flag: a Run writes, and there is
-      // no dry pass to opt into any more. A stage without one (correct, the
-      // mask generators, groups) never had the distinction, and is sent
-      // `false` rather than a flag it does not take -- so `job.apply` stays
-      // exactly "this run was told to write", which is what the undo route and
-      // the Undo button both read it as.
+      // `--apply` whenever the stage has the flag; a stage without one is sent
+      // `false` rather than a flag it does not take, so `job.apply` stays
+      // exactly "this run was told to write" for the undo route and button.
       const job = await api.start(s.id, v, !!s.apply, rel);
       config.setSettings("values", (prev) => ({ ...(prev ?? {}), [s.id]: job.values }));
       attach(job.id);
@@ -210,14 +199,10 @@ export function createRunner(deps: {
     }
   }
 
-  /** **Run** the current stage, for real: `--apply`, so the captions are
-      written and the report it leaves is a record of what changed rather than
-      an offer. `rel` narrows it to that one image; null runs the batch the
-      Settings `path_pattern` names.
-
-      What stands between a mistaken run and a lost caption is the ladder, not a
-      confirmation: the replaced text is a version now, and Undo replays this
-      very report backwards. */
+  /** **Run** the current stage for real (`--apply`), so its report records what
+      changed. `rel` narrows it to that one image; null runs the batch the
+      Settings `path_pattern` names. The replaced text becomes a version, and
+      Undo replays this very report backwards. */
   async function run(rel: string | null) {
     // `--from_report` is rebuilt per start and never carried over from the
     // saved form: a leftover path would quietly turn a Run into a replay of
@@ -227,9 +212,9 @@ export function createRunner(deps: {
     if (job) sent.set(job.id, { rel });
   }
 
-  /** **Undo**: put back the captions the last Run wrote, from the very report
-      it wrote them out of. A caption edited since is left alone and counted --
-      the run bar says so rather than quietly restoring less than it claims. */
+  /** **Undo**: put back the captions the last Run wrote, from the report it
+      wrote them out of. A caption edited since is left alone and counted on the
+      run bar. */
   async function undo() {
     const s = stages.cur();
     const id = s && applied[s.id];

@@ -32,9 +32,7 @@ def _await_job(c, response, tries: int = 200) -> dict:
 
 
 def _opt(argv: list[str], flag: str) -> str:
-    """The value ``flag`` carries in ``argv``. Position-free on purpose: the
-    bound fields (roots, stage defaults, the report root) all land in parser
-    order, so an added binding must not move an unrelated assertion."""
+    """The value ``flag`` carries in ``argv``, read position-free."""
     return argv[argv.index(flag) + 1]
 
 
@@ -125,7 +123,7 @@ def test_settings_fill_the_bound_stage_defaults():
         fs, {}, settings={"path_pattern": "char/*", "tagger_dir": "ckpt"}
     )
     assert argv == ["--path_pattern", "char/*", "--tagger_dir", "ckpt"]
-    # A value stranded in a saved form never beats (or fills in for) Settings.
+    # A value stranded in a saved form never beats Settings.
     assert S.build_argv(fs, {"path_pattern": "stale/*", "tagger_dir": "stale"}) == []
     # ...and it is not written back into the settings file either.
     assert S.form_values(fs, {"path_pattern": "stale/*", "mode": "merge"}) == {
@@ -134,8 +132,7 @@ def test_settings_fill_the_bound_stage_defaults():
 
 
 def test_device_is_never_on_the_form_or_the_argv():
-    """Auto-detected in the child (``_device.resolve_device``), because this
-    process is torch-free and cannot see the child's hardware."""
+    """``--device`` is resolved in the child, since this process is torch-free."""
     required = {"mask_dir": "m", "out": "g.json"}
     for stage_id in ("autotag", "position", "masks_sam", "masks_mit", "groups"):
         _, fs = _stage(stage_id)
@@ -148,8 +145,7 @@ def test_device_is_never_on_the_form_or_the_argv():
 
 
 def test_scoped_stages_are_the_ones_taking_a_pattern():
-    """The run bar's per-image button exists exactly where the stage has a
-    ``--path_pattern`` to narrow."""
+    """The per-image button exists exactly where a ``--path_pattern`` can narrow."""
     scoped = {s.id for s in S.STAGES if S.schema(s).get("scoped")}
     assert scoped == {
         "resize",
@@ -160,7 +156,7 @@ def test_scoped_stages_are_the_ones_taking_a_pattern():
         "ocr",
         "masks_sam",
         "masks_mit",
-        # Export narrows the same way: publishing just the image on screen.
+        # Export narrows the same way.
         "export",
     }
 
@@ -173,23 +169,19 @@ def test_required_field_is_enforced():
 
 def test_boolean_optional_action_and_positional_list():
     _, fs = _stage("masks_mit")
-    # --image-dir is bound to `dst`: the mask is cut from the same pixels the
-    # trainer's loader will rescale it onto. --mask-dir is bound to the
-    # Settings mask root plus this generator's own tail.
+    # --image-dir is bound to `dst` (the mask is cut from the pixels the loader
+    # rescales it onto); --mask-dir to the mask root plus this generator's tail.
     argv = S.build_argv(fs, {"ctd_gate": False}, roots={"dst": "d"}, mask_root="ws")
     assert argv == ["--image-dir", "d", "--mask-dir", "ws/masks_mit", "--no-ctd-gate"]
-    # A positional list is bound the same way, one joined tail per input, and
-    # the merge's inputs are exactly the two trees the generators wrote.
+    # A positional list binds the same way, one joined tail per input.
     _, fs = _stage("masks_merge")
     argv = S.build_argv(fs, {}, roots={"masks": "o"}, mask_root="ws")
     assert argv == ["--output-dir", "o", "ws/masks_sam", "ws/masks_mit"]
 
 
 def test_a_shut_drawer_sends_none_of_its_knobs():
-    """The text stage is two detectors behind two checkboxes, and the argv says
-    which ran. A knob left in a saved form under a switch that is now off would
-    otherwise ride along as a flag the stage ignores — legible in the log as a
-    detector that was configured and then did nothing."""
+    """Two detectors behind two checkboxes: a knob under a shut switch never
+    reaches the argv."""
     _, fs = _stage("masks_mit")
     roots, settings = {"dst": "d"}, {"checkpoint": "sam3.pt"}
     bound = ["--image-dir", "d", "--mask-dir", "ws/masks_mit"]
@@ -226,12 +218,8 @@ def test_a_shut_drawer_sends_none_of_its_knobs():
 
 
 def test_export_destinations_are_bound_and_on_the_panel():
-    """Export is the one stage whose bound fields stay on its form.
-
-    Where it publishes is a per-run choice, so ``--out`` / ``--index`` are
-    ``overridable``: still filled from Settings, but shown — and shown as paths
-    with the right chooser, which a bound field never had to say while every one
-    of them was hidden."""
+    """Export keeps ``--out`` / ``--index`` on its form as ``overridable`` paths
+    (a per-run choice); every other bound field stays hidden."""
     _, fs = _stage("export")
     over = {f["dest"] for f in fs if f["overridable"]}
     assert over == S.PANEL_FIELDS["export"] == {"out", "index"}
@@ -241,31 +229,22 @@ def test_export_destinations_are_bound_and_on_the_panel():
     assert by["index"]["report"] == "captions/caption_index.json"
     assert (by["out"]["path"], by["out"]["path_kind"]) == (True, "dir")
     assert (by["index"]["path"], by["index"]["path_kind"]) == (True, "file")
-    # Everything Export *reads* stays bound and hidden, like any other stage.
+    # Everything Export reads stays bound and hidden.
     assert not any(f["overridable"] for f in fs if f["dest"] in ("src", "dst", "masks"))
 
 
 def test_every_basic_field_names_a_flag_the_stage_actually_has():
-    """A typo in :data:`BASIC_FIELDS` is a silently *advanced* field.
-
-    The row is a set of dests with nothing to check it against — a misspelled
-    one folds the knob it meant to keep away and says nothing, which is the one
-    way this table can be wrong without anyone noticing.
-    """
+    """Every dest in :data:`BASIC_FIELDS` names a flag the stage has; a typo
+    would silently fold the knob it meant to keep."""
     for sid, basic in S.BASIC_FIELDS.items():
         _, fs = _stage(sid)
         assert basic <= {f["dest"] for f in fs}, sid
 
 
 def test_advanced_folds_the_research_parameters_and_never_the_form_itself():
-    """What the Advanced toggle may hide, and what it may never.
-
-    A stage with no :data:`BASIC_FIELDS` row has no advanced fields at all
-    (``autotag``, whose two knobs are the form). A stage with one keeps the
-    handful a run changes its mind about — and keeps, whatever the row says, the
-    fields the form cannot do without: a drawer's own gate, which is what the
-    rest of its group hangs off, a required field, and anything already hidden
-    because Settings fills it.
+    """A stage with no :data:`BASIC_FIELDS` row has no advanced fields; one with a
+    row still never folds a drawer's gate, a required field, or an already-hidden
+    one.
     """
     _, fs = _stage("autotag")
     assert not any(f["advanced"] for f in fs)
@@ -280,14 +259,12 @@ def test_advanced_folds_the_research_parameters_and_never_the_form_itself():
     kept = {f["dest"] for f in shown if not f["advanced"]} - {"apply", S.REPLAY_FIELD}
     assert kept == S.BASIC_FIELDS["position"]
     assert by["prompt"]["advanced"] is False and by["iou_threshold"]["advanced"] is True
-    # Bound fields are hidden already: saying they were *also* advanced would be
-    # a second answer to a question with one.
+    # Bound fields are hidden already.
     assert not any(
         f["advanced"] for f in fs if f["setting"] or f["root"] or f["report"]
     )
 
-    # The text-mask stage's two detector switches are gates, so they stay on the
-    # form whatever the row says -- a folded gate is a drawer you cannot open.
+    # The two detector switches are gates: a folded gate is a drawer you cannot open.
     _, fs = _stage("masks_mit")
     for f in fs:
         if f["gate"] == f["dest"] or f["required"]:
@@ -317,9 +294,8 @@ def test_an_overridable_field_opens_on_settings_and_yields_to_the_form():
         argv = S.build_argv(fields, values, roots=roots, report_root=reports)
         return argv[argv.index("--out") + 1]
 
-    # The resolved schema and the raw one put the same argv together: a value
-    # that *is* the resolved default is still spelled out, or the run would fall
-    # back to the CLI's own `post_image_dataset`.
+    # Resolved and raw build the same argv: a value equal to the resolved default
+    # is still spelled out, or the run falls back to the CLI's own default.
     assert _out(got["fields"], {}) == _out(sc["fields"], {}) == "/data/export"
     assert _out(got["fields"], {"out": "/tmp/scratch"}) == "/tmp/scratch"
     assert _out(got["fields"], {"out": "  "}) == "/data/export"
@@ -330,23 +306,19 @@ def test_an_overridable_field_opens_on_settings_and_yields_to_the_form():
 
 
 def test_export_has_no_undo_flag():
-    """Taking an export back is the GUI's Undo over the run's report
-    (``gui.proposals``), not an argv assembled by hand — it is a second write
-    outside the workspace, and it belongs beside the run it is undoing."""
+    """Taking an export back is the GUI's Undo over the run's report, not a flag."""
     _, fs = _stage("export")
     assert "undo" not in {f["dest"] for f in fs}
 
 
 def test_a_stale_mask_dir_in_a_saved_form_never_wins():
-    """``mask_dir`` moved off the form into ⚙ Settings, so a value left in a
-    saved payload is as dead as a stale root: two generators sharing one
-    directory is the failure the split root exists to prevent."""
+    """``mask_dir`` lives in ⚙ Settings, so a value left in a saved payload is
+    dead: two generators sharing one directory overwrite each other."""
     _, fs = _stage("masks_sam")
     argv = S.build_argv(fs, {"mask_dir": "typo"}, roots={"dst": "d"}, mask_root="ws")
     assert "typo" not in argv
     assert argv == ["--image-dir", "d", "--mask-dir", "ws/masks_sam"]
-    # With no root to bind against, the flag falls away and the CLI's own
-    # default stands — which is the same path, spelled once in `workspace/`.
+    # With no root to bind against, the flag falls away and the CLI default stands.
     assert S.build_argv(fs, {"mask_dir": "typo"}, roots={"dst": "d"}) == [
         "--image-dir",
         "d",
@@ -354,8 +326,7 @@ def test_a_stale_mask_dir_in_a_saved_form_never_wins():
 
 
 def test_the_sam3_checkpoint_is_one_setting_for_three_stages():
-    """position / audit / masks_sam build the same SAM3, so they load the same
-    file — set once in Settings, never three times on three forms."""
+    """position / audit / masks_sam build the same SAM3 from one Settings value."""
     required = {"mask_dir": "m"}
     for stage_id in ("position", "audit", "masks_sam"):
         _, fs = _stage(stage_id)
@@ -378,8 +349,7 @@ def test_the_sam3_checkpoint_is_one_setting_for_three_stages():
 
 
 def test_the_soft_prompt_is_one_setting_for_both_detector_stages():
-    """The two SAM3 stages run the *same* detector, so the soft prompt it finds
-    a subject with is one weights path, not a form field on each."""
+    """Both detector stages take the soft prompt from one Settings value."""
     for stage_id in ("position", "audit"):
         _, fs = _stage(stage_id)
         embed = next(f for f in fs if f["dest"] == "prompt_embed")
@@ -393,8 +363,8 @@ def test_the_soft_prompt_is_one_setting_for_both_detector_stages():
 
 
 def test_the_report_root_moves_every_report_and_splits_none():
-    """One Settings knob, one directory per stage: the tail comes off each
-    stage's own CLI default, so no two stages can be pointed at one report."""
+    """One Settings knob, one directory per stage: the tail comes off each stage's
+    own CLI default, so no two stages share a report."""
     tails = {}
     for stage_id in ("resize", "autotag", "position", "audit", "groups"):
         st, fs = _stage(stage_id)
@@ -461,7 +431,7 @@ def test_second_load_hits_the_cache_and_skips_the_child(cache):
 
 
 def test_touching_a_stage_module_invalidates_the_cache(cache, monkeypatch):
-    """The key is keyed on the module files, so an edited parser is never stale."""
+    """The cache key is keyed on the module files, so an edited parser is never stale."""
     calls, tmp_path, _ = cache
     mod = tmp_path / "cachestub_stage.py"
     mod.write_text("def build_parser():\n    pass\n", encoding="utf-8")
@@ -549,10 +519,8 @@ def client(tmp_path, monkeypatch):
     monkeypatch.setitem(S.BY_ID, "stub", fake)
     schemas["stub"] = S.schema(fake)
     app = create_app(jobs=JobManager(log_dir=tmp_path / "logs"), schemas=schemas)
-    # A browser on this machine, which is what the panel always is: the two
-    # routes that open or list something outside the dataset (`/api/pick`,
-    # `/api/ls`) answer a stranger differently, and `tests/test_gui_nativepick.py`
-    # is where that half is pinned.
+    # A local browser; `/api/pick` and `/api/ls` answer a remote one differently
+    # (pinned in `tests/test_gui_nativepick.py`).
     with TestClient(app, client=("127.0.0.1", 4242)) as c:
         yield c, tmp_path
 
@@ -566,9 +534,7 @@ def test_index_and_info(client):
 
 
 def test_bundle_assets_resolve(client):
-    """The page is not self-contained -- the font sits beside it -- so the two
-    halves have to agree: every ``url()`` the built CSS still points at must be
-    a name ``/assets`` actually serves, or the GUI renders in a fallback face."""
+    """Every ``url()`` the built CSS points at must be a name ``/assets`` serves."""
     c, _ = client
     refs = re.findall(r"url\((/assets/[^)]+)\)", c.get("/").text)
     assert refs, "the bundle references no assets -- did build.ts start inlining again?"
@@ -576,14 +542,14 @@ def test_bundle_assets_resolve(client):
         r = c.get(ref)
         assert r.status_code == 200, ref
         assert r.headers["content-type"] == "font/woff2"
-    # The route is the page's siblings, not the page itself, and not a guess.
+    # The route serves the page's siblings, not the page itself.
     assert c.get("/assets/index.html").status_code == 404
     assert c.get("/assets/nope.woff2").status_code == 404
 
 
 def test_files_are_confined_to_the_dataset(client):
-    """Serving a *file* is bounded by the trees the panel is showing, always --
-    browsing (``/api/ls``) is the looser half, and only for a local browser."""
+    """Serving a file is bounded by the trees the panel is showing; browsing
+    (``/api/ls``) is the looser half."""
     c, _ = client
     assert (
         c.get("/api/files", params={"path": "image_dataset/a.png"}).status_code == 200
@@ -597,9 +563,8 @@ def test_files_are_confined_to_the_dataset(client):
 
 
 def test_the_browser_walks_up_by_the_parent_the_server_names(client):
-    """The picker joins names onto a path but never takes one apart, so ``..``
-    is a field in the answer -- and it goes past the home, which is how a root
-    is pinned to a tree beside it."""
+    """The picker never takes a path apart, so ``parent`` is a field in the answer
+    — and it goes past the home."""
     c, home = client
     at_home = c.get("/api/ls").json()
     assert at_home["path"] == "" and at_home["parent"] == home.parent.as_posix()
@@ -610,9 +575,8 @@ def test_the_browser_walks_up_by_the_parent_the_server_names(client):
 
 
 def test_files_reject_dotdot_traversal(client):
-    """`..` must not escape the dataset: `is_relative_to` is purely textual, so
-    `<home>/image_dataset/../../x` would sail through without the normpath
-    collapse `reachable` does."""
+    """`..` must not escape the dataset; `reachable` collapses it with normpath
+    before the textual `is_relative_to`."""
     c, home = client
     outside = home.parent / "gui_traversal_target.txt"
     outside.write_text("secret")
@@ -620,8 +584,7 @@ def test_files_reject_dotdot_traversal(client):
         traversal = f"image_dataset/../../{outside.name}"
         assert outside.is_file()  # the target really exists — 404 is the guard
         assert c.get("/api/files", params={"path": traversal}).status_code == 404
-        # The *browser* may walk out there -- this machine's file manager could
-        # too -- but reading what it finds is still refused.
+        # The browser may walk out there; reading what it finds is still refused.
         assert (
             c.get("/api/ls", params={"path": "image_dataset/../.."}).status_code == 200
         )
@@ -643,8 +606,8 @@ def test_job_runs_streams_and_persists_values(client):
     assert r.status_code == 200, r.text
     job = r.json()
     assert job["argv"][:3] == [sys.executable, "-m", "stub_stage"]
-    # --report_dir is bound to the Settings report root, which defaults to the
-    # parent of the `dst` root rather than to the literal in the CLI default.
+    # --report_dir binds to the Settings report root, which defaults to the parent
+    # of the `dst` root rather than to the CLI's literal.
     assert job["argv"][3:] == [
         "--n",
         "3",
@@ -669,8 +632,8 @@ def test_job_runs_streams_and_persists_values(client):
 
 
 def test_stage_schemas_carry_the_settings_value_for_a_panel_field(client):
-    """``/api/stages`` is the only settings-dependent thing about the dump: the
-    Export panel's destinations open on what a Run would actually use."""
+    """``/api/stages`` fills a panel field's default from Settings; every other
+    stage's schema is the dump verbatim."""
     c, _home = client
     c.put("/api/settings", json={"dataset": {"out": "elsewhere/export"}})
     export = next(s for s in c.get("/api/stages").json() if s["id"] == "export")
@@ -684,9 +647,7 @@ def test_stage_schemas_carry_the_settings_value_for_a_panel_field(client):
 
 
 def test_job_start_creates_the_report_directory(client):
-    """The stub's own mkdir has no ``parents=True``, so a nested report dir only
-    works because ``POST /api/jobs`` made it first — and the run bar reads the
-    report back at the path it told the child to write."""
+    """``POST /api/jobs`` creates the report directory before the child runs."""
     c, home = client
     c.put("/api/settings", json={"stage_defaults": {S.REPORT_SETTING: "deep/nested"}})
     job = _await_job(c, c.post("/api/jobs", json={"stage": "stub"}))
@@ -724,17 +685,16 @@ def test_settings_pattern_and_rel_pick_the_run_scope(client):
 
 
 def test_resize_is_not_a_dock_panel():
-    """It has a schema and an argv, but nothing to click: it runs itself."""
+    """Resize has a schema and an argv but no panel: it runs itself."""
     assert S.BY_ID["resize"].hidden is True
     assert "Resize" not in S.PANELS
     assert [s.id for s in S.STAGES if s.hidden] == ["resize"]
 
 
 def test_only_resized_tree_stages_get_the_preflight():
-    """A stage bound to ``dst`` reads the resized tree, so it needs resize in
-    front of it — which is every pixel-reading stage now that the resized tree
-    is the one decode substrate. ``export`` is bound to ``dst`` but publishes it
-    rather than consuming it, and ``masks_merge`` reads no image at all."""
+    """A stage bound to ``dst`` reads the resized tree and needs resize in front of
+    it. ``export`` publishes ``dst`` rather than consuming it, and ``masks_merge``
+    opens no image."""
     got = {s.id: S.preprocess_for(s.id) for s in S.STAGES}
     assert got["export"] is None and "dst" in S.ROOT_FIELDS["export"].values()
     assert {k for k, v in got.items() if v == "resize"} == {
@@ -760,7 +720,7 @@ def test_a_dst_bound_stage_runs_resize_first(client, monkeypatch):
 
     assert [st["label"] for st in job["steps"]] == ["resize", "stub"]
     assert job["steps"][0]["module"] == "anime_tools.stages.cli.resize_images"
-    # `argv` stays the *stage's* command, so the UI still labels the job by it.
+    # `argv` stays the stage's own command, so the UI labels the job by it.
     assert job["argv"][:3] == [sys.executable, "-m", "stub_stage"]
     assert job["state"] == "done", job
     # Both steps' output lands in the one stream, under a step header.
@@ -772,7 +732,7 @@ def test_a_stage_without_a_preflight_is_a_single_step(client):
     c, _home = client
     job = _await_job(c, c.post("/api/jobs", json={"stage": "stub", "values": {"n": 1}}))
     assert [st["label"] for st in job["steps"]] == ["stub"]
-    # A lone step prints no header -- the chain is invisible when there is none.
+    # A lone step prints no header.
     body = "".join(c.get(f"/api/jobs/{job['id']}/log").iter_text())
     assert "step 1/1" not in body
 
@@ -815,7 +775,7 @@ def test_settings_preprocess_block_configures_the_preflight(client, monkeypatch)
 
 
 def test_a_failing_step_stops_the_chain(tmp_path):
-    """No point tagging images the resize step never produced."""
+    """A failing step stops the chain."""
     from anime_tools.gui.jobs import JobManager, Step
 
     (tmp_path / "boom_step.py").write_text("import sys; print('first'); sys.exit(3)")
@@ -862,12 +822,12 @@ def test_steps_run_in_order_in_one_stream(tmp_path):
 
 
 def test_scoping_an_unscopable_stage_is_refused(client, monkeypatch):
-    """No ``--path_pattern`` means nothing to narrow -- and "this image"
-    quietly meaning "everything" is the one outcome worth a 400."""
+    """No ``--path_pattern`` means nothing to narrow, so scoping is a 400 rather
+    than a run over everything."""
     c, _home = client
     r = c.post("/api/jobs", json={"stage": "stub", "rel": "../escape.png"})
     assert r.status_code == 400
-    # The same stub with its pattern taken away: nothing left to narrow.
+    # The same stub with its pattern taken away.
     schemas = c.app.state.schemas.get()
     monkeypatch.setitem(schemas, "stub", {**schemas["stub"], "scoped": False})
     r = c.post("/api/jobs", json={"stage": "stub", "rel": "a.png"})
@@ -890,16 +850,14 @@ ROW = "name,category,post_count,description\n"
 
 
 def test_tag_descriptions_are_the_caption_panel_s_kb(client, monkeypatch):
-    """Click a tag -> what the Danbooru KB says. The panel has to answer even
-    with no KB on disk (that answer is the download prompt), and the English
-    sibling must win for the *description* only -- the taxonomy is the base
-    table's, or half the tags would lose their category with their blurb."""
+    """The panel answers even with no KB on disk (the download prompt), and the
+    English sibling replaces the description only — the taxonomy stays the base
+    table's."""
     from anime_tools.captions import correction
     from anime_tools.gui import tags as T
 
     c, home = client
-    # The source tree's own models/ is a fallback candidate; a test must not
-    # find the developer's copy of a 16 MB CSV.
+    # The source tree's own models/ is a fallback candidate; keep the test off it.
     monkeypatch.setattr(correction, "_REPO_ROOT", home / "elsewhere")
     monkeypatch.setattr(T, "_CACHE", None)
 
@@ -923,8 +881,8 @@ def test_tag_descriptions_are_the_caption_panel_s_kb(client, monkeypatch):
     assert body["description"] == "one female character, in Korean"
     assert body["source"] == correction.TAG_CSV_NAME
 
-    # The English sibling, built later: picked up without a restart (the cache
-    # is keyed on both files), and it replaces the blurb, nothing else.
+    # The English sibling, built later: the cache is keyed on both files, and it
+    # replaces the blurb only.
     (models / correction.TAG_CSV_EN_NAME).write_text(
         ROW + "1girl,0,7598073,One female character.\n", encoding="utf-8"
     )
@@ -949,7 +907,7 @@ def test_tag_descriptions_are_the_caption_panel_s_kb(client, monkeypatch):
 
 def test_model_catalog_and_download_job(client, monkeypatch):
     """The Settings rows come from the download catalog, and Download starts a
-    normal job -- so it shares the one slot with the stages."""
+    normal job sharing the one slot."""
     c, home = client
     body = c.get("/api/models").json()
     assert body["models_dir"] == str(home / "models")
@@ -960,13 +918,13 @@ def test_model_catalog_and_download_job(client, monkeypatch):
 
     assert c.post("/api/models/download", json={"ids": ["nope"]}).status_code == 404
 
-    # Downloads and stages contend for the same slot on purpose.
+    # Downloads and stages contend for the same slot.
     j = c.post("/api/jobs", json={"stage": "stub", "values": {"sleep": 30}}).json()
     assert c.post("/api/models/download", json={"ids": ["sam3"]}).status_code == 409
     c.post(f"/api/jobs/{j['id']}/cancel")
 
-    # The child is the downloads CLI; HF_HUB_OFFLINE keeps the test off the wire
-    # (it fails fast, which is all we need to see it ran).
+    # HF_HUB_OFFLINE keeps the test off the wire; it fails fast, which is enough
+    # to see the child ran.
     monkeypatch.setenv("HF_HUB_OFFLINE", "1")
     job = _await_job(c, c.post("/api/models/download", json={"ids": ["mit_text"]}))
     assert job["argv"][1:] == ["-m", "anime_tools.downloads", "mit_text"]
@@ -996,7 +954,7 @@ def test_startup_does_not_wait_for_the_schema_dump(tmp_path, monkeypatch):
 
     t0 = time.perf_counter()
     app = _app(tmp_path, monkeypatch, slow)
-    assert time.perf_counter() - t0 < 1.0  # bound the port, don't dump schemas
+    assert time.perf_counter() - t0 < 1.0  # bind the port, don't dump schemas
 
     with TestClient(app) as c:
         assert c.get("/api/info").json()["schemas_ready"] is False
@@ -1052,8 +1010,7 @@ def test_pick_port_skips_busy_port():
 
 
 def test_replay_capable_stages_advertise_it():
-    """The GUI's Apply offers a replay off ``schema()["replay"]``, so the two
-    caption stages that grew ``--from_report`` have to carry the flag."""
+    """Apply reads ``schema()["replay"]``, so a ``--from_report`` stage carries it."""
     for stage_id in ("autotag", "position"):
         st, fs = _stage(stage_id)
         assert S.schema(st)["replay"] is True
@@ -1062,16 +1019,14 @@ def test_replay_capable_stages_advertise_it():
 
 
 def test_replay_report_name_matches_the_stages():
-    """``report_path`` hard-codes the replay's filename to stay torch-free;
-    this is the assertion that keeps the copy honest."""
+    """``report_path`` hard-codes the replay filename to stay torch-free."""
     from anime_tools.stages.replay import REPLAY_REPORT_NAME
 
     assert S.REPLAY_REPORT_NAME == REPLAY_REPORT_NAME
 
 
 def test_a_replay_reports_beside_the_run_it_replays():
-    """``--from_report`` and ``--report_dir`` normally name the same directory:
-    the replay must not clobber the dry run it is reading."""
+    """A replay reports beside the dry run it reads, never over it."""
     st, fs = _stage("autotag")
     dry = S.report_path(st, fs, {}, "r")
     assert dry == "r/captions/autotag/report.json"
@@ -1088,7 +1043,7 @@ def test_from_report_reaches_the_argv():
 
 
 def test_dataset_items_refreshes_only_what_it_is_asked_for(client):
-    """The sidebar patch path: a job's ``written`` list in, those rows out."""
+    """A job's ``written`` list in, those rows out."""
     c, tmp_path = client
     src = tmp_path / "image_dataset"
     (src / "sub").mkdir()
@@ -1108,8 +1063,7 @@ def test_dataset_items_refreshes_only_what_it_is_asked_for(client):
 
 
 def test_dataset_items_drops_what_it_cannot_refresh(client):
-    """Traversal and vanished rows are dropped, not raised: the caller is
-    patching a listing, and a row it cannot refresh is one to leave alone."""
+    """Traversal and vanished rows are dropped, not raised."""
     c, _ = client
     r = c.post(
         "/api/dataset/items", json={"rels": ["../escape.png", "/abs.png", "gone.png"]}
@@ -1118,17 +1072,16 @@ def test_dataset_items_drops_what_it_cannot_refresh(client):
 
 
 def test_apply_replays_a_dry_run_end_to_end(tmp_path, monkeypatch):
-    """The whole Apply path, over the real HTTP API and the real autotag CLI:
-    a dry run's report goes in, captions come out, and no model is loaded."""
+    """The whole Apply path over the real HTTP API and autotag CLI: a dry run's
+    report in, captions out, no model loaded."""
     from fastapi.testclient import TestClient
 
     from anime_tools.gui.server import create_app
 
     monkeypatch.setenv("ANIME_TOOLS_HOME", str(tmp_path))
     c = TestClient(create_app())
-    # Saving Settings makes the roots real (nothing existed a moment ago).
-    # Registry order (input, then the three the workspace owns); `out` is
-    # Export's to create, so it is not here.
+    # Saving Settings makes the roots real, in registry order; `out` is Export's
+    # to create, so it is not here.
     assert c.put("/api/dataset/roots", json={}).json()["created"] == [
         "src",
         "master",
@@ -1141,7 +1094,7 @@ def test_apply_replays_a_dry_run_end_to_end(tmp_path, monkeypatch):
         (src / f"{n}.txt").write_text("1girl, solo.")
         (dst / f"{n}.png").write_bytes(b"\x89PNG\r\n\x1a\n")
 
-    # What the tagger pass left behind, which is exactly what Apply now skips.
+    # What the tagger pass left behind.
     rdir = tmp_path / "workspace" / "captions" / "autotag"
     rdir.mkdir(parents=True)
     (rdir / "report.json").write_text(
@@ -1203,8 +1156,7 @@ def test_apply_replays_a_dry_run_end_to_end(tmp_path, monkeypatch):
 
 
 def test_a_refused_root_is_a_bad_request_not_a_crash(client):
-    """`DatasetError` and `ProposalError` are registered app-wide rather than
-    caught at nine call sites. Anything outside the curation home is refused."""
+    """`DatasetError` / `ProposalError` are registered app-wide as 400s."""
     c, *_ = client
     r = c.get("/api/dataset", params={"src": "/etc"})
     assert r.status_code == 400
@@ -1221,8 +1173,7 @@ def test_an_empty_caption_write_is_still_a_bad_request(client):
 
 
 def test_an_image_that_is_not_in_the_dataset_is_a_404(client):
-    """The roots resolved — only the image is missing, so this one keeps its own
-    status rather than taking the app-wide 400."""
+    """The roots resolved, so a missing image is a 404, not the app-wide 400."""
     c, *_ = client
     r = c.get("/api/dataset/item", params={"rel": "nope.png"})
     assert r.status_code == 404

@@ -82,9 +82,8 @@ def _hf_token_present() -> bool:
 
 
 # ---- settings-derived values, as pure functions ---------------------------- #
-# Each takes the settings mapping rather than reading it, so one request reads
-# the file once and everything it derives agrees. ``D.DatasetError`` propagates
-# to the app-wide 400 handler in ``create_app``.
+# Each takes the settings mapping rather than reading it, so one request reads the
+# file once. ``D.DatasetError`` propagates to the app-wide 400 handler.
 
 
 def roots_for(settings: Mapping[str, Any], **overrides: str) -> D.Roots:
@@ -110,18 +109,10 @@ def _root_beside(settings: Mapping[str, Any], key: str, sibling: Path) -> str:
     """A Settings root that stages hang their own tails off, home-relative:
     whatever ``key`` holds, and *beside* ``sibling`` when it holds nothing.
 
-    Two settings have exactly this shape, for the same underlying reason: a
-    handful of stages spell one flag identically, so what Settings holds has to
-    be a root each of them appends a tail to rather than a directory they all
-    write into. The blank case is then the same rule twice -- follow the tree
-    these outputs belong to, so they move when the dataset moves.
-
-    *Beside* stops at the curation home. A ``sibling`` of one component — a bare
-    ``resized``, or the pre-workspace ``post_image_dataset`` a settings file
-    written before the workspace still pins — has the home itself for a parent,
-    and the rule would then strew the tails across the project root. The
-    workspace is where the tools write (:mod:`anime_tools.workspace`), so that
-    is the answer instead.
+    *Beside* stops at the curation home: a ``sibling`` of one component (a bare
+    ``resized``, or a pre-workspace ``post_image_dataset``) has the home itself
+    for a parent, which would strew the tails across the project root. The
+    workspace root is used instead.
     """
     got = str((settings.get(S.SETTINGS_KEY) or {}).get(key) or "").strip()
     if got:
@@ -131,41 +122,32 @@ def _root_beside(settings: Mapping[str, Any], key: str, sibling: Path) -> str:
 
 
 def report_root(settings: Mapping[str, Any], roots: D.Roots) -> str:
-    """Where every stage's report lands, home-relative — the root only; each
-    stage appends its own tail (``S.Field.report``), so no two share a
-    ``--report_dir``: one shared directory would have one stage's
-    ``--from_report`` replay read another stage's report.
+    """Where every stage's report lands, home-relative — the root only; each stage
+    appends its own tail (``S.Field.report``), so no two share a ``--report_dir``
+    and one stage's ``--from_report`` cannot read another's report.
 
-    Blank means *beside the* ``dst`` *root*, so reports follow the resized tree
-    they describe wherever the dataset moves — see :func:`_root_beside` for
-    where *beside* stops, and why ``captions/`` and ``groups/`` do not end up in
-    the project root.
+    Blank means *beside the* ``dst`` *root* (:func:`_root_beside`).
     """
     return _root_beside(settings, S.REPORT_SETTING, roots.dst)
 
 
 def mask_root(settings: Mapping[str, Any], roots: D.Roots) -> str:
-    """Where each generator's *own* mask tree lands, home-relative — the root
-    only; each generator appends its own tail (``S.Field.mask``), because two
-    generators sharing a ``--mask-dir`` would overwrite each other's
-    ``{stem}_mask.png`` at the same relative path and leave ``merge_masks`` one
-    tree to union instead of two.
+    """Where each generator's *own* mask tree lands, home-relative — the root only;
+    each generator appends its own tail (``S.Field.mask``), because two generators
+    sharing a ``--mask-dir`` would overwrite each other's ``{stem}_mask.png`` at
+    the same relative path and leave ``merge_masks`` one tree to union.
 
-    Blank means *beside the* ``masks`` *root*, so the intermediates sit next to
-    the merged tree they feed, and follow it when the dataset moves — the same
-    stop-at-the-home rule as :func:`report_root`, spelled once in
-    :func:`_root_beside`.
+    Blank means *beside the* ``masks`` *root* (:func:`_root_beside`).
     """
     return _root_beside(settings, S.MASK_SETTING, roots.masks)
 
 
 def preprocess_min_pixels(settings: Mapping[str, Any]) -> int:
     """The resize floor the preflight runs at, from the Settings *Preprocess*
-    block — the stage's own default when it is blank, 0 when it is turned off.
+    block — the stage's own default when blank, 0 when turned off.
 
-    Read here rather than off the schema dump because it is wanted on the item
-    route, which must answer while the schemas are still loading; the value is
-    the stage's constant either way, imported so the two cannot drift.
+    Read here rather than off the schema dump, because the item route must answer
+    while the schemas are still loading.
     """
     got = (settings.get(S.PREPROCESS_SETTINGS_KEY) or {}).get("min_pixels")
     if got is None or str(got).strip() == "":
@@ -183,14 +165,13 @@ def root_paths(roots: D.Roots) -> dict[str, str]:
 
 
 def make_output_dirs(stage: S.Stage, report: str | None, roots: D.Roots) -> None:
-    """Create the directories this run *writes* to, so a fresh home does not
-    need a mkdir tour before the first job.
+    """Create the directories this run *writes* to, so a fresh home does not need
+    a mkdir tour before the first job.
 
     Only the outputs the GUI itself chose: the workspace roots this stage binds
     (``D.OUTPUT_ROOTS`` ∩ ``S.ROOT_FIELDS``) and the report directory. Never
-    ``src``, and never a free-text path off the stage form — an empty tree
-    conjured behind a mistyped ``--source`` hides the typo. Never ``out``
-    either, so an export tree that exists means an export happened.
+    ``src``, never a free-text path off the stage form (that would hide a typo),
+    and never ``out``, so an export tree that exists means an export happened.
     """
     for name in set(S.ROOT_FIELDS.get(stage.id, {}).values()) & D.OUTPUT_ROOTS:
         D.ensure_output_dir(getattr(roots, name))
@@ -209,9 +190,8 @@ def preprocess_steps(
     """The resize preflight for ``stage``, or nothing.
 
     It runs with the *same* ``defaults`` the stage got, so a per-image Apply
-    resizes exactly that image and a batch resizes the batch; its own knobs come
-    from the Settings ``preprocess`` block. A stage whose preflight is
-    unavailable runs alone — resize is a convenience, not a gate.
+    resizes exactly that image; its own knobs come from the Settings
+    ``preprocess`` block. A stage whose preflight is unavailable runs alone.
     """
     pre_id = S.preprocess_for(stage.id)
     pre = S.BY_ID.get(pre_id or "")
@@ -236,10 +216,10 @@ def preprocess_steps(
 class Schemas:
     """The stage form schemas, kept off the startup path.
 
-    Collecting them means a child interpreter (this process must stay
-    torch-free — ``test_boundary`` pins that), which costs seconds on a cache
-    miss, so the loader runs on a background thread and only the endpoints that
-    need a schema block on it. A failing dump is a 500 there, not a dead server.
+    Collecting them means a child interpreter (this process stays torch-free),
+    which costs seconds on a cache miss, so the loader runs on a background thread
+    and only the endpoints that need a schema block on it. A failing dump is a 500
+    there, not a dead server.
     """
 
     TIMEOUT = 60.0
@@ -278,8 +258,7 @@ class Schemas:
 def create_app(
     *, jobs: JobManager | None = None, schemas: dict[str, Any] | None = None
 ) -> FastAPI:
-    # Job logs are curation output like everything else, so they live in the
-    # workspace rather than in the tree Export publishes to.
+    # Job logs are curation output, so they live in the workspace.
     mgr = jobs or JobManager(log_dir=workspace_dir() / "gui_logs")
     # Passing schemas in short-circuits the background loader (see Schemas).
     store = Schemas(schemas)
@@ -293,8 +272,8 @@ def create_app(
     app.state.jobs = mgr
     app.state.schemas = store
 
-    # A refused path, root or report is a bad request, not a crash. The routes
-    # that owe a *404* instead say so at the one call that can produce theirs.
+    # A refused path, root or report is a bad request, not a crash. Routes that
+    # owe a 404 instead say so at the call that produces theirs.
     @app.exception_handler(D.DatasetError)
     @app.exception_handler(P.ProposalError)
     async def _bad_request(_request: Request, exc: Exception) -> JSONResponse:
@@ -308,11 +287,9 @@ def create_app(
     def asset(name: str) -> FileResponse:
         """Serve a sibling of index.html -- today only the bundled woff2.
 
-        The bundle inlines its script and stylesheet but not the font: at
-        1.7 MB the base64 of it was 92% of the committed file, rewritten by
-        every frontend commit. Beside the page it is one immutable object.
-        A path param never spans "/", so `name` cannot climb out of STATIC;
-        the checks below are for a name that simply is not an asset.
+        The bundle inlines its script and stylesheet but not the 1.7 MB font.
+        A path param never spans "/", so `name` cannot climb out of STATIC; the
+        checks below are for a name that simply is not an asset.
         """
         p = STATIC / name
         if name == "index.html" or name.startswith(".") or not p.is_file():
@@ -334,10 +311,9 @@ def create_app(
     def list_stages() -> list[dict[str, Any]]:
         """Every stage's form schema, in registry order.
 
-        The dump is collected once and cached on the source tree, so the only
-        thing settings-dependent about it is the default of a field the *panel*
-        may override (``S.PANEL_FIELDS``): those open on what Settings says a
-        Run would use, which is why the settings are read here at all.
+        The dump is cached on the source tree; the only settings-dependent part
+        is the default of a field the panel may override (``S.PANEL_FIELDS``),
+        which opens on what Settings says a Run would use.
         """
         schemas = store.get()
         settings = load_settings()
@@ -384,7 +360,7 @@ def create_app(
 
     @app.post("/api/models/download")
     async def download_models(request: Request) -> dict[str, Any]:
-        """Fetch weights as a normal job, so a 3 GB pull cannot run under a
+        """Fetch weights as a normal job, so a large pull cannot run under a
         stage. Empty ``ids`` means every missing model."""
         body = await request.json()
         ids = [str(i) for i in (body.get("ids") or [])]
@@ -419,15 +395,14 @@ def create_app(
         apply = bool(body.get("apply"))
         rel = str(body.get("rel") or "").strip()
         # One read for the whole request: the roots, the stage defaults and the
-        # preflight's knobs all come out of it and must agree.
+        # preflight's knobs all come out of it.
         settings = load_settings()
         roots = roots_for(settings)
         defaults = stage_defaults(settings)
         reports = report_root(settings, roots)
         if rel:
             # Refuse rather than silently run the batch: a stage with no
-            # --path_pattern has nothing to narrow, and "apply to this image"
-            # quietly meaning "apply to everything" is the worst outcome here.
+            # --path_pattern has nothing to narrow.
             if not sc.get("scoped"):
                 raise HTTPException(400, f"{stage.id} cannot be scoped to one image")
             defaults = {**defaults, S.SCOPE_FIELD: D.item_pattern(rel)}
@@ -466,9 +441,8 @@ def create_app(
             )
         except RuntimeError as e:
             raise HTTPException(409, str(e)) from e
-        # Re-read before writing: the job started, and a settings PUT could
-        # have landed while it did — merging into the request's own snapshot
-        # would silently roll that back.
+        # Re-read before writing: a settings PUT could have landed while the job
+        # started, and merging into this request's snapshot would roll it back.
         data = load_settings()
         data.setdefault("values", {})[stage.id] = values
         save_settings(data)
@@ -529,8 +503,8 @@ def create_app(
         return job, resolve_path(job.report_path)
 
     def _proposals(job_id: str) -> tuple[Any, dict[str, P.Proposal]]:
-        """A finished run and what it proposes, keyed by dataset rel.
-        ``P.read`` is report-mtime cached, so a second ask is a dict lookup."""
+        """A finished run and what it proposes, keyed by dataset rel. ``P.read``
+        is report-mtime cached, so a second ask is a dict lookup."""
         job, path = _report_of(job_id)
         return job, P.read(path, roots_for(load_settings()), job.stage)
 
@@ -539,8 +513,7 @@ def create_app(
         """Which dataset images this run wants to change — the index only.
 
         The before/after text of one image comes from ``/proposal`` as the
-        selection lands on it, so opening a 2000-image batch's diff does not put
-        2000 captions on the wire.
+        selection lands on it, so a large batch's diff stays off the wire.
         """
         job, found = _proposals(job_id)
         return {
@@ -562,11 +535,8 @@ def create_app(
 
     @app.post("/api/jobs/{job_id}/undo")
     def job_undo(job_id: str) -> dict[str, Any]:
-        """Put back the captions this run wrote.
-
-        Refuses a dry run outright — it wrote nothing, so "undo" could only mean
-        undoing some *other* run sharing the report shape.
-        """
+        """Put back the captions this run wrote. A dry run is refused: it wrote
+        nothing, so an undo could only touch some other run's writes."""
         job, path = _report_of(job_id)
         if not job.apply:
             raise HTTPException(400, "that run wrote nothing — nothing to undo")
@@ -594,9 +564,8 @@ def create_app(
         body = await request.json()
         picked = {k: str(body.get(k) or "").strip() for k in D.DEFAULT_ROOTS}
         roots = D.resolve_roots(picked, trusted=True)
-        # The only ``trusted`` resolve: saving Settings is what *defines* the
-        # trees the panel may read (``dataset_bases``), so a root outside the
-        # home is set here or nowhere.
+        # The only ``trusted`` resolve: saving Settings is what defines the trees
+        # the panel may read (``dataset_bases``).
         try:
             created = D.ensure_roots(roots)
         except OSError as e:
@@ -632,10 +601,9 @@ def create_app(
     def dataset_groups() -> dict[str, Any]:
         """The near-twin components the **Groups** stage wrote, rels only.
 
-        The client joins them onto the ``/api/dataset`` rows it already has, so
-        one filter and one truncation serve both sidebar orderings. The path is
-        derived exactly like a stage's report, so the view reads the file the
-        Groups panel writes wherever Settings points it.
+        The client joins them onto the ``/api/dataset`` rows it already has, so one
+        filter and one truncation serve both sidebar orderings. The path is derived
+        like a stage's report, so it follows Settings.
         """
         settings = load_settings()
         return D.load_groups(report_root(settings, roots_for(settings)))
@@ -684,8 +652,8 @@ def create_app(
     async def dataset_parse(request: Request) -> dict[str, Any]:
         """Parse an *unsaved* caption for the editor's live clause preview.
 
-        The grammar has exactly one implementation (``position_clauses``) — the
-        browser must never hand-split a caption on commas, so it asks instead.
+        The browser must never hand-split a caption on commas, so it asks the one
+        grammar implementation (``position_clauses``) instead.
         """
         body = await request.json()
         return D.parsed_caption(str(body.get("text") or ""))
@@ -733,22 +701,19 @@ def create_app(
     async def pick_path(request: Request) -> dict[str, Any]:
         """Open the *host's* folder/file chooser and answer with what it got.
 
-        The dialog opens on the machine running this server, so it is offered
-        only to a browser on that same machine: from anywhere else it would be
-        a window nobody can see, holding the request until it times out. That
-        refusal and a host with no chooser both come back as
-        ``available: false``, the panel's cue to fall back to ``/api/ls``.
+        The dialog opens on the machine running this server, so it is offered only
+        to a browser on that same machine; from anywhere else it would hold the
+        request on a window nobody can see. That refusal and a host with no chooser
+        both come back as ``available: false``, the cue to fall back to ``/api/ls``.
 
-        The answer is home-relative when it is under the home, absolute when it
-        is not. A root outside the home is still refused, but by the save that
-        means it, not by the browse.
+        The answer is home-relative under the home, absolute outside it.
         """
         if not _is_loopback(request):
             return {"available": False, "path": None}
         body = await request.json()
         kind = "dir" if str(body.get("kind") or "dir") != "file" else "file"
-        # A dialog is as slow as the person in front of it, so it waits on a
-        # thread; the loop keeps serving the panel behind it.
+        # The dialog blocks for as long as the person in front of it takes, so it
+        # waits on a thread while the loop keeps serving the panel.
         res = await asyncio.to_thread(
             NP.pick,
             kind,
@@ -764,12 +729,10 @@ def create_app(
     def ls(request: Request, path: str = "") -> dict[str, Any]:
         """Directory listing for the fallback path browser.
 
-        The fallback has to reach the same places the host's own chooser can,
-        or a host without one could never point a root at a sibling tree — so
-        for a browser on *this* machine it walks anywhere, and ``parent`` is how
-        it goes up (the client joins names but never takes a path apart). From
-        anywhere else it stays inside ``D.dataset_bases``, the same tree the
-        file and thumbnail routes serve.
+        For a browser on *this* machine it walks anywhere, so a host with no native
+        chooser can still point a root at a sibling tree; ``parent`` is how it goes
+        up (the client joins names but never takes a path apart). From anywhere else
+        it stays inside ``D.dataset_bases``.
         """
         try:
             p = (
@@ -785,10 +748,10 @@ def create_app(
         parent = p.parent
         return {
             # Home-relative inside the home, absolute outside it, "" at the home
-            # itself -- the picker joins names onto this and hands it back.
+            # itself; the picker joins names onto this and hands it back.
             "path": "" if p == curation_home() else D.rel_to_home(p),
-            # None at the filesystem root, and at the edge of what this client
-            # may see: the ".." the picker draws is exactly this field.
+            # None at the filesystem root and at the edge of what this client may
+            # see; the ".." the picker draws is exactly this field.
             "parent": (
                 D.rel_to_home(parent)
                 if parent != p and (_is_loopback(request) or _within(parent))
@@ -863,8 +826,7 @@ def _chromium_binary() -> str | None:
 def _open_app_window(url: str) -> None:
     """Open ``url`` as a chromeless app window, falling back to a browser tab.
 
-    ``--app=`` reuses the running browser's default profile, so there is no
-    second session and no extra login.
+    ``--app=`` reuses the running browser's default profile.
     """
     import subprocess
 
@@ -883,8 +845,8 @@ def _open_app_window(url: str) -> None:
 
 
 def _open_when_ready(host: str, port: int, url: str, *, timeout: float = 60.0) -> None:
-    """Open ``url`` once the server accepts connections: a fixed delay races
-    startup and lands the browser on an error only a refresh clears."""
+    """Open ``url`` once the server accepts connections, rather than after a fixed
+    delay that would race startup."""
     import socket
     import time
 

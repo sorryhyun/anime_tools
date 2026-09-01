@@ -1,9 +1,5 @@
-"""``calibrate_thresholds(min_support=…)`` — a tag with too few val positives
-keeps the 0.5 default instead of trusting a degenerate F1 sweep (62% of the
-vocab has <5 val positives on a ~800-image val split, and ~300 of those swept
-to hair-trigger thresholds ≤0.3). The stroke-augmentation half of the original
-test went to ``_archive/anima_tagger_training/tests/`` with the PE trainer.
-"""
+"""``calibrate_thresholds(min_support=…)``: a tag with too few val positives keeps
+the 0.5 default rather than trusting a degenerate F1 sweep."""
 
 from __future__ import annotations
 

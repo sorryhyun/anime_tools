@@ -13,12 +13,9 @@ import type {
 } from "../types";
 
 /** The two files a preview can show, plus `overlay`: the mask drawn over the
-    image at 40%, which is how a mask is actually audited — flipping tabs and
-    comparing from memory is not.
-
-    The resized pixels are deliberately not a tab of their own: they are the
-    source re-encoded onto the bucket geometry, so the tab showed the same
-    picture twice. They are still the overlay's base when there is no source. */
+    image at 40%, which is how a mask is audited. The resized pixels get no tab
+    of their own (the source re-encoded onto the bucket geometry is the same
+    picture), but are still the overlay's base when there is no source. */
 const FILE_VIEWS = ["image", "mask"] as const;
 type FileView = (typeof FILE_VIEWS)[number];
 type View = FileView | "overlay";
@@ -26,16 +23,12 @@ const viewLabel = (v: View) => t().item.views[v];
 
 const mp = (px: number) => `${(px / 1e6).toFixed(2)} MP`;
 
-/** The size read-out under the preview, and the one thing a size means here.
-
-    An image below the resize floor is skipped by the preflight, so it never
-    lands in `workspace/resized` — the tree every stage walks. Run a stage on it
-    and you get zero rows, no diff and no writes, which reads as a broken stage
-    rather than as a filtered image. The chip is where that is said, next to the
-    pixel count you would already be looking at. `too_small` null means the
-    floor was never applied to this file (the mask, the resized copy, or a floor
-    turned off), and an unmeasured image gets no chip: a green one would claim
-    it passed a test nobody ran. */
+/** The size read-out under the preview. An image below the resize floor is
+    skipped by the preflight, so it never lands in `workspace/resized` — the tree
+    every stage walks — and a stage over it writes nothing at all; the chip is
+    where that is said. `too_small` null means the floor was never applied to
+    this file (the mask, the resized copy, or a floor turned off), and an
+    unmeasured image gets no chip. */
 function Dims(props: { info: ImageInfo | null; floor: number }) {
   return (
     <Show when={props.info}>
@@ -61,16 +54,13 @@ function Dims(props: { info: ImageInfo | null; floor: number }) {
   );
 }
 
-/** The caption column's width, in px. Kept out of `persisted` for the reason
-    the dock height is: it moves on every pointermove of a drag, so it is saved
-    once on pointerup instead of at frame rate. */
+/** The caption column's width, in px. Kept out of `persisted` like the dock
+    height: it moves on every pointermove, so it saves once on pointerup. */
 const CAP_W = "capw";
 const CAP_MIN = 300;
 
-/** The preview is a magnifier, not a link: a click used to hand the file to the
-    browser, which is the one place the mask, the resized pixels and the caption
-    are *not* side by side. Ctrl/⌘+scroll scales in place instead, anchored on
-    the pointer so the detail you aimed at stays under it. */
+/** Ctrl/⌘+scroll scales the preview in place, anchored on the pointer so the
+    detail aimed at stays under it. */
 const ZOOM_MAX = 12;
 
 export function ItemView(props: {
@@ -85,8 +75,7 @@ export function ItemView(props: {
       the editor when the version it rewrote is the one on screen. */
   proposal?: Proposal;
   proposalStage?: string;
-  /** The one global "show explanations" preference: the prose under a card is
-      the same kind of text the ? hides everywhere else. */
+  /** The one global "show explanations" preference. */
   help: boolean;
   onSaved: (entry: CaptionEntry) => void;
 }) {
@@ -94,9 +83,7 @@ export function ItemView(props: {
   const [capW, setCapW] = createSignal(Number(localStorage.getItem(CAP_W)) || 420);
   let split!: HTMLDivElement;
 
-  /** Drag the preview|caption boundary. The image and the caption both want the
-      width, and which one wins changes with what you are auditing -- a mask
-      overlay wants the picture, a clause rewrite wants the text. */
+  /** Drag the preview|caption boundary. */
   function grip(e: PointerEvent) {
     e.preventDefault();
     const x0 = e.clientX;
@@ -124,9 +111,9 @@ export function ItemView(props: {
     transform: `translate(${pan().x}px, ${pan().y}px) scale(${zoom()})`,
   });
 
-  /** Zoom about the pointer. The frame centres the picture, so the untransformed
-      centre is the frame's own centre: a point sits at `centre + pan + zoom*v`,
-      and holding it still across a zoom change is one solve for the new pan. */
+  /** Zoom about the pointer. The frame centres the picture, so a point sits at
+      `centre + pan + zoom*v`; holding it still across a zoom change is one solve
+      for the new pan. */
   function wheel(e: WheelEvent & { currentTarget: HTMLDivElement }) {
     if (!e.ctrlKey && !e.metaKey) return;
     e.preventDefault();
@@ -205,9 +192,8 @@ export function ItemView(props: {
       >
         {(it) => (
           <>
-            {/* The address, and only that: the geometry belongs to whichever
-                file is on screen, so the line under the picture reports it and
-                this row is not a second copy of the source's numbers. */}
+            {/* The address only: the geometry belongs to whichever file is on
+                screen, and the line under the picture reports it. */}
             <div class="crumbs">
               <Show when={it().dir}>
                 <span class="dim">{it().dir}/</span>
@@ -297,11 +283,8 @@ export function ItemView(props: {
               </div>
 
               {/* One caption panel, not one card per tree: an image has a
-                  *ladder* of captions (the hand-written master, the versions
-                  the revised caption used to be, that caption, then the
-                  generated v0…vN) and the panel's badges are that ladder. Which
-                  tree a version lives in is an answer it gives, not a question
-                  it asks. */}
+                  *ladder* of captions and the panel's badges are that
+                  ladder. */}
               <div class="captions">
                 <CaptionCard
                   help={props.help}

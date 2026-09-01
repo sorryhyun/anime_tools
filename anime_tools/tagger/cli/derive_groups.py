@@ -6,7 +6,7 @@ picks each group's mode by measuring how often two members co-occur on a
 hair length) are mutually exclusive → ``softmax_when_solo``; members that
 routinely stack (accessories) → ``multilabel``.
 
-The output is a **candidate** for human review, not a drop-in file — keys are
+The output is a candidate for human review, not a drop-in file: keys are
 slugged from the Korean taxonomy and want renaming, ``softmax`` groups want a
 curated ``escape:`` list. Read-only: nothing in ``--out_dir`` is mutated.
 
@@ -29,8 +29,7 @@ import yaml
 from anime_tools.captions import tag_groups as tg
 from anime_tools.captions.correction import load_tag_knowledge_base
 
-# Single-subject predicate on space-form tag *names*; ``role_markers`` and the
-# trainer's ``GroupRouter`` gate on the same rule over indices.
+# Single-subject predicate on space-form tag *names*.
 from anime_tools.captions.taxonomy import is_solo_names as _is_solo
 from anime_tools.tagger.data import TaggerCheckpoint
 
@@ -62,10 +61,7 @@ def _solo_sets_from_manifest(ckpt: TaggerCheckpoint) -> list[set[str]]:
 
 
 def solo_sets_from_index(index) -> list[set[str]]:
-    """Solo tag-name sets from a ``build_caption_index`` result.
-
-    Lets ``build_vocab`` derive groups from the scan it already did.
-    """
+    """Solo tag-name sets from a ``build_caption_index`` result."""
     out: list[set[str]] = []
     for _cap, _img, tags in index.values():
         names = set(tags)
@@ -151,12 +147,11 @@ def decide_mode(
 ) -> tuple[str, str, str]:
     """Pick ``(yaml_mode, tier, rationale)`` for a group.
 
-    Three tiers, because danbooru's hierarchical double-tagging (``long hair`` +
-    ``very long hair``) and 'mixed' members (``two-tone hair``) inflate the
-    multi-rate of genuinely attribute-like families above a strict exclusivity
-    cut. Only the ``confident`` tier (rate ≤ softmax_cooc_max) becomes
-    ``softmax_when_solo``; ``borderline`` (≤ borderline_cooc_max) is emitted
-    ``multilabel`` but flagged so the curator can promote it with an ``escape:``.
+    Three tiers: danbooru's hierarchical double-tagging (``long hair`` + ``very
+    long hair``) and 'mixed' members (``two-tone hair``) inflate the multi-rate
+    of attribute-like families. Only the ``confident`` tier (rate ≤
+    softmax_cooc_max) becomes ``softmax_when_solo``; ``borderline`` (≤
+    borderline_cooc_max) is emitted ``multilabel`` but flagged for promotion.
     """
     if n_any < min_support:
         return (
@@ -299,8 +294,7 @@ def derive_rows(
 
 # --apply: merge derived groups into a curated, English-keyed groups.yaml.
 # Korean taxonomy path → English group key. On a key collision the preserved
-# hand-curated group wins and the derived one is dropped (see merge_apply); with
-# nothing to preserve, those families are emitted as derived softmax groups.
+# hand-curated group wins and the derived one is dropped (see merge_apply).
 
 _EN_KEY: dict[str, str] = {
     "얼굴/눈 > 눈 색상": "eye_color",
@@ -365,13 +359,11 @@ _EN_KEY: dict[str, str] = {
 
 # Groups to emit as softmax_when_solo, in two tiers by measured solo multi-rate
 # (P(≥2 members | ≥1 member) on solo images): ≤2% truly exclusive, ≤~17% the
-# borderline tier where the residual co-fires are rare stacks. eye_shape is
-# deliberately NOT here — shape tags do co-occur (closed eyes + tsurime), so a
-# forced single pick would be wrong supervision. The eye/hair entries only fire
-# when there is no preserved groups.yaml to defer to. Every promoted group
-# carries a sentinel class (see merge_apply), relaxing supervision/decode from
-# "exactly one" to "at most one"; without it decode stamps an argmax winner on
-# every applicable image even when the family is absent.
+# borderline tier where the residual co-fires are rare stacks. The eye/hair
+# entries only fire when there is no preserved groups.yaml to defer to. Every
+# promoted group carries a sentinel class (see merge_apply), relaxing
+# supervision/decode from "exactly one" to "at most one"; without it decode
+# stamps an argmax winner on every applicable image.
 _PROMOTE_SOFTMAX = {
     "얼굴/눈 > 눈 색상",
     "머리카락 > 머리 색상",
@@ -446,8 +438,8 @@ def merge_apply(
         if mode == "softmax_when_solo" and escape:
             body["escape"] = escape
         if mode == "softmax_when_solo":
-            # Derived families have no guaranteed presence: the sentinel ("none of
-            # these") class lets CE supervise absence and decode reject.
+            # Derived families have no guaranteed presence: the sentinel
+            # ("none of these") class lets CE supervise absence.
             body["sentinel"] = True
         body["description"] = (
             f"[{path}] {r['multi_rate']:.0%} solo multi-rate, n={r['n_any']}"
@@ -474,10 +466,8 @@ def merge_apply(
 
 
 # The two halves of a groups pass, shared by ``--mode derive_groups`` and
-# ``build_vocab --derive_groups``. What differs between those two is *upstream*
-# of both halves and stays with the caller: where ``solo_sets`` came from (the
-# manifest, or a caption scan the build already did) and where ``kb`` came from
-# (an explicit --tag_cache, or find_tag_csv() with a warn-and-skip fallback).
+# ``build_vocab --derive_groups``. The caller supplies ``solo_sets`` (from the
+# manifest or a caption scan) and ``kb``.
 
 
 def derive_from_args(
@@ -491,15 +481,9 @@ def derive_from_args(
 ) -> tuple[list[dict], list[str], int]:
     """Score one groups pass and log it: ``(rows, unmatched, n_general)``.
 
-    The five tuning knobs are declared once, on the one ``tagger.cli.main``
-    parser, and both modes read the same namespace — so they are lifted off
-    ``args`` here rather than respelled per call site: the ten-argument
-    :func:`derive_rows` call was written out twice, which is two places for a
-    renamed knob to be missed and a default to drift.
-
-    ``source`` is the caller's one-phrase name for where ``solo_sets`` came
-    from, so the log line says which corpus the co-occurrence was measured on —
-    the number is only as trustworthy as its source.
+    The five tuning knobs are lifted off ``args`` here; both modes read the one
+    ``tagger.cli.main`` parser's namespace. ``source`` names where ``solo_sets``
+    came from, for the log line.
     """
     logger.info(
         "co-occurrence from %s — %d single-subject samples", source, len(solo_sets)
@@ -539,16 +523,12 @@ def write_merged_groups(
 ) -> tg.TagGroups:
     """Merge ``rows`` onto ``preserve``, back ``dest`` up, write it, read it back.
 
-    Returns the written file loaded through :func:`tag_groups.load_groups` — the
-    real consumer, so a merge that cannot be loaded fails here rather than at
-    the next run. It is returned rather than discarded because the caller that
-    goes on to *use* the groups (``build_vocab``) would otherwise parse the file
-    it just wrote a second time.
+    Returns the written file loaded through :func:`tag_groups.load_groups`, so
+    a merge that cannot be loaded fails here rather than at the next run.
 
-    The backup is ``<dest>.bak`` (``groups.yaml`` → ``groups.yaml.bak``) and is
-    taken whenever ``dest`` exists, including when ``dest`` *is* ``preserve`` —
-    safe, because :func:`merge_apply` has already read that file into memory,
-    and precisely the case where a backup is worth having.
+    The backup is ``<dest>.bak`` and is taken whenever ``dest`` exists,
+    including when ``dest`` *is* ``preserve`` (safe: :func:`merge_apply` has
+    already read that file into memory).
     """
     text, notes = merge_apply(rows, preserve, min_group_size=min_group_size)
     if dest.exists():

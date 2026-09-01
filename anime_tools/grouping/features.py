@@ -1,17 +1,14 @@
-"""PE-Spatial image-feature extraction + per-image cache (library primitive).
+"""PE-Spatial image-feature extraction + per-image cache.
 
-One PE-Spatial embedding path and one on-disk feature cache, shared by near-twin
-mining, grouping and dedup. Each image is encoded at PE's native 512x512 bucket →
-a global CLS descriptor + a 32x32 patch grid pooled to 16x16 (both L2-normed),
-cached per-image as ``.npz`` under ``$NEAR_TWIN_CACHE`` (default
-``~/.cache/near_twin/``), keyed by parent-dir hash + stem and stamped with the
-source's ``(size, mtime_ns)`` + :data:`FEATURE_CACHE_VER` — see
-:func:`_source_stamp` for why the stamp is what makes a rewritten tree a miss.
+Each image is encoded at PE's native 512x512 bucket → a global CLS descriptor + a
+32x32 patch grid pooled to 16x16 (both L2-normed), cached per-image as ``.npz``
+under ``$NEAR_TWIN_CACHE`` (default ``~/.cache/near_twin/``), keyed by parent-dir
+hash + stem and stamped with the source's ``(size, mtime_ns)`` +
+:data:`FEATURE_CACHE_VER`.
 
-The encoder is passed in as an :class:`Embedder`; this module never owns the
-model lifetime and never imports the PE loader.
-``easycontrol_adapters.tools.near_twins.engine`` re-exports these names, so they
-are not free to rename.
+The encoder is passed in as an :class:`Embedder`; this module never imports the
+PE loader. ``easycontrol_adapters.tools.near_twins.engine`` re-exports these
+names, so they are not free to rename.
 """
 
 from __future__ import annotations
@@ -36,8 +33,6 @@ from anime_tools.captions.taxonomy import normalize_tag
 CACHE_ROOT = Path(
     os.environ.get("NEAR_TWIN_CACHE", Path.home() / ".cache" / "near_twin")
 )
-# Derived from the curation walker rather than retyped, so grouping sees the
-# same image pool as the stages and the GUI browsing the same tree.
 IMAGE_EXTS: tuple[str, ...] = tuple(sorted({e.lower() for e in IMAGE_EXTENSIONS}))
 PE_NATIVE = 512  # PE-Spatial-B16-512 square bucket → 32x32 patch grid
 GRID_NATIVE = 32
@@ -48,9 +43,9 @@ FEATURE_CACHE_VER = 1  # bump to invalidate every cached .npz when the schema ch
 def read_tags(txt_path: Path) -> set[str]:
     """Read a ``.txt`` caption sidecar → set of normalized flat tags ("" → empty).
 
-    Parsed through the caption grammar, never a hand ``split(",")``: the period
-    is the clause delimiter, so a naive split would glue a clause header onto the
-    previous tag. Clause tags are excluded — this is the flat bag.
+    Parsed through the caption grammar (the period is the clause delimiter, so a
+    ``split(",")`` would glue a clause header onto the previous tag). Clause tags
+    are excluded — this is the flat bag.
     """
     if not txt_path.is_file():
         return set()
@@ -85,8 +80,7 @@ def _image_size(path: Path) -> tuple[int, int]:
 
 
 def iter_images(root: Path) -> list[Path]:
-    """Every image file under ``root`` (recursive), sorted — the shared curation
-    glob, so grouping sees the pool the stages process and the GUI browses."""
+    """Every image file under ``root`` (recursive), sorted."""
     if not root.is_dir():
         return []
     return glob_images_pathlib(root, recursive=True)
@@ -126,11 +120,7 @@ def gather_members(
 
 
 def keep_size_cohabiting(members: list[Member]) -> list[Member]:
-    """Drop members with no exact same-size sibling — they can never form a pair.
-
-    The same-size gate's pre-embedding half: a unique canvas size within an
-    artist has nothing to pair against, so embedding it would be wasted work.
-    """
+    """Drop members with no exact same-size sibling — they can never form a pair."""
     sizes = Counter(m.wh for m in members)
     return [m for m in members if m.wh != (0, 0) and sizes[m.wh] >= 2]
 
@@ -146,11 +136,10 @@ def _cache_path(member: Member) -> Path:
 def _source_stamp(path: Path) -> tuple[int, int]:
     """``(size, mtime_ns)`` of the source image; ``(-1, -1)`` if unreadable.
 
-    The cache key addresses a *location* (parent-dir hash + stem), so nothing in
-    it changes when the pixels underneath are rewritten — which is what a
-    regenerated ``workspace/resized/`` does. The stamp is what makes that a miss
-    instead of a silent stale hit. ``(-1, -1)`` never matches a real stat, so an
-    unreadable source recomputes rather than trusting what was cached.
+    The cache key addresses a *location* (parent-dir hash + stem), so it does not
+    move when the pixels underneath are rewritten (a regenerated
+    ``workspace/resized/``); the stamp is what makes that a miss. ``(-1, -1)``
+    never matches a real stat, so an unreadable source recomputes.
     """
     try:
         st = path.stat()
@@ -172,9 +161,8 @@ _BAD_TENSOR = torch.zeros(3, PE_NATIVE, PE_NATIVE)  # placeholder for a failed d
 
 
 class _ImageDataset(torch.utils.data.Dataset):
-    """Decode+resize on DataLoader workers so CPU preprocessing overlaps the GPU
-    forward. A corrupt image yields ``ok=False`` (skipped downstream) instead of
-    crashing the whole pass."""
+    """Decode+resize on DataLoader workers. A corrupt image yields ``ok=False``
+    (skipped downstream) instead of crashing the pass."""
 
     def __init__(self, members: list[Member]):
         self.members = members
@@ -202,7 +190,7 @@ class Embedder(Protocol):
 
     ``batch`` arrives on ``self.device`` in ``self.dtype`` as ``[B, 3, 512, 512]``
     in ``[-1, 1]``; return ``(cls [B, D] L2-normed float32, grid16 [B, 16, 16, D]
-    float16)`` as numpy. The cache format is embedder-agnostic in *name* only —
+    float16)`` as numpy. The cache does not record which embedder wrote it —
     switch embedders with a fresh ``$NEAR_TWIN_CACHE`` root.
     """
 
@@ -221,10 +209,9 @@ class Feature:
 def _save_feature(cache_path: Path, f: Feature, stamp: tuple[int, int]) -> None:
     """Write one cached feature, stamped with its source's ``(size, mtime_ns)``.
 
-    ``stamp`` is captured before the decode rather than read here: a source
-    rewritten mid-run then stores the *old* stamp against the new pixels, so the
-    next run re-embeds. Stat-ing at save time would store the new stamp against
-    the old pixels and the entry would never be revisited.
+    ``stamp`` must be captured before the decode: stat-ing here would store the
+    new stamp against pixels read before a mid-run rewrite, and that entry would
+    never be revisited.
     """
     cache_path.parent.mkdir(parents=True, exist_ok=True)
     size, mtime_ns = stamp
@@ -241,9 +228,9 @@ def _save_feature(cache_path: Path, f: Feature, stamp: tuple[int, int]) -> None:
 def _load_feature(cache_path: Path, stamp: tuple[int, int]) -> Feature | None:
     """Cached feature for ``stamp``, or ``None`` to recompute.
 
-    Anything wrong — no file, an unreadable or truncated ``.npz``, a
-    pre-stamp entry, a bumped :data:`FEATURE_CACHE_VER`, or a source whose size
-    or mtime moved — means "recompute", never an error.
+    Anything wrong — no file, an unreadable or truncated ``.npz``, a pre-stamp
+    entry, a bumped :data:`FEATURE_CACHE_VER`, or a moved size/mtime — means
+    "recompute", never an error.
     """
     if not cache_path.is_file():
         return None
@@ -268,16 +255,12 @@ def embed_members(
 ) -> dict[str, Feature]:
     """Load cached features; embed + cache any misses once via ``embedder``.
 
-    Misses stream through a ``DataLoader`` with pinned-memory async H2D and a
-    thread pool for the ``.npz`` writes, so decode, copy and forward overlap.
-
     With ``root`` given, the returned dict is keyed by each member's image path
     relative to it (POSIX string) — pass the tree's source dir whenever members
-    can span subfolders, since nothing enforces unique stems tree-wide and two
-    subfolders' ``1.webp`` would otherwise silently share one entry. Without
-    ``root`` the key is the bare ``stem``, which is only safe when the caller's
-    member scope guarantees unique stems. A member whose image fails to decode is
-    omitted; the on-disk cache is keyed and stamped independently of this.
+    can span subfolders, since two subfolders' ``1.webp`` would otherwise share
+    one entry. Without ``root`` the key is the bare ``stem``, safe only when the
+    caller's member scope guarantees unique stems. A member whose image fails to
+    decode is omitted; the on-disk cache is keyed and stamped independently.
     """
 
     def _key(m: Member) -> str:
@@ -308,8 +291,7 @@ def embed_members(
         collate_fn=_collate,
         persistent_workers=False,
     )
-    # tqdm to stderr so the daemon captures it and the GUI progress-bar tracker
-    # (gui/progress.py TQDM_RE) can drive a determinate bar over the embed pass.
+    # tqdm to stderr: the GUI progress tracker (gui/progress.py TQDM_RE) parses it.
     from tqdm import tqdm
 
     pbar = tqdm(total=len(todo), desc="embedding", unit="img", file=sys.stderr)

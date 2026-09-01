@@ -1,20 +1,12 @@
-"""Contact sheet for an applied `caption-position` run: image / SAM segment / caption before-after.
+"""Contact sheet for an applied `caption-position` run: image, segments, captions.
 
-What an already-landed run did to the captions, and whether the detector saw
-what you think it saw. One row per image: the detection overlay, the
-mask-blanked crops, and the master caption next to the revised one now on disk,
-every clause tag marked moved / novel / duplicated.
-
-The **after** side is read from disk (`--dst`), not re-proposed, so the sheet
-shows what actually trains. Detection is re-run only to recover the (unpersisted)
-crops and boxes, proposing from the master under `--src` — after one `--apply`
-the revised caption carries clauses and `is_candidate` would reject the corpus.
-A fresh proposal that disagrees with disk flags the row `drift`.
+One row per image: the detection overlay, the mask-blanked crops, and the master
+caption next to the revised one now on disk, every clause tag marked moved /
+novel / duplicated. The after side is read from disk (`--dst`), not re-proposed,
+so the sheet shows what actually trains; a fresh proposal that disagrees with
+disk flags the row `drift`.
 
 Read-only: writes only under `--out`, never a caption.
-
-    make daemon-run ARGS="anime_tools/stages/cli/review_position_captions.py \\
-        --path_pattern 'ama_mitsuki/*|ie_(raarami)/*'"
 """
 
 from __future__ import annotations
@@ -46,9 +38,7 @@ class PositionPalette:
     """One color per position phrase, allocated per row in first-seen order.
 
     Keyed by the *position name*, not an index: the overlay numbers boxes in
-    detection order while the clauses sit in caption order. A drifted
-    after-caption whose position no longer exists allocates the next color and
-    visibly matches nothing, which is the honest rendering.
+    detection order while the clauses sit in caption order.
     """
 
     def __init__(self) -> None:
@@ -97,17 +87,16 @@ def parse_args() -> argparse.Namespace:
 
 
 def flat_key_set(caption: str) -> set[str]:
-    # ``parsed.tag_keys`` minus the blanks: the same shared key the rewrite
-    # itself compares on, so this sheet's verdicts read the bag it read.
+    # Keyed by ``normalize_tag``, the same key the rewrite compares on.
     return {key for t in parse_caption(caption).flat_tags if (key := normalize_tag(t))}
 
 
 def classify(tag: str, before_bag: set[str], after_bag: set[str]) -> str:
     """How a clause tag got there — read off the two captions, not the proposal.
 
-    On-disk text rather than ``proposal.moved`` keeps the verdict true when the
-    re-derivation drifts: ``moved`` = the bag gave it up, ``novel`` = a crop
-    invention the master never carried, ``duplicated`` = still flat as well.
+    ``moved`` = the bag gave it up, ``novel`` = the master never carried it,
+    ``duplicated`` = still flat as well. Using the on-disk text rather than
+    ``proposal.moved`` keeps the verdict true when the re-derivation drifts.
     """
     key = normalize_tag(tag)
     if key not in before_bag:
@@ -143,8 +132,8 @@ def caption_html(
     """Render one caption, marking what each clause tag did to the flat bag.
 
     Clause colors are the box colors, matched by position name; when the palette
-    does not know it, the i-th clause takes the i-th box's color, since a drifted
-    caption still lists clauses in the reading order of the run that wrote it.
+    does not know it, the i-th clause takes the i-th box's color (a drifted
+    caption still lists clauses in the reading order of the run that wrote it).
     """
     if not caption:
         return "<span class=dim>(empty)</span>"
@@ -340,9 +329,9 @@ def main() -> None:
         else:
             status = f"skip:{reason}"
 
-        # Instances (reading order, matching the crop sink) carry the positions;
-        # a gate-rejected image has none, so its raw detections take synthetic
-        # keys that clause coloring can never collide with.
+        # Instances (reading order, matching the crop sink) carry the positions.
+        # A gate-rejected image has none, so its raw detections take synthetic
+        # keys that clause coloring cannot collide with.
         palette = PositionPalette()
         if proposal is not None and proposal.instances:
             boxes = [inst.box for inst in proposal.instances]
@@ -379,7 +368,7 @@ def main() -> None:
                 "drift": drift,
                 "has_clauses": has_clauses,
                 # After first: its clause positions match the fresh instances,
-                # so they reuse the box colors.
+                # so they claim the box colors.
                 "after": caption_html(
                     after, before_bag, after_bag, palette, box_colors
                 ),
@@ -393,7 +382,7 @@ def main() -> None:
         )
         print(f"  [{index}/{len(images)}] {rel}  {status}{'  DRIFT' if drift else ''}")
 
-    # Clause-carrying rows first: they are the ones with something to adjudicate.
+    # Clause-carrying rows first, then drifted ones.
     rows.sort(key=lambda r: (not r["has_clauses"], not r["drift"], r["image"]))
     write_json(
         out_dir / "report.json",

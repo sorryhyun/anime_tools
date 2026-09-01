@@ -1,30 +1,11 @@
 #!/usr/bin/env python
-"""Phase 3 of the caformer proposal — does the dbv4 backend's confidence mean
-anything on OUR images (not just rank well)?
+"""Does the dbv4 backend's confidence mean anything on our images, or only rank?
 
-CPU-only, seconds: reads the projected our-vocab probs the sidecar trainer
-cached for every ``dataset.json`` stem (``train_sidecar.py`` stage 1) and the
-val split's ground truth, then reports per frequency tier:
-
-* **ECE** (expected calibration error, 15 equal-width bins) of the raw
-  sigmoid pooled over all (image, tag) cells of the tier — plus the
-  reliability curve (bin confidence vs empirical positive rate) so an
-  over/under-confidence direction is visible, not just a number;
-* **threshold transfer**: the card's per-tag ``best_threshold`` (tuned on
-  danbooru) vs the F1-optimal threshold on our val split — fraction of tags
-  agreeing within ±0.10 and the median |Δ|, so we know whether recalibrating
-  on our data is worth anything;
-* the same two for the **sidecar** rows (BCE head, thresholds already
-  val-calibrated — so transfer is trivially 1.0 there; the ECE is the
-  informative half).
-
-Gate (pre-registered in the proposal): ECE ≤ 0.05 on the head tier and card
-thresholds within ±0.1 of val-optimal on ≥ 80 % of head tags.
-
-READOUT: bench/tagger_external/results/<ts>[-label]/{summary.md, result.json,
-         reliability.csv}
-
-::
+CPU-only: reads the projected our-vocab probs the sidecar trainer cached per
+``dataset.json`` stem against the val split's ground truth, and reports ECE
+(15 equal-width bins) plus a reliability curve per frequency tier, and how far
+the card's per-tag ``best_threshold`` sits from the val-optimal one. Writes
+``summary.md``, ``result.json`` and ``reliability.csv`` into the run dir.
 
     uv run python bench/tagger_external/calibration_check.py --label dbv4-calib
 """

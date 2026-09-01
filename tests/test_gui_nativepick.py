@@ -1,9 +1,6 @@
-"""The `…` on a path field: the host's own chooser, and the fallback rule.
-
-Two halves — which chooser :mod:`anime_tools.gui.nativepick` builds for a
-desktop, and what ``POST /api/pick`` does with the answer. No dialog is ever
-opened here: ``_argv`` is inspected rather than run, and the route's tests
-stand in for ``pick`` itself.
+"""The `…` on a path field: which chooser :mod:`anime_tools.gui.nativepick`
+builds for a desktop, and what ``POST /api/pick`` does with the answer. No
+dialog is opened: ``_argv`` is inspected rather than run.
 """
 
 from __future__ import annotations
@@ -64,17 +61,15 @@ def windows(monkeypatch):
 
 
 def test_the_windows_dialog_is_owned_so_it_lands_on_top(windows):
-    """A server behind the browser has no claim on the foreground, so an
-    *unowned* dialog opens invisibly — behind Chrome, with the request blocked
-    on it. The topmost owner is what puts it in front, and it must own both
-    kinds and be closed on the way out of either."""
+    """An unowned dialog opens behind the browser; the topmost owner puts it in
+    front, owns both kinds, and is closed on the way out of either."""
     for kind, dialog in (("dir", "FolderBrowserDialog"), ("file", "OpenFileDialog")):
         script = NP._argv(kind, None, "t")[-1]
         assert dialog in script
         assert f"{NP.OWNER_VAR}.TopMost = $true" in script
         assert f"ShowDialog({NP.OWNER_VAR})" in script
-        # The owner is raised before the dialog and disposed of after it, so a
-        # cancel cannot leak a transparent topmost window over the desktop.
+        # Raised before the dialog and disposed of after, so a cancel leaks no
+        # transparent topmost window.
         assert script.index(f"{NP.OWNER_VAR}.Show()") < script.index("ShowDialog(")
         assert script.endswith(f"{NP.OWNER_VAR}.Close()")
 
@@ -177,8 +172,8 @@ def test_the_chooser_opens_at_the_first_directory_that_exists(home, calls):
 
 
 def test_a_stranger_browses_only_the_dataset(home):
-    """The fallback browser walks the machine for the machine's own browser;
-    from anywhere else it sees the trees the panel is showing and no more."""
+    """The fallback browser walks the machine only for a local client; a remote
+    one sees the dataset trees and no more."""
     with _client(home, host="10.0.0.7") as c:
         assert c.get("/api/ls").json()["parent"] is None  # no way up
         assert c.get("/api/ls", params={"path": str(home.parent)}).status_code == 404
@@ -187,7 +182,7 @@ def test_a_stranger_browses_only_the_dataset(home):
 
 
 def test_a_browser_on_another_machine_gets_the_fallback(home, calls):
-    """The dialog would open on the server's desktop, where nobody can see it."""
+    """A remote browser gets the fallback: the dialog would open server-side."""
     seen, _ = calls
     with _client(home, host="10.0.0.7") as c:
         body = c.post("/api/pick", json={"kind": "dir", "path": ""}).json()

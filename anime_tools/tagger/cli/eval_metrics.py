@@ -1,11 +1,10 @@
 """Stratified tagger eval — per-tag metrics, inference-rule prediction, KB slices.
 
 Pure helpers over collected ``[N, n_tags]`` logit / multi-hot tensors: no model,
-no loader, no disk. They exist because the trainer's ``macro_f1`` **excludes**
-softmax-group tags (their sigmoid scores are argmax-only at inference), leaving
-the headline metric blind to the tags the group machinery supervises;
+no loader, no disk. The trainer's ``macro_f1`` excludes softmax-group tags
+(their sigmoid scores are argmax-only at inference), so
 :func:`predict_with_inference_rule` mirrors the real ``AnimaTagger.predict``
-decision procedure so every tag can be scored end-to-end.
+decision procedure and every tag can be scored end-to-end.
 
 Slice keys: general tags map to their danbooru taxonomy ``소분류`` (KB plus
 ``derive_groups``' ``_EN_KEY`` naming), other categories to ``cat:<category>``,
@@ -28,9 +27,9 @@ def per_tag_prf(
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
     """``(precision, recall, f1, support)`` per tag from boolean/0-1 tensors.
 
-    Convention matches the trainer: a tag with no predictions AND no positives
-    gets precision/recall 0 (denominators clamped), not 1 — so unsupported
-    tags don't inflate macro averages. Callers should mask by ``support > 0``.
+    A tag with no predictions AND no positives gets precision/recall 0
+    (denominators clamped), not 1, so unsupported tags don't inflate macro
+    averages. Callers should mask by ``support > 0``.
     """
     pred_f = pred.float()
     target_f = target.float()
@@ -48,8 +47,7 @@ def per_tag_average_precision(
 ) -> torch.Tensor:
     """Threshold-free AP per tag; NaN where the split has no positives.
 
-    Works for softmax-group tags too (no threshold enters), which makes it the
-    cleanest cross-head comparison metric.
+    Works for softmax-group tags too, since no threshold enters.
     """
     N = scores.shape[0]
     order = scores.argsort(dim=0, descending=True)
@@ -200,8 +198,7 @@ def aggregate_slices(
 
     ``macro_f1`` / ``mean_ap`` average only over *supported* tags (≥1 positive
     in the split); ``micro_f1`` pools every cell in the slice. ``n_tags`` vs
-    ``n_supported`` makes thin-support slices visible instead of silently
-    diluted.
+    ``n_supported`` makes thin-support slices visible.
     """
     rows: list[dict] = []
     for key, idxs in slice_indices.items():

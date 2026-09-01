@@ -1,5 +1,4 @@
-"""Dependency direction guard: ``anima_lora`` depends on ``anime_tools``, never
-the reverse. No module in the package may import the trainer."""
+"""No module in the package may import the trainer."""
 
 from __future__ import annotations
 

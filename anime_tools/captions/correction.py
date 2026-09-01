@@ -31,17 +31,15 @@ from anime_tools.captions.taxonomy import (
 
 _CATEGORY_RE = re.compile(r"^\s*\[([^\]]+)\]")
 
-# The KB's two file names, spelled once. :mod:`anime_tools.downloads` imports
-# them for its catalog row, so the file a Download button fetches and the file
-# this module looks for can't drift apart.
+# :mod:`anime_tools.downloads` imports these for its catalog row, so the file a
+# Download button fetches is the file this module looks for.
 TAG_CSV_NAME = "danbooru_tags_classified.csv"
 """The base table: English tag names / categories, **Korean** descriptions."""
 TAG_CSV_EN_NAME = "danbooru_tags_classified.en.csv"
 """Its English sibling, built by
 ``python -m anime_tools.tagger.cli.build_english_tag_csv``."""
 
-# Fallback for this source tree; the GUI passes ROOT explicitly so installed
-# layouts can keep the CSV under models/.
+# Fallback for this source tree; the GUI passes ROOT explicitly.
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 
 _DANBOORU_NUMERIC_CATEGORIES = {
@@ -52,11 +50,11 @@ _DANBOORU_NUMERIC_CATEGORIES = {
     "5": "meta",
 }
 
-# Injected aesthetic/quality-conditioning tags. NOT real booru tags (absent from
+# Injected aesthetic/quality-conditioning tags. Not real booru tags (absent from
 # the KB), so without this set they fall through to the general tail. Stored
 # space-form because ``normalize_tag`` turns ``_``→`` `` before classification;
-# the ``score_N`` buckets get their underscore back on emit (Pony convention,
-# see ``_quality_emit_form``). Emitted at the very front of the caption.
+# ``score_N`` gets its underscore back on emit (``_quality_emit_form``).
+# Emitted at the very front of the caption.
 _SCORE_QUALITY_TAGS = frozenset(f"score {n}" for n in range(1, 10))
 _QUALITY_TAGS = (
     frozenset(
@@ -141,9 +139,7 @@ def default_tag_csv_candidates(
 
     The base CSV carries Korean descriptions. For a non-Korean ``lang`` the
     lookup prefers a same-language sibling ``danbooru_tags_classified.<lang>.csv``
-    then the English one, so a Japanese/Chinese UI shows English rather than
-    untranslated Hangul; the base file remains the final fallback (it still
-    supplies language-neutral tag names / categories for autocomplete).
+    then the English one; the base file is the final fallback.
     """
 
     stems = [TAG_CSV_NAME]
@@ -156,8 +152,8 @@ def default_tag_csv_candidates(
     for stem in stems:
         if root is not None:
             paths.append(root / "models" / stem)
-        # models_dir() is the only candidate that honours ANIME_TOOLS_MODELS,
-        # which is where the `danbooru_tags` download row puts the file.
+        # models_dir() honours ANIME_TOOLS_MODELS, where the `danbooru_tags`
+        # download row puts the file.
         paths.append(models_dir() / stem)
         paths.append(_REPO_ROOT / "models" / stem)
     env = os.environ.get("ANIMA_DANBOORU_TAGS_CSV")
@@ -185,9 +181,8 @@ def find_tag_csv(root: Path | None = None, lang: str | None = None) -> Path | No
 
 
 def load_tag_knowledge_base(path: str | Path) -> TagKnowledgeBase:
-    # Hot path: ~114k rows. ``csv.reader`` (no per-row dict) + one
-    # ``normalize_tag`` per row + reusing the category regex match for the
-    # description body keep this ~2x faster than the naive DictReader form.
+    # Hot path: ~114k rows, hence ``csv.reader`` rather than ``DictReader`` and
+    # one ``normalize_tag`` per row.
     csv_path = Path(path)
     tags: dict[str, TagInfo] = {}
     with csv_path.open("r", encoding="utf-8-sig", newline="") as f:
@@ -241,8 +236,8 @@ def correct_caption(
     options: CaptionCorrectionOptions | None = None,
 ) -> CaptionCorrectionResult:
     options = options or CaptionCorrectionOptions()
-    # Clause tags are bound to a subject — bucket-reordering would dissolve that
-    # binding back into the bag. Correct only the flat bag, then re-append.
+    # Bucket-reordering would dissolve a clause tag's binding back into the
+    # bag, so only the flat bag is corrected and the clauses re-appended.
     parsed = parse_position_caption(text)
     if parsed.has_clauses:
         flat = correct_caption(", ".join(parsed.flat_tags), kb, options=options)
@@ -339,7 +334,7 @@ def _drop_clause_tags(clauses, kb: TagKnowledgeBase, options: CaptionCorrectionO
     """Apply ``options.drop_groups`` inside position clauses.
 
     Only the dropped tags are removed; a clause left with no tags is removed
-    whole — a bare ``On the left`` binds nothing.
+    whole, since a bare ``On the left`` binds nothing.
     """
     if not options.drop_groups:
         return list(clauses), ()
@@ -400,8 +395,7 @@ def _kind_from_category(category_path: str, numeric_category: str) -> str:
     numeric_kind = _DANBOORU_NUMERIC_CATEGORIES.get(numeric_category.strip())
     if numeric_kind is not None:
         return numeric_kind
-    # The fallback category path is Korean; the numeric Danbooru category is
-    # preferred above, so this only helps non-standard rows.
+    # Korean fallback path, for rows with no numeric Danbooru category.
     if category_path:
         root = category_path.split(">")[0].strip()
         if root == "작가":
@@ -429,7 +423,7 @@ def _quality_emit_form(tag: str) -> str:
 
 def _is_commentary_tag(tag: str) -> bool:
     """Danbooru commentary metadata tags (``commentary request``, ``<language>
-    commentary``, …) all carry the substring. Demoted to the general tail."""
+    commentary``, …) all carry the substring."""
     return "commentary" in tag
 
 

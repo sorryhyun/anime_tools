@@ -1,10 +1,10 @@
 """Match censored sincos training images to their uncensored ("decensored") counterparts.
 
 Filenames don't correspond (sincos = gelbooru post IDs, decensored = pixiv IDs) and
-resolutions differ, so matching is purely visual. Censored vs uncensored pairs differ
-only in small mosaic/bar regions, so global perceptual descriptors match them reliably.
+resolutions differ, so matching is purely visual. A pair differs only in small
+mosaic/bar regions, which global perceptual descriptors tolerate.
 
-Descriptors (PIL+numpy only, no model download, scale-invariant via resize):
+Descriptors (PIL+numpy only, scale-invariant via resize):
   - DCT perceptual hash (64-bit) on a 32x32 grayscale -> Hamming distance
   - 16x16 grayscale thumbnail, z-normalized -> cosine similarity
   - aspect-ratio gate (rejects candidates whose AR differs too much)
@@ -60,12 +60,10 @@ _CENSOR_EXTRA = {"convenient hair"}  # hair censor without the word 'censor'
 def is_censor_tag(tag: str) -> bool:
     """True if a single tag asserts the image is censored (not un/decensored).
 
-    Keyed through :func:`~anime_tools.captions.taxonomy.normalize_tag`, the
-    grammar's one tag key, rather than a private ``.strip().lower()``: that fold
-    misses the underscore, so the danbooru spelling ``convenient_hair`` never
-    reached :data:`_CENSOR_EXTRA` and its images were tiered ``no_censor_tag``.
-    ``normalize_tag`` is idempotent, so a caller that already normalized (which
-    :func:`has_censor_tag` does) pays nothing.
+    Keyed through :func:`~anime_tools.captions.taxonomy.normalize_tag`: a plain
+    ``.lower()`` leaves the underscore, so ``convenient_hair`` would never reach
+    :data:`_CENSOR_EXTRA`. ``normalize_tag`` is idempotent, so an
+    already-normalized caller pays nothing.
     """
     t = normalize_tag(tag)
     if t in _NOT_CENSOR:
@@ -76,18 +74,13 @@ def is_censor_tag(tag: str) -> bool:
 def has_censor_tag(stem: str) -> bool:
     """True if ``stem``'s caption sidecar says the image is censored.
 
-    Read through :func:`~anime_tools.grouping.features.read_tags` — the caption
-    grammar — never a hand ``split(",")``: the period is the clause delimiter,
-    so splitting on commas glues a clause header onto the tag before it
-    (``"white socks. On the left"``) and offers the result up as a tag. The flat
-    bag ``read_tags`` returns is also the right *scope* for this question:
-    being censored is a property of the whole image, so the clause tags it drops
-    (what the girl on the left is wearing) are exactly the ones that must not
-    vote. A missing sidecar reads as an empty bag, which is "no censor tag".
+    Read through :func:`~anime_tools.grouping.features.read_tags`, whose flat bag
+    is the right scope: being censored is a property of the whole image, so the
+    clause tags it drops must not vote. A missing sidecar reads as an empty bag.
 
     The import is deferred because it reaches ``features`` and so torch, while
-    :func:`descriptors` runs on a spawn pool that re-imports this module in
-    every worker — and no worker ever asks this question.
+    :func:`descriptors` runs on a spawn pool that re-imports this module in every
+    worker — and no worker asks this question.
     """
     from anime_tools.grouping.features import read_tags
 
@@ -137,13 +130,10 @@ def _worker(path_str: str):
 def build(dir_path: Path, label: str) -> dict[str, dict]:
     """``filename -> descriptor`` for every image in ``dir_path``, cached whole.
 
-    The walk is the shared curation glob, not a ``.webp`` filter, so a censored
-    original saved as ``.png`` is pairable too; descriptors are keyed by filename
-    (extension included), so a mixed directory is fine.
-
-    One ``.npz`` for the whole directory, stamped with ``(newest mtime, count,
-    CACHE_VER)`` — unlike the per-image PE feature cache next door. Anything
-    wrong with the stamp or the file means "recompute", never an error.
+    Descriptors are keyed by filename (extension included), so a mixed-format
+    directory is fine. One ``.npz`` per directory, stamped with ``(newest mtime,
+    count, CACHE_VER)``; anything wrong with the stamp or the file means
+    "recompute", never an error.
     """
     files = glob_images_pathlib(dir_path, recursive=False)
     cache = OUT_DIR / f"_desc_{label}.npz"
@@ -216,9 +206,7 @@ def main() -> None:
         )
 
     # Tier by hamming. Two hard gates force 'skip' regardless of visual score:
-    # no censor tag in the sidecar (nothing to decensor), and an animated match
-    # (would inject animation into training). The decensored set does not cover
-    # every sincos image, so a tail of genuine non-matches is expected.
+    # no censor tag in the sidecar (nothing to decensor), and an animated match.
     for r in rows:
         h = r["hamming"]
         stem = Path(r["sincos"]).stem

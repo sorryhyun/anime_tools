@@ -1,9 +1,8 @@
 """The SAM3 detection flag block, and the options it builds.
 
-``position_captions`` and ``audit_multiview`` run the *same* detector, so both
-halves are declared together — :func:`add_detection_args` declares the flags,
-:func:`detection_options` reads the namespace back into the detection half of
-:class:`~anime_tools.stages.position_captions.PositionCaptionOptions`.
+``position_captions`` and ``audit_multiview`` run the *same* detector:
+:func:`add_detection_args` declares the flags, :func:`detection_options` reads
+the namespace back into the detection half of ``PositionCaptionOptions``.
 Declaring one without the other is what lets them disagree.
 """
 
@@ -13,9 +12,9 @@ import argparse
 
 from anime_tools.masking._sam3 import SUBJECT_PROMPT, add_prompt_embed_arg
 
-# Flags a stage may leave out because it pins the value itself (the audit always
-# wants ``min_instances=2``). :func:`detection_options` reads them only when
-# declared, so an omitted flag falls through to the dataclass default.
+# Flags a stage may leave out because it pins the value itself (the audit pins
+# ``min_instances=2``). Read only when declared, so an omitted flag falls
+# through to the dataclass default.
 OPTIONAL_FLAGS = ("blank_crops", "min_instances", "strict_count")
 
 
@@ -33,15 +32,13 @@ def add_detection_args(
 
     The four booleans add a flag the *other* stage does not take, in the slot it
     occupies in that parser's field order — and therefore in the GUI form.
-    ``name_confidence`` is the audit's only extra; the clause stage declares its
-    own under clause composition.
     """
     g = p.add_argument_group("detection")
     g.add_argument(
         "--prompt", default=SUBJECT_PROMPT, help="SAM3 text prompt for a subject"
     )
-    # Declared in masking/_sam3.py beside --checkpoint: the SAM3 subject-mask
-    # stage takes the same flag, and both are ⚙ Settings stage defaults.
+    # Declared in masking/_sam3.py beside --checkpoint; both are ⚙ Settings
+    # stage defaults.
     add_prompt_embed_arg(g)
     g.add_argument(
         "--score_threshold", type=float, default=0.5, help=score_threshold_help
@@ -156,15 +153,15 @@ def add_detection_args(
 def detection_options(args: argparse.Namespace, **overrides) -> dict[str, object]:
     """The detection half of ``PositionCaptionOptions``, as keyword arguments.
 
-    Pass the extras (``detection_options(args, min_instances=2)``) rather than
-    retyping the common ones. Flags in :data:`OPTIONAL_FLAGS` are read only when
-    the parser declared them, so a stage that pins the value does not ask.
+    Extras go through ``**overrides`` (``detection_options(args,
+    min_instances=2)``). Flags in :data:`OPTIONAL_FLAGS` are read only when the
+    parser declared them.
     """
     opts: dict[str, object] = {
         "prompt": args.prompt,
         "score_threshold": args.score_threshold,
         "retry_score_threshold": args.retry_score_threshold,
-        # Not a straight copy: a comma string on the CLI, a tuple in options.
+        # Comma string on the CLI, tuple in options.
         "part_prompts": tuple(
             t.strip() for t in args.part_prompts.split(",") if t.strip()
         ),

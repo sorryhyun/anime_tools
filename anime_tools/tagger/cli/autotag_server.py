@@ -1,8 +1,7 @@
 """Resident autotag worker for the GUI Dataset tab.
 
 Loads the Anima Tagger once, then serves single-image requests over a
-line-based stdio protocol so consecutive "Autotag" clicks don't pay the
-model-load cost each time. The GUI owns the process: spawned on first use, kept
+line-based stdio protocol. The GUI owns the process: spawned on first use, kept
 resident, and torn down before any other GPU work so the card is free.
 
 Protocol (all lines newline-terminated, UTF-8):
@@ -64,8 +63,7 @@ def main() -> None:
     ckpt_dir = ensure_tagger_checkpoint(resolve_path(args.tagger_dir))
     device = resolve_device(args.device)
     tagger = AnimaTagger(ckpt_dir, device=device)
-    # Warm the lazily-loaded backbone on a dummy image so READY genuinely means
-    # "ready to serve" and the first real request is fast.
+    # Warm the lazily-loaded backbone so READY means "ready to serve".
     try:
         tagger.predict_caption(Image.new("RGB", (64, 64)))
     except Exception:

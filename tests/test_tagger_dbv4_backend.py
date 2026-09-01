@@ -1,20 +1,17 @@
 """dbv4 backend behind the AnimaTagger contract — offline invariants.
 
-No HF download, no timm weights: the backend is stubbed with a fake
-``Dbv4Backend`` whose ``forward`` returns canned probabilities, and the
-card is built in-memory. Pinned here:
+The backend is stubbed with a fake ``Dbv4Backend`` returning canned
+probabilities, so no HF download or timm weights are needed.
 
 1. ``align_vocab`` joins by space-normalised name, recovers ``rules.yaml``
    renames, and reports unmatched tags per category.
-2. A dbv4-backed dir loads with **no** ``model.safetensors``; ``predict``
-   returns the same keys as the PE path (``rating`` / ``rating_scores`` /
-   ``scores`` / ``kept`` / ``thresholds`` / ``people_count``).
-3. Unsupported tags never fire: their logit is ``UNSUPPORTED_LOGIT`` and a
-   pure-``softmax`` group made only of unsupported tags emits nothing (the
-   ``@artist`` regression seen on the first live run).
-4. People-count always comes from the count-tag rule on dbv4 (it beats the
-   sidecar head on val); a sidecar adds ``people_count_scores`` and makes its
-   BCE rows emittable.
+2. A dbv4-backed dir loads with no ``model.safetensors``; ``predict`` returns
+   ``rating`` / ``rating_scores`` / ``scores`` / ``kept`` / ``thresholds`` /
+   ``people_count``.
+3. Unsupported tags never fire: their logit is ``UNSUPPORTED_LOGIT``, and a
+   ``softmax`` group of only unsupported tags emits nothing.
+4. People-count comes from the count-tag rule; a sidecar adds
+   ``people_count_scores`` and makes its BCE rows emittable.
 5. ``SidecarHead.save`` / ``load`` round-trips weights + metadata.
 """
 
@@ -180,8 +177,7 @@ def test_align_without_recovery_leaves_rename_unmatched():
 def test_dbv4_dir_loads_without_model_weights(tmp_path, monkeypatch):
     _write_ckpt(tmp_path)
     assert not (tmp_path / "model.safetensors").exists()
-    # Our half is complete -> no checkpoint fetch; the backbone preflight is
-    # stubbed as "cached" so the test stays offline.
+    # No checkpoint fetch; the backbone preflight is stubbed as "cached".
     monkeypatch.setattr("anime_tools.tagger.dbv4_meta.backbone_cached", lambda _r: True)
     assert at.ensure_tagger_checkpoint(tmp_path) == tmp_path
     t = _tagger(tmp_path, {"1girl": 0.95, "solo": 0.9, "explicit": 0.9}, monkeypatch)
@@ -232,7 +228,7 @@ def test_sidecar_rows_become_emittable_and_people_head_wins(tmp_path, monkeypatc
         head.fc.bias[0] = 4.0  # touhou → σ(4) ≈ 0.98
         head.fc.bias[1] = -4.0  # shiro → ≈ 0.02
         head.fc.bias[2 + at.PEOPLE_COUNT_LABELS.index("2girls")] = 5.0
-    # thresholds for sidecar rows are written by the trainer; emulate it
+    # thresholds for sidecar rows are written by the trainer
     t = _tagger(tmp_path, {"1girl": 0.9, "1boy": 0.9}, monkeypatch, sidecar=head)
     t.thresholds[IDX["touhou"]] = 0.5
     t.thresholds[IDX["shiro (mignon)"]] = 0.5
@@ -240,16 +236,14 @@ def test_sidecar_rows_become_emittable_and_people_head_wins(tmp_path, monkeypatc
     out = t.predict(IMG)
     assert "touhou" in out["kept"]
     assert "shiro (mignon)" not in out["kept"]  # σ(-4) < threshold
-    # the count-tag rule stays authoritative (beats the head on val, and is
-    # consistent with the emitted count tags); the head only adds scores.
+    # the count-tag rule stays authoritative; the head only adds scores.
     assert out["people_count"] == "1girl_1boy"
     assert out["people_count_source"] == "count-tag-rule"
     assert out["people_count_scores"]["2girls"] > 0.9
 
 
 def test_oc_character_survives_original_without_artist(tmp_path, monkeypatch):
-    """`name (artist)` OCs must not be dropped by the artist-consistency rule
-    on dbv4 — no @artist is ever emitted there, so the rule has no evidence."""
+    """dbv4 emits no @artist, so the artist-consistency rule cannot drop an OC."""
     _write_ckpt(tmp_path)
     bce_rows = [IDX["original"], IDX["shiro (mignon)"]]
     head = db.SidecarHead(d_in=8, bce_indices=bce_rows)
@@ -290,8 +284,7 @@ def test_unknown_backend_rejected(tmp_path):
 
 
 def test_legacy_pe_backend_rejected(tmp_path):
-    """The in-house PE dual-encoder head was removed 2026-08-30; a legacy
-    checkpoint (``backend`` absent or ``"pe"``) must fail loudly at load."""
+    """A legacy checkpoint (``backend`` absent or ``"pe"``) fails loudly at load."""
     _write_ckpt(tmp_path)
     for cfg in ({}, {"backend": "pe"}):
         (tmp_path / "config.json").write_text(json.dumps(cfg))
@@ -346,7 +339,7 @@ def test_backbone_preflight_respects_no_autofetch(tmp_path, monkeypatch):
 
 
 def test_hf_download_translates_gated_repo_error(monkeypatch):
-    """The gated 401/403 is fast (not a hang) but must still name the recovery."""
+    """A gated 401/403 fails fast and names the recovery."""
     import httpx
     import huggingface_hub
     from huggingface_hub.utils import GatedRepoError

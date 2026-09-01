@@ -1,13 +1,7 @@
-"""PE-Spatial embedder for dataset grouping / near-twin mining.
+"""Default :class:`~anime_tools.grouping.features.Embedder` — PE-Spatial-B16-512.
 
-The feature cache (:func:`anime_tools.grouping.features.embed_members`) takes
-any :class:`~anime_tools.grouping.features.Embedder`; this is the package's own
-PE-Spatial-B16-512 implementation (via :mod:`anime_tools.vision.pe`) and the
-default ``build_groups`` uses when no embedder is injected.
-
-``pe_spatial_embedder`` is a dotted-path factory (``module:callable``) so the
-``build_groups`` CLI can be pointed at it — or at any other embedder — with
-``--embedder``.
+``pe_spatial_embedder`` is a dotted-path factory (``module:callable``), the form
+``build_groups --embedder`` resolves.
 """
 
 from __future__ import annotations
@@ -50,8 +44,8 @@ def pe_spatial_embedder(
 ) -> PESpatialEmbedder:
     """Factory: load PE-Spatial-B16-512 on ``device`` (auto when None).
 
-    bf16 by default, which is what existing ``$NEAR_TWIN_CACHE`` entries were
-    written with."""
+    bf16 by default — what existing ``$NEAR_TWIN_CACHE`` entries were written
+    with."""
     from anime_tools._device import resolve_device
     from anime_tools.vision.pe import load_pe_spatial
 

@@ -1,18 +1,9 @@
 """OCR: the sidecar, the engine's weights-free pieces, and what a run writes.
 
-The split these pin is the whole design. A run answers **one** question and
-writes **one** place: the recognized text goes into ``{stem}.ocr.txt`` in the OCR
-tree, and no caption is read or written. The stage used to also infer a Danbooru
-script tag from a guessed language and append it to the caption, and later to
-drop a line whose guessed language was not asked for; both halves are gone, and
-``test_the_stage_never_touches_a_caption`` plus
-``test_every_recognized_line_reaches_the_sidecar_numbered_in_order`` are what
-keep them gone.
-
-None of this loads a model. The sidecar is stdlib, the stage takes its reader as
-an argument, and the CTC decode and the two shape-holding tricks are exercised
-against hand-built arrays — so the suite stays CPU-only and needs no 139 MB
-download.
+A run writes the recognized text to ``{stem}.ocr.txt`` in the OCR tree and reads
+or writes no caption. Nothing here loads a model: the stage takes its reader as
+an argument, and the CTC decode and the shape-holding tricks run against
+hand-built arrays.
 """
 
 from __future__ import annotations
@@ -48,8 +39,7 @@ def test_the_sidecar_round_trips_through_a_tab_and_a_multi_dot_stem(tmp_path: Pa
 
 
 def test_the_sidecar_mirrors_the_resized_tree_and_digs_its_own_subdir(tmp_path: Path):
-    """The OCR tree joins to the dataset by the same relative path every other
-    root does, so a nested artist folder has to be created rather than assumed."""
+    """The OCR tree joins by relative path, digging a nested subdir as needed."""
     p = write_ocr_for(tmp_path, Path("artist/a.txt"), [line("SALE")])
     assert p == tmp_path / "artist" / ("a" + OCR_SIDECAR_SUFFIX)
     assert read_ocr(p)[0].text == "SALE"
@@ -58,8 +48,7 @@ def test_the_sidecar_mirrors_the_resized_tree_and_digs_its_own_subdir(tmp_path: 
 def test_no_text_deletes_the_sidecar_rather_than_writing_an_empty_one(tmp_path: Path):
     p = write_ocr_for(tmp_path, Path("a.txt"), [line("SALE")])
     assert p.is_file()
-    # A re-run over re-cropped pixels that no longer hold the text must not leave
-    # the old claim standing.
+    # A re-run that finds no text must not leave the old claim standing.
     write_ocr_for(tmp_path, Path("a.txt"), [])
     assert not p.exists()
     assert read_ocr(p) == []
@@ -84,14 +73,8 @@ def test_a_damaged_record_costs_its_line_and_never_the_run(tmp_path: Path):
 
 
 def test_every_recognized_line_reaches_the_sidecar_numbered_in_order():
-    """There is no language filter, and the absence is the point.
-
-    A ``--lang`` allowlist used to drop a line whose script was not asked for,
-    with the script guessed back off the characters -- so ``01R`` was English,
-    a lone ``心`` was Chinese, and ``!?`` was neither and was deleted. Guessing
-    a language is not a way of deciding whether something is text. The score
-    floor is the filter; everything that clears it is a readout.
-    """
+    """There is no language filter: the score floor is the only one, and every
+    line clearing it is renumbered in order."""
     lines = [line("SALE", seq=7), line("!?", seq=9), line("心", seq=40)]
     kept = number_lines(lines)
     assert [(ln.seq, ln.text) for ln in kept] == [(1, "SALE"), (2, "!?"), (3, "心")]
@@ -134,14 +117,12 @@ def test_an_applied_run_writes_the_sidecar_into_the_ocr_tree(tmp_path: Path):
     _, stats = _run(dst, ocr, [line("SALE")], apply=True)
     assert stats.sidecars == 1
     assert [ln.text for ln in read_ocr(ocr / "a.ocr.txt")] == ["SALE"]
-    # And nowhere near the resized tree, which is where it used to land.
+    # And nowhere near the resized tree.
     assert not (dst / "a.ocr.txt").exists()
 
 
 def test_the_stage_never_touches_a_caption(tmp_path: Path):
-    """The tag half is gone: a run over an English line used to append
-    ``english text`` to the caption, and most of what that proposed rested on
-    two-character fragments. Nothing in the resized tree may change."""
+    """Nothing in the resized tree changes: no caption, history or variants."""
     dst, ocr = _dataset(tmp_path)
     (dst / "a.txt").write_text("safe, 1girl", encoding="utf-8")
     _run(dst, ocr, [line("SALE")], apply=True)
@@ -158,8 +139,7 @@ def test_a_japanese_only_image_gets_a_sidecar_like_any_other(tmp_path: Path):
 
 
 def test_an_uncaptioned_image_is_read_like_any_other(tmp_path: Path):
-    """Unlike the caption stages: this one has nothing to look a caption up for,
-    so having none is not a reason to skip an image."""
+    """No caption is needed, so having none is not a reason to skip an image."""
     from PIL import Image
 
     dst, ocr = _dataset(tmp_path)
@@ -178,8 +158,7 @@ def test_an_image_with_no_text_is_counted_and_leaves_no_sidecar(tmp_path: Path):
 
 
 def test_the_batched_reader_answers_what_the_one_at_a_time_reader_does(tmp_path: Path):
-    """``read_many_fn`` is what lets the engine batch; it must be a pure
-    substitution, so the two are run against the same images and compared."""
+    """``read_many_fn`` is a pure substitution for ``read_fn``."""
     from PIL import Image
 
     dst, ocr = _dataset(tmp_path)
@@ -205,8 +184,7 @@ def test_the_batched_reader_answers_what_the_one_at_a_time_reader_does(tmp_path:
 
 
 def test_ctc_decode_collapses_repeats_and_drops_blanks():
-    """The one place an off-by-one would not fail but would silently return
-    fluent-looking garbage, so it is pinned against a hand-built array."""
+    """CTC decode: repeats collapse only across a blank."""
     np = pytest.importorskip("numpy")
     from anime_tools.ocr._onnx import TextRecognizer
 
@@ -232,9 +210,8 @@ def test_an_all_blank_row_is_an_empty_string_and_not_a_crash():
 
 
 def test_the_vocabulary_is_derived_from_the_graph_not_assumed():
-    """A dictionary and a graph that are not a pair must fail loudly: the
-    shipped medium model answers 18,710 classes to an 18,708-entry dict, i.e.
-    a blank *and* the space upstream appends."""
+    """The vocabulary is sized off the graph's class count: dict + blank, or dict
+    + blank + the appended space; anything else raises."""
     from anime_tools.ocr._onnx import TextRecognizer
 
     class FakeOut:
@@ -263,13 +240,11 @@ def test_the_vocabulary_is_derived_from_the_graph_not_assumed():
 
 # ---- one input shape per session ---------------------------------------
 #
-# ONNX Runtime's CUDA provider re-plans on every input-shape change, and a
-# bucketed resized tree changes it on every image -- measured at 12 ms of
-# detector forward behind 70 ms of re-planning, which was most of a run. Both
-# sessions are therefore held at one shape. Neither half of that is visible in
-# a result when it works: the padding would show up as phantom boxes along the
-# canvas seam, and the batch padding as recognized text landing on the wrong
-# crop. Hence pinning them here rather than trusting the timing.
+# ONNX Runtime's CUDA provider re-plans on every input-shape change (~70 ms
+# behind a 12 ms detector forward), and a bucketed resized tree changes the shape
+# on every image, so both sessions are held at one shape. When it works nothing
+# is visible in the result; when it breaks, padding shows up as phantom boxes on
+# the canvas seam and batch padding as text landing on the wrong crop.
 
 
 def _detector(pad_to: int):
@@ -287,9 +262,8 @@ def _detector(pad_to: int):
 
 
 def test_the_detector_sees_one_shape_whatever_the_image_was():
-    """The whole point: two differently-shaped images must arrive at the session
-    as the same tensor shape, and each must still report the region it occupies
-    so the pad can be cut back off."""
+    """Differently-shaped images arrive as one tensor shape, each still reporting
+    the live region so the pad can be cut back off."""
     np = pytest.importorskip("numpy")
     pytest.importorskip("cv2")
 
@@ -306,8 +280,7 @@ def test_the_detector_sees_one_shape_whatever_the_image_was():
 
 
 def test_a_cpu_detector_keeps_the_image_shape_and_pays_nothing_to_pad():
-    """The CPU provider has no re-planning penalty, so padding it to a square
-    would be pure loss -- `pad_to=0` is what a CPU session gets."""
+    """A CPU session gets `pad_to=0`: no re-planning penalty, so padding is loss."""
     np = pytest.importorskip("numpy")
     pytest.importorskip("cv2")
 
@@ -316,9 +289,8 @@ def test_a_cpu_detector_keeps_the_image_shape_and_pays_nothing_to_pad():
 
 
 def test_nothing_found_in_the_padded_band_survives():
-    """The replicated border is not image, and a box along the canvas seam is
-    the failure mode padding would introduce. `_boxes` crops the map to the live
-    region first, so the band cannot be looked at at all."""
+    """`_boxes` crops the map to the live region first, so the replicated border
+    cannot produce a box."""
     np = pytest.importorskip("numpy")
     pytest.importorskip("cv2")
 
@@ -345,9 +317,8 @@ def test_the_recognizer_quantizes_its_width_but_only_when_it_has_to():
 
 
 def test_a_short_final_batch_is_padded_out_and_its_filler_dropped():
-    """Batch size is an input axis too, so the tail of a run must not shrink it.
-    The filler rows have to disappear again before the scatter, or every string
-    after the first short batch lands on the wrong crop."""
+    """Batch size is an input axis too: the tail is padded out, and the filler
+    rows are dropped before the scatter."""
     np = pytest.importorskip("numpy")
     pytest.importorskip("cv2")
     from anime_tools.ocr._onnx import TextRecognizer
@@ -378,7 +349,7 @@ def test_a_short_final_batch_is_padded_out_and_its_filler_dropped():
     out = rec.recognize(crops)
     assert len(out) == len(crops)
     assert all(text == "a" for text, _ in out)
-    # Two forwards, both full width and both full batch -- the second held 1 crop.
+    # Two forwards, both full width and both full batch; the second held 1 crop.
     assert seen == [(4, 3, 48, 320), (4, 3, 48, 320)]
 
 
@@ -394,8 +365,7 @@ def test_reading_order_runs_across_a_row_before_down_the_page():
 
 
 def test_the_loader_and_the_download_catalog_name_one_directory():
-    """A download and a load that spell the same path twice can drift, and the
-    symptom is a Download button that appears to do nothing."""
+    """The catalog row and the loader name one directory."""
     from anime_tools.downloads import (
         by_id,
         default_ppocr_det_dir,

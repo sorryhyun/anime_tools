@@ -1,9 +1,5 @@
-"""Export: the one thing that leaves the workspace.
-
-The pass is a walk and a copy, so what is worth pinning is the *decisions*
-around it — which artifacts it finds, when it skips, what it refuses to
-overwrite blind, and that publishing twice is not publishing twice.
-"""
+"""Export: which artifacts it finds, when it skips, what it refuses to overwrite
+blind, and that publishing twice publishes nothing the second time."""
 
 from __future__ import annotations
 
@@ -34,12 +30,8 @@ def _txt(path: Path, text: str) -> None:
 
 @pytest.fixture
 def ws(tmp_path):
-    """A workspace with one fully-derived image and one bare one.
-
-    ``a`` has everything: pixels, a derived caption, a variants sidecar, a mask
-    and a revised master. ``sub/b`` has pixels only, which is the ordinary
-    mid-curation state and must publish without complaint.
-    """
+    """``a`` has pixels, caption, variants sidecar, mask and revised master;
+    ``sub/b`` has pixels only."""
     p = ExportPaths(
         resized=tmp_path / "workspace" / "resized",
         masks=tmp_path / "workspace" / "masks",
@@ -77,34 +69,31 @@ def test_plan_finds_every_artifact_and_invents_none(ws):
         "master",
         "index",
     }
-    # Two images, but only `a` has the other four; `sub/b` contributes its
-    # pixels alone rather than four `missing-source` findings.
+    # Only `a` has the other four; `sub/b` contributes its pixels alone.
     assert sorted(r.rel for r in _by(rows, "image")) == ["a.png", "sub/b.png"]
     assert [r.rel for r in _by(rows, "caption")] == ["a.png"]
-    # Nothing is published yet, so every row is a create — except the revised
-    # master, which lands over a caption that is already there.
+    # Every row is a create except the revised master, which lands over an
+    # existing caption.
     assert {r.status for r in rows} == {"would-create", "would-overwrite"}
     assert [r.kind for r in rows if r.status == "would-overwrite"] == ["master"]
 
 
 def test_the_master_publishes_back_over_the_input_tree(ws):
-    """The one row that writes outside `--out`: the contract says the caption
-    master lives in `image_dataset/`, so that is where a revision goes."""
+    """The master row writes outside `--out`, into `image_dataset/`."""
     (master,) = _by(plan_export(ws), "master")
     assert Path(master.dst) == ws.src / "a.txt"
-    # And it is the row that can overwrite something hand-written, so the
-    # previous text is kept for the revert.
+    # It can overwrite hand-written text, so `before` is kept for the revert.
     assert master.status == "would-overwrite" and master.before == "1girl, solo"
 
 
 def test_an_unrevised_master_is_not_a_row(ws):
-    """No overlay means nothing to publish — not an empty write over the input."""
+    """No overlay means nothing to publish, not an empty write over the input."""
     (ws.master / "a.txt").unlink()
     assert _by(plan_export(ws), "master") == []
 
 
 def test_a_flat_legacy_mask_still_publishes(ws):
-    """`masks/{stem}_mask.png` predates `--recursive`, and is still a mask."""
+    """A flat `masks/{stem}_mask.png` is still a mask."""
     _png(ws.masks / "b_mask.png", 180)
     rels = {r.rel for r in _by(plan_export(ws), "mask")}
     assert rels == {"a.png", "sub/b.png"}
@@ -142,8 +131,7 @@ def test_apply_publishes_the_contract_paths(ws):
 
 
 def test_exporting_twice_publishes_nothing_the_second_time(ws):
-    """`copy2` preserves mtime, so an unchanged tree compares equal next time —
-    which is what keeps a re-export a walk rather than a full recopy."""
+    """`copy2` preserves mtime, so an unchanged tree compares equal next time."""
     run_export(ws, apply=True)
     rows, stats = run_export(ws, apply=True)
     assert stats.created == 0 and stats.overwrote == 0
@@ -161,8 +149,8 @@ def test_a_changed_caption_republishes_without_touching_the_pixels(ws):
 
 
 def test_a_destination_edited_since_the_plan_is_decided_again_at_write_time(ws):
-    """The plan is advice; the copy re-reads disk. A row planned as a create
-    that now exists is reported as an overwrite, not written as a create."""
+    """The copy re-reads disk: a row planned as a create that now exists is
+    reported as an overwrite."""
     rows = plan_export(ws)
     (image,) = [r for r in _by(rows, "image") if r.rel == "a.png"]
     assert image.status == "would-create"
@@ -217,7 +205,7 @@ def test_revert_leaves_a_file_edited_since_the_export_alone(ws):
 
 
 def test_revert_cannot_put_back_overwritten_pixels(ws):
-    """No snapshot is kept: re-exporting is the way back, and it is idempotent."""
+    """No pixel snapshot is kept; re-exporting is the way back."""
     _png(ws.out / "resized" / "a.png", 99)
     rows, _ = run_export(ws, apply=True)
     _, stats = revert_export(rows, apply=True)
@@ -233,9 +221,7 @@ def test_revert_of_a_dry_run_has_nothing_to_undo(ws):
 
 
 def test_rows_survive_the_round_trip_through_a_report(ws):
-    """The GUI's Undo reads rows back out of the report's JSON, so they have to
-    be the same rows — `before` included, or a restore would write an empty
-    caption."""
+    """Undo reads rows back out of the report's JSON, `before` included."""
     rows, _ = run_export(ws, apply=True)
     report = {"rows": [r.to_dict() for r in rows]}
     again = rows_from_report(json.loads(json.dumps(report)))

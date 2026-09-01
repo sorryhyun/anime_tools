@@ -1,18 +1,12 @@
 """A stage report read as per-image caption proposals — and put back again.
 
 Keys a report's rows by *dataset rel* (what the sidebar selects) so the caption
-panel can show a proposal beside the caption it would replace. :func:`undo` is
-the same reading in reverse, guarded on the file still holding what the run put
-there. Torch-free, like the rest of :mod:`anime_tools.gui`.
+panel can show a proposal beside the caption it would replace. :func:`undo` is the
+same reading in reverse, guarded on the file still holding what the run put there.
 
-The report *shapes* below are a copy of each stage CLI's ``REPLAY_SPEC`` rather
-than an import: those live next to ``build_tag_fn`` / the SAM3 loaders, and
-importing one would pull torch into the server process (``test_boundary`` pins
-that it stays out). Only the instances are copied — the ``ReplaySpec`` class,
-the report reader and the drift ladder come from
-:mod:`anime_tools.stages.replay`, which is torch-free by construction.
-``tests/test_gui_proposals.py`` compares the copies against the originals field
-for field.
+The :data:`SHAPES` instances are hand-copied from each stage CLI's ``REPLAY_SPEC``;
+importing one would pull torch into the server process. The class, the report
+reader and the drift ladder come from :mod:`anime_tools.stages.replay`.
 """
 
 from __future__ import annotations
@@ -60,9 +54,7 @@ SHAPES: dict[str, ReplaySpec] = {
         drop_variants=True,
         history_by="position",
     ),
-    # OCR is deliberately absent. It writes only its own sidecar tree and touches
-    # no caption, so it has nothing to propose and nothing to undo — a run of it
-    # is not a proposal, it is a readout.
+    # OCR is absent: it writes only its own sidecar tree and touches no caption.
     # The audit gates on verdict/confidence rather than a row status, so there
     # is no ``ok_status`` to match: a row is a proposal when it proposes text.
     "audit": ReplaySpec(
@@ -75,13 +67,12 @@ SHAPES: dict[str, ReplaySpec] = {
         newline=True,
     ),
 }
-"""GUI stage id → the report shape its CLI declares. Copied, not imported."""
+"""GUI stage id → the report shape its CLI declares."""
 
 CAPTION_KIND: dict[str, str] = {"src": "master", "dst": "revised"}
 """Which of the two editable captions a stage's ``target_root`` names."""
 
-# ``apply_one``'s ladder, said from the undo side: putting a caption back is an
-# apply with the two texts swapped, so its statuses need only be renamed.
+# ``apply_one``'s statuses, renamed for the undo side.
 _UNDO_STATUS = {
     "already-applied": "already-undone",
     "missing-caption": "missing",
@@ -109,8 +100,8 @@ class Proposal:
     def to_dict(self) -> dict[str, Any]:
         return {
             **vars(self),
-            # Parsed here and never in the browser: a diff that split on commas
-            # would disagree with the grammar about every position clause.
+            # Parsed here, never in the browser: splitting on commas would
+            # disagree with the grammar about every position clause.
             "before_parsed": D.parsed_caption(self.before) if self.before else None,
             "after_parsed": D.parsed_caption(self.after) if self.after else None,
         }
@@ -132,9 +123,8 @@ def _rows(report: Mapping[str, Any], shape: ReplaySpec) -> list[Mapping[str, Any
 
 
 def _texts(row: Mapping[str, Any], shape: ReplaySpec) -> tuple[str, str]:
-    """``(before, after)``, from either report dialect: a stage's own report
-    names them per its ``ReplaySpec``, while a replay's always says
-    ``before``/``after`` — and Apply is a replay, so both reach here."""
+    """``(before, after)``, from either report dialect: a stage's own report names
+    them per its ``ReplaySpec``, a replay's always says ``before``/``after``."""
     before, after = row.get(shape.before_field), row.get(shape.after_field)
     if before is None and after is None:
         before, after = row.get("before"), row.get("after")
@@ -199,13 +189,9 @@ def _cached(path: str, mtime: float, roots: D.Roots, stage: str) -> dict[str, Pr
 
 
 EXPORT_STAGE = "export"
-"""The one stage whose report is not a caption diff.
-
-Its rows are file copies, read back by
-:mod:`anime_tools.stages.export_workspace` rather than by the drift ladder, but
-it reaches the server through the same route and answers in the same shape — so
-the branch lives at the top of :func:`undo`, not in a second entry point.
-"""
+"""The one stage whose report is not a caption diff: its rows are file copies, read
+back by :mod:`anime_tools.stages.export_workspace`. It shares the undo route, so
+:func:`undo` branches on it at the top."""
 
 
 def _undo_export(report_path: Path, roots: D.Roots) -> dict[str, Any]:
@@ -263,13 +249,10 @@ def undo(report_path: Path, roots: D.Roots, stage: str) -> dict[str, Any]:
             continue
         image = str(row.get("image") or "")
         if before:
-            # An undo is an apply with the two texts swapped — same drift
-            # ladder, same write, and the same drop of the variants sidecar,
-            # which wins over the caption at encode time and is just as stale
-            # against the text being put back. It supersedes a version like any
-            # other write, so the text being undone is filed under ``undo``
-            # rather than vanishing: an undo you did not mean is then one badge
-            # away, which is the whole promise of the history rung.
+            # An undo is an apply with the two texts swapped: same drift ladder,
+            # same write, and the same drop of the variants sidecar (which wins
+            # over the caption at encode time and would be stale against the text
+            # being put back). The undone text is filed under ``undo`` in history.
             status = apply_one(
                 target,
                 after,
@@ -284,9 +267,8 @@ def undo(report_path: Path, roots: D.Roots, stage: str) -> dict[str, Any]:
                 continue
             restored.append(image)
         else:
-            # An empty before-text was a file the run *created* (autotag's
-            # ``missing`` mode), so the inverse is a delete, not a write of
-            # nothing — but it is gated on the same two questions.
+            # An empty before-text means the run *created* the file (autotag's
+            # ``missing`` mode), so the inverse is a delete, gated the same way.
             if not target.is_file():
                 skipped["already-undone"] += 1
                 continue
@@ -302,9 +284,8 @@ def undo(report_path: Path, roots: D.Roots, stage: str) -> dict[str, Any]:
                 if sidecar.is_file():
                     sidecar.unlink()
             if shape.history_by:
-                # The versions of a caption that no longer exists are versions
-                # of nothing — and this run is what created it, so there is no
-                # earlier text the history could still be describing.
+                # This run created the caption, so its history describes no
+                # earlier text and goes with the file.
                 from anime_tools.captions.history import drop_history
 
                 drop_history(target)

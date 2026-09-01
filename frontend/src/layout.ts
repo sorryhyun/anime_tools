@@ -1,12 +1,8 @@
 import { createEffect, createSignal, on } from "solid-js";
 import { asFlag, fromFlag, persisted } from "./state";
 
-/** Which panes are on screen and how tall the dock is — the preferences that
+/** Which panes are on screen and how tall the dock is — preferences that
  * survive a reload but mean nothing to the server.
- *
- * The dataset sidebar, the stage dock and the caption panel all want the same
- * space and which one wins changes by the minute, so all three are foldable and
- * the boundary between the tree and the dock is a drag.
  */
 export function createLayout() {
   const [sidebar, setSidebar] = persisted("sidebar", true, asFlag, fromFlag);
@@ -15,7 +11,7 @@ export function createLayout() {
   // once on pointerup (see `grip`) rather than at frame rate.
   const [dockH, setDockH] = createSignal(Number(localStorage.getItem("dockh")) || 320);
   /** One global "show the prose" preference, off by default: the stage doc and
-      the Settings blurbs are behind the (?) buttons until it is on. */
+      the Settings blurbs sit behind the (?) buttons until it is on. */
   const [help, setHelp] = persisted("help", false, asFlag, fromFlag);
 
   // A class on <body>, not a <Show>: the tree keeps its expanded folders and

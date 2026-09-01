@@ -5,13 +5,10 @@ import { t } from "../i18n";
 import { Dialog } from "./Dialog";
 
 /** Pressing the `…`: the host's own chooser when there is one, the dialog below
- *  when there isn't.
- *
- * The panel and the dataset are normally on the same machine, so the desktop's
- * chooser is the one that already knows where things are — it opens anywhere,
- * not just under the curation home, and types nothing. `onFallback` runs only
- * when the server says there was no chooser to open (a headless host, or a
- * browser somewhere else); a cancel is a cancel and leaves the field alone.
+ * when there isn't. The desktop chooser opens anywhere, not just under the
+ * curation home. `onFallback` runs only when the server says there was no
+ * chooser to open (a headless host, or a browser elsewhere); a cancel leaves the
+ * field alone.
  */
 export async function browsePath(
   kind: "dir" | "file",

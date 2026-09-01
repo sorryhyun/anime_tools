@@ -1,13 +1,12 @@
 """Read side of the tagger checkpoint's ``vocab.json`` (torch-free).
 
-``vocab.json`` is written by ``anime_tools/tagger/cli/vocab.py``; this is the
-one reader, so its four consumers share one copy of the schema:
+Written by ``anime_tools/tagger/cli/vocab.py``. The schema:
 
 ``tags``
     ``[{name, index, category, freq, median_pos}, …]`` — one row per kept tag,
     ``index`` is the model's output slot. ``category`` is the booru tag type
     (``general`` / ``character`` / ``copyright`` / ``artist`` / ``count`` /
-    ``metadata`` / ``deprecated``); a tag carries exactly one.
+    ``metadata`` / ``deprecated``); exactly one per tag.
 ``ratings``
     Ordered rating labels for the rating head.
 ``people_count_labels``
@@ -15,12 +14,10 @@ one reader, so its four consumers share one copy of the schema:
     without the head.
 ``groups``
     :func:`anime_tools.captions.tag_groups.resolved_to_dict` output — the typed
-    tag groups projected onto ``index`` slots. Absent for a vocab built without
-    ``--groups``.
-
-Nothing here imports torch: the group rows come back as
-:class:`~anime_tools.captions.tag_groups.ResolvedGroup` dataclasses, and only
-:meth:`GroupRouter.from_vocab` turns them into tensors.
+    tag groups projected onto ``index`` slots, as
+    :class:`~anime_tools.captions.tag_groups.ResolvedGroup` dataclasses (only
+    :meth:`GroupRouter.from_vocab` turns them into tensors, keeping this module
+    torch-free). Absent for a vocab built without ``--groups``.
 """
 
 from __future__ import annotations
@@ -55,12 +52,10 @@ def names_by_category(
 ) -> dict[str, set[str]]:
     """``category -> {tag name}`` over ``vocab["tags"]``.
 
-    ``categories`` restricts (and pre-seeds, so an axis with no tags still comes
-    back as an empty set) the result; ``None`` returns every category present.
-    ``key`` maps each name on the way in for callers that compare on a folded
-    form — pass :func:`~anime_tools.captions.taxonomy.normalize_tag` only if you
-    mean it: the vocab is the authority on a tag's *exact* spelling, and every
-    caller here matches caption tags against it verbatim.
+    ``categories`` restricts and pre-seeds the result (an axis with no tags
+    still comes back as an empty set); ``None`` returns every category present.
+    ``key`` folds each name on the way in — the vocab is the authority on a
+    tag's *exact* spelling, so leave it unset unless you mean to fold.
     """
     wanted = None if categories is None else tuple(categories)
     out: dict[str, set[str]] = {} if wanted is None else {c: set() for c in wanted}

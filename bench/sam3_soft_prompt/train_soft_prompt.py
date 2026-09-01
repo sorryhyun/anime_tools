@@ -1,16 +1,11 @@
-"""Phase 0b — learn a SAM3 soft prompt (textual inversion) for anime subjects.
+"""Learn a SAM3 soft prompt (textual inversion) for anime subjects.
 
-Only the post-tower prompt tensor ``language_features`` ``(32, 1, 256)`` moves;
-SAM3 stays frozen end to end (trunk under `no_grad`, fusion encoder + decoder
-traversed by the backward pass but never updated). Init from a real phrase
-(``--init``), supervise against the pseudo-targets from `build_targets.py`
-with the usual DETR recipe — Hungarian matching, sigmoid focal objectness with
-presence, L1 + GIoU boxes, BCE + dice masks — and hold out ``--val_frac`` of
-the clean pool for a loss/recall readout.
-
-Output: ``results/<ts>-<label>/soft_prompt.safetensors`` (+ checkpoints), a
-`result.json` envelope. Evaluate with `probe_nms_pairs.py --prompt_embed …`
-and `ab_sam3_prompt.py`.
+Only the post-tower ``language_features`` ``(32, 1, 256)`` moves; SAM3 stays
+frozen end to end. Init from a phrase (``--init``), supervise against
+`build_targets.py`'s pseudo-targets with the DETR recipe (Hungarian matching,
+focal objectness with presence, L1 + GIoU boxes, BCE + dice masks), and hold
+out ``--val_frac`` for the readout. Writes ``soft_prompt.safetensors`` plus
+per-eval checkpoints and a `result.json` envelope into the run dir.
 
     make daemon-run ARGS="bench/sam3_soft_prompt/train_soft_prompt.py --label animegirl-init"
 """

@@ -6,8 +6,7 @@ import type { SettingsPane } from "./SettingsDialog";
 
 /** The title bar: where the dataset is, how big it is, and the two things that
     can be wrong before anything is run (no HF token, a download in flight).
-    Settings live behind the ☰ menu at the left; what stays in the bar itself is
-    only what you need to see without opening anything. */
+    Settings live behind the ☰ menu at the left. */
 export function Header(props: {
   info?: Info;
   list?: DatasetList;
@@ -16,9 +15,8 @@ export function Header(props: {
   /** A weights pull is never shown in the dock, so this badge is the only sign
       of one while the dialog it belongs to is closed. */
   downloading: boolean;
-  /** How many catalog models are not downloaded. The count used to be a badge
-      on the Models *tab*; with the three dialogs separate, the menu row that
-      opens that one is where it goes. */
+  /** How many catalog models are not downloaded; badged on the menu row that
+      opens the Models dialog. */
   missingModels: number;
   onSettings: (pane?: SettingsPane) => void;
 }) {
@@ -31,16 +29,14 @@ export function Header(props: {
         onHelp={props.onHelp}
         onSettings={props.onSettings}
       />
-      {/* One path in the bar, not two: the home is what every path shown in
-          the panel is written against, so it reads back off the name here and
-          the listing's root is the one that says something. */}
+      {/* The home every path in the panel is written against, on the name. */}
       <b title={props.info?.home}>anime_tools</b>
       <Show when={props.list}>
         {(l) => <span class="dim">{t().header.images(l().total, l().root)}</span>}
       </Show>
       <span class="sp" />
       {/* A set token is a menu row; a missing one is a blocker, so it stays in
-          the bar where it cannot be missed. */}
+          the bar. */}
       <Show when={!props.info?.hf_token}>
         <button
           class="link warn"

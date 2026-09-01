@@ -1,14 +1,9 @@
 """How often does NMS keep the worse mask? Sizes the mask-quality tie-break.
 
-`dedupe_detections` ranks duplicates on score alone, which can keep a 0.077
-box-fill proposal over a 0.560 one for 0.035 of score. This walks a corpus,
-replays the same greedy NMS, and records every suppression: the two scores, the
-two mask fills, and their IoU. See `docs/multiview_audit.md`.
-
-Read-only. Prints how often suppression fires, how often the survivor is the
-*worse* mask, and what score margin those inversions sit at. One grounding pass
-per image serves every floor in ``--floors``, since the score gate is a pure
-re-filter over the shared proposal set.
+`dedupe_detections` ranks duplicates on score alone, which can keep a 0.077 box-fill
+proposal over a 0.560 one for 0.035 of score. Read-only: replays the same greedy NMS over
+a corpus and reports every suppression, its two mask fills and its score margin. One
+grounding pass per image serves every floor in ``--floors``. See `docs/multiview_audit.md`.
 """
 
 from __future__ import annotations
@@ -98,8 +93,8 @@ def main() -> None:
 
     rows: list[dict] = []
     proposals: list[dict] = []
-    # PNG decode is the serial CPU gap between GPU passes — prefetch a few
-    # images ahead so the detector never waits on the decoder.
+    # PNG decode is the serial CPU gap between GPU passes — prefetch a few images ahead
+    # so the detector never waits on the decoder.
     pool = ThreadPoolExecutor(max_workers=2)
     pending = deque(
         (path, pool.submit(load_rgb, path)) for path in images[:PREFETCH_DEPTH]

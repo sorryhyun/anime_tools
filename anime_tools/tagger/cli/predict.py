@@ -40,8 +40,6 @@ def cmd_predict(args: argparse.Namespace) -> None:
     else:
         ckpt = TaggerCheckpoint.from_dir(out_dir, require=("vocab",))
         if ckpt.dataset is None:
-            # More specific than the shared "run build_vocab first" exit: here
-            # the manifest is only one of two ways to name an image.
             raise SystemExit(
                 f"--image not given and no manifest at {out_dir / 'dataset.json'} "
                 "to sample from. Pass --image <path> or run --mode build_vocab first."
@@ -52,7 +50,6 @@ def cmd_predict(args: argparse.Namespace) -> None:
         stem = random.choice(pool)
         i = stem_to_idx[stem]
         image_path = manifest.image_paths[i]
-        # Resolve ground-truth labels for the side-by-side comparison.
         vocab = ckpt.vocab
         idx_to_name = ckpt.idx_to_name()
         gt_tags = [idx_to_name[k] for k in manifest.tag_indices[i] if k in idx_to_name]

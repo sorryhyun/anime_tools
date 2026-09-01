@@ -8,8 +8,8 @@ classification stays identical, and writes ``danbooru_tags_classified.en.csv``
 next to the base CSV.
 
 The mirror is a single 45 MB parquet read with ``pyarrow`` straight out of the
-hub cache — no ``datasets`` round trip. The GUI runs this for you as the
-``danbooru_tags_en`` row of :mod:`anime_tools.downloads`.
+hub cache. The GUI runs this for you as the ``danbooru_tags_en`` row of
+:mod:`anime_tools.downloads`.
 """
 
 from __future__ import annotations
@@ -25,8 +25,7 @@ from anime_tools._env import models_dir
 from anime_tools.captions.correction import TAG_CSV_EN_NAME, TAG_CSV_NAME
 from anime_tools.downloads import DANBOORU_WIKI_FILE, DANBOORU_WIKI_REPO
 
-# DText → plain text: danbooru wiki bodies are DText, not MediaWiki. Strip the
-# markup down to bare prose so it renders cleanly in a tooltip.
+# DText → plain text: danbooru wiki bodies are DText, not MediaWiki.
 _WIKI_LINK_LABELLED = re.compile(r"\[\[[^\]|]+\|([^\]]+)\]\]")  # [[tag|label]] -> label
 _WIKI_LINK = re.compile(r"\[\[([^\]]+)\]\]")  # [[tag]] -> tag
 _SEARCH_LINK = re.compile(r"\{\{([^}]+)\}\}")  # {{search}} -> search
@@ -44,8 +43,7 @@ def clean_dtext(body: str, *, max_len: int = 600) -> str:
     """Reduce a DText wiki body to a concise one-paragraph English blurb."""
     if not body:
         return ""
-    # The first paragraph is the definition; trailing paragraphs are usage notes
-    # / related-tag dumps that bloat the tooltip. Keep the definition.
+    # The first paragraph is the definition; the rest is usage notes.
     paragraph = body.strip().split("\n\n", 1)[0]
     text = _WIKI_LINK_LABELLED.sub(r"\1", paragraph)
     text = _WIKI_LINK.sub(r"\1", text)
@@ -73,8 +71,6 @@ def load_wiki_descriptions(
 
     from anime_tools._hf import hf_download
 
-    # No log line for the fetch: this is a cache hit whenever the catalog row
-    # ran it, and hf_hub_download draws its own bar when it is not.
     path = hf_download(
         what="Danbooru wiki mirror",
         hint="python -m anime_tools.downloads danbooru_tags_en",
@@ -84,7 +80,6 @@ def load_wiki_descriptions(
         revision=revision,
     )
     # `tag` is the canonical tag, `title` mirrors it — index both for the join.
-    # Only these four columns come off disk.
     table = pq.read_table(path, columns=["tag", "title", "body", "is_deleted"])
     out: dict[str, str] = {}
     for tag, title, body, deleted in zip(

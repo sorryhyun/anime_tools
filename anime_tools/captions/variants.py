@@ -1,20 +1,14 @@
 """Caption-variant generation + on-disk variant sidecars (torch-free).
 
-Torch-free so the caption-correction step and the GUI can reuse all three:
-
 * :func:`generate_caption_variants` — the stochastic shuffle / tag-dropout /
   identity-randomize expansion for train-time caption sampling, materialized as
-  text **before** the TE encoder is ever loaded.
+  text **before** the TE encoder is loaded.
 * :func:`build_erasure_token_pool` — the dual-single erasure pool the
-  identity-randomize axis draws from; takes the two tokenizers as plain
-  arguments.
-* the ``{stem}.variants.txt`` sidecar read/write pair — the single source of
-  truth: the caption step writes it, the TE step encodes exactly its lines, and
-  the GUI previews it. The *file shape* it is written in belongs to
-  :mod:`anime_tools.captions._sidecar` and is shared with
-  ``{stem}.history.txt``; what stays here is the vocabulary — a record is a
-  ``(label, text)`` pair, and the labels are the ``v*``/``r*`` names the TE
-  cache layout is keyed by.
+  identity-randomize axis draws from.
+* the ``{stem}.variants.txt`` sidecar read/write pair: the caption step writes
+  it, the TE step encodes exactly its lines, the GUI previews it. The file shape
+  is :mod:`anime_tools.captions._sidecar`'s; the vocabulary is local — a record
+  is a ``(label, text)`` pair whose ``v*``/``r*`` labels key the TE cache layout.
 """
 
 from __future__ import annotations
@@ -48,24 +42,19 @@ def build_erasure_token_pool(
     (lexinvariant tag regularization, arXiv:2305.16349).
 
     A randomized slot is filled by a *different* pool token each draw, so the
-    literal symbol stays unreliable — pushing the adapter to ground the concept
-    in surrounding structure (image content + co-occurring tags) rather than the
-    exact trigger vector (role-based, not vector-based, binding). Per the cited
-    method the filler is a *real* vocab token, not gibberish: unreliability comes
-    from the per-draw variation, not from the symbol being intrinsically
-    meaningless. Distinct from tag-dropout (which removes the slot).
+    literal symbol stays unreliable. The filler is a *real* vocab token, not
+    gibberish. Distinct from tag-dropout, which removes the slot.
 
-    **Dual-single** is the load-bearing constraint. Anima tokenizes captions
-    twice — Qwen3 for the text encoder and T5 for the LLM adapter's target ids
-    — so a filler must be exactly one token in *both* vocabularies, else it
-    shreds into junk subword pieces on whichever side fragments it. We keep
-    lowercase ascii alphabetic words that survive as a single token in both;
-    ``exclude`` (the dataset's real tags) drops any word that is itself a
-    genuine tag. Returns bare words (no leading space).
+    **Dual-single** is the load-bearing constraint: Anima tokenizes captions
+    twice (Qwen3 for the text encoder, T5 for the LLM adapter's target ids), so
+    a filler must be exactly one token in *both* vocabularies or it shreds into
+    subword pieces. Keeps lowercase ascii alphabetic words single in both;
+    ``exclude`` (the dataset's real tags) drops words that are genuine tags.
+    Returns bare words (no leading space).
 
     Selection keys off the ``Ġ`` (leading-space) Qwen3 vocab form — exact for
-    this token class, so no Qwen3 re-encode is needed; only the T5 single-token
-    property is checked at runtime.
+    this token class, so only the T5 single-token property is checked at
+    runtime.
     """
     excl = {t.lower() for t in exclude} if exclude else set()
     try:
@@ -151,24 +140,21 @@ def generate_caption_variants(
 
     v0 = pristine original caption. v1..v{N-1} are smart-shuffled (preserving
     the @artist prefix and section anchors), then every tag *after* the prefix
-    is independently dropped with probability ``tag_dropout_rate``, then every
-    survivor has its identity erased (replaced by a fresh token from
-    ``erasure_pool``) with probability ``tag_randomize_rate``. The
-    ``@no-artist`` sentinel participates in the boundary but is stripped from
-    every variant, v0 included.
+    is independently dropped at ``tag_dropout_rate``, then every survivor has
+    its identity erased (a fresh token from ``erasure_pool``) at
+    ``tag_randomize_rate``. The ``@no-artist`` sentinel participates in the
+    boundary but is stripped from every variant, v0 included.
 
     Both axes are **prefix-protected**: neither touches the @artist prefix, so
     the trigger tag stays intact. Clause headers and the sentinel are never
-    randomized either. ``protect_fn`` marks tags that must survive both axes
-    verbatim even past the prefix (still shuffled).
+    randomized. ``protect_fn`` marks tags that must survive both axes verbatim
+    even past the prefix (still shuffled).
 
-    ``erasure_pool`` (see :func:`build_erasure_token_pool`) is **required**
-    whenever ``tag_randomize_rate > 0`` — there is no random-ASCII fallback.
+    ``erasure_pool`` is **required** whenever ``tag_randomize_rate > 0``.
 
     **Position clauses are atomic**: each clause is kept or dropped *whole* at
     ``clause_dropout_rate`` (default: ``tag_dropout_rate``), with its tags
-    shuffled inside. Per-tag dropout inside a clause would leave a
-    half-described position.
+    shuffled inside — per-tag dropout would leave a half-described position.
     """
     from anime_tools.captions import shuffle as anima_train_utils
     from anime_tools.captions.position_clauses import (
@@ -248,8 +234,7 @@ def generate_caption_variants(
 def variants_sidecar_path(image_or_caption_path: Path) -> Path:
     """``{stem}.variants.txt`` next to a resized image (or its ``.txt`` caption).
 
-    A multi-dot stem is preserved (``a.b.png`` → ``a.b.variants.txt``); the rule
-    and the reason are :func:`anime_tools.captions._sidecar.sidecar_path`'s.
+    A multi-dot stem is preserved (``a.b.png`` → ``a.b.variants.txt``).
     """
     return sidecar_path(image_or_caption_path, VARIANTS_SIDECAR_SUFFIX)
 
@@ -259,9 +244,8 @@ def write_variants_sidecar(path: Path, variants: list[tuple[str, str]]) -> None:
 
     ``variants`` is an ordered ``(label, text)`` list (``v0``, ``v1`` …, then
     ``r1`` …); v0 is the pristine/corrected caption that also lives in
-    ``{stem}.txt``. An empty list still writes the file: unlike a history, a
-    variant set is what the TE step encodes, so *no variants* is a statement and
-    not an absence.
+    ``{stem}.txt``. An empty list still writes the file — the TE step encodes
+    exactly these lines, so "no variants" is a statement, not an absence.
     """
     write_rows(path, sidecar_header("variants"), variants)
 
@@ -269,12 +253,9 @@ def write_variants_sidecar(path: Path, variants: list[tuple[str, str]]) -> None:
 def read_variants_sidecar(path: Path) -> list[tuple[str, str]]:
     """Parse a ``{stem}.variants.txt`` into an ordered ``(label, text)`` list.
 
-    ``path`` must exist — every caller reaches here having already decided the
-    sidecar is there (:mod:`anime_tools.stages.captions` to compare it against
-    what it would generate, the GUI to expand it into badges), so a missing one
-    is a bug in the caller rather than an empty variant set. Past that, records
-    arrive with the format's own tolerance for a hand-edit (see
-    :mod:`anime_tools.captions._sidecar`). Order is preserved so the TE writer
-    can map ``v*``/``r*`` labels straight onto its flat cache layout.
+    ``path`` must exist — a missing sidecar is a bug in the caller, not an empty
+    variant set. Records arrive with the format's own hand-edit tolerance. Order
+    is preserved so the TE writer can map ``v*``/``r*`` labels straight onto its
+    flat cache layout.
     """
     return [(label.strip(), text) for label, text in read_rows(path, VARIANTS_FIELDS)]

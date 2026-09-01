@@ -1,17 +1,12 @@
 """Which tags may enter a position clause, and in what order.
 
-The tag-*group* policy behind the position-clause rewrite: the subject/scene
-split, the gates that bound what a clause may assert, and
-:class:`ClauseVocabulary`, which ranks and admits one crop's tags. The clause
-grammar lives in :mod:`anime_tools.captions.position_clauses` and the bag→clause
-move rules in :mod:`anime_tools.captions.clause_rewrite`.
+The subject/scene split, the gates that bound what a clause may assert, and
+:class:`ClauseVocabulary`, which ranks and admits one crop's tags.
 
-The policy is data, not code: :class:`ClauseGroups` is loaded from
+The policy is data: :class:`ClauseGroups` is loaded from
 ``configs/clause_vocabulary.yaml``, whose group names come from the tagger
-checkpoint's own ``groups.yaml`` — so the rules can be A/B'd without editing
-Python, and cannot drift from the model that produced the tags. A group name the
-checkpoint doesn't declare is warned about at load: a typo would otherwise
-silently disable a gate.
+checkpoint's own ``groups.yaml``. A name the checkpoint doesn't declare is
+warned about at load — a typo would otherwise silently disable a gate.
 
 Pure stdlib + yaml (no torch). Per-rule evidence and the knob table live in
 ``docs/position_captions.md``.
@@ -33,8 +28,8 @@ from anime_tools.captions.taxonomy import is_artist_tag, is_count_tag, is_rating
 logger = logging.getLogger(__name__)
 
 # Resolved against the curation home (``anime_tools._env.curation_home``): a
-# ``configs/clause_vocabulary.yaml`` there (the trainer ships one, user-editable)
-# overrides the package default at :data:`PACKAGED_CLAUSE_GROUPS_CONFIG`.
+# ``configs/clause_vocabulary.yaml`` there overrides the package default at
+# :data:`PACKAGED_CLAUSE_GROUPS_CONFIG`.
 CLAUSE_GROUPS_CONFIG = "configs/clause_vocabulary.yaml"
 PACKAGED_CLAUSE_GROUPS_CONFIG = (
     Path(__file__).resolve().parent / "data" / "clause_vocabulary.yaml"
@@ -43,7 +38,7 @@ PACKAGED_CLAUSE_GROUPS_CONFIG = (
 
 def clause_groups_config_path(path: str | Path = CLAUSE_GROUPS_CONFIG) -> Path:
     """``<home>/configs/clause_vocabulary.yaml`` when present, else the copy
-    shipped inside the package (byte-identical at release time)."""
+    shipped inside the package."""
     resolved = resolve_path(path)
     if resolved.exists() or Path(path) != Path(CLAUSE_GROUPS_CONFIG):
         return resolved
@@ -55,8 +50,7 @@ class ClauseGroups:
     """The clause policy as loaded from ``configs/clause_vocabulary.yaml``.
 
     Group-name sets, except :attr:`page_level_framing` and
-    :attr:`multi_value_markers`, which name individual *tags*. Field-by-field
-    rationale lives in the YAML.
+    :attr:`multi_value_markers`, which name individual *tags*.
     """
 
     subject: frozenset[str] = frozenset()
@@ -87,11 +81,10 @@ class ClauseGroups:
 
 
 def load_clause_groups(path: str | Path = CLAUSE_GROUPS_CONFIG) -> ClauseGroups:
-    """Read a clause-policy YAML. See ``configs/clause_vocabulary.yaml``.
+    """Read a clause-policy YAML.
 
     ``view_invariant_groups`` defaults to ``character_invariant_groups`` — the
-    same rule read at two strengths (may a tag LEAVE the bag vs may it ENTER a
-    clause at all).
+    same rule at two strengths (may a tag LEAVE the bag vs ENTER a clause).
     """
     with open(clause_groups_config_path(path), encoding="utf-8") as f:
         raw = yaml.safe_load(f) or {}
@@ -133,11 +126,9 @@ class ClauseVocabulary:
 
     ``tag_to_group`` from the tagger checkpoint's ``groups.yaml``;
     ``characters``/``excluded`` from its ``vocab.json``. Ungrouped tags are
-    admitted only via the attributable + in-the-caption path (see
-    :meth:`select`) — lets a curated compound like ``pink jacket`` bind while
-    keeping ungrouped scene tags out. ``excluded`` = image-level categories that
-    would otherwise ride the ranked path in. ``exclusive_groups`` = softmax
-    groups where only one member may enter a clause.
+    admitted only via the attributable + in-the-caption path (:meth:`select`).
+    ``excluded`` = image-level categories. ``exclusive_groups`` = softmax groups
+    where only one member may enter a clause.
     """
 
     characters: frozenset[str] = frozenset()
@@ -153,12 +144,8 @@ class ClauseVocabulary:
         """Groups where a clause may only pick a value the flat bag already named.
 
         The configured ``bag_gated_groups`` plus every **exclusive** subject
-        group the checkpoint declares. Derived rather than listed so the gate
-        cannot drift from ``groups.yaml``: whatever the tagger models as a
-        softmax over one subject is a group where a second value is a
-        contradiction rather than extra detail — minus
-        ``ungated_exclusive_groups``, where the group describes the view rather
-        than the subject.
+        group the checkpoint declares, minus ``ungated_exclusive_groups``, where
+        the group describes the view rather than the subject.
         """
         cfg = self.clause_groups
         derived = cfg.bag_gated | (self.exclusive_groups & cfg.subject)
@@ -202,18 +189,16 @@ class ClauseVocabulary:
         tags only this crop kept; ``shared`` = tags every crop kept.
 
         Candidates are ranked once, admitted bag-first then up to
-        ``max_novel_tags`` novel ones — a novel tag can never later be *moved*
-        by ``clause_rewrite.plan_bag_removals``, so this bounds dead-weight
-        invention without ever rescuing a crowded-out bag tag.
+        ``max_novel_tags`` novel ones; a novel tag can never later be *moved*
+        by ``clause_rewrite.plan_bag_removals``.
 
         Suppression knobs, weakest to strongest: ``discriminative_only`` drops
-        ``shared`` tags (a `multiple views` sheet repeats the same character on
-        every view, crowding out the outfit that differs);
-        ``allow_identity=False`` (body-part crops) drops hair/eye/hairstyle — no
-        head, no evidence; ``bag_gated_identity`` makes the flat bag outrank the
-        tagger for any :meth:`gated_groups` member it has spoken for;
-        ``view_invariant`` (repeated-subject layout) is strongest, dropping the
-        name and every view-invariant trait — plus the view-anatomy groups when
+        ``shared`` tags; ``allow_identity=False`` (body-part crops) drops
+        hair/eye/hairstyle, there being no head to read them off;
+        ``bag_gated_identity`` makes the flat bag outrank the tagger for any
+        :meth:`gated_groups` member it has spoken for; ``view_invariant``
+        (repeated-subject layout) is strongest, dropping the name and every
+        view-invariant trait — plus the view-anatomy groups when
         ``bind_view_anatomy`` is off.
         """
         cfg = self.clause_groups
@@ -224,8 +209,7 @@ class ClauseVocabulary:
         invariant_groups = cfg.view_invariant
         if not bind_view_anatomy:
             invariant_groups = invariant_groups | cfg.view_anatomy
-        # Gated groups the caption has already spoken for — see the
-        # ``bag_members`` test in ``add``.
+        # Gated groups the caption has already spoken for.
         bag_members = (
             {
                 group: {t for t in flat_bag if self.group_of(t) == group}
@@ -241,8 +225,7 @@ class ClauseVocabulary:
             # Checked here, not only on the ranked path below: an excluded tag
             # can still be grouped (a deprecated alias filed under hair_color)
             # and must not ride the priority path in. Same for page-level
-            # framing — `framing` is a priority group, and the priority step
-            # reads its winner straight off ``groups``.
+            # framing, since `framing` is a priority group.
             if tag in self.excluded or tag in cfg.page_level_framing:
                 return False
             group = self.group_of(tag)
@@ -267,8 +250,8 @@ class ClauseVocabulary:
 
         # 1. Character name. A name the caption never claimed is a crop
         #    hallucination, so by default it must appear in the flat bag.
-        #    Skipped on a repeated-subject layout: every view is the same girl,
-        #    so a bound name would claim the other views are someone else.
+        #    Skipped on a repeated-subject layout, where a bound name would
+        #    claim the other views are someone else.
         names = (
             []
             if view_invariant
@@ -286,9 +269,8 @@ class ClauseVocabulary:
                 candidates.append(name)
                 break  # one identity per subject
 
-        # 2. Exclusive-group winners (hair color, eye color, …). These are the
-        #    softmax_when_solo groups, and a single-subject crop is exactly the
-        #    condition under which they fire — the whole point of cropping.
+        # 2. Exclusive-group winners (hair color, eye color, …) — the
+        #    softmax_when_solo groups, which fire on a single-subject crop.
         for group in cfg.priority:
             members = sorted(
                 (t for t in kept if self.group_of(t) == group),
@@ -296,8 +278,7 @@ class ClauseVocabulary:
             )
             # A kept member the caption already named outranks the softmax
             # winner: otherwise, on a gated group, ``add`` rejects the novel
-            # winner and the group emits nothing even though the crop also kept
-            # the very value the bag listed.
+            # winner and the group emits nothing.
             winner = next((t for t in members if t in flat_bag), None)
             if winner is None:
                 # Group didn't fire (contaminated / multi-person crop): fall
@@ -346,9 +327,8 @@ def load_clause_vocabulary(
     """Build a :class:`ClauseVocabulary` from a tagger checkpoint directory.
 
     ``clause_groups`` overrides the shipped policy. Whichever policy is used is
-    checked against the checkpoint's declared groups: an unknown name is a typo
-    that would silently disable a gate, so it is logged rather than left to be
-    discovered in a dry run's diff.
+    checked against the checkpoint's declared groups; an unknown name is logged,
+    since it would silently disable a gate.
     """
     from anime_tools.captions import tag_groups as tg
     from anime_tools.captions.vocab_io import (

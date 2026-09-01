@@ -1,10 +1,5 @@
-"""One reader for ``vocab.json`` — the four hand parsers now go through it.
-
-Pins the two halves that used to be spelled out per consumer: the
-``category -> names`` projection (with the caller's own folding), and the
-``resolved_to_dict``/``resolved_from_dict`` round trip that lets the group
-router revive a snapshot instead of walking raw dicts.
-"""
+"""``vocab.json`` reading: the ``category -> names`` projection (with the caller's
+own folding) and the ``resolved_to_dict``/``resolved_from_dict`` round trip."""
 
 from __future__ import annotations
 

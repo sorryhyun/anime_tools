@@ -1,16 +1,10 @@
 """The Danbooru tag KB behind the caption panel's click-a-tag panel.
 
-The answer comes out of ``danbooru_tags_classified.csv``, the same table
-:mod:`anime_tools.captions.correction` types tags against; without it this
-module answers "not installed" and the UI points at Settings › Models.
-
-Two files, one view. The base CSV carries the taxonomy with **Korean**
-descriptions; the optional ``.en.csv`` sibling carries English ones and nothing
-else, so English is merged *over* the base — never the other way round, or a tag
-missing from the wiki mirror (half of them) would lose its category and count.
-
-Torch-free like the rest of ``anime_tools.gui``: stdlib csv over a 16 MB table,
-loaded lazily and re-read only when the file's mtime moves.
+Answers come from ``danbooru_tags_classified.csv``; without it this module answers
+"not installed". The base CSV carries the taxonomy with Korean descriptions and the
+optional ``.en.csv`` sibling carries only English ones, so English is merged *over*
+the base — the other direction would drop the category and count of the ~half of
+tags the wiki mirror misses. Loaded lazily, re-read when either file's mtime moves.
 """
 
 from __future__ import annotations
@@ -32,10 +26,8 @@ from anime_tools.captions.correction import (
 
 _LOCK = threading.Lock()
 _CACHE: tuple[tuple, TagKnowledgeBase, str | None] | None = None
-"""``(stamp, kb, source)`` — the one parsed copy. The stamp is the identity of
-*both* files (path + mtime, or ``None`` for the sibling that isn't there), so a
-download of either — the base table, or the English descriptions built over it
-— is picked up on the next click instead of at the next restart."""
+"""``(stamp, kb, source)``. The stamp covers *both* files (path + mtime, or ``None``
+for an absent sibling), so a download of either is picked up on the next call."""
 
 
 def _stamp(path: Path | None) -> tuple[str, float] | None:
@@ -64,9 +56,8 @@ def english_csv() -> Path | None:
 def _merge_english(kb: TagKnowledgeBase, path: Path) -> None:
     """Overwrite descriptions with the English ones, in place.
 
-    A second :func:`load_tag_knowledge_base` would parse — and hold — a whole
-    second KB for one column, so this reads the file as plain rows and touches
-    only the tags the base table already knows.
+    Reads plain rows rather than a second KB, and touches only tags the base
+    table already knows.
     """
     import dataclasses
 
@@ -113,7 +104,7 @@ def load() -> tuple[TagKnowledgeBase | None, str | None]:
                 _merge_english(kb, en)
                 source = en.name
             except (OSError, ValueError):
-                pass  # a truncated build is not a reason to lose the base KB
+                pass  # a truncated build still leaves the base KB usable
         _CACHE = (stamp, kb, source)
         return kb, source
 
@@ -121,9 +112,8 @@ def load() -> tuple[TagKnowledgeBase | None, str | None]:
 def describe(tag: str) -> dict[str, Any]:
     """One tag's KB entry, as the caption panel's JSON.
 
-    ``installed`` false means the CSV is not here at all (offer the download);
-    ``known`` false means it is, and this tag simply is not a Danbooru tag —
-    an Anima quality tag, an ``@artist`` the KB never heard of, a typo.
+    ``installed`` false means the CSV is absent; ``known`` false means it is
+    present and this tag is not a Danbooru tag.
     """
     kb, source = load()
     out: dict[str, Any] = {
@@ -145,8 +135,8 @@ def describe(tag: str) -> dict[str, Any]:
         category_path=info.category_path,
         description=info.description,
         post_count=info.post_count,
-        # False when the row answered under another spelling -- an underscored
-        # tag, or an @-prefixed artist looked up bare.
+        # False when the row answered under another spelling (underscored tag,
+        # @-prefixed artist looked up bare).
         exact=normalize_tag(tag) == info.name,
     )
     return out

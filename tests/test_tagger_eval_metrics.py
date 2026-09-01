@@ -1,9 +1,7 @@
-"""Invariant tests for the stratified tagger-eval metrics.
-
-Pins the AP/F1 math against hand-computed values and — the load-bearing one —
-that :func:`predict_with_inference_rule` mirrors ``AnimaTagger.predict``'s
-group refinement: solo/escape gating from *predicted* tags, group tags
-cleared, argmax winner always emitted when the gate applies.
+"""Stratified tagger-eval metrics: the AP/F1 math against hand-computed values,
+and that :func:`predict_with_inference_rule` mirrors ``AnimaTagger.predict``'s
+group refinement (solo/escape gating from *predicted* tags, group tags cleared,
+argmax winner always emitted when the gate applies).
 """
 
 from __future__ import annotations

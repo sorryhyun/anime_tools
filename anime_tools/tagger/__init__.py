@@ -1,7 +1,7 @@
 """Anima Tagger — a thin head over the external dbv4 caformer tagger.
 
-``AnimaTagger`` is exposed lazily (it imports torch/timm); ``dbv4_meta`` is
-torch-free and safe to import from download tooling / GUIs.
+``AnimaTagger`` is exposed lazily because it imports torch/timm; ``dbv4_meta``
+stays torch-free.
 """
 
 __all__ = ["DEFAULT_TAGGER_DIR", "AnimaTagger"]

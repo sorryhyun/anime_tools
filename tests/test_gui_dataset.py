@@ -1,8 +1,4 @@
-"""Dataset browsing API: the image/caption tree, the caption writer, thumbs.
-
-Mirrors the sidebar's actual traffic — list the tree, open one item, save a
-caption, then read it back.
-"""
+"""Dataset browsing API: the image/caption tree, the caption writer, thumbs."""
 
 from __future__ import annotations
 
@@ -67,7 +63,7 @@ def test_listing_joins_the_three_trees(client):
         "dir": "",
         "name": "a.png",
         "stem": "a",
-        # One flag per ladder rung, keyed by rung: the sidebar's dot strip.
+        # One flag per ladder rung: the sidebar's dot strip.
         "captions": {
             "master": True,
             "history": False,
@@ -85,11 +81,7 @@ def test_listing_joins_the_three_trees(client):
 
 
 def test_the_listing_carries_the_caption_ladder(client):
-    """The dot strip is drawn from the server's rungs, not a copy of their names.
-
-    Same declaration as the row's ``captions`` map and the panel's badges, which
-    is what makes Phase 2's master overlay one line rather than three.
-    """
+    """The dot strip is drawn from the server's rungs, not a copy of their names."""
     from anime_tools.gui import dataset as D
 
     c, _ = client
@@ -116,12 +108,8 @@ def test_listing_filters(client):
 
 
 def test_the_listing_default_is_the_cap_not_a_smaller_number():
-    """A listing shows the whole dataset; only ``MAX_ITEMS`` truncates it.
-
-    The default used to be 2000 with nothing overriding it, so the 20000 cap was
-    unreachable and any real dataset came back quietly short — in the group
-    ordering too, since both orderings draw this one listing. Pinned in both
-    spellings, because the route and the function each carry the default.
+    """A listing shows the whole dataset; only ``MAX_ITEMS`` truncates it. Pinned
+    in both spellings, since the route and the function each carry the default.
     """
     import inspect
 
@@ -151,8 +139,7 @@ def test_item_detail_parses_the_caption_grammar(client):
     # Clauses come parsed: the browser never splits a caption on commas.
     assert master["parsed"] == {
         "flat_tags": ["1girl", "solo"],
-        # Offsets too: the boxed caption editor draws them, and they must be
-        # slices of the very text this entry carries.
+        # Offsets too: they must be slices of the text this entry carries.
         "spans": [
             {"start": 0, "end": 5, "kind": "tag", "clause": -1},
             {"start": 7, "end": 11, "kind": "tag", "clause": -1},
@@ -172,7 +159,7 @@ def test_item_detail_parses_the_caption_grammar(client):
     assert (
         revised["text"] == "" and revised["parsed"] is None and revised["mtime"] is None
     )
-    # Never written, so nothing it used to be: the history rung is hollow too.
+    # Never written, so the history rung is hollow too.
     assert history["kind"] == "history" and not history["exists"]
     # No sidecar, but the rung it would fill keeps its place on the badge row.
     assert variants["kind"] == "variants"
@@ -184,8 +171,7 @@ def test_item_detail_matches_a_re_encoded_resized_image(client):
     c, _ = client
     it = c.get("/api/dataset/item", params={"rel": "sub/b.jpg"}).json()
     assert it["resized"]["path"] == "workspace/resized/sub/b.png"
-    # The sidecar rung expands into one badge per label, each already parsed:
-    # a variant is a caption, so the browser does not split it either.
+    # The sidecar rung expands into one badge per label, each already parsed.
     assert [v["kind"] for v in it["versions"]] == [
         "master",
         "history",
@@ -200,13 +186,7 @@ def test_item_detail_matches_a_re_encoded_resized_image(client):
 
 
 def test_every_badge_has_the_same_keys_however_it_was_read(client, home):
-    """A caption file and a row inside a sidecar are one wire shape.
-
-    The panel reads these keys off whichever badge is selected, so an entry the
-    expanded branch builds from text it already holds must be indistinguishable
-    -- key for key -- from one read off a caption file. It is the same builder
-    (``_version_entry``); this is the guard that keeps it so.
-    """
+    """A caption file and a row inside a sidecar are one wire shape, key for key."""
     c, _ = client
     (home / "workspace/resized/sub/b.history.txt").write_text(
         "# anima caption history — auto-generated, do not hand-edit\n"
@@ -237,16 +217,14 @@ def test_every_badge_has_the_same_keys_however_it_was_read(client, home):
         "text",
         "parsed",
     )
-    # An expanded entry's ``kind`` is its badge and its ``rung`` is the ladder
-    # row it came out of, which is what the frontend colours it by; an
-    # unexpanded one is its own rung.
+    # An expanded entry's ``kind`` is its badge and its ``rung`` the ladder row it
+    # came from; an unexpanded one is its own rung.
     assert [(v["kind"], v["rung"]) for v in versions[1:3]] == [
         ("revised@1", "history"),
         ("revised@2", "history"),
     ]
     assert all(v["kind"] == v["rung"] for v in (versions[0], versions[3]))
-    # Read once for the whole sidecar: every row it holds wears the file's own
-    # name and mtime, and carries its text parsed.
+    # Read once for the whole sidecar: every row wears the file's name and mtime.
     hist = versions[1:3]
     assert {v["path"] for v in hist} == {"workspace/resized/sub/b.history.txt"}
     assert len({v["mtime"] for v in hist}) == 1
@@ -259,28 +237,22 @@ def test_every_badge_has_the_same_keys_however_it_was_read(client, home):
 
 
 def test_item_detail_flags_an_image_under_the_resize_floor(client):
-    """The panel says why a stage over this image would do nothing at all.
-
-    Below ``min_pixels`` the resize preflight skips the image, so it never lands
-    in ``workspace/resized`` -- the tree every stage walks. A run then reports
-    zero images and writes nothing, which reads as a broken stage unless the
-    size line says the size is the reason.
-    """
+    """Below ``min_pixels`` the resize preflight skips the image, so it never
+    reaches the tree every stage walks; the panel says so."""
     from anime_tools.stages.resize import DEFAULT_MIN_PIXELS
 
     c, _ = client
     it = c.get("/api/dataset/item", params={"rel": "a.png"}).json()
     assert it["min_pixels"] == DEFAULT_MIN_PIXELS
     assert it["image"]["pixels"] == 64 and it["image"]["too_small"] is True
-    # Only the source is measured against the floor: the mask and the resized
-    # copy are *outputs* of that decision, so a verdict on them answers nothing.
+    # Only the source is measured: the mask and resized copy are outputs of that
+    # decision.
     assert it["mask"]["too_small"] is None
 
 
 def test_no_resize_floor_means_no_verdict(client, home):
-    """``min_pixels`` 0 turns the floor off, and then there is nothing to say --
-    ``None``, not ``False``: the panel must not claim an image passed a test
-    nobody ran."""
+    """``min_pixels`` 0 turns the floor off, so the verdict is ``None``, not
+    ``False``."""
     from anime_tools.gui import dataset as D
     from anime_tools.gui.server import roots_for
 
@@ -289,9 +261,8 @@ def test_no_resize_floor_means_no_verdict(client, home):
 
 
 def test_the_resize_floor_comes_from_the_preprocess_settings():
-    """The floor the item route measures against is the one the preflight runs
-    at -- the Settings *Preprocess* block, falling back to the stage's own
-    constant rather than to a second copy of the number."""
+    """The item route's floor is the Settings *Preprocess* value, falling back to
+    the stage's own constant."""
     from anime_tools.gui.server import preprocess_min_pixels
     from anime_tools.gui.stages import PREPROCESS_SETTINGS_KEY
     from anime_tools.stages.resize import DEFAULT_MIN_PIXELS
@@ -338,7 +309,7 @@ def test_writing_a_revised_caption_flags_the_stale_sidecar(client, home):
         },
     )
     assert r.json()["variants_stale"] is True
-    # ...and the sidecar itself is left alone; regenerating it is the stage's job.
+    # ...and the sidecar itself is left alone.
     assert (home / "workspace/resized/sub/b.variants.txt").exists()
 
 
@@ -362,7 +333,7 @@ def test_caption_writes_are_confined_and_validated(client):
 
 
 def test_a_caption_is_stored_as_one_line(client, home):
-    """The trainer reads captions line-wise; a pasted newline must not survive."""
+    """The trainer reads captions line-wise, so a pasted newline is folded away."""
     c, _ = client
     c.put(
         "/api/dataset/item",
@@ -395,7 +366,7 @@ def test_roots_are_settable_and_persisted(client, home):
 
 
 def test_saving_roots_creates_the_missing_directories(client, home):
-    """Settings is the explicit 'these are my roots' gesture, so it makes them."""
+    """Saving roots creates the directories under the home."""
     from anime_tools.gui import dataset as D
 
     c, _ = client
@@ -420,8 +391,7 @@ def test_saving_roots_creates_the_missing_directories(client, home):
 
 
 def test_a_root_can_be_a_tree_beside_the_home(client, home):
-    """The ordinary layout: ``anime_tools/`` checked out next to ``anima_lora/``,
-    so ``src`` is ``../anima_lora/image_dataset`` and no home holds both."""
+    """A root may point at a tree beside the home."""
     from anime_tools.gui import dataset as D
 
     c, _ = client
@@ -431,9 +401,8 @@ def test_a_root_can_be_a_tree_beside_the_home(client, home):
 
     r = c.put("/api/dataset/roots", json={"src": "../anima_lora/image_dataset"})
     assert r.status_code == 200, r.text
-    # Outside the home, so it comes back by the name it was given rather than
-    # with the home's own prefix repeated back at the reader -- and `lexical`
-    # collapses that `..` again, so what goes out is what comes back in.
+    # Outside the home, so it comes back by the name it was given; `lexical`
+    # collapses the `..` again.
     assert r.json()["roots"]["src"] == {
         "path": "../anima_lora/image_dataset",
         "exists": True,
@@ -442,13 +411,13 @@ def test_a_root_can_be_a_tree_beside_the_home(client, home):
     # The listing and the pixels follow the root out of the home...
     assert [i["rel"] for i in c.get("/api/dataset").json()["items"]] == ["z.png"]
     assert c.get("/api/thumb", params={"path": f"{sibling}/z.png"}).status_code == 200
-    # ...but only that tree: what is merely *near* it is still nobody's business.
+    # ...but only that tree.
     outsider = home.parent / "not-mine.txt"
     assert c.get("/api/files", params={"path": str(outsider)}).status_code == 404
 
 
 def test_a_root_outside_the_home_is_never_created(client, home):
-    """Pointing at a tree beside the home is the point; conjuring one is not."""
+    """A root outside the home is never created."""
     c, _ = client
     r = c.put("/api/dataset/roots", json={"src": "../escape"})
     assert r.status_code == 200, r.text
@@ -458,14 +427,13 @@ def test_a_root_outside_the_home_is_never_created(client, home):
 
 
 def test_a_query_param_cannot_point_the_listing_anywhere(client, home):
-    """A saved root widens what may be read; a request's own override never
-    does -- only the Settings save that means it gets to move that line."""
+    """A saved root widens what may be read; a request's own override never does."""
     c, _ = client
     assert c.get("/api/dataset", params={"src": "../elsewhere"}).status_code == 400
 
 
 def test_reading_never_creates_a_root(client, home):
-    """resolve_roots is on every read request; a typo must stay reported missing."""
+    """A typo in a root is reported missing, never created."""
     c, _ = client
     body = c.get("/api/dataset", params={"src": "typo"}).json()
     assert body["missing"] and body["items"] == [] and not (home / "typo").exists()
@@ -491,9 +459,7 @@ def test_thumbnails_are_webp_and_confined(client):
 
 
 def test_item_pattern_selects_exactly_the_one_image():
-    """How the GUI runs a stage on the selected image: it narrows the
-    ``--path_pattern`` the stage already takes, so one image and a batch share
-    the same code path."""
+    """Running a stage on one image narrows the ``--path_pattern`` it already takes."""
     from anime_tools.gui import dataset as D
     from anime_tools.path_filter import filter_paths_by_glob
 
@@ -513,15 +479,14 @@ def test_item_pattern_selects_exactly_the_one_image():
     ) == [True, False]
 
     # …but '|' is the pattern's own separator and cannot be escaped, so a name
-    # carrying one is refused instead of silently matching nothing.
+    # carrying one is refused rather than silently matching nothing.
     with pytest.raises(D.DatasetError, match=r"\|"):
         D.item_pattern("char/a|b.png")
     with pytest.raises(D.DatasetError):
         D.item_pattern("../escape.png")
 
 
-# ---- group view: the grouping manifest, read back as the sidebar's second
-# ordering of the same rows ------------------------------------------------
+# ---- group view: the grouping manifest as the sidebar's second ordering ----
 
 
 def _manifest(home: Path, groups: list[dict], **over) -> Path:
@@ -542,8 +507,8 @@ def _manifest(home: Path, groups: list[dict], **over) -> Path:
 
 
 def test_groups_subpath_is_the_stage_report_tail():
-    """The view has to read the file the Groups stage writes, wherever Settings
-    points ``report_root`` — same split the stage's own report field gets."""
+    """The view reads the file the Groups stage writes, wherever ``report_root``
+    points."""
     from anime_tools.grouping.cli.build_groups import build_parser
     from anime_tools.gui.dataset import GROUPS_SUBPATH
     from anime_tools.gui.stages import report_subpath
@@ -578,8 +543,7 @@ def test_groups_are_rels_the_listing_can_join(client):
             "members": ["sub/b.jpg", "a.png"],
         }
     ]
-    # Every member is a rel the listing keys its rows by, which is the whole
-    # join: group view draws the same rows, in a different order.
+    # Every member is a rel the listing keys its rows by.
     rels = {i["rel"] for i in c.get("/api/dataset").json()["items"]}
     assert set(body["groups"][0]["members"]) <= rels
 
@@ -595,10 +559,8 @@ def test_groups_follow_the_report_root_setting(client, home):
 
 
 def test_a_one_component_dst_puts_the_reports_in_the_workspace(client):
-    """Beside ``dst`` stops at the home: a ``dst`` with no parent inside it —
-    a settings file written before the workspace still pins the pre-workspace
-    ``post_image_dataset`` — would otherwise strew ``captions/`` and ``groups/``
-    across the project root."""
+    """Beside ``dst`` stops at the home, so a one-component ``dst`` puts the
+    reports in the workspace rather than the project root."""
     c, _ = client
     c.put(
         "/api/dataset/roots",
@@ -609,13 +571,11 @@ def test_a_one_component_dst_puts_the_reports_in_the_workspace(client):
 
 
 def test_the_mask_root_sits_beside_the_masks_root_by_default(client):
-    """Each generator's own tree is an intermediate the merge unions into the
-    ``masks`` root, so it belongs next to it — and moves with it. Blank is the
-    default; the same stop-at-the-home rule as ``report_root``."""
+    """The mask root sits beside the ``masks`` root and moves with it; blank is
+    the default, with the same stop-at-the-home rule as ``report_root``."""
     c, _ = client
     assert c.get("/api/dataset/roots").json()["mask_root"] == "workspace"
-    # A one-component masks root has the home for a parent; the workspace is
-    # the answer rather than the project root.
+    # A one-component masks root has the home for a parent.
     c.put(
         "/api/dataset/roots",
         json={"src": "image_dataset", "dst": "workspace/resized", "masks": "masks"},
@@ -624,8 +584,8 @@ def test_the_mask_root_sits_beside_the_masks_root_by_default(client):
 
 
 def test_the_mask_root_setting_moves_both_generators_and_the_merge(client):
-    """One value, three CLIs: the two ``--mask-dir`` defaults and the merge's
-    two inputs all hang off it, each keeping its own tail."""
+    """One value, three CLIs: the two ``--mask-dir`` defaults and the merge's two
+    inputs all hang off it, each keeping its own tail."""
     from anime_tools.gui import server as SV
     from anime_tools.gui import stages as S
 
@@ -648,7 +608,7 @@ def test_the_mask_root_setting_moves_both_generators_and_the_merge(client):
 
 
 def test_a_missing_manifest_is_not_an_error(client):
-    """The Groups stage may simply never have run — the panel says so."""
+    """The Groups stage may never have run; the panel says so."""
     c, _ = client
     body = c.get("/api/dataset/groups").json()
     assert body["missing"] and body["groups"] == []
@@ -671,12 +631,8 @@ def test_an_unreadable_manifest_is_a_400(client, home):
 
 
 def test_the_ocr_sidecar_reaches_the_panel_without_being_a_caption_version(client):
-    """The sidecar is evidence about the picture, not a version of the caption.
-
-    So it rides its own key rather than the ladder: expanding it into the badge
-    row would offer to make the caption say ``こんにちは``. It also lives in its
-    own tree rather than beside the caption — the panel joins it to the item by
-    the same relative path every other root joins by.
+    """The OCR sidecar rides its own key rather than the caption ladder, joined
+    to the item by relative path from its own tree.
     """
     c, home = client
     ocr = home / "workspace" / "ocr" / "sub"
@@ -695,14 +651,12 @@ def test_the_ocr_sidecar_reaches_the_panel_without_being_a_caption_version(clien
         "score": 0.971,
         "text": "こんにちは",
     }
-    # Not a rung: no badge in the row came out of the sidecar, so nothing in
-    # the panel offers to make the caption say what the picture says.
+    # Not a rung: no badge in the row came out of the sidecar.
     assert not any(v["kind"] == "ocr" or v.get("rung") == "ocr" for v in it["versions"])
     assert not any("こんにちは" in (v.get("text") or "") for v in it["versions"])
 
 
 def test_an_image_with_no_ocr_sidecar_answers_an_empty_list(client):
-    """A missing sidecar is an image the stage never read *and* one it read and
-    found nothing in. Deliberately the same answer: both mean no text on file."""
+    """No sidecar and an empty sidecar answer the same: no text on file."""
     c, _ = client
     assert c.get("/api/dataset/item", params={"rel": "a.png"}).json()["ocr"] == []

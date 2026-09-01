@@ -14,18 +14,14 @@ import type {
 /** Folders render lazily, but one flat folder can still hold thousands of
     images; rows past this need an explicit click. */
 const PAGE = 200;
-/** Above this many images the tree opens collapsed — expanding 5k rows on load
-    is the one thing that makes this sidebar feel slow. */
+/** Above this many images the tree opens collapsed; expanding 5k rows on load
+    is slow. */
 const AUTO_EXPAND_MAX = 400;
 
 /** The caption ladder, as the dots on an image row: a filled dot is a file on
     disk, a hollow one is not, and clicking either opens that version in the
-    panel. A fixed strip rather than child rows under a chevron, because every
-    image has the same rungs.
-
-    Which rungs there are is the server's answer (`DatasetList.ladder`), not a
-    list retyped here — only what to *call* one is ours, and a rung with nothing
-    to call it wears its own id. */
+    panel. Which rungs there are is the server's answer (`DatasetList.ladder`);
+    only what to *call* one is ours, and a rung with no name wears its own id. */
 const CAP_HINT: Record<string, () => string> = {
   master: () => t().tree.capMaster,
   history: () => t().tree.capHistory,
@@ -85,8 +81,7 @@ interface Artist {
 
 /** `<dir>/<stem>` -- the manifest's rels are keyed to the *resized* tree, whose
     files resize may have re-encoded (a `.webp` master lands as `.png`), so the
-    extension is the one part of a rel the two trees need not agree on. Same
-    stem-match `_row`'s `resized`/`mask` flags and `_sibling_image` use. */
+    extension is the one part of a rel the two trees need not agree on. */
 const stemKey = (dir: string, stem: string) => (dir ? `${dir}/${stem}` : stem);
 function relStemKey(rel: string) {
   const cut = rel.lastIndexOf("/");
@@ -94,12 +89,10 @@ function relStemKey(rel: string) {
   return dot > cut + 1 ? rel.slice(0, dot) : rel;
 }
 
-/** The manifest's rels joined onto the rows the listing already has.
- *
- * The join is what keeps the two modes honest: a member the filter dropped (or
- * that the truncation never sent) is simply not in the group, so a group's size
- * on screen is always the number of rows you can actually click. Whatever is
- * left over is the `ungrouped` bucket, so switching modes cannot lose an image.
+/** The manifest's rels joined onto the rows the listing already has. A member
+ * the filter dropped (or the truncation never sent) is not in the group, so a
+ * group's size on screen is the number of rows you can click; whatever is left
+ * over is the `ungrouped` bucket, so switching modes cannot lose an image.
  */
 function regroup(items: DatasetItem[], groups?: DatasetGroups) {
   const byRel = new Map<string, DatasetItem>();
@@ -146,8 +139,7 @@ export function DatasetTree(props: {
   query: string;
   onQuery: (q: string) => void;
   onRefresh: () => void;
-  /** Rels the last Run wants to change. Marked here so a batch's diff is
-      something you can walk, instead of clicking around looking for it. */
+  /** Rels the last Run changed, so a batch's diff can be walked down. */
   pending?: Set<string>;
   /** Collapse the tree; the rail's ⟩ on the left edge brings it back. */
   onCollapse: () => void;
@@ -230,10 +222,8 @@ export function DatasetTree(props: {
     </>
   );
 
-  /** One image: the thumbnail, the name, its flags — and the caption ladder's
-      dots, which are both the "what exists" readout and the way to open one in
-      the panel. In group view the name carries its folder, since the row is no
-      longer sitting under it. */
+  /** One image: the name, its flags, and the caption ladder's dots. In group
+      view the name carries its folder, since the row is no longer under it. */
   const ImageNode = (p: { it: DatasetItem; depth: number; withDir?: boolean }) => {
     const on = (k: NodeKind) => props.sel?.rel === p.it.rel && props.sel.kind === k;
     return (
@@ -249,10 +239,9 @@ export function DatasetTree(props: {
           </Show>
           {p.it.name}
         </span>
-        {/* Row flags are about the *image*, not its captions -- the caption
-            files are the dot strip below. Both of these say a stage has been
-            here: `r` that resize has produced the copy every stage downstream
-            of it walks, so a row without one is invisible to them. */}
+        {/* Row flags are about the *image*, not its captions. `r` = resize has
+            produced the copy every stage downstream of it walks, so a row
+            without one is invisible to them. */}
         <span class="flags">
           <Show when={props.pending?.has(p.it.rel)}>
             <span class="flag prop" title={t().tree.flagPending}>
@@ -293,8 +282,7 @@ export function DatasetTree(props: {
   };
 
   /** Group view: artist ▸ component ▸ images, then everything the manifest did
-      not cluster. The bucket is collapsed by default — it is the big one, and
-      the point of this mode is the components above it. */
+      not cluster. That bucket is the big one, so it opens collapsed. */
   const GroupView = () => (
     <>
       <For each={grouped().artists}>

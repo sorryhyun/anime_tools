@@ -1,33 +1,12 @@
 """Auto-tag the dataset with the Anima Tagger and write the caption master.
 
-Thin CLI over ``anime_tools.stages.autotag``: loads the tagger (auto-downloading
-the checkpoint if missing), walks the resized tree, and proposes a caption per
-image. **Dry-run is the default** — a dry run emits ``report.json`` so the
-proposals can be eyeballed before ``--apply``.
+Walks the resized tree and proposes a caption per image, in one of three
+``--mode``s: ``missing`` (uncaptioned images only, the default and the one
+non-destructive mode), ``merge`` (append novel tags, keeping clauses) or
+``overwrite`` (replace the caption outright).
 
-Three modes (``--mode``):
-
-    missing    only images with no caption sidecar (default — never destructive)
-    merge      tag everything, append only tags the caption lacks (clauses kept)
-    overwrite  replace the caption with the tagger's output (destructive)
-
-After an ``--apply`` run the TE caches are stale but *look* current — caption
-edits do not invalidate them. Follow with ``make preprocess-te``, which
-regenerates the ``.variants.txt`` sidecars first (those override the CLI dropout
-rate, so a stale sidecar would keep training the pre-tag caption).
-
-``--from_report`` replays a dry run without loading the tagger, skips any row
-whose caption changed since, and writes ``apply_report.json``.
-
-    make caption-autotag                              # dry run, missing-only
-    make caption-autotag ARGS="--apply"               # write them
-    make caption-autotag ARGS="--mode merge --apply"  # top up existing captions
-    make preprocess-te                                # re-encode (required)
-
-    # the same two-step, paying for the tagger once:
-    python -m anime_tools.stages.cli.autotag_captions
-    python -m anime_tools.stages.cli.autotag_captions --apply \
-        --from_report workspace/captions/autotag/report.json
+Dry-run by default; ``--apply`` writes the master. The TE caches go stale but
+still look current, so follow a real apply with ``make preprocess-te``.
 """
 
 from __future__ import annotations
@@ -100,8 +79,7 @@ def parse_args() -> argparse.Namespace:
     return build_parser().parse_args()
 
 
-# The proposal lands in the caption **master** (``--src``) — this is the one
-# stage that writes it.
+# The proposal lands in the caption **master** (``--src``).
 REPLAY_SPEC = ReplaySpec(
     stage="autotag_captions",
     rows_key="rows",
@@ -140,8 +118,8 @@ def main() -> None:
         return
 
     options = AutotagOptions(mode=args.mode, min_confidence=args.min_confidence)
-    # Not in parse_args(): --from_report returns above without importing torch,
-    # and resolve_device would have done exactly that.
+    # Not in parse_args(): --from_report returns above and must stay torch-free,
+    # which resolve_device would break.
     device = resolve_device(args.device)
     print(f"Loading Anima Tagger ({device})...", flush=True)
     tag_fn, info = build_tag_fn(

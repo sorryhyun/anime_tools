@@ -1,11 +1,8 @@
 """Tokenizer loading for caption-length / erasure-pool passes (curation side).
 
-Curation stages only ever need *tokenizers* (never encoder weights), and they
-must not know which bundled config a given ``*.safetensors`` text encoder maps
-to — that is trainer knowledge. So this module takes **directories** only; the
-trainer's task wrappers resolve a model path to its tokenizer dir
-(``library.anima.weights.qwen3_tokenizer_dir``) before invoking a stage.
-Torch-free apart from ``transformers``.
+Takes tokenizer **directories** only, never a ``*.safetensors`` encoder path;
+callers resolve a model to its tokenizer dir first. Torch-free apart from
+``transformers``.
 """
 
 from __future__ import annotations

@@ -1,10 +1,5 @@
-"""The model download catalog: what it claims, and that the loaders agree.
-
-The catalog is what the GUI's Settings rows and ``python -m
-anime_tools.downloads`` both read, so the one thing worth pinning is that a row
-points where the loader actually looks -- a Download button that fetches a
-checkpoint into the wrong directory is worse than no button.
-"""
+"""The model download catalog: what it claims, and that the loaders agree — a
+row has to point where the loader actually looks."""
 
 from __future__ import annotations
 
@@ -23,7 +18,7 @@ def home(tmp_path, monkeypatch):
 
 
 def test_catalog_is_torch_free():
-    """The GUI process imports this module; it must not drag torch in."""
+    """The GUI process imports this module, so it must stay torch-free."""
     import subprocess
     import sys
 
@@ -46,12 +41,10 @@ def test_every_row_is_addressable_and_serializable(home):
         assert d["id"] and d["title"] and d["repo"] and d["files"] and d["used_by"]
         assert d["installed"] == (not d["missing"])
         if a.dest is not None:
-            # A fresh home holds nothing, and no path-backed row may claim it does.
-            # (Hub-cache rows answer for the machine, not the home, so they are
-            # legitimately "installed" here.)
+            # A fresh home holds nothing. (Hub-cache rows answer for the machine,
+            # not the home, so they are legitimately "installed" here.)
             assert d["installed"] is False
-            # A row that *builds* its product is that product, not its inputs:
-            # the parquet it joins may sit in the hub cache all day.
+            # A derived row probes for its product, not its inputs.
             assert d["missing"] == list(a.derived or a.files)
 
 
@@ -60,8 +53,7 @@ def test_destinations_follow_the_curation_home(home):
     assert by["tagger"].dest == home / "models" / "captioners" / "anima-tagger-dbv4"
     assert by["sam3"].dest == home / "models" / "sam3"
     assert by["pe_spatial"].dest == home / "models" / "pe"
-    # Not under models/: the soft prompt has to land on the relative path the
-    # --prompt_embed default resolves, which is the trainer's own layout.
+    # Not under models/: the soft prompt lands on the path --prompt_embed resolves.
     assert by["soft_prompt"].dest == home / "networks" / "calibration"
     # Hub-cache assets have no path under models/ to keep in sync.
     assert by["tagger_backbone"].dest is None and by["mit_text"].dest is None
@@ -77,7 +69,7 @@ def test_a_present_file_flips_the_row_to_installed(home):
 
 
 def test_rows_land_where_the_loaders_look():
-    """The whole point of the catalog: one source of truth for locations."""
+    """Each row's destination is where its loader looks."""
     pytest.importorskip("torch")
     from anime_tools.tagger import dbv4_meta
     from anime_tools.vision import pe
@@ -103,8 +95,7 @@ def test_rows_land_where_the_loaders_look():
     embed = DL.resolve_path(pc.build_parser().parse_args([]).prompt_embed)
     assert embed == by["soft_prompt"].dest / DL.SOFT_PROMPT_FILENAME
 
-    # The CTD gate has no flag at all — the catalog path *is* where the MIT
-    # stage looks, so the row and the loader are the same call.
+    # The CTD gate has no flag: the row and the loader are the same call.
     from anime_tools.masking.cli import generate_masks_mit as mit
 
     assert mit.default_ctd_onnx_path is DL.default_ctd_onnx_path
@@ -113,8 +104,7 @@ def test_rows_land_where_the_loaders_look():
 
 
 def test_the_tag_kb_lands_where_correction_looks_for_it(home):
-    """The KB is the one row a *stage* reads as data rather than weights, so
-    the pairing to pin is with ``find_tag_csv``, not with a checkpoint loader."""
+    """The KB row is data, not weights: it pairs with ``find_tag_csv``."""
     from anime_tools.captions.correction import (
         TAG_CSV_EN_NAME,
         TAG_CSV_NAME,
@@ -130,8 +120,8 @@ def test_the_tag_kb_lands_where_correction_looks_for_it(home):
     assert find_tag_csv(home) == csv
     assert DL.by_id()["danbooru_tags"].installed
 
-    # The English row *builds* its file out of the wiki mirror, so its probe
-    # asks for the product; the 45 MB parquet is an input in the hub cache.
+    # The English row builds its file from the wiki mirror, so its probe asks for
+    # the product; the parquet stays an input in the hub cache.
     en = by["danbooru_tags_en"]
     assert en.derived == (TAG_CSV_EN_NAME,) and en.build is not None
     assert en.missing() == [TAG_CSV_EN_NAME]
@@ -140,8 +130,8 @@ def test_the_tag_kb_lands_where_correction_looks_for_it(home):
 
 
 def test_a_built_row_runs_its_build_after_fetching(home, monkeypatch):
-    """``fetch`` is download-then-build for a derived row -- and the downloads
-    go to the hub cache, not into ``dest`` beside the product."""
+    """``fetch`` on a derived row is download-then-build, with the download
+    landing in the hub cache rather than in ``dest``."""
     seen: dict[str, object] = {}
 
     def fake_download(**kwargs):
@@ -156,8 +146,7 @@ def test_a_built_row_runs_its_build_after_fetching(home, monkeypatch):
         DL, "_build_english_tag_csv", lambda dest, log: seen.update(built=dest)
     )
     row = DL.by_id()["danbooru_tags_en"]
-    # by_id() captured the module-level function, so rebuild the row with the
-    # patched one -- what is under test is fetch(), not the join itself.
+    # by_id() captured the module-level function; rebuild the row with the patched one.
     row = replace(row, build=DL._build_english_tag_csv)
     row.fetch(log=lambda _msg: None)
 
@@ -209,8 +198,7 @@ def test_cli_downloads_only_what_is_missing(home, monkeypatch, capsys):
 
 
 def test_a_url_row_downloads_over_plain_https(home, monkeypatch, capsys):
-    """The soft prompt is not on the Hub: its row fetches from a URL, and lands
-    flat in the same dest ``missing()`` probes."""
+    """A URL row fetches over https and lands flat in the dest ``missing()`` probes."""
     import urllib.request
 
     asked: list[str] = []

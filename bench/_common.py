@@ -1,13 +1,8 @@
-"""Shared helpers for bench/ scripts (anime_tools copy).
+"""Shared helpers for bench/ scripts.
 
-Copied from the trainer's ``bench/_common.py`` in the curation split (Phase 3b,
-2026-08-30) — same ``result.json`` envelope and run-dir layout so results stay
-comparable across the two repos; NOT imported from the trainer (dependency
-direction is trainer → anime_tools, never the reverse).
-
-Goal: one consistent envelope so results from different methods can be
-compared, indexed, and re-found. Each script picks its own metrics shape;
-this module just standardizes the *outer* record.
+One envelope so results from different methods can be compared, indexed and
+re-found; each script picks its own metrics shape. Must match the trainer's
+``bench/_common.py`` for results to stay comparable across the two repos.
 
 Envelope (result.json) — schema_version=1::
 
@@ -123,22 +118,15 @@ def _serializable(v: Any) -> Any:
 
 
 def start_heartbeat(interval: float = 45.0, *, label: str = "hb") -> None:
-    """Print a keep-alive line every ``interval`` seconds (daemon-friendly).
+    """Print a keep-alive line every ``interval`` seconds.
 
-    The daemon's stall watchdog kills a *command* job whose stdout and
-    progress.jsonl both freeze for 120 s (``anima_daemon/config.py``), which is
-    the normal shape of an embed/eval loop between prints — so every long-quiet
-    bench script needs *something*. Two supported ways, in preference order:
+    The daemon's stall watchdog kills a command job whose stdout and
+    progress.jsonl both freeze for 120 s, which is the normal shape of a quiet
+    embed/eval loop. Call this at the top of ``main()``, or submit with a
+    raised budget (``--stall-timeout 0``).
 
-    1. submit with a raised/disabled budget — ``make daemon-run
-       ARGS="… --stall-timeout 0"`` / ``submit_command(stall_timeout=…)``. The
-       daemon also cross-checks process-tree CPU before firing, so a genuinely
-       computing job survives its budget.
-    2. call this at the top of ``main()`` — one line, no submit-side knowledge
-       needed, and the ticks double as a "still alive, N seconds in" log.
-
-    Daemon thread, so it never keeps the process alive; unbuffered so the line
-    actually reaches the job's stdout.log (which is what the watchdog stats).
+    Daemon thread, so it never keeps the process alive; flushed so the line
+    reaches the job's stdout.log, which is what the watchdog stats.
     """
     import threading
     import time
@@ -162,9 +150,9 @@ def make_run_dir(
 ) -> Path:
     """Create and return ``<root>/<YYYYMMDD-HHMM>[-<label>]/``.
 
-    Default ``root`` is ``<repo>/bench/<method>/results/``. Pass an explicit
-    ``root`` (e.g. a dir under ``post_image_dataset/``) to redirect — useful for
-    calibration data that's logically a cache, not a published-bench artifact.
+    Default ``root`` is ``<repo>/bench/<method>/results/``; pass an explicit
+    ``root`` to redirect calibration data that is a cache, not a published
+    artifact.
     """
     ts = (when or datetime.now()).strftime("%Y%m%d-%H%M")  # noqa: DTZ005 — local wall clock, matches the trainer's run dirs
     name = f"{ts}-{label}" if label else ts
@@ -192,11 +180,7 @@ def write_result(
 ) -> Path:
     """Write the standard ``result.json`` envelope into ``run_dir``.
 
-    Only ``run_dir`` is positional; everything else is keyword-only (issues.md
-    DX5). Call as
-    ``write_result(run_dir, script=__file__, args=args, metrics={...})`` — a
-    positional ``write_result(run_dir, metrics)`` fails with an opaque
-    "takes 1 positional argument" error.
+    Only ``run_dir`` is positional; everything else is keyword-only.
     """
     args_dict = vars(args) if hasattr(args, "__dict__") else dict(args)
     script_path = Path(script)
@@ -235,12 +219,9 @@ def write_result(
     out = run_dir / "result.json"
     out.write_text(json.dumps(record, indent=2))
 
-    # Daemon result-envelope lift (proposal Phase 1a): when this script runs as a
-    # daemon job, the daemon exported ANIMA_DAEMON_JOB_DIR into our env. Drop a
-    # pointer to the just-written envelope there so the monitor can lift its
-    # abs path + {label, metrics} digest into the job record on the terminal
-    # transition. Absent (a plain inline `python bench/.../run_bench.py`) → a
-    # no-op, so bench scripts stay standalone with zero daemon coupling.
+    # Under a daemon job, ANIMA_DAEMON_JOB_DIR is exported: drop a pointer to
+    # the envelope there so the monitor can lift it into the job record. Absent
+    # for a plain inline run, which keeps bench scripts standalone.
     job_dir = os.environ.get("ANIMA_DAEMON_JOB_DIR")
     if job_dir:
         try:

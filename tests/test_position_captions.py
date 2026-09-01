@@ -1,19 +1,15 @@
 """Position-aware caption clauses — parse/compose, variants, and the pipeline.
 
-Four invariants worth pinning:
-
-1. **Clause parsing round-trips.** ``.`` delimits clauses, ``,`` delimits tags —
-   a naive ``split(",")`` glues the header onto the preceding tag.
-2. **Clauses are atomic under variant generation.** A shuffled variant must
-   never move a clause tag into the flat bag or into a *different* clause.
-3. **The pipeline never writes a clause it can't ground.** Count disagreement,
-   too few instances, and hallucinated character names all skip.
-4. **The v2 rewrite only removes what it has earned.** A tag leaves the flat bag
-   only when exactly one clause claims it, the bag corroborates a per-subject
-   reading, no other crop kept it, and the winner clears the runner-up by the
-   attribution margin (relative to the winner's own probability, since per-tag
-   thresholds vary widely). Failing any rule degrades to v1 for that tag —
-   bound *and* still flat — never a wrong deletion.
+1. Clause parsing round-trips: ``.`` delimits clauses, ``,`` delimits tags.
+2. Clauses are atomic under variant generation: a shuffled variant never moves a
+   clause tag into the flat bag or into a different clause.
+3. The pipeline never writes a clause it cannot ground — count disagreement, too
+   few instances and hallucinated character names all skip.
+4. The v2 rewrite removes a tag from the flat bag only when exactly one clause
+   claims it, the bag corroborates a per-subject reading, no other crop kept it,
+   and the winner clears the runner-up by the attribution margin (relative to
+   the winner's own probability, since per-tag thresholds vary widely). Failing
+   any rule degrades to v1 for that tag — bound and still flat.
 """
 
 from __future__ import annotations
@@ -97,13 +93,7 @@ def test_has_clauses_detects_both_forms():
 
 
 def test_lowercase_period_form_parses_and_canonicalizes():
-    """`has_clauses` and `parse_caption` must agree on a lowercase header.
-
-    GOTCHA regression: a hand-written ``. on the left,`` made ``has_clauses``
-    true (case-insensitive split regex) but ``parse_caption`` returned zero
-    clauses (case-sensitive header test) — shredding the clause it was told to
-    leave alone.
-    """
+    """`has_clauses` and `parse_caption` agree on a lowercase period-form header."""
     caption = "safe, 2girls. on the left, red eyes. on the right, aqua eyes."
     assert has_clauses(caption)
     parsed = parse_caption(caption)
@@ -117,23 +107,16 @@ def test_lowercase_period_form_parses_and_canonicalizes():
 
 
 def test_a_lowercase_scene_tag_in_the_bag_is_not_a_header():
-    """Only the period form is case-insensitive.
-
-    With no delimiter, a bare ``on the beach`` mid-bag is a scene tag — the
-    comma-form header stays strict so it can't be promoted into a clause.
-    """
+    """Only the period form is case-insensitive: a bare ``on the beach`` mid-bag
+    is a scene tag, not a header."""
     parsed = parse_caption("1girl, blue hair, on the beach")
     assert parsed.flat_tags == ("1girl", "blue hair", "on the beach")
     assert not parsed.clauses
 
 
 def test_tag_spans_slice_the_caption_they_came_from():
-    """A span is offsets, so slicing the source with it must give the tag back.
-
-    This is the whole contract the GUI's boxed editor draws on: whitespace, the
-    comma and the caption-terminating period sit *outside* the span, so a box
-    hugs the tag and the punctuation between two tags stays unboxed.
-    """
+    """A span is offsets: slicing the source with it gives the tag back, with
+    whitespace, the comma and the terminating period outside the span."""
     for span in tag_spans(GT):
         assert GT[span.start : span.end] == span.text
         assert span.text == span.text.strip()
@@ -144,12 +127,8 @@ def test_tag_spans_slice_the_caption_they_came_from():
 
 
 def test_tag_spans_and_parse_caption_are_the_same_walk():
-    """``parse_caption`` is written on top of ``tag_spans``; pin that they agree.
-
-    Every caption shape the parse tests above cover, read back out of the spans:
-    a header opens its clause, the tags after it belong to it, and everything
-    before the first header is the flat bag.
-    """
+    """``parse_caption`` is written on top of ``tag_spans``; the two agree on every
+    caption shape above."""
     for caption in (
         GT,
         "1girl, blue hair, smile",
@@ -162,9 +141,8 @@ def test_tag_spans_and_parse_caption_are_the_same_walk():
         parsed = parse_caption(caption)
         spans = tag_spans(caption)
         assert tuple(s.text for s in spans if s.clause < 0) == parsed.flat_tags
-        # Lowercased on both sides: a span is the source slice, so it keeps a
-        # hand-written ``on the left`` verbatim, where ``header`` is the
-        # canonical emission form.
+        # Lowercased on both sides: a span is the source slice, where ``header``
+        # is the canonical emission form.
         assert [s.text.lower() for s in spans if s.kind == "header"] == [
             c.header.lower() for c in parsed.clauses
         ]
@@ -178,8 +156,7 @@ def test_tag_span_kinds_name_the_artist_and_the_header():
     assert kinds["@rurudo"] == "artist"
     assert kinds["On the left"] == "header"
     assert kinds["cat girl"] == "tag"
-    # ``@ @`` is the booru eye-shape tag, not a handle — same guard the shuffle
-    # and the trainer use, so the editor cannot tint it as an artist.
+    # ``@ @`` is the booru eye-shape tag, not a handle.
     assert [s.kind for s in tag_spans("1girl, @ @")] == ["tag", "tag"]
 
 
@@ -236,12 +213,9 @@ def test_single_subject_row_gets_the_bare_row_word():
 
 
 def test_magazine_layout_names_columns_not_fake_rows():
-    """A full-height subject beside a column of stacked panels (`9760139`).
-
-    Center-y clustering split the tall girl from the panels she overlaps by
-    ~85% into fake rows; interval overlap chains all three into one row, so
-    the x-axis separates instead: the stacked panels take `top left`/`bottom
-    left` and the girl who spans the whole height is just `right`.
+    """A full-height subject beside a column of stacked panels (`9760139`): the
+    x-axis separates, so the stack takes `top left`/`bottom left` and the girl
+    spanning the height is bare `right`.
     """
     boxes = [
         (0, 0, 455, 450),  # panel, upper left
@@ -258,12 +232,8 @@ def test_magazine_layout_names_columns_not_fake_rows():
 
 
 def test_a_lone_end_hugging_panel_earns_its_row_qualifier():
-    """`9760121`: one close-up panel in the upper left, the girl on the right.
-
-    The panel leaves the bottom half empty, so bare `left` under-describes it
-    — it reads `top left`; the girl spans the height and stays bare `right`
-    (`bottom`, the old name, was simply wrong).
-    """
+    """`9760121`: the panel leaves the bottom half empty, so it reads `top left`;
+    the girl spans the height and stays bare `right`."""
     boxes = [(375, 80, 600, 860), (0, 10, 420, 435)]
     assert assign_positions(boxes, (619, 900)) == ["right", "top left"]
 
@@ -274,10 +244,9 @@ def test_a_diagonal_pair_reads_by_its_corners():
 
 
 def test_a_wide_panel_bleeding_under_a_neighbour_stays_in_its_lane():
-    """`5828187`: the bottom-left panel's box reaches under the right girl (a
-    leg drawn across the sheet), overlapping her x-extent completely. Interval
-    overlap chained everything into one column and degraded the sheet to
-    left/middle/right; center-gap lanes keep the panel in the left column."""
+    """`5828187`: the bottom-left panel's box reaches under the right girl,
+    overlapping her x-extent completely; center-gap lanes keep it in the left
+    column."""
     boxes = [(15, 0, 450, 515), (0, 395, 585, 890), (410, 90, 585, 820)]
     assert assign_positions(boxes, (639, 900)) == [
         "top left",
@@ -288,27 +257,22 @@ def test_a_wide_panel_bleeding_under_a_neighbour_stays_in_its_lane():
 
 
 def test_nested_boxes_fall_back_to_left_right_in_reading_order():
-    """`5828184`: the lying girl's box spans the full width and CONTAINS the
-    standing girl's x-extent. Their centers still sit in separate lanes, both
-    span the height, and the caption must read left→right — not open with
-    `On the right`."""
+    """`5828184`: the lying girl's box contains the standing girl's x-extent, but
+    their centers sit in separate lanes and the caption reads left→right."""
     boxes = [(375, 70, 600, 840), (0, 90, 619, 890)]
     assert assign_positions(boxes, (619, 900)) == ["right", "left"]
     assert ordered_indices(boxes, (619, 900)) == [1, 0]
 
 
 def test_a_panel_reaching_the_halfway_line_stays_bare_left():
-    """`6183990`: near-identical layout to `9760121`, but the panel's bottom
-    reaches the frame's halfway line (empty gap 0.452 < _EDGE_CLEAR) — the
-    curated call is bare `left`/`right` here, `top left` there. Pins the
-    calibrated boundary between the two."""
+    """`6183990`: the panel's bottom reaches the halfway line (empty gap
+    0.452 < _EDGE_CLEAR), so it is bare `left`, not `top left`."""
     boxes = [(16, 0, 491, 466), (406, 87, 573, 851)]
     assert assign_positions(boxes, (627, 900)) == ["left", "right"]
 
 
 def test_same_height_subjects_stay_bare_left_right():
-    """The qualifier must not fire on ordinary side-by-side pairs — a sitting
-    girl beside a standing one is still `left`/`right`, not `bottom left`."""
+    """The row qualifier does not fire on ordinary side-by-side pairs."""
     boxes = [(0, 0, 400, 1000), (600, 380, 1000, 1000)]
     assert assign_positions(boxes, (1000, 1000)) == ["left", "right"]
 
@@ -428,10 +392,8 @@ def pipeline_bits():
     vocabulary = ClauseVocabulary(
         characters=frozenset({"akita neru", "hatsune miku"}),
         excluded=frozenset({"vocaloid"}),
-        # ``body_shape`` is exclusive in the shipped groups.yaml, and the bag
-        # gate is derived from this set — see ClauseVocabulary.gated_groups.
-        # ``framing`` is exclusive too (``softmax_when_solo``), which is exactly
-        # why it needs the gate exemption these tests pin.
+        # The bag gate is derived from this set (ClauseVocabulary.gated_groups).
+        # ``framing`` is exclusive too, hence the gate exemption pinned below.
         exclusive_groups=frozenset(
             {"hair_color", "eye_color", "body_shape", "framing"}
         ),
@@ -541,11 +503,10 @@ def test_propose_binds_hair_color_to_each_side(pipeline_bits):
 
 
 def test_v2_moves_each_bound_attribute_out_of_the_flat_bag(pipeline_bits):
-    """The point of v2: every attribute asserted exactly once, where it belongs."""
+    """Every attribute is asserted exactly once, where it belongs."""
     proposal = _two_girls_proposal(pipeline_bits)
     parsed = parse_caption(proposal.proposed)
-    # The bag keeps the cast list and what describes the image — not the
-    # attributes, which now live in the clause that owns them.
+    # The bag keeps the cast list and what describes the image.
     assert parsed.flat_tags == (
         "safe",
         "2girls",
@@ -555,17 +516,14 @@ def test_v2_moves_each_bound_attribute_out_of_the_flat_bag(pipeline_bits):
         "simple background",
     )
     assert {m["tag"] for m in proposal.moved} == {"blonde hair", "aqua hair"}
-    # Nothing is lost — every moved tag is still in the caption, in one clause.
+    # Nothing is lost: every moved tag is still in the caption, in one clause.
     bound = {t for c in parsed.clauses for t in c.tags}
     assert {"blonde hair", "aqua hair"} <= bound
 
 
 def test_the_cast_list_stays_in_the_flat_bag(pipeline_bits):
-    """Hand-written convention: names are bound *and* kept flat.
-
-    The bag is the cast list a prompt uses to summon the characters; the clause
-    says which one is where. No non-name attribute is ever duplicated this way.
-    """
+    """Names are bound *and* kept flat: the bag is the cast list, the clause says
+    which one is where. No non-name attribute is duplicated this way."""
     proposal = _two_girls_proposal(pipeline_bits)
     flat = parse_caption(proposal.proposed).flat_tags
     assert "akita neru" in flat and "hatsune miku" in flat
@@ -585,7 +543,7 @@ def test_no_rewrite_restores_the_additive_v1_caption(pipeline_bits):
 
 
 def _views_proposal(pipeline_bits, caption, per_crop, **option_overrides):
-    """A two-view sheet of ONE character: same girl, different outfit per view."""
+    """A two-view sheet of one character: different outfit per view."""
     from anime_tools.stages.position_captions import propose_for_image
 
     image, vocabulary, _, Options = pipeline_bits
@@ -602,14 +560,9 @@ def _views_proposal(pipeline_bits, caption, per_crop, **option_overrides):
 
 
 def test_a_single_characters_attributes_never_leave_the_bag(pipeline_bits):
-    """The v2 hazard: two views of one girl are not two girls.
-
-    Moving ``blonde hair`` off the left view only would make the caption claim
-    the right view isn't blonde, of the same character — so it stays flat;
-    the outfit that genuinely differs per view still moves.
-
-    Pinned at ``multi_view_gate=False`` (the *removal* rule) — the gate itself
-    is the stricter *emission* layer stacked on top (see multi-view tests below).
+    """Two views of one girl are not two girls: ``blonde hair`` stays flat, while
+    the outfit that genuinely differs per view moves. Pinned at
+    ``multi_view_gate=False``, i.e. the removal rule alone.
     """
     proposal = _views_proposal(
         pipeline_bits,
@@ -681,9 +634,8 @@ def test_a_contested_tag_stays_in_the_bag(pipeline_bits):
                 "groups": {},
             },
             {
-                # Just under the keep threshold — the tagger nearly kept `maid`
-                # here too, so removing it from the bag would deny it of this
-                # girl. Both girls in maid outfits is exactly this shape.
+                # Just under the keep threshold: removing `maid` from the bag
+                # would deny it of this girl.
                 "kept": {"hatsune miku": 0.9, "playboy bunny": 0.9},
                 "scores": {"maid": 0.45, "playboy bunny": 0.9},
                 "groups": {},
@@ -698,9 +650,9 @@ def test_a_contested_tag_stays_in_the_bag(pipeline_bits):
 
 
 def test_a_low_threshold_tag_the_other_crop_never_saw_moves(pipeline_bits):
-    """The absolute-gap bug: a tag whose F1 threshold is ~0.05 can be a decisive
-    0.34-vs-0.000 call and still never produce a 0.35 probability gap. Judged
-    relative to the winner, the runner-up's 0.000 is what it looks like.
+    """A tag whose F1 threshold is ~0.05 can be a decisive 0.34-vs-0.000 call
+    without producing a 0.35 absolute gap, so the margin is relative to the
+    winner.
     """
     proposal = _views_proposal(
         pipeline_bits,
@@ -726,10 +678,8 @@ def test_a_low_threshold_tag_the_other_crop_never_saw_moves(pipeline_bits):
 
 
 def test_a_tag_the_other_crop_kept_stays_in_the_bag(pipeline_bits):
-    """Kept twice, bound once: the second clause dropped it (budget /
-    discriminative filter / view gate), not the tagger. That is a selection
-    artifact, so the bag keeps the tag no matter how wide the score gap is.
-    """
+    """Kept on both crops but bound to one clause is a selection artifact, so the
+    bag keeps the tag however wide the score gap."""
     from anime_tools.stages.position_captions import (
         ClauseVocabulary,
         RemovalPlan,
@@ -770,12 +720,8 @@ def test_a_tag_bound_to_two_subjects_stays_in_the_bag(pipeline_bits):
 
 
 def test_underscore_bag_tag_matches_space_form_clause_tag(pipeline_bits):
-    """Form mismatch must not defeat a move: the caption may hold the
-    underscore form (``speech_bubble``) while the tagger — and thus the clause,
-    the kept/score maps and the group map — uses the space form. Comparison
-    keys fold ``_`` to `` ``; the moved tag keeps the bag's own spelling and
-    the clause text is untouched.
-    """
+    """Comparison keys fold ``_`` to `` ``, so an underscore bag tag matches a
+    space-form clause tag; the moved tag keeps the bag's own spelling."""
     from anime_tools.stages.position_captions import (
         ClauseVocabulary,
         plan_bag_removals,
@@ -802,28 +748,21 @@ def test_flatten_undoes_the_rewrite(pipeline_bits):
 
     proposal = _two_girls_proposal(pipeline_bits)
     flat = {t.strip() for t in flatten_caption(proposal.proposed).split(",")}
-    # Tag *set* restored (order is not promised — the corrector re-buckets it).
+    # Tag set restored; order is not promised.
     assert {t.strip() for t in _TWO_GIRLS_CAPTION.split(",")} <= flat
     assert "On the" not in flatten_caption(proposal.proposed)
 
 
 def test_flatten_folds_the_underscore_spelling_of_a_tag_it_returns():
-    """A tag moved out in space form must not come back beside its own
-    underscore spelling.
-
-    ``tag_keys`` and the flatten dedupe both key on
-    :func:`~anime_tools.captions.taxonomy.normalize_tag` — the same normalizer
-    the rewrite's own ``_cmp_key`` uses to decide a tag *can* move. Keyed on a
-    bare ``lower()`` (as they were before the consolidation) the two spellings
-    read as two tags, and flattening a rewrite that moved ``speech_bubble``
-    while the tagger proposed ``speech bubble`` wrote both into one bag.
-    """
+    """The flatten dedupe keys on :func:`~anime_tools.captions.taxonomy.normalize_tag`,
+    so a tag moved out in space form does not come back beside its underscore
+    spelling."""
     from anime_tools.captions.position_clauses import flatten_caption, parse_caption
 
     caption = "safe, 1girl, speech_bubble, blue eyes. On the left, speech bubble."
     flat = parse_caption(flatten_caption(caption)).flat_tags
     assert list(flat) == ["safe", "1girl", "speech_bubble", "blue eyes"]
-    # The bag's own spelling is what survives — comparison folds, output doesn't.
+    # The bag's own spelling survives: comparison folds, output does not.
     assert "speech bubble" not in flat
 
 
@@ -857,7 +796,7 @@ def _two_hair_colors():
 
 def test_a_detected_male_is_inside_the_count_range(pipeline_bits):
     # `expected` counts girls, but the `girl` prompt picks up males
-    # inconsistently, so equality can't be right; girls..girls+boys is.
+    # inconsistently, so the range is girls..girls+boys.
     from anime_tools.stages.position_captions import propose_for_image
 
     image, vocabulary, _, Options = pipeline_bits
@@ -919,9 +858,8 @@ def test_retry_fires_when_the_caption_gives_no_count(pipeline_bits):
         ),
         tag_fn=_two_hair_colors(),
         vocabulary=vocabulary,
-        # …and the multi-view gate stays off for the same reason: with it on,
-        # hair color never reaches a clause and the row skips as
-        # no-discriminative-tags before the retry's effect can be read.
+        # The multi-view gate stays off, or hair color never reaches a clause and
+        # the row skips before the retry's effect can be read.
         options=Options(multi_view_gate=False),
     )
     assert proposal.ok, proposal.status
@@ -929,9 +867,7 @@ def test_retry_fires_when_the_caption_gives_no_count(pipeline_bits):
 
 
 def test_a_nested_subject_survives_dedupe():
-    # A real second subject is as nested as a group box — one girl in front of
-    # another, an embrace, a background figure inside a foreground box — so
-    # the rule must stay opt-in.
+    # A real second subject is as nested as a group box, so the rule is opt-in.
     from anime_tools.stages.position_captions import Detection, dedupe_detections
 
     host = Detection(box=(0, 0, 1000, 500), score=0.9)
@@ -946,8 +882,7 @@ def test_a_nested_subject_survives_dedupe():
 
 
 def test_mask_containment_separates_a_fragment_from_a_second_subject():
-    # The discriminator the box rule cannot provide. Both pairs below are box-
-    # nested to ~1.0; only the mask tells them apart, so only the fragment goes.
+    # Both pairs below are box-nested to ~1.0; only the mask tells them apart.
     from anime_tools.stages.position_captions import (
         Detection,
         box_containment,
@@ -980,8 +915,7 @@ def test_mask_containment_separates_a_fragment_from_a_second_subject():
 
 
 def test_mask_containment_falls_back_to_boxes_without_masks():
-    # Stub detections and part boxes carry no mask; the rule must abstain rather
-    # than suppress, so the box-only behaviour is exactly preserved.
+    # Stub detections and part boxes carry no mask; the rule abstains.
     from anime_tools.stages.position_captions import Detection, dedupe_detections
 
     host = Detection(box=(0, 0, 1000, 500), score=0.9)
@@ -990,7 +924,7 @@ def test_mask_containment_falls_back_to_boxes_without_masks():
         len(dedupe_detections([host, inside], 0.65, mask_containment_threshold=0.8))
         == 2
     )
-    # Above 1.0 disables the rule outright, restoring the pre-flag behaviour.
+    # Above 1.0 disables the rule outright.
     speckle = np.zeros((100, 100), dtype=np.float32)
     speckle[:, 0:50] = 1.0
     a = Detection(box=(0, 0, 100, 100), score=0.9, mask=speckle)
@@ -1006,14 +940,14 @@ def test_mask_box_fill():
     mask[0:50, 0:100] = 1.0
     det = Detection(box=(0, 0, 100, 100), score=0.5, mask=mask)
     assert mask_box_fill(det) == pytest.approx(0.5)
-    # The window clips to the mask, so an out-of-range box doesn't blow up.
+    # The window clips to the mask, so an out-of-range box does not blow up.
     wide = Detection(box=(-10, -10, 200, 50), score=0.5, mask=mask)
     assert mask_box_fill(wide) == pytest.approx(1.0)
 
 
 def test_fill_ratio_swaps_the_survivor_inside_a_matched_pair():
     # The 5847152 shape: a near-empty duplicate outscores the clean mask by a
-    # hair; with the tie-break on, the clean mask survives instead.
+    # hair; the tie-break lets the clean mask survive.
     from anime_tools.stages.position_captions import Detection, dedupe_detections
 
     speckle = np.zeros((100, 100), dtype=np.float32)
@@ -1023,20 +957,19 @@ def test_fill_ratio_swaps_the_survivor_inside_a_matched_pair():
     garbage = Detection(box=(0, 0, 100, 100), score=0.9, mask=speckle)
     good = Detection(box=(0, 0, 100, 90), score=0.87, mask=clean)  # IoU 0.9
 
-    # Off (default): score alone picks the survivor — today's behaviour.
+    # Off (default): score alone picks the survivor.
     assert dedupe_detections([garbage, good], 0.65) == [garbage]
     # On: the pair is matched either way, but the far better mask wins.
     kept = dedupe_detections([garbage, good], 0.65, fill_ratio_threshold=2.0)
     assert kept == [good]
-    # Count is invariant by construction — an unrelated box is untouched.
+    # Count is invariant: an unrelated box is untouched.
     other = Detection(box=(200, 200, 300, 300), score=0.5, mask=clean)
     kept = dedupe_detections([garbage, good, other], 0.65, fill_ratio_threshold=2.0)
     assert len(kept) == 2 and good in kept and other in kept
 
 
 def test_fill_ratio_below_threshold_keeps_score_order():
-    # A benign inversion (ratio < R) must not swap — a missed swap is today's
-    # behaviour, a wrong swap is a regression.
+    # A benign inversion (ratio < R) must not swap.
     from anime_tools.stages.position_captions import Detection, dedupe_detections
 
     kept_mask = np.zeros((100, 100), dtype=np.float32)
@@ -1071,7 +1004,7 @@ def test_an_inset_is_too_small_to_be_a_subject(pipeline_bits):
             {
                 0.5: [
                     ((0, 0, 400, 500), 0.9),
-                    # 0.4% of the canvas, and disjoint — containment won't catch it.
+                    # 0.4% of the canvas, and disjoint: containment misses it.
                     ((900, 400, 950, 440), 0.8),
                 ]
             }
@@ -1085,7 +1018,7 @@ def test_an_inset_is_too_small_to_be_a_subject(pipeline_bits):
 
 
 def test_open_ended_crowd_counts_defer_to_detection():
-    # `6+girls` is "six or more", not six — an exact match can only ever fail.
+    # `6+girls` is "six or more", not six.
     from anime_tools.stages.position_captions import (
         caption_boy_count,
         caption_subject_count,
@@ -1115,17 +1048,13 @@ def test_comic_panels_defer_the_count_to_detection():
 
 
 def test_koma_count_bounds_a_page_that_has_no_girls_count_check():
-    """``Nkoma`` names the panel count, restoring the ceiling the layout waived.
-
-    Without it, a 2-panel page where SAM3 splits one girl into an overlapping
-    pair would sail through the waived count check undetected.
-    """
+    """``Nkoma`` names the panel count, restoring the ceiling the layout waived."""
     from anime_tools.stages.position_captions import caption_panel_ceiling
 
     assert caption_panel_ceiling("safe, 1girl, 2koma") == 2
     assert caption_panel_ceiling("safe, 2girls, 1boy, 2koma") == 6
     assert caption_panel_ceiling("safe, 4koma") == 4  # nobody counted, 1/panel
-    # Unbounded layouts stay unbounded — no panel count to multiply.
+    # Unbounded layouts stay unbounded: no panel count to multiply.
     assert caption_panel_ceiling("safe, 1girl, comic") is None
     assert caption_panel_ceiling("safe, 1girl, multiple views") is None
     assert caption_panel_ceiling("safe, 1girl, multiple 4koma") is None
@@ -1170,8 +1099,7 @@ def test_a_koma_page_at_its_ceiling_proposes(pipeline_bits):
         ),
         tag_fn=_two_hair_colors(),
         vocabulary=vocabulary,
-        # The ceiling is a detection-count gate; the multi-view gate is off so a
-        # koma page still has clause content left to propose with.
+        # The multi-view gate is off so the koma page still has clause content.
         options=Options(multi_view_gate=False),
     )
     assert proposal.ok, proposal.status
@@ -1179,8 +1107,7 @@ def test_a_koma_page_at_its_ceiling_proposes(pipeline_bits):
 
 
 def test_page_number_is_not_a_layout_tag():
-    """A scanned art-book page is one illustration with a number in the margin —
-    a false signal, not a weak one."""
+    """``page number`` is a margin annotation, not a panel layout."""
     from anime_tools.stages.position_captions import (
         caption_subject_count,
         is_candidate,
@@ -1242,7 +1169,7 @@ def _part_detector(boxes_by_prompt):
 
 
 def test_part_prompt_recovers_a_headless_panel(pipeline_bits):
-    """The ama_mitsuki layout: one full body plus a headless close-up panel."""
+    """One full body plus a headless close-up panel."""
     from anime_tools.stages.position_captions import propose_for_image
 
     image, vocabulary, _, Options = pipeline_bits
@@ -1260,13 +1187,12 @@ def test_part_prompt_recovers_a_headless_panel(pipeline_bits):
         ),
         vocabulary=vocabulary,
         # Multi-view gate off: this is about the second grounding pass and the
-        # reading order it lands in, not about what the clauses end up carrying.
+        # reading order it lands in.
         options=Options(part_prompts=("buttocks",), multi_view_gate=False),
     )
     assert proposal.ok, proposal.status
     assert proposal.detected == 2
-    # ``detections`` is recorded as merged (subjects first); ``instances`` is in
-    # reading order, so the recovered panel lands on the left where it was drawn.
+    # ``detections`` is merged (subjects first); ``instances`` is in reading order.
     assert [d["source"] for d in proposal.detections] == ["subject", "buttocks"]
     assert [(i.position, i.source) for i in proposal.instances] == [
         ("left", "buttocks"),
@@ -1279,7 +1205,7 @@ def test_part_prompt_recovers_a_headless_panel(pipeline_bits):
 
 
 def test_part_prompts_are_inert_when_the_subject_prompt_suffices(pipeline_bits):
-    """No undershoot → no second grounding pass, so no nested duplicate boxes."""
+    """No undershoot means no second grounding pass."""
     from anime_tools.stages.position_captions import propose_for_image
 
     image, vocabulary, _, Options = pipeline_bits
@@ -1311,7 +1237,7 @@ def test_part_prompts_are_inert_when_the_subject_prompt_suffices(pipeline_bits):
 
 
 def test_part_crop_carries_no_hair_or_eye_color(pipeline_bits):
-    """A headless crop has no evidence for identity — the tagger guesses anyway."""
+    """A headless crop carries no identity tags, however the tagger guesses."""
     from anime_tools.stages.position_captions import propose_for_image
 
     image, vocabulary, _, Options = pipeline_bits
@@ -1320,12 +1246,10 @@ def test_part_crop_carries_no_hair_or_eye_color(pipeline_bits):
         "safe, 1girl, multiple views, blonde hair",
         detect_fn=_detector({0.5: [((700, 0, 1000, 500), 0.9)]}),
         part_detect_fn=_part_detector({"buttocks": [((0, 0, 600, 500), 0.8)]}),
-        # Crops are tagged in reading order: the recovered left panel, then the
-        # full body on the right.
+        # Crops are tagged in reading order: recovered left panel, then full body.
         tag_fn=_tagger(
             [
-                # Part crop: the tagger invents a color and an eye color on top
-                # of the one tag it can actually see.
+                # Part crop: the tagger invents a hair and eye color.
                 {
                     "kept": {
                         "green hair": 0.8,
@@ -1340,8 +1264,8 @@ def test_part_crop_carries_no_hair_or_eye_color(pipeline_bits):
             ]
         ),
         vocabulary=vocabulary,
-        # ``allow_identity`` is a per-crop rule and must hold on its own — the
-        # multi-view gate would suppress the same tags image-wide and hide it.
+        # ``allow_identity`` is a per-crop rule; the multi-view gate is off so it
+        # is observable on its own.
         options=Options(part_prompts=("buttocks",), multi_view_gate=False),
     )
     assert proposal.ok, proposal.status
@@ -1349,11 +1273,11 @@ def test_part_crop_carries_no_hair_or_eye_color(pipeline_bits):
     assert "green hair" not in part.tags
     assert "red eyes" not in part.tags
     assert "twintails" not in part.tags  # hairstyle is identity too
-    assert part.tags == ["ass"]  # only what a headless crop can actually show
+    assert part.tags == ["ass"]  # only what a headless crop can show
 
 
 def test_clause_cannot_contradict_a_hair_color_the_caption_named(pipeline_bits):
-    """Item 2: the flat bag outranks the crop tagger on identity groups."""
+    """The flat bag outranks the crop tagger on identity groups."""
     from anime_tools.stages.position_captions import propose_for_image
 
     image, vocabulary, _, Options = pipeline_bits
@@ -1375,20 +1299,19 @@ def test_clause_cannot_contradict_a_hair_color_the_caption_named(pipeline_bits):
         ),
         tag_fn=tags,
         vocabulary=vocabulary,
-        # The bag gate applies to every image; the multi-view gate is the
-        # stricter layer above it and is switched off so this one is observable.
+        # The multi-view gate is the stricter layer above and is off here.
         options=Options(multi_view_gate=False),
     )
     assert proposal.ok, proposal.status
     clauses = parse_caption(proposal.proposed).clauses
     assert not any("green hair" in c.tags for c in clauses)
-    # ``red eyes`` survives: the caption named no eye color at all, so it is new
+    # ``red eyes`` survives: the caption named no eye color, so it is new
     # information rather than a contradiction.
     assert any("red eyes" in c.tags for c in clauses)
 
 
 def test_bag_gate_still_allows_every_color_the_caption_listed(pipeline_bits):
-    """A real 2girls image names both colors — neither clause may be blocked."""
+    """A real 2girls image names both colors, so neither clause is blocked."""
     from anime_tools.stages.position_captions import propose_for_image
 
     image, vocabulary, _, Options = pipeline_bits
@@ -1418,13 +1341,8 @@ _CROWDED_CAPTION = (
 
 
 def _crowded_proposal(pipeline_bits, **option_overrides):
-    """A crop the tagger is far more talkative about than the caption is.
-
-    Four of its kept tags are in the bag; five are not. With eight clause slots
-    the bag-blind selector filled most of them with the novel five — none of
-    which can ever *move*, because ``plan_bag_removals`` only removes what is in
-    the bag.
-    """
+    """A crop the tagger is far more talkative about than the caption: four kept
+    tags are in the bag, five are not."""
     from anime_tools.stages.position_captions import propose_for_image
 
     image, vocabulary, _, Options = pipeline_bits
@@ -1463,12 +1381,8 @@ def _crowded_proposal(pipeline_bits, **option_overrides):
 
 
 def test_a_clause_fills_from_the_bag_before_inventing(pipeline_bits):
-    """The crop decides *where*; the caption decides *what*.
-
-    Every bag tag this crop kept is bound, and exactly one novel tag rides
-    along. Ordering is still the ranking (name → hair → eyes → the rest), not
-    the admission order.
-    """
+    """Every bag tag this crop kept is bound and exactly one novel tag rides along;
+    ordering is the ranking (name → hair → eyes → the rest)."""
     proposal = _crowded_proposal(pipeline_bits)
     assert proposal.ok, proposal.status
     clause = parse_caption(proposal.proposed).clauses[0]
@@ -1485,12 +1399,7 @@ def test_max_novel_tags_zero_never_invents(pipeline_bits):
 
 
 def test_the_bag_blind_budget_is_still_reachable(pipeline_bits):
-    """``max_novel_tags == max_clause_tags`` restores the pre-budget behaviour.
-
-    Kept as the A/B arm: the reuse-first default is a caption-quality claim, and
-    the arm it has to beat is the one that filled every slot with whatever the
-    crop tagger scored highest.
-    """
+    """``max_novel_tags == max_clause_tags`` is the bag-blind A/B arm."""
     proposal = _crowded_proposal(pipeline_bits, max_novel_tags=8)
     clause = parse_caption(proposal.proposed).clauses[0]
     assert len(clause.tags) == 8
@@ -1498,12 +1407,8 @@ def test_the_bag_blind_budget_is_still_reachable(pipeline_bits):
 
 
 def test_the_novel_budget_never_costs_a_move(pipeline_bits):
-    """Tightening the budget may only remove padding, never a binding.
-
-    It cannot rescue a crowded-out bag tag either — ``rest`` is already ranked
-    bag-first, so the clause cap is only reached once the bag is spent — so
-    equality of the moved set in both directions is the contract.
-    """
+    """Tightening the budget removes padding, never a binding: the moved set is
+    equal in both directions."""
     budgeted = _crowded_proposal(pipeline_bits)
     bag_blind = _crowded_proposal(pipeline_bits, max_novel_tags=8)
     assert {m["tag"] for m in budgeted.moved} == {m["tag"] for m in bag_blind.moved}
@@ -1514,11 +1419,8 @@ def test_the_novel_budget_never_costs_a_move(pipeline_bits):
 
 
 def test_the_bag_gate_covers_every_exclusive_group_not_just_identity(pipeline_bits):
-    """Item 2, generalized: an exclusive group holds exactly one value.
-
-    So a crop naming a second one is a contradiction, not extra detail — here
-    the bag says ``flat chest`` while the crop wants to add ``large breasts``.
-    """
+    """An exclusive group holds one value, so a crop naming a second one (here
+    ``large breasts`` against the bag's ``flat chest``) is a contradiction."""
     from anime_tools.stages.position_captions import propose_for_image
 
     image, vocabulary, _, Options = pipeline_bits
@@ -1548,8 +1450,8 @@ def test_the_bag_gate_covers_every_exclusive_group_not_just_identity(pipeline_bi
     assert not any(
         "large breasts" in c.tags for c in parse_caption(gated.proposed).clauses
     )
-    # The novel budget is not what blocked it: with the gate off, the same tag
-    # takes the same free slot.
+    # The novel budget is not what blocked it: with the gate off it takes the
+    # same free slot.
     ungated = run(bag_gated_identity=False)
     assert any(
         "large breasts" in c.tags for c in parse_caption(ungated.proposed).clauses
@@ -1557,13 +1459,8 @@ def test_the_bag_gate_covers_every_exclusive_group_not_just_identity(pipeline_bi
 
 
 def test_a_kept_bag_value_outranks_the_softmax_winner(pipeline_bits):
-    """The gate and the priority path must not fight each other.
-
-    The crop's softmax says ``green hair``; the caption never listed it, so the
-    gate rejects it. Taking the softmax winner unconditionally then left the
-    group empty even though the crop *also* kept the ``blonde hair`` the caption
-    did list — the clause lost a bindable tag to a rejected guess.
-    """
+    """The crop's softmax winner (``green hair``) is gate-rejected, so the group
+    falls back to the kept bag value rather than emptying."""
     from anime_tools.stages.position_captions import propose_for_image
 
     image, vocabulary, _, Options = pipeline_bits
@@ -1592,7 +1489,7 @@ def test_a_kept_bag_value_outranks_the_softmax_winner(pipeline_bits):
 
 
 def test_part_top_up_stops_at_the_target(pipeline_bits):
-    """A fragmenting part prompt must not bind more clauses than the gate needs."""
+    """A fragmenting part prompt binds no more clauses than the target needs."""
     from anime_tools.stages.position_captions import detect_subjects
 
     image, _, _Detection, Options = pipeline_bits
@@ -1617,7 +1514,7 @@ def test_part_top_up_stops_at_the_target(pipeline_bits):
 
 
 def test_part_box_nested_in_a_subject_is_dropped(pipeline_bits):
-    """A part inside a subject is that subject's own body, not a new position."""
+    """A part nested in a subject is that subject's body, not a new position."""
     from anime_tools.stages.position_captions import merge_part_detections
 
     _, _, Detection, _ = pipeline_bits
@@ -1657,9 +1554,7 @@ def test_unlisted_character_name_is_rejected(pipeline_bits):
 
 
 def test_multiple_views_clauses_carry_only_what_differs(pipeline_bits):
-    # A `1girl, multiple views` outfit sheet: same character, same hair, same
-    # eyes in every view. Repeating those four times binds nothing — the clause
-    # must carry the outfit, which is the only thing that varies.
+    # A `1girl, multiple views` outfit sheet: only the outfit varies per view.
     from anime_tools.stages.position_captions import propose_for_image
 
     image, vocabulary, _, Options = pipeline_bits
@@ -1688,7 +1583,7 @@ def test_multiple_views_clauses_carry_only_what_differs(pipeline_bits):
     clauses = parse_caption(proposal.proposed).clauses
     assert clauses[0].tags == ("maid",)
     assert clauses[1].tags == ("swimsuit",)
-    # ...and the shared attributes are still asserted, in the untouched flat bag.
+    # ...and the shared attributes are still asserted in the flat bag.
     assert "hatsune miku" in parse_caption(proposal.proposed).flat_tags
 
 
@@ -1737,9 +1632,8 @@ def _layout_proposal(pipeline_bits, caption, per_crop, **option_overrides):
     )
 
 
-# The crop tagger disagreeing with itself across two views of one girl. Note the
-# disagreement is exactly what shared-tag suppression fails to catch: each of
-# these reaches only one crop, so it reads as "attributable" when it is a miss.
+# The crop tagger disagreeing with itself across two views of one girl: each tag
+# reaches only one crop, so it reads as "attributable" when it is a miss.
 _DISAGREEING_VIEWS = [
     {
         "kept": {
@@ -1767,11 +1661,8 @@ _LAYOUT_CAPTION = (
 def test_a_repeated_subject_page_binds_only_what_a_view_can_differ_in(
     pipeline_bits, layout
 ):
-    """One girl drawn twice: her name and her traits belong to her, not a view.
-
-    ``multiple views`` is the clean case, but an ``Nkoma`` page and a bare
-    ``comic`` redraw the same character panel by panel — every ``_LAYOUT_TAGS``
-    member takes the gate.
+    """One girl drawn twice: her name and traits belong to her, not a view. Every
+    ``_LAYOUT_TAGS`` member takes the gate, not just ``multiple views``.
     """
     proposal = _layout_proposal(
         pipeline_bits, _LAYOUT_CAPTION.format(layout=layout), _DISAGREEING_VIEWS
@@ -1779,16 +1670,15 @@ def test_a_repeated_subject_page_binds_only_what_a_view_can_differ_in(
     assert proposal.ok, proposal.status
     parsed = parse_caption(proposal.proposed)
     bound = {t for c in parsed.clauses for t in c.tags}
-    # Nothing the character owns — name, hair, eyes, body shape.
+    # Nothing the character owns: name, hair, eyes, body shape.
     assert bound.isdisjoint(
         {"hatsune miku", "aqua hair", "twintails", "long hair", "large breasts"}
     )
-    # …only what one view has and the other does not: the outfits, and the
-    # anatomy that is *visible* in one panel (`body_parts` left the invariant
-    # set — see `--gate_view_anatomy`).
+    # …only what one view has and the other does not: the outfits and the anatomy
+    # visible in one panel (`body_parts` is gated by `--gate_view_anatomy`).
     assert bound == {"maid", "playboy bunny", "ass"}
-    # Nothing was destroyed: a tag that never reached a clause cannot be moved
-    # out of the bag, so every suppressed trait is still asserted, flat.
+    # A tag that never reached a clause cannot leave the bag, so every suppressed
+    # trait is still asserted, flat.
     assert {
         "hatsune miku",
         "aqua hair",
@@ -1799,7 +1689,7 @@ def test_a_repeated_subject_page_binds_only_what_a_view_can_differ_in(
 
 
 def test_the_gate_is_off_for_a_genuine_multi_character_image(pipeline_bits):
-    """No layout tag → two different girls → identity is the point of the clause."""
+    """No layout tag means two different girls, so identity binds."""
     proposal = _layout_proposal(
         pipeline_bits,
         "safe, 2girls, hatsune miku, aqua hair, large breasts, ass, maid, "
@@ -1812,7 +1702,7 @@ def test_the_gate_is_off_for_a_genuine_multi_character_image(pipeline_bits):
 
 
 def test_bind_view_traits_reverts_the_gate(pipeline_bits):
-    """The A/B arm: ``--bind_view_traits`` restores the pre-gate clauses."""
+    """``--bind_view_traits`` is the A/B arm that reverts the gate."""
     proposal = _layout_proposal(
         pipeline_bits,
         _LAYOUT_CAPTION.format(layout="multiple views"),
@@ -1824,12 +1714,8 @@ def test_bind_view_traits_reverts_the_gate(pipeline_bits):
 
 
 def test_an_excluded_tag_cannot_ride_the_priority_path_into_a_clause(pipeline_bits):
-    """Copyright / deprecated tags are filtered on *every* path, not just the last.
-
-    ``light brown hair`` is a deprecated alias that ``groups.yaml`` still files
-    under ``hair_color``, so it used to enter through the exclusive-group step,
-    which never consulted ``excluded`` — 4 images of the first full-corpus run.
-    """
+    """``excluded`` is consulted on every path, including the exclusive-group step
+    a deprecated alias like ``light brown hair`` enters through."""
     from anime_tools.stages.position_captions import ClauseVocabulary
 
     _, _, _, _Options = pipeline_bits
@@ -1856,8 +1742,7 @@ def test_an_excluded_tag_cannot_ride_the_priority_path_into_a_clause(pipeline_bi
 
 
 def test_indistinguishable_subjects_are_skipped(pipeline_bits):
-    # Nothing varies between the crops → no clause can be grounded → skip
-    # rather than emit two identical, information-free clauses.
+    # Nothing varies between the crops, so no clause can be grounded.
     from anime_tools.stages.position_captions import propose_for_image
 
     image, vocabulary, _, Options = pipeline_bits
@@ -1877,8 +1762,7 @@ def test_indistinguishable_subjects_are_skipped(pipeline_bits):
 
 
 def test_differing_hair_colors_still_bind_for_two_characters(pipeline_bits):
-    # The discriminative rule must NOT suppress the multi-girl case it exists
-    # to serve: two girls with different hair keep their hair in their clause.
+    # Two girls with different hair keep their hair in their clause.
     from anime_tools.stages.position_captions import propose_for_image
 
     image, vocabulary, _, Options = pipeline_bits
@@ -1909,8 +1793,7 @@ def test_differing_hair_colors_still_bind_for_two_characters(pipeline_bits):
 
 
 def test_copyright_tags_stay_out_of_clauses(pipeline_bits):
-    # A franchise tag fires on every crop and describes the image, not a
-    # subject — it must not ride the ranked path into a clause.
+    # A franchise tag describes the image, not a subject.
     from anime_tools.stages.position_captions import propose_for_image
 
     image, vocabulary, _, Options = pipeline_bits
@@ -1946,8 +1829,8 @@ def test_only_one_member_of_an_exclusive_group_per_clause(pipeline_bits):
         ),
         tag_fn=_tagger(
             [
-                # Two hair colors kept on one crop; the group winner wins and the
-                # runner-up must not follow it in through the ranked path.
+                # Two hair colors on one crop: the group winner wins and the
+                # runner-up does not follow it in through the ranked path.
                 {
                     "kept": {"green hair": 0.9, "aqua hair": 0.85, "twintails": 0.7},
                     "groups": {"hair_color": "green hair"},
@@ -1998,8 +1881,8 @@ def test_is_candidate(caption, expected):
 
 
 def test_multiple_views_defers_the_count_to_detection():
-    # `1girl, multiple views` is routinely four bindable views — the girls-count
-    # must NOT gate it, or every outfit sheet skips on count-mismatch.
+    # `1girl, multiple views` is routinely four bindable views, so the girls-count
+    # must not gate it.
     from anime_tools.stages.position_captions import caption_subject_count
 
     assert caption_subject_count("safe, 1girl, multiple views, maid") is None
@@ -2013,8 +1896,7 @@ def test_mask_blanking_removes_the_neighbour(pipeline_bits):
 
     from anime_tools.stages.position_captions import Detection, crop_instance
 
-    # Left half red (the subject), right half blue (a neighbour intruding into
-    # the padded box). Blanking must leave no blue in the crop.
+    # Left half red (the subject), right half blue (a neighbour in the padded box).
     pixels = np.zeros((100, 200, 3), dtype=np.uint8)
     pixels[:, :100] = (255, 0, 0)
     pixels[:, 100:] = (0, 0, 255)
@@ -2075,7 +1957,7 @@ def _run_io(pipeline_bits, src, dst, **kwargs):
 
 
 def test_apply_writes_the_resized_caption_and_never_the_master(pipeline_bits, tmp_path):
-    """Clauses are generated data — the hand-written master stays byte-identical."""
+    """Clauses are generated data: the hand-written master stays byte-identical."""
     src, dst = _corpus(tmp_path, _TWO_GIRLS_CAPTION)
 
     _rows, stats = _run_io(pipeline_bits, src, dst, apply=True)
@@ -2097,7 +1979,7 @@ def test_dry_run_writes_nothing_at_all(pipeline_bits, tmp_path):
 
 
 def test_apply_drops_the_stale_variant_sidecar(pipeline_bits, tmp_path):
-    """The sidecar wins at encode time — a pre-clause one would keep training."""
+    """The sidecar wins at encode time, so a pre-clause one is dropped."""
     from anime_tools.captions.variants import variants_sidecar_path
 
     src, dst = _corpus(tmp_path, _TWO_GIRLS_CAPTION)
@@ -2139,13 +2021,8 @@ def test_flatten_backs_out_the_derived_caption_only(pipeline_bits, tmp_path):
 
 
 def test_framing_binds_to_the_view_it_describes(pipeline_bits):
-    """A headless close-up panel says so in its own clause.
-
-    The population: one full-body view next to a hip/backside crop. `framing`
-    is the only group that separates them — every other attribute either
-    belongs to the character (and is gated out on a view layout) or is simply
-    absent from a crop with no head in it.
-    """
+    """A headless close-up panel says so in its own clause: `framing` is the only
+    group that separates it from a full-body view."""
     _, vocabulary, _, _ = pipeline_bits
     tags = vocabulary.select(
         {"ass focus": 0.77, "underwear": 0.8, "denim": 0.6},
@@ -2162,27 +2039,20 @@ def test_framing_binds_to_the_view_it_describes(pipeline_bits):
 
 
 def test_the_bag_gate_does_not_claim_framing(pipeline_bits):
-    """`framing` is exclusive, so it lands in the derived gate unless exempted.
-
-    Without the exemption the bag's `full body` — true of the *other* panel —
-    pins every clause to `full body` and the crop's own reading is discarded,
-    which would make the whole feature inert on exactly the sheets it targets.
+    """`framing` is exclusive, so it would land in the derived bag gate; the
+    exemption keeps the bag's `full body` (true of the other panel) from
+    pinning every clause.
     """
     _, vocabulary, _, _ = pipeline_bits
     gated = vocabulary.gated_groups()
     assert "framing" not in gated
-    # …while the reasoning it is exempted from still applies to real subject
-    # attributes: one girl has one body shape.
+    # …while real subject attributes stay gated: one girl has one body shape.
     assert "body_shape" in gated
 
 
 def test_page_level_framing_never_binds_to_a_view(pipeline_bits):
-    """`solo focus` / `white border` are filed under `framing` but describe the page.
-
-    v2 *moves* a bound tag out of the flat bag, so binding one of these would
-    not merely add noise to a clause — it would delete a true statement about
-    the image from the bag and re-assert it about one panel.
-    """
+    """`solo focus` / `white border` are filed under `framing` but describe the
+    page, and v2 moves a bound tag out of the bag, so they must not bind."""
     _, vocabulary, _, _ = pipeline_bits
     for tag in ("solo focus", "white border"):
         assert vocabulary.is_scene_tag(tag)
@@ -2201,11 +2071,8 @@ def test_page_level_framing_never_binds_to_a_view(pipeline_bits):
 
 
 def test_framing_survives_the_multi_view_gate(pipeline_bits):
-    """The strictest gate must not eat the one thing that varies between views.
-
-    `view_invariant` drops whatever the *character* owns. How a panel is
-    cropped is owned by the panel, so it is precisely what should get through.
-    """
+    """`view_invariant` drops what the character owns; how a panel is cropped is
+    owned by the panel, so framing survives."""
     _, vocabulary, _, _ = pipeline_bits
     tags = vocabulary.select(
         {"ass focus": 0.77, "aqua hair": 0.95, "ass": 0.9},
@@ -2219,18 +2086,14 @@ def test_framing_survives_the_multi_view_gate(pipeline_bits):
         view_invariant=True,
         max_novel_tags=1,
     )
-    # Hair belongs to the character and is gated; framing and the anatomy that
-    # is visible in this panel are facts about the view, so both survive.
+    # Hair belongs to the character and is gated; framing and the visible anatomy
+    # are facts about the view.
     assert tags == ["ass focus", "ass"]
 
 
 def test_two_panels_of_the_same_kind_still_share_their_framing(pipeline_bits):
-    """Known limitation, pinned so it is a decision and not a surprise.
-
-    A sheet whose views are *both* backside crops has `ass focus` on both, so
-    `discriminative_only` suppresses it on both — the same residual the
-    identity gate has. Recovering it needs a different rule, not this one.
-    """
+    """Known limitation: a sheet whose views are both backside crops has
+    `ass focus` on both, so `discriminative_only` suppresses it on both."""
     _, vocabulary, _, _ = pipeline_bits
     tags = vocabulary.select(
         {"ass focus": 0.6, "denim": 0.7},
@@ -2270,13 +2133,8 @@ def test_no_framing_restores_the_pre_change_clause(pipeline_bits):
 
 
 def test_visible_anatomy_binds_on_a_view_layout(pipeline_bits):
-    """`ass` separates a from-behind panel from a front one — the gate ate it.
-
-    Anatomy is owned by the character the way hair color is, but unlike hair
-    color what is *visible* is a fact about the panel. Measured on
-    `ama_mitsuki/13247180`: one girl from behind beside the same girl from the
-    front, and `ass` (in the caption's own bag) reached neither clause.
-    """
+    """What anatomy is *visible* is a fact about the panel, so `ass` separates a
+    from-behind panel from a front one even under the view gate."""
     proposal = _layout_proposal(
         pipeline_bits,
         _LAYOUT_CAPTION.format(layout="multiple views"),
@@ -2284,8 +2142,7 @@ def test_visible_anatomy_binds_on_a_view_layout(pipeline_bits):
     )
     bound = {t for c in parse_caption(proposal.proposed).clauses for t in c.tags}
     assert "ass" in bound
-    # …and the character's own traits are still gated — this loosened one group,
-    # not the rule.
+    # …and the character's own traits are still gated.
     assert bound.isdisjoint({"hatsune miku", "aqua hair", "large breasts"})
 
 
@@ -2307,13 +2164,8 @@ def test_gate_view_anatomy_restores_the_old_gate(pipeline_bits):
 
 
 def test_shipped_policy_is_internally_consistent():
-    """``configs/clause_vocabulary.yaml`` still says what the pipeline assumes.
-
-    Each assertion is a coupling that fails *silently* if the YAML drifts: a
-    priority group that can't bind emits nothing, `framing` missing from the
-    ungated set lets the bag gate pin every clause to the caption's first
-    framing tag, and a marker group outside the invariant set gates nothing.
-    """
+    """``configs/clause_vocabulary.yaml`` still says what the pipeline assumes;
+    each coupling below fails silently if the YAML drifts."""
     from anime_tools.captions.clause_vocabulary import default_clause_groups
 
     cfg = default_clause_groups()
@@ -2322,8 +2174,7 @@ def test_shipped_policy_is_internally_consistent():
     assert cfg.bag_gated <= cfg.subject
     assert "framing" in cfg.subject and "framing" in cfg.ungated_exclusive
     assert set(cfg.multi_value_markers) <= cfg.character_invariant
-    # The anatomy gate is opt-in (`--gate_view_anatomy`), so `body_parts` is
-    # named on its own rather than sitting in the view-invariant set.
+    # The anatomy gate is opt-in, so `body_parts` is named on its own.
     assert cfg.view_anatomy and cfg.view_anatomy.isdisjoint(cfg.view_invariant)
 
 
@@ -2337,11 +2188,9 @@ def test_view_invariant_defaults_to_the_character_invariant_set(tmp_path):
 
 
 def test_the_policy_drives_selection(pipeline_bits):
-    """Editing the YAML must change what binds — else it is decoration.
-
-    Dropping `framing` from `subject_groups` + `priority_groups` is the config
-    spelling of ``--no_framing``, and has to reach ``select`` the same way.
-    """
+    """Editing the YAML changes what binds: dropping `framing` from
+    `subject_groups` + `priority_groups` is the config spelling of
+    ``--no_framing``."""
     import dataclasses
 
     _, vocabulary, _, _ = pipeline_bits
@@ -2367,11 +2216,8 @@ def test_the_policy_drives_selection(pipeline_bits):
 
 
 def test_a_typo_in_the_policy_is_reported(tmp_path, caplog):
-    """A group the checkpoint doesn't declare matches nothing — say so loudly.
-
-    Silence here is the failure mode: the rule keyed to that name simply stops
-    firing, and the only evidence is a dry-run diff nobody reads as a bug.
-    """
+    """A group the checkpoint does not declare matches nothing, and is warned about
+    rather than silently disabling its rule."""
     import json
     import logging
 
@@ -2451,8 +2297,8 @@ _RELAX_RIGHT = {"hatsune miku": 0.9, "aqua hair": 0.8, "maid": 0.05}
 
 
 def test_bag_relax_defaults_to_the_shipped_recipe(pipeline_bits):
-    """The shipped default is 0.35/0.85 (chosen by curation 2026-08-19):
-    `maid` at 0.45 clears 0.8 * 0.35 on the left crop with no options set."""
+    """The shipped default is 0.35/0.85: `maid` at 0.45 clears 0.8 * 0.35 on the
+    left crop with no options set."""
     from anime_tools.stages.position_captions import PositionCaptionOptions
 
     assert PositionCaptionOptions().bag_relax == 0.35
@@ -2462,9 +2308,8 @@ def test_bag_relax_defaults_to_the_shipped_recipe(pipeline_bits):
 
 
 def test_bag_relax_one_restores_the_strict_pipeline(pipeline_bits):
-    """`1.0` is the off switch (the A/B control arm): `maid` is in the bag but
-    under its 0.8 threshold on both crops — the strict pipeline never sees
-    it."""
+    """`1.0` is the off switch: `maid` is under its 0.8 threshold on both crops,
+    so the strict pipeline never sees it."""
     proposal = _relax_proposal(
         pipeline_bits, _RELAX_LEFT, _RELAX_RIGHT, bag_relax=1.0, bag_word_relax=1.0
     )
@@ -2474,11 +2319,8 @@ def test_bag_relax_one_restores_the_strict_pipeline(pipeline_bits):
 
 
 def test_bag_relax_binds_and_moves_a_corroborated_tag(pipeline_bits):
-    """0.45 clears 0.8 * 0.5 on the left crop only → attributable → moved.
-
-    The motivating case: 5828184's `black panties` at 0.498 against a 0.800
-    threshold on the lying-girl crop, 0.066 on the standing one.
-    """
+    """0.45 clears 0.8 * 0.5 on the left crop only, so it is attributable and
+    moves (the 5828184 `black panties` shape: 0.498 vs 0.066 against 0.800)."""
     proposal = _relax_proposal(pipeline_bits, _RELAX_LEFT, _RELAX_RIGHT, bag_relax=0.5)
     parsed = parse_caption(proposal.proposed)
     assert "maid" in parsed.clauses[0].tags
@@ -2487,8 +2329,8 @@ def test_bag_relax_binds_and_moves_a_corroborated_tag(pipeline_bits):
 
 
 def test_bag_relax_never_admits_a_novel_tag(pipeline_bits):
-    """Relaxation reads the bag only — a sub-threshold tag the caption never
-    contained stays invisible however low the floor goes."""
+    """Relaxation reads the bag only: a tag the caption never contained stays
+    invisible however low the floor goes."""
     left = dict(_RELAX_LEFT, apron=0.79)  # sub-threshold and NOT in the bag
     thresholds = dict(_RELAX_THRESHOLDS, apron=0.8)
     from anime_tools.stages.position_captions import propose_for_image
@@ -2508,11 +2350,9 @@ def test_bag_relax_never_admits_a_novel_tag(pipeline_bits):
 
 
 def test_bag_relax_min_score_floors_near_noise_admissions(pipeline_bits):
-    """A relaxed admission still needs the absolute score floor: `maid` at
-    0.29 clears the relaxed threshold (0.8 * 0.35 = 0.28) but not the 0.3
-    default floor — the channel4 `white gloves` shape, where a near-noise
-    activation on the wrong crop won attribution because the true owner
-    under-fired. With the floor off it binds again (the pre-floor arm)."""
+    """A relaxed admission still needs the absolute floor: `maid` at 0.29 clears
+    the relaxed threshold (0.8 * 0.35 = 0.28) but not the 0.3 default floor.
+    With the floor off it binds again."""
     left = dict(_RELAX_LEFT, maid=0.29)
     floored = _relax_proposal(pipeline_bits, left, _RELAX_RIGHT)
     parsed = parse_caption(floored.proposed)
@@ -2527,7 +2367,7 @@ def test_bag_relax_min_score_floors_near_noise_admissions(pipeline_bits):
 
 def test_bag_relax_min_score_never_touches_the_taggers_own_keeps(pipeline_bits):
     """The floor gates only the relax path: a tag the tagger keeps at its own
-    calibrated threshold binds even when that score is under the floor."""
+    threshold binds even when that score is under the floor."""
     left = dict(_RELAX_LEFT, maid=0.85)  # above its own 0.8 threshold
     proposal = _relax_proposal(
         pipeline_bits, left, _RELAX_RIGHT, bag_relax_min_score=0.9
@@ -2536,8 +2376,8 @@ def test_bag_relax_min_score_never_touches_the_taggers_own_keeps(pipeline_bits):
 
 
 def test_bag_word_relax_compounds_per_extra_word(pipeline_bits):
-    """`playboy bunny` (two words) at 0.55: 0.8 * 0.7 = 0.56 misses, and the
-    0.9 word bonus lowers the floor to 0.504 — specificity earns the slack."""
+    """`playboy bunny` (two words) at 0.55: 0.8 * 0.7 = 0.56 misses, and the 0.9
+    word bonus lowers the floor to 0.504."""
     left = dict(_RELAX_LEFT, **{"playboy bunny": 0.55})
     without = _relax_proposal(
         pipeline_bits, left, _RELAX_RIGHT, bag_relax=0.7, bag_word_relax=1.0
@@ -2552,15 +2392,9 @@ def test_bag_word_relax_compounds_per_extra_word(pipeline_bits):
 
 
 def test_bag_relax_blocks_a_move_the_strict_sets_grant(pipeline_bits):
-    """Cuts both ways: a rival crop's borderline score becomes a keep, making
-    the tag shared — so it stays flat instead of wrongly leaving the bag.
-
-    On 5828184 this is the bogus `sweater` move: both girls wear it, the
-    standing crop just scored it 0.551 against 0.6.
-
-    The rival's 0.6 clears the 0.25 attribution margin (1 - 0.6/0.9 = 0.33),
-    so the strict pipeline moves the tag; the relaxed kept set is the only
-    rule that catches it.
+    """Cuts both ways: a rival crop's borderline score becomes a keep, so the tag
+    is shared and stays flat. The rival's 0.6 clears the 0.25 attribution margin
+    (1 - 0.6/0.9 = 0.33), so only the relaxed kept set catches it.
     """
     left = dict(_RELAX_LEFT, maid=0.9)
     right = dict(_RELAX_RIGHT, maid=0.6)  # sub-threshold, but clearly there
@@ -2579,14 +2413,8 @@ def test_bag_relax_blocks_a_move_the_strict_sets_grant(pipeline_bits):
 
 
 def test_reattach_reads_the_two_underscore_spellings_as_one_tag():
-    """A moved tag comes back in the clause only, in either spelling.
-
-    ``_reattach_clauses`` recovers the moved set from the destination caption —
-    a tag its clauses carry that its own bag does not — and takes it back out of
-    the freshly corrected bag. The master spells it ``long hair`` and the clause
-    the rewrite wrote spells it ``long_hair``, so on a bare ``lower()`` key the
-    two never matched: the tag was re-asserted flat *and* bound, which is the
-    duplication the function exists to prevent.
+    """``_reattach_clauses`` recovers the moved set from the destination caption
+    and takes it back out of the corrected bag, keying both spellings as one tag.
     """
     from anime_tools.stages.captions import _reattach_clauses
 
@@ -2597,13 +2425,12 @@ def test_reattach_reads_the_two_underscore_spellings_as_one_tag():
     assert out == "1girl, blue eyes. On the left, long_hair."
     parsed = parse_caption(out)
     assert "long hair" not in parsed.flat_tags and "long_hair" not in parsed.flat_tags
-    # ``blue_eyes`` is in the destination's own bag, so it was never moved and
-    # the corrected spelling survives untouched.
+    # ``blue_eyes`` is in the destination's own bag, so it was never moved.
     assert parsed.flat_tags == ("1girl", "blue eyes")
 
 
 def test_reattach_keeps_a_bag_tag_the_clause_also_carries():
-    """v1's degraded case — bound *and* still flat — is not a move."""
+    """v1's degraded case — bound and still flat — is not a move."""
     from anime_tools.stages.captions import _reattach_clauses
 
     out = _reattach_clauses(

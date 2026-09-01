@@ -9,14 +9,13 @@ mirror time without touching the caption master.
 Resolution for one tag, in order:
 
 1. Tag *shape* (``taxonomy.py``) — ``@`` prefix → ``artist``, count regex →
-   ``count``, rating literal → ``rating``. Shape wins over the KB so a
-   dataset-only artist the KB has never seen is still an artist.
+   ``count``, rating literal → ``rating``. Shape wins over the KB, so a
+   dataset-only artist is still an artist.
 2. KB kind (``TagInfo.kind``) — ``character`` / ``copyright`` / ``meta`` from
-   danbooru's numeric category (authoritative for those three).
-3. KB taxonomy path — the coarse ``대분류`` (or ``대분류 > 소분류`` for the
-   finer entries like ``lighting``).
-4. Unknown to the KB → ``None``. **Never dropped**: an unclassifiable tag is
-   kept rather than guessed at.
+   danbooru's numeric category.
+3. KB taxonomy path — the coarse ``대분류`` (or ``대분류 > 소분류`` for finer
+   entries like ``lighting``).
+4. Unknown to the KB → ``None``, and **never dropped**.
 
 A selector that isn't a known slug is treated as a **literal path prefix**
 against the KB's ``category_path`` (``"효과/연출 > 조명"``), so any subgroup in
@@ -35,12 +34,11 @@ if TYPE_CHECKING:  # pragma: no cover
 
 
 # slug -> taxonomy path prefix(es) in the KB. The coarse 대분류 slugs cover the
-# whole subtree; the finer ones (``lighting`` …) pick one 소분류 out of a
-# parent the user rarely wants to drop wholesale. Paths are matched as
-# prefixes on the normalized ``category_path`` (``"효과/연출 > 조명"``).
+# whole subtree; the finer ones (``lighting`` …) pick one 소분류. Paths are
+# matched as prefixes on the normalized ``category_path``.
 DROP_GROUP_PATHS: dict[str, tuple[str, ...]] = {
     # Structural kinds — resolved by tag shape / danbooru numeric category
-    # first; the path is only the fallback for rows typed by the Korean tree.
+    # first; the path is only the fallback for Korean-tree-typed rows.
     "artist": ("아티스트", "작가"),
     "character": ("캐릭터",),
     "copyright": ("작품/출처", "작품"),
@@ -86,8 +84,8 @@ def drop_group_names() -> tuple[str, ...]:
 def parse_drop_groups(spec: str | Iterable[str] | None) -> tuple[str, ...]:
     """Normalize a comma-separated (or iterable) selector list.
 
-    Slugs are lower-cased; anything else is kept verbatim as a literal
-    taxonomy-path prefix. Order is stable, duplicates and blanks dropped.
+    Slugs are lower-cased, anything else kept verbatim as a literal
+    taxonomy-path prefix. Order is stable; duplicates and blanks dropped.
     """
     if not spec:
         return ()
@@ -111,9 +109,8 @@ def _selector_paths(selector: str) -> tuple[str, ...]:
 def _path_matches(category_path: str, prefix: str) -> bool:
     """Prefix match on the normalized taxonomy path.
 
-    A bare 대분류 (``"인물"``) covers its whole subtree, and CSV editions
-    spell some roots differently (``작품`` vs ``작품/출처``), so plain
-    ``startswith`` is the right test.
+    A bare 대분류 (``"인물"``) covers its whole subtree, and CSV editions spell
+    some roots differently (``작품`` vs ``작품/출처``).
     """
     return bool(category_path and prefix) and category_path.startswith(prefix)
 
@@ -121,8 +118,8 @@ def _path_matches(category_path: str, prefix: str) -> bool:
 def tag_drop_group(tag: str, kb: TagKnowledgeBase) -> str | None:
     """The coarse slug ``tag`` belongs to, or ``None`` when unclassifiable.
 
-    Only the *coarse* structural/대분류 slug is returned here (``effect``, not
-    ``lighting``) — :func:`should_drop_tag` handles finer selectors by path.
+    Only the *coarse* structural/대분류 slug (``effect``, not ``lighting``);
+    :func:`should_drop_tag` handles finer selectors by path.
     """
     if tag == "@no-artist":
         return None
@@ -151,10 +148,9 @@ def tag_drop_group(tag: str, kb: TagKnowledgeBase) -> str | None:
 def should_drop_tag(tag: str, kb: TagKnowledgeBase, selectors: Iterable[str]) -> bool:
     """True when ``tag`` falls under any of ``selectors``.
 
-    Structural slugs resolve by shape/kind (so an unknown ``@name`` still
-    drops under ``artist``); everything else — table slugs and literal path
-    prefixes alike — resolves against the KB taxonomy path. Unknown tags and
-    rating literals never drop.
+    Structural slugs resolve by shape/kind (so an unknown ``@name`` still drops
+    under ``artist``); everything else resolves against the KB taxonomy path.
+    Unknown tags and rating literals never drop.
     """
     sels = tuple(selectors)
     if not sels or tag == "@no-artist" or is_rating_tag(tag):

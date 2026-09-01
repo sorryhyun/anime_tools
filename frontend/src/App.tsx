@@ -16,12 +16,10 @@ import { SettingsDialog } from "./components/SettingsDialog";
 import { StagePanel } from "./components/StagePanel";
 import { TagLens } from "./components/TagLens";
 
-/** Wiring only: this file creates the five state modules, bridges the two of
- * them that must talk, and hands their signals to the components. No business
- * logic lives here. The two seams worth naming are the dock (a stage start
- * opens it, so `runner` is given `openDock`) and the single job slot the server
- * has — a stage run and a weights download share it, which is why an adopted
- * job has to be told apart before it is followed.
+/** Wiring only: creates the five state modules and hands their signals to the
+ * components. A stage start opens the dock, so `runner` is given `openDock`;
+ * the server has a single job slot shared by stage runs and weights downloads,
+ * so an adopted job has to be told apart before it is followed.
  */
 export default function App() {
   const config = createConfig();
@@ -36,13 +34,12 @@ export default function App() {
   });
   const downloads = createDownloads(config);
 
-  // A job the page did not start -- one already running when it loaded, or
-  // started from another tab -- belongs to whichever follower it came from.
+  // Adopt a job the page did not start (already running on load, or started
+  // from another tab). Keyed on `running`, not the ids: an id is kept after its
+  // job ends, and a second externally-started job deserves adopting too.
   createEffect(
     on(config.info, (i) => {
       const id = i?.running;
-      // `running`, not the ids: an id is kept after its job ends, and a
-      // second externally-started job deserves adopting too.
       if (!id || runner.busy() || downloads.busy()) return;
       // Only the id comes back on /api/info, so ask what it is before deciding
       // which follower gets it -- a download must not land in the dock.
@@ -54,9 +51,9 @@ export default function App() {
   );
 
   /** A dock button: open the panel on the stage it was last left on. Pressing
-      the open panel's own button is a no-op rather than a fold -- the dock is
-      folded by the ▾ in the strip's corner, so a mis-aimed second click on a
-      panel cannot take the form out from under a run. */
+      the open panel's own button is a no-op; the dock folds by the ▾ in the
+      strip's corner, so a mis-aimed second click cannot take the form out from
+      under a run. */
   function pickPanel(panel: string, ss: Stage[]) {
     const want = stages.curPanel() === panel ? stages.curId() : stages.lastInPanel[panel];
     const s = ss.find((x) => x.id === want) ?? ss.find((x) => x.available) ?? ss[0];
@@ -80,7 +77,7 @@ export default function App() {
       />
 
       {/* The tree folds from its own bar and comes back on the rail it leaves
-          behind, so both halves of the fold sit on the edge that moves. */}
+          behind. */}
       <Show when={!layout.sidebar()}>
         <button
           class="unfold"
@@ -158,8 +155,8 @@ export default function App() {
         />
       </Dock>
 
-      {/* One card for every tag chip in the app; it floats, so it is mounted
-          at the root rather than inside the caption panel. */}
+      {/* One card for every tag chip in the app; it floats, so it is mounted at
+          the root. */}
       <TagLens onInstall={() => config.openSettings("models")} />
 
       <SettingsDialog

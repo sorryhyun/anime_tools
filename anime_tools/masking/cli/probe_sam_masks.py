@@ -1,17 +1,10 @@
 """Dump SAM3's raw per-instance masks, colour-coded, over one or many images.
 
-Answers "is the mask actually broken, or are we mishandling it?" — the two look
-identical downstream once ``crop_instance`` has blanked a crop white. Bypasses
-the audit: run a prompt, print each mask's shape / dtype / value range / fill
-against the image it should align with, and render every instance in its own
-colour. A clean silhouette means the mask is fine and our indexing is wrong;
-the crop's speckle means the mask really is that bad.
-
-Sweeps several prompts over several images in one pass: the encoding is computed
-once per image and re-grounded per prompt, so an extra prompt costs a grounding
-pass, not a re-encode. Renders land at ``<out>/<stem>/prompt_<label>.png`` and
-the numbers in a ``probe.json`` carrying every proposal's score / box / area
-fraction / box fill.
+Bypasses the audit to answer "is the mask broken, or are we mishandling it?": prints each
+mask's shape / dtype / value range / fill and renders every instance in its own colour.
+Several prompts sweep several images in one pass, the encoding computed once per image and
+re-grounded per prompt. Renders land at ``<out>/<stem>/prompt_<label>.png``, the numbers
+in a ``probe.json``.
 """
 
 from __future__ import annotations
@@ -48,8 +41,8 @@ COLORS = [
 def parse_prompts(spec: str) -> list[tuple[str, str]]:
     """``"girl,rear=buttocks"`` -> ``[("girl", "girl"), ("rear", "buttocks")]``.
 
-    The label names the output file, so a multi-word prompt needs one; without
-    an explicit ``label=`` the prompt is slugified into one.
+    The label names the output file; without an explicit ``label=`` the prompt is
+    slugified into one.
     """
     out: list[tuple[str, str]] = []
     for item in spec.split(","):
@@ -121,9 +114,9 @@ def resolve_images(args: argparse.Namespace) -> list[Path]:
 def out_names(paths: list[Path]) -> list[str]:
     """One output dir per image, keyed on the stem.
 
-    A bare stem is only unique within one folder, so the whole selection falls
-    back to `<parent>__<stem>` the moment any two collide — all-or-nothing, so
-    the naming doesn't depend on which images happened to be selected.
+    A bare stem is only unique within one folder, so the whole selection falls back to
+    `<parent>__<stem>` the moment any two collide — all-or-nothing, so the naming does
+    not depend on which images happened to be selected.
     """
     stems = [p.stem for p in paths]
     if len(set(stems)) == len(stems):
@@ -142,8 +135,8 @@ def probe_one(
 ) -> tuple[list[dict], np.ndarray, list]:
     """Ground one prompt against an already-encoded image.
 
-    Returns the per-proposal records, the colour overlay, and the raw boxes (the
-    caller draws them, so the overlay stays a pure mask render).
+    Returns the per-proposal records, the colour overlay, and the raw boxes (the caller
+    draws them, so the overlay stays a pure mask render).
     """
     out = processor.set_text_prompt(prompt=prompt, state=state)
     boxes, scores, masks = out["boxes"], out["scores"], out.get("masks")
@@ -181,9 +174,9 @@ def probe_one(
         flat = raw[0] if raw.ndim == 3 else raw
         aligned = flat.shape == (image.height, image.width)
         binary = flat > 0.5
-        # Same fill the pipeline's NMS tie-break sees, so this is the number
-        # `dedupe_detections` would have ranked on. It clamps the box to the
-        # *mask's* shape, which is the point when `aligned` is False.
+        # Same fill the pipeline's NMS tie-break sees, i.e. the number
+        # `dedupe_detections` would have ranked on. It clamps the box to the *mask's*
+        # shape, which is the point when `aligned` is False.
         fill = mask_box_fill(
             Detection(box=tuple(coords), score=float(score), mask=flat)
         )
@@ -245,8 +238,8 @@ def main() -> None:
         raise SystemExit("--prompts is empty")
     paths = resolve_images(args)
     out_root = resolve_path(args.out)
-    # A lone image with a lone prompt is the original single-shot diagnostic —
-    # keep it chatty (dtype / value range / alignment), stay terse for a sweep.
+    # A lone image with a lone prompt is chatty (dtype / value range / alignment); a
+    # sweep stays terse.
     verbose = len(paths) == 1 and len(prompts) == 1
     print(
         f"{len(paths)} image(s) x {len(prompts)} prompt(s): {[p for _, p in prompts]}"
@@ -285,8 +278,7 @@ def main() -> None:
                 }
                 render(overlay, boxes, out_dir / f"prompt_{label}.png")
                 if idx == 0:
-                    # `overlay.png` is the first prompt's render under its
-                    # historical name, so older references still resolve.
+                    # The first prompt's render, also under the name older references use.
                     render(overlay, boxes, out_dir / "overlay.png")
         summary.append(entry)
         print(f"  wrote: {out_dir}")

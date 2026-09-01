@@ -1,16 +1,12 @@
-"""Apply a reviewer-curated accept list of multiview-audit findings — with undo.
+"""Apply a reviewer-curated accept list of multiview-audit findings, with undo.
 
-Where ``audit_multiview.py --apply`` writes every finding a verdict tier admits,
-this applies exactly the set a human hand-picked across tiers. Accepted
-``multiple views``/``unsure`` rows get the ``multiple views`` splice; accepted
-``extra-character`` rows get the ``{instances}girls`` count replacement.
+Writes exactly the findings a human hand-picked across verdict tiers, rather than
+every finding a tier admits. Every run writes a manifest of verbatim before/after
+text next to the report, and ``--revert <manifest>`` restores it, refusing any
+caption edited since.
 
-Every run writes a manifest (verbatim before/after per caption) next to the
-report — ``image_dataset/`` is gitignored, so the manifest is the only undo.
-``--revert <manifest>`` restores it, refusing any caption edited since.
-
-Dry-run by default; ``--apply`` writes. After a real apply or revert, run
-``make preprocess-te`` — the caption master changed.
+Dry-run by default; a real apply or revert changes the caption master, so run
+``make preprocess-te`` after.
 """
 
 from __future__ import annotations
@@ -33,9 +29,8 @@ def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument(
         "--report",
-        # `audit_multiview`'s --report_dir plus the file it writes there: the
-        # accept list is a list of that report's rows, so the two defaults are
-        # one path split in half. Pinned together in test_stage_cli_args.
+        # `audit_multiview`'s --report_dir plus the file it writes there; the
+        # two defaults are pinned together in test_stage_cli_args.
         default=f"{WS.REPORTS}/multiview_audit/report.json",
         help="Audit report.json the accept list refers to",
     )

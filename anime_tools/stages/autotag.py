@@ -1,15 +1,13 @@
 """Batch auto-tagging: image → Anima Tagger → caption master.
 
-Walks the resized tree and writes ``.txt`` sidecars back into the caption
-**master**, because it *creates* the caption every later stage reads — unlike
-the clause rewrite, which only ever touches the revised caption.
+Walks the resized tree and writes ``.txt`` sidecars into the caption **master**,
+since it creates the caption every later stage reads.
 
-Three modes, because the right policy depends on whether the corpus is
-hand-captioned:
+Three modes:
 
 ``missing``
-    Tag only images with no caption sidecar — the safe default, and the only
-    mode that cannot lose hand-written text.
+    Tag only images with no caption sidecar — the only mode that cannot lose
+    hand-written text.
 ``merge``
     Tag everything, but only *append* tags the caption does not already carry.
     Clause tags count as present, so a merge after ``caption-position`` cannot
@@ -17,9 +15,9 @@ hand-captioned:
 ``overwrite``
     Replace the caption with the tagger's output. Destructive.
 
-**Dry-run is the default** (the caller passes ``apply``). Caption edits do *not*
-invalidate the TE caches, so an applied run must be followed by
-``make preprocess-te``.
+**Dry-run is the default** (the caller passes ``apply``). An applied run must be
+followed by ``make preprocess-te``, since caption edits do not invalidate the TE
+caches.
 """
 
 from __future__ import annotations
@@ -86,9 +84,8 @@ class AutotagStats:
 
 
 def _has_rating(tags: tuple[str, ...]) -> bool:
-    # The rating literals are single spaceless words, so the underscore fold is
-    # a no-op here — but it is the one tag key in this module, and a second
-    # spelling of "same tag?" is exactly what ``merge_tags`` got wrong.
+    # Keyed on ``normalize_tag`` like every other "same tag?" test, even though
+    # the rating literals are spaceless words where the underscore fold is moot.
     return any(normalize_tag(t) in RATING_LITERALS for t in tags)
 
 
@@ -100,10 +97,9 @@ def merge_tags(existing: str, tagged: str) -> tuple[str, tuple[str, ...]]:
     clause tag back into the flat bag. The tagger's leading rating is dropped
     when the caption already carries one — two ratings contradict.
 
-    Presence is keyed on :func:`normalize_tag`, which is the whole point here:
-    the tagger emits ``speech bubble`` where a hand-written master may hold
-    ``speech_bubble``, so a local ``lower()`` appended the tagger's spelling of
-    every underscored tag the caption already carried.
+    Presence is keyed on :func:`normalize_tag`: the tagger emits ``speech
+    bubble`` where a hand-written master may hold ``speech_bubble``, and any
+    other key reads one tag as two.
     """
     parsed = parse_caption(existing)
     seen = set(parsed.tag_keys)
@@ -141,9 +137,9 @@ def run_autotag_captions(
 ) -> tuple[list[AutotagProposal], AutotagStats]:
     """Walk the resized tree, tag, and (with ``apply``) write the caption master.
 
-    Tagging runs on the *resized* image because that is the pixel data training
-    sees; the caption lands next to the original under ``source_dir``. ``tag_fn``
-    is normally ``AnimaTagger.predict_caption`` bound to ``min_confidence``.
+    Tagging runs on the *resized* image (the pixel data training sees); the
+    caption lands next to the original under ``source_dir``. ``tag_fn`` is
+    normally ``AnimaTagger.predict_caption`` bound to ``min_confidence``.
     """
     from anime_tools._walk import walk_images
 
@@ -213,9 +209,8 @@ def build_tag_fn(
 ) -> tuple[Callable[[Image.Image], str], Mapping[str, object]]:
     """Load the Anima Tagger and return ``(tag_fn, info)``.
 
-    Torch-importing, so it lives behind a function rather than at module import
-    — ``run_autotag_captions`` itself is torch-free and unit-testable with a
-    stub ``tag_fn``. The checkpoint is auto-fetched when absent.
+    Torch imports live inside this function so ``run_autotag_captions`` stays
+    torch-free. The checkpoint is auto-fetched when absent.
     """
     from anime_tools._env import resolve_path
     from anime_tools.tagger.tagger import (

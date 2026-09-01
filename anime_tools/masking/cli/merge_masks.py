@@ -1,8 +1,7 @@
 """Merge masks from multiple sources by taking the pixel-wise minimum (union of masked regions).
 
-Walks each input mask directory recursively and keys merges by
-``(rel_dir, name)`` so masks at the same relative path across inputs collide.
-The output preserves the same nested layout under ``--output-dir``.
+Keys merges by ``(rel_dir, name)``, so masks at the same relative path across inputs
+collide; the nested layout is preserved under ``--output-dir``.
 """
 
 import argparse
@@ -19,10 +18,8 @@ from anime_tools.masking._masks import iter_masks
 DEFAULT_INPUTS = [WS.MASKS_SAM, WS.MASKS_MIT]
 """The two generators' own ``--mask-dir`` defaults, in the order they run.
 
-A merge whose inputs are not the trees the generators wrote merges nothing, so
-the three paths are declared once in :mod:`anime_tools.workspace` and read back
-here. A missing input directory is skipped, not an error — running only one
-generator is a valid half of this.
+A missing input directory is skipped, not an error — running only one generator is a
+valid half of this.
 """
 
 
@@ -46,8 +43,8 @@ def build_parser() -> argparse.ArgumentParser:
 def main() -> None:
     args = build_parser().parse_args()
 
-    # Home-anchored, so the defaults name the trees the generators wrote
-    # however the operator got here.
+    # Home-anchored, so the defaults name the trees the generators wrote however the
+    # operator got here.
     mask_dirs = [resolve_path(d) for d in args.mask_dirs]
     output_dir = resolve_path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)

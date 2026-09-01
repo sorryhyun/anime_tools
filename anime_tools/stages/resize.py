@@ -3,12 +3,10 @@
 Every later stage walks ``workspace/resized/``, so an image that exists only
 under the master is invisible to all of them.
 
-Two things here are *interop* with the trainer's own resize pass, not taste:
-the chosen ``(W, H)`` (same tier, band and solver, so the trainer finds every
-PNG already at its target bucket and skips it instead of re-encoding the
-dataset) and the ``anima_resize_*`` PNG text keys (:func:`_metadata_signature`),
-which its size-aware skip compares when a non-default anchor or margin is in
-play.
+Two things are interop with the trainer's resize pass: the chosen ``(W, H)``
+(same tier, band and solver) and the ``anima_resize_*`` PNG text keys
+(:func:`_metadata_signature`), which its size-aware skip compares. Diverge on
+either and each side re-encodes the other's PNGs.
 
 Torch-free — PIL only.
 """
@@ -41,11 +39,9 @@ DEFAULT_MIN_PIXELS = 500_000
 def below_min_pixels(size: tuple[int, int], min_pixels: int) -> bool:
     """Would this image be skipped for being too small? ``min_pixels`` 0 = never.
 
-    The floor is on the *source* pixels, and a skip here is not "left out of
-    training" but invisible to the whole pipeline: nothing lands in the resized
-    tree, which every other stage walks. That is why the GUI asks the same
-    question of an image it is showing, and why the answer is written once here
-    rather than spelled a second time over there.
+    The floor is on the *source* pixels, and a skip means nothing lands in the
+    resized tree — invisible to every other stage, not merely left out of
+    training.
     """
     return min_pixels > 0 and size[0] * size[1] < min_pixels
 
@@ -158,10 +154,8 @@ def resize_to_bucket(
 ) -> Image.Image:
     """Cover-scale ``img`` to ``bucket`` (LANCZOS) then anchor-crop to it.
 
-    ``img`` is the already-transposed, margin-cropped working region. Under
-    free-fit the crop is sub-patch unless the ratio clamp fired, so the anchor
-    rarely matters — but it is the trainer's exact pixel geometry, which is what
-    makes the two outputs interchangeable.
+    ``img`` is the already-transposed, margin-cropped working region. This is
+    the trainer's exact pixel geometry.
     """
     bw, bh = bucket
     anchor_x, anchor_y = CROP_ANCHORS[normalize_crop_anchor(crop_anchor)]
@@ -211,9 +205,8 @@ class ResizeStats:
     skipped_small: int = 0
     """Below ``min_pixels``."""
     too_small: list[str] = field(default_factory=list)
-    """``"<path>: <W>x<H>"`` per skip. Named rather than counted for the same
-    reason :attr:`failures` is: an image that never lands in the resized tree is
-    invisible to every downstream stage, not merely absent from training."""
+    """``"<path>: <W>x<H>"`` per skip — named rather than counted, since a
+    skipped image is invisible to every downstream stage."""
     skipped_current: int = 0
     """A resized PNG already at the target bucket (pass ``overwrite`` to force)."""
     failed: int = 0
@@ -225,9 +218,8 @@ class ResizeStats:
 
 def _collect_metadata(src: Image.Image) -> dict:
     """Save kwargs carrying through what ``convert("RGB")`` + ``save()`` drops:
-    ICC profile, raw EXIF and PNG text chunks (where ComfyUI / A1111 stash the
-    generation prompt). Best-effort per field so a malformed chunk cannot kill a
-    worker."""
+    ICC profile, raw EXIF and PNG text chunks (the ComfyUI / A1111 generation
+    prompt). Best-effort per field so a malformed chunk cannot kill a worker."""
     out: dict = {}
     if icc := src.info.get("icc_profile"):
         out["icc_profile"] = icc
@@ -247,17 +239,14 @@ def _collect_metadata(src: Image.Image) -> dict:
 def _metadata_signature(options: ResizeOptions) -> dict[str, str]:
     """The ``anima_resize_*`` keys stamped into the PNG, trainer-compatible.
 
-    Empty for the default geometry — as the trainer writes it too, so its skip
-    check falls back to the size alone. A non-default anchor or margin stamps
-    the trainer's three keys in its format, so changing either re-resizes on
-    both sides.
+    Empty for the default geometry, as the trainer writes it too, so its skip
+    check falls back to the size alone.
     """
     if options.crop_anchor == DEFAULT_CROP_ANCHOR and not any(options.crop_margins):
         return {}
     return {
         _ANCHOR_KEY: options.crop_anchor,
-        # Always empty: the bucket_resos allow-list is not ported, and the
-        # trainer writes "" here too whenever it is unset.
+        # Always empty: the trainer writes "" here too whenever it is unset.
         _BUCKET_RESOS_KEY: "",
         _MARGINS_KEY: ",".join(f"{m:g}" for m in options.crop_margins),
     }
@@ -265,11 +254,10 @@ def _metadata_signature(options: ResizeOptions) -> dict[str, str]:
 
 def _oriented_size(src: Image.Image) -> tuple[int, int]:
     """``(W, H)`` as :func:`PIL.ImageOps.exif_transpose` would leave it, from the
-    header alone.
+    header alone — which is what lets an already-resized image be skipped
+    without a decode.
 
-    Orientation only ever swaps a size, so reading it here is what lets an
-    already-resized image be skipped without a decode. ``getexif()`` is
-    consulted only when the file carries an EXIF block, because
+    ``getexif()`` is consulted only when the file carries an EXIF block, because
     ``PngImageFile.getexif`` *loads the image* to look for one.
     """
     w, h = src.size
@@ -305,8 +293,7 @@ def _is_current(
             if not signature:
                 # Default geometry stamps no keys, so the size is the whole
                 # answer — and reading ``.text`` off a PNG decodes it (tEXt/zTXt
-                # may sit after IDAT), which would make a fully-cached re-run as
-                # expensive as the first one.
+                # may sit after IDAT).
                 return True
             text = getattr(existing, "text", {}) or {}
             return all(text.get(k) == v for k, v in signature.items())
@@ -329,14 +316,11 @@ def process_image(
     ``ProcessPoolExecutor`` worker. Returns ``(name, bucket, skipped)``; unless
     ``overwrite`` is set an output already at the target bucket is left alone.
 
-    That skip is load-bearing: the GUI runs this pass as a preflight in front of
-    every stage that opens an image, so on a settled dataset almost every call
-    ends there. Nothing above that line may decode — not the source
-    (``exif_transpose`` copies, and a copy loads) nor the output (``.text`` on a
-    PNG loads) — hence the header-only geometry via :func:`_oriented_size`, with
-    the metadata read and the transpose *after* the skip.
-
-    ``size_hint`` is that oriented size when the caller already read it.
+    Nothing above that skip may decode — not the source (``exif_transpose``
+    copies, and a copy loads) nor the output (``.text`` on a PNG loads) — hence
+    the header-only geometry via :func:`_oriented_size`, with the metadata read
+    and the transpose *after* the skip. ``size_hint`` is that oriented size when
+    the caller already read it.
     """
     target_dir = out_dir / rel_dir if rel_dir else out_dir
     out_path = target_dir / f"{image_path.stem}.png"
@@ -410,10 +394,9 @@ def _probe_sizes(
 ) -> list[tuple[Path, tuple[int, int] | None, tuple[int, int] | None, str]]:
     """Read every source header, in the pool — source order preserved.
 
-    Not the cheap prelude it looks like: ``Image.open`` on a webp demuxes the
-    whole file (~2 ms each), so with the skip path no longer decoding, *this* is
-    the pass. Pure per-file CPU, so threads do nothing (the GIL is held inside
-    the decoder) and only the process pool helps. ``map`` keeps input order.
+    ``Image.open`` on a webp demuxes the whole file (~2 ms each), and it is pure
+    per-file CPU with the GIL held inside the decoder, so only a process pool
+    helps. ``map`` keeps input order.
     """
     if workers <= 1 or len(images) < 2:
         return [_probe(p) for p in images]
@@ -457,8 +440,7 @@ def run_resize_images(
     stats.seen = len(images)
 
     # ``(path, oriented size)``: one header read per image, carried into
-    # ``process_image``, which would otherwise re-open the file to ask the same
-    # question that the min-pixel gate here already answered.
+    # ``process_image`` so it need not re-open the file.
     pending: list[tuple[Path, tuple[int, int] | None]] = []
     for image_path, raw, size, error in _probe_sizes(images, workers):
         if error or raw is None:
@@ -491,8 +473,7 @@ def run_resize_images(
     ]
 
     if workers <= 1:
-        # Inline: one image, or a caller avoiding the ~1s spawn cost of a pool
-        # it would use once (the GUI's per-image Run takes this path).
+        # Inline: one image, or a caller avoiding the ~1s pool spawn cost.
         for index, call in enumerate(args, 1):
             try:
                 _record(index, process_image(*call))

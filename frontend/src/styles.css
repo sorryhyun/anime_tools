@@ -1,6 +1,5 @@
-/* Pretendard, the same UI face the desktop trainer GUI bundles. One variable
-   file (wght 45-930), inlined as a base64 data: URL by build.ts -- the shipped
-   index.html makes no font request, so the GUI looks identical offline. */
+/* One variable file (wght 45-930), served beside the page by build.ts -- the
+   shipped index.html makes no third-party font request. */
 @font-face {
   font-family: Pretendard;
   src: url("../fonts/PretendardVariable.subset.woff2") format("woff2");
@@ -9,26 +8,21 @@
   font-display: swap;
 }
 
-/* Pretendard leads; the subset stops at Hangul, so Han (JA/ZH) and emoji fall
-   back to the system families -- the same cascade anima_lora's Qt theme uses.
-   The UI itself is translated (src/i18n.ts), so the JA and ZH faces are named
-   here rather than left to `sans-serif`: without them a Windows browser draws
-   the interface in whatever sans it happens to have, which may carry no kana
-   at all. Hangul first, then Japanese, then Simplified Chinese -- one stack,
-   not a rule per language, because a single page mixes them (a Korean UI over
+/* Pretendard leads; its subset stops at Hangul, so Han (JA/ZH) and emoji fall
+   back. The JA and ZH faces are named rather than left to `sans-serif`: without
+   them a Windows browser may draw the UI in a sans carrying no kana at all. One
+   stack, not a rule per language -- a single page mixes them (a Korean UI over
    a Japanese path). */
 :root { --font-ui:Pretendard,"Apple SD Gothic Neo","Malgun Gothic","Noto Sans CJK KR","Hiragino Sans","Yu Gothic UI","Meiryo","Noto Sans CJK JP","PingFang SC","Microsoft YaHei","Noto Sans CJK SC",system-ui,sans-serif,"Apple Color Emoji","Segoe UI Emoji","Noto Color Emoji"; --font-mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; --bg:#14161a; --panel:#1c1f25; --line:#2a2e36; --fg:#e6e6e6; --dim:#8b919c; --accent:#7aa2f7; --ok:#9ece6a; --warn:#e0af68; --err:#f7768e; --sel:#262b35; --input:#0f1115; }
 * { box-sizing:border-box }
 body { margin:0; font:14px/1.45 var(--font-ui); background:var(--bg); color:var(--fg); height:100vh; overflow:hidden }
-/* Dataset first: sidebar tree | item view, with the stage runner docked below
-   the item view only -- the tree runs the full height beside both, because the
-   list you are picking from is what the dock's Run and its diff are about. */
+/* Sidebar tree | item view, with the stage runner docked below the item view
+   only; the tree runs the full height beside both. */
 #root { height:100vh; display:grid; grid-template-columns:290px 1fr; grid-template-rows:44px minmax(0,1fr) auto }
 header { grid-column:1/3; display:flex; align-items:center; gap:14px; padding:0 14px; border-bottom:1px solid var(--line); background:var(--panel) }
 header b { color:var(--accent) }
-/* The ☰ is the app menu -- Settings, the token, the help preference -- not the
-   sidebar fold: the fold lives on the edge that actually moves. The popup hangs
-   from the button, which is why the pair is a positioned wrapper. */
+/* The popup hangs from the ☰ button, which is why the pair is a positioned
+   wrapper. */
 header button.fold { font-size:15px; line-height:1; color:var(--dim) }
 header button.fold:hover { color:var(--fg) }
 .hmenu { position:relative; display:flex; align-items:center }
@@ -36,9 +30,8 @@ header button.fold:hover { color:var(--fg) }
 .hmenu-pop button { display:flex; align-items:center; justify-content:space-between; gap:14px; background:none; border:0; border-radius:5px; padding:6px 9px; font-size:13px }
 .hmenu-pop button:hover { background:var(--sel) }
 .hmenu-pop hr { border:0; border-top:1px solid var(--line); margin:4px 2px; width:100% }
-/* The language row is the one menu item that is not a command: its buttons
-   switch in place, so they are a chip strip inside the row rather than four
-   more rows that each close the menu. */
+/* The language buttons switch in place, so they are a chip strip inside one
+   row. */
 .hmenu-lang { display:flex; flex-direction:column; align-items:stretch; gap:5px; padding:6px 9px; font-size:13px }
 .hmenu-lang > span:last-child { display:flex; flex-wrap:wrap; gap:3px }
 .hmenu-lang button { background:none; border:0; border-radius:5px; padding:3px 6px; font-size:12px; color:var(--dim); white-space:nowrap }
@@ -46,16 +39,15 @@ header button.fold:hover { color:var(--fg) }
 .hmenu-lang button.on { color:var(--accent); background:var(--sel) }
 body.nosidebar #root { grid-template-columns:0 1fr }
 body.nosidebar aside { display:none }
-/* The other half of the fold: the tree's own ⟨ closes it, this rail button on
-   the edge it left brings it back. Fixed, because the column it would sit in is
-   zero wide once the tree is gone. */
+/* The rail that brings the folded tree back. Fixed, because the column it
+   would sit in is zero wide once the tree is gone. */
 .unfold { position:fixed; left:0; top:52px; z-index:20; padding:14px 8px; border-left:0; border-radius:0 7px 7px 0; background:var(--panel); color:var(--dim); font-size:16px; line-height:1 }
 .unfold:hover { color:var(--fg) }
 header .mono { max-width:26ch; overflow:hidden; text-overflow:ellipsis; white-space:nowrap }
 .dim { color:var(--dim); font-size:12px }
 .ok { color:var(--ok) }
-/* Warn-toned inline affordances (the header's missing-token button, the stage
-   bar's missing-models hint) -- doubled up to outrank button.link's accent. */
+/* Warn-toned inline affordances -- doubled up to outrank button.link's
+   accent. */
 .warn, button.link.warn { color:var(--warn) }
 button.link.warn:hover { text-decoration:underline }
 .sp { flex:1 }
@@ -67,8 +59,7 @@ aside { grid-column:1; grid-row:2/4; border-right:1px solid var(--line); backgro
 .treebar { display:flex; align-items:center; gap:6px; padding:8px; border-bottom:1px solid var(--line) }
 .treebar + .treebar { padding-top:6px }
 .treebar input { flex:1 }
-/* The two orderings of the same rows -- the folders the dataset is stored in,
-   and the near-twin components the Groups stage found in them. */
+/* The two orderings of the same rows: folders, and near-twin components. */
 .modes { display:flex; border:1px solid var(--line); border-radius:5px; overflow:hidden }
 .modes button { border:0; border-radius:0; background:none; color:var(--dim); padding:2px 9px; font-size:12px }
 .modes button + button { border-left:1px solid var(--line) }
@@ -88,15 +79,11 @@ aside { grid-column:1; grid-row:2/4; border-right:1px solid var(--line); backgro
 .tn .tl .dim { font-size:inherit }
 .dot { width:7px; height:7px; flex:none; border-radius:50%; background:var(--dim) }
 .dot.master { background:var(--accent) } .dot.revised { background:var(--ok) } .dot.variants { background:var(--warn) }
-/* The versions the revised caption used to be. Deliberately the dim default and
-   not a hue of its own: history is the rung you read, never the one you work
-   in, and four saturated colours in one strip is three too many. */
+/* History keeps the dim default rather than a hue of its own. */
 .dot.history { background:var(--dim) }
 .dot.proposal { background:var(--warn) }
-/* An image's caption ladder, as a strip on its own row rather than a labelled
-   child per rung under a chevron: filled is a file on disk, hollow is not, and
-   either one is the button that opens that version in the panel. A row per rung
-   was the sidebar's whole vertical budget spent on a fact three pixels carry. */
+/* An image's caption ladder, as a strip on its own row: filled is a file on
+   disk, hollow is not, and either is the button that opens that version. */
 .caps { display:flex; gap:5px; flex:none; padding-left:6px }
 .caps .dot { padding:0; border:0; cursor:pointer; width:8px; height:8px; box-shadow:0 0 0 3px transparent }
 .caps .dot.off { background:none; box-shadow:inset 0 0 0 1px var(--line) }
@@ -106,15 +93,13 @@ aside { grid-column:1; grid-row:2/4; border-right:1px solid var(--line); backgro
 .caps .dot.history.on { color:var(--dim) }
 .caps .dot.off.on { box-shadow:inset 0 0 0 1px var(--line), 0 0 0 2px var(--bg), 0 0 0 3px var(--dim) }
 .flags { margin-left:auto; display:flex; gap:4px; align-items:center }
-/* The mask flag draws its own colour, so it gets a size and nothing else. An
-   emoji draws well inside its em box, so it is set a notch over the 13px row
-   text to land at the same visual weight as the `r` beside it. */
+/* The mask flag is an emoji, which draws well inside its em box, so it is set a
+   notch over the 13px row text to match the `r` beside it. */
 .flag.mask { font-size:14px; line-height:1 }
 /* `r` = the resized copy exists, in --ok because it lives in the dst tree, the
    same root the revised caption's dot is green for. */
 .flag.rz { color:var(--ok); font:600 13px var(--font-mono); line-height:1 }
-/* This image is one the last Run changed -- so a batch's diff is a thing you
-   can walk down, not a thing you go looking for. */
+/* This image is one the last Run changed. */
 .flag.prop { color:var(--accent); font-size:9px }
 
 /* ---- centre: one dataset item ----
@@ -122,11 +107,9 @@ aside { grid-column:1; grid-row:2/4; border-right:1px solid var(--line); backgro
    auto placement would then slide `main` into the zero-wide first column. */
 main { grid-column:2; grid-row:2; display:grid; grid-template-rows:auto minmax(0,1fr); overflow:hidden }
 .crumbs { display:flex; align-items:center; gap:6px; padding:8px 14px; border-bottom:1px solid var(--line) }
-/* Preview | captions, with the boundary on a drag handle: the picture and the
-   text both want the width, and which one wins changes with what you are
-   auditing. The caption column is the sized one (a caption has a comfortable
-   width; an image just fits whatever is left), and `--cap-w` is set on the
-   element by ItemView, saved to localStorage on pointerup. */
+/* Preview | captions, with the boundary on a drag handle. The caption column is
+   the sized one; `--cap-w` is set on the element by ItemView and saved to
+   localStorage on pointerup. */
 .split { position:relative; display:grid; grid-template-columns:minmax(240px,1fr) var(--cap-w,420px); overflow:hidden }
 .splitgrip { position:absolute; top:0; bottom:0; right:calc(var(--cap-w,420px) - 2px); width:5px; cursor:col-resize; z-index:2 }
 .splitgrip:hover { background:var(--accent) }
@@ -137,9 +120,8 @@ main { grid-column:2; grid-row:2; display:grid; grid-template-rows:auto minmax(0
 .preview .frame img { max-width:100%; max-height:100%; object-fit:contain; border-radius:4px; background:#0006 }
 .preview .frame > img, .preview .frame > .overlay { transform-origin:50% 50% }
 /* The overlay view: the L-mode mask screen-blended over the image at 40%, so
-   the subject glows and black stays the image -- auditing a mask by flipping
-   tabs and comparing from memory is not auditing. Both images contain-fit the
-   same box, so same-aspect files (the mask mirrors its source) stay aligned. */
+   the subject glows and black stays the image. Both images contain-fit the same
+   box, so same-aspect files (the mask mirrors its source) stay aligned. */
 .preview .frame .overlay { position:relative; display:flex; align-items:center; justify-content:center; width:100%; height:100%; min-height:0 }
 .preview .overlay img.ov { position:absolute; inset:0; width:100%; height:100%; object-fit:contain; opacity:.4; mix-blend-mode:screen; background:none; border-radius:0; pointer-events:none }
 .preview .hint { padding:0 12px 10px; word-break:break-all }
@@ -157,41 +139,33 @@ main { grid-column:2; grid-row:2; display:grid; grid-template-rows:auto minmax(0
 .card { border:1px solid var(--line); border-radius:7px; padding:10px 12px; background:var(--panel) }
 .card.sel { border-color:var(--accent) }
 .card-h { display:flex; align-items:center; gap:8px }
-/* The path is the only part of a card header that may shrink: the badge and
-   the two buttons carry translated words (「元に戻す」, "되돌리기"), which flex
-   would otherwise break onto a second line one character at a time. */
+/* The path is the only part of a card header that may shrink: the badge and the
+   two buttons carry translated words (「元に戻す」, "되돌리기"), which flex would
+   otherwise break one character at a time. */
 .card-h .badge, .card-h button { flex:none; white-space:nowrap }
 .hint { font-size:12px; margin:4px 0 }
-/* The caption ladder, as the badges over the one editor: master, every version
-   the revised caption used to be, that caption, then the generated v0…vN. Same
-   readout as the sidebar's dot strip -- filled dot = on disk, hollow = not --
-   so a badge and the row's dot are recognisably the same file, and the badge is
-   also the switch that puts that version in the field below. An expanded rung's
+/* The caption ladder, as the badges over the one editor. Same readout as the
+   sidebar's dot strip -- filled dot = on disk, hollow = not. An expanded rung's
    badges wear their *rung's* colour (`CaptionEntry.rung`), so `revised@2` is a
-   history dot and not a guess made from the shape of its name; a rung added to
-   `dataset.CAPTION_LADDER` wants one `.dot.<kind>` colour here. */
+   history dot; a rung added to `dataset.CAPTION_LADDER` wants one `.dot.<kind>`
+   colour here. */
 .vbs { display:flex; flex-wrap:wrap; align-items:center; gap:4px }
 .vb { display:flex; align-items:center; gap:5px; padding:2px 8px; border-radius:10px; background:none; border:1px solid transparent; color:var(--dim); font-size:11px }
-/* Background-only, like the ☰ menu's rows: the base `button:hover` accent ring
-   is louder than five pills in a strip can carry, and it wins on source order
-   (same specificity, declared later), so it is overridden rather than left. */
+/* Background-only: the base `button:hover` accent ring wins on source order
+   (same specificity, declared later), so it is overridden here. */
 .vb:hover { color:var(--fg); background:#ffffff0c; border-color:transparent }
 .vb.on:hover { border-color:var(--line) }
 .vb.on { color:var(--fg); background:var(--sel); border-color:var(--line) }
 .vb.off { color:#5a606b }
-/* A rung holding an unsaved draft, so text typed against another version is
-   visible from the one you are on -- the same warn tint the field's own
+/* A rung holding an unsaved draft -- the same warn tint the field's own
    "unsaved" note wears. */
 .vb.mod, .vb.mod.on, .vb.mod.off { color:var(--warn) }
 .vb .dot { width:6px; height:6px }
 .vb.off .dot { background:none; box-shadow:inset 0 0 0 1px var(--line) }
-/* A generated version is read in the same boxed field it would be edited in,
-   dimmed rather than swapped for a table: the boxes are how a caption is read
-   here, and a table cell cannot show one. */
+/* A generated version is read in the same boxed field, dimmed. */
 textarea.cap.ro { color:var(--dim); cursor:default }
-/* The caption editor. Tags are not chips -- a caption is one string and is
-   edited as one -- so the boxes are painted on a backdrop *behind* a real
-   textarea: same font, same width, same padding, glyphs transparent, while the
+/* The caption editor: the boxes are painted on a backdrop *behind* a real
+   textarea -- same font, width and padding, glyphs transparent -- while the
    textarea on top keeps the caret, the selection and the IME. box-shadow, not
    border: a shadow costs no layout, so the backdrop's lines break exactly where
    the textarea's do, and (box-decoration-break defaulting to slice) a tag split
@@ -202,11 +176,10 @@ textarea.cap.ro { color:var(--dim); cursor:default }
 .caphl { position:absolute; inset:0; z-index:0; overflow:hidden; border:1px solid transparent; border-radius:4px; padding:5px 7px; background:var(--input); color:transparent; font:13px/1.5 var(--font-mono); white-space:pre-wrap; overflow-wrap:break-word }
 textarea.cap { display:block; position:relative; z-index:1; min-height:78px; overflow:hidden; resize:none; background:transparent; font:13px/1.5 var(--font-mono); white-space:pre-wrap; overflow-wrap:break-word }
 /* One box per tag, tinted by what the grammar made of it: a clause header wears
-   the accent its clause key does and the tags it owns a fainter one, an artist
-   handle the warn tint (the same three the trainer's Qt editor paints), and the
-   box the caret is inside brightens -- the boxed editor's hovered chip. The
-   plain box is a step brighter than --line: a box sits on the input ground,
-   which is darker than the panel a chip's border is drawn against. */
+   the accent its clause key does, the tags it owns a fainter one, an artist
+   handle the warn tint, and the box the caret is inside brightens. The plain box
+   is a step brighter than --line: it sits on the input ground, darker than the
+   panel a chip's border is drawn against. */
 .tb { box-shadow:0 0 0 1px #565e6e; border-radius:3px; background:#ffffff0d }
 .tb.cl { box-shadow:0 0 0 1px #7aa2f759 }
 .tb.hdr { box-shadow:0 0 0 1px #7aa2f7a6; background:#7aa2f714 }
@@ -217,8 +190,8 @@ textarea.cap { display:block; position:relative; z-index:1; min-height:78px; ove
 .ck { flex:none; min-width:12ch; color:var(--dim); font:11px var(--font-mono); text-transform:uppercase; letter-spacing:.04em }
 .ck.pos { color:var(--accent); text-transform:none; font-size:12px }
 .tags { display:flex; flex-wrap:wrap; gap:4px }
-/* Every tag is a button: clicking one opens the Danbooru KB card (TagLens).
-   The class outranks the element rule below, so a chip still looks like a chip. */
+/* Every tag is a button (TagLens). The class outranks the element rule below,
+   so a chip still looks like a chip. */
 .tag { background:#ffffff0d; border:1px solid var(--line); border-radius:10px; padding:0 7px; font-size:12px; line-height:1.6; cursor:help; font-family:inherit }
 .tag:hover { border-color:var(--accent) }
 /* The card itself: fixed, positioned under the chip that was clicked. */
@@ -227,9 +200,8 @@ textarea.cap { display:block; position:relative; z-index:1; min-height:78px; ove
 .tlcat { color:var(--accent); font-size:12px; margin-top:4px }
 .tlbody { font-size:12px; line-height:1.55; margin-top:4px; max-height:40vh; overflow:auto; overflow-wrap:anywhere }
 .tlsrc { font-size:10px; margin-top:6px; border-top:1px solid var(--line); padding-top:4px }
-/* The pending diff: what Run proposed for this caption, sitting under the
-   editor holding what is on disk. Warn-tinted, because it is not written yet --
-   Apply is what makes it real, and Undo is what takes it back. */
+/* The last Run's diff for this caption, under the editor holding what is on
+   disk. */
 .diff { margin-top:10px; border:1px solid var(--line); border-left:2px solid var(--warn); border-radius:6px; padding:8px 10px; background:#ffffff05 }
 .diff.stale { border-left-color:var(--dim); opacity:.75 }
 .diff .parsed { margin-top:4px }
@@ -259,10 +231,8 @@ button.help.on { color:var(--fg); border-color:var(--accent) }
 button.help.warn { color:var(--warn); border-color:var(--warn) }
 button.help.warn:hover { border-color:var(--accent) }
 .dlgh { display:flex; align-items:center; gap:8px }
-/* The dialog's x: a borderless glyph in the corner, so it reads as chrome
-   rather than as one more button competing with Save. It carries the error hue
-   -- muted at rest so the corner stays quiet, full --err under the pointer --
-   because leaving is the one thing in here that drops what you typed. */
+/* The dialog's x: a borderless glyph in the corner, in the error hue -- muted
+   at rest, full --err under the pointer. */
 .dlgx { width:24px; height:24px; flex:none; padding:0; background:none; border:0; border-radius:5px; color:#a35c69; font-size:18px; line-height:1 }
 .dlgx:hover { background:#f7768e1f; color:var(--err) }
 .reuse { display:flex; gap:8px; align-items:flex-start; max-width:520px; margin:0 0 10px; font-size:12px; color:var(--dim) }
@@ -270,26 +240,23 @@ button.help.warn:hover { border-color:var(--accent) }
 .reuse code { color:var(--fg) }
 fieldset { position:relative; border:1px solid var(--line); border-radius:6px; margin:0 0 12px; padding:8px 12px }
 legend { color:var(--dim); font-size:12px; padding:0 4px }
-/* A group's advanced fields fold on its bottom edge, the way its title sits on
-   the top one -- so the knobs a run retunes stay in the fieldset that names
-   them and the sweep parameters are one click under them, rather than in a bin
-   at the foot of the form. Right, because the legend owns the left. */
+/* A group's advanced fields fold on its bottom edge; right, because the legend
+   owns the left. */
 .advfold { position:absolute; right:10px; bottom:-9px; padding:0 6px; background:var(--bg); border:0; border-radius:0; color:var(--dim); font-size:11px; line-height:16px }
 .advfold:hover { color:var(--fg) }
 .advfold.warn { color:var(--warn) }
 /* A drawer's legend is its switch: the group title with the gate flag's own
-   checkbox in front of it, so the knobs below are visibly folded away by it. */
+   checkbox in front of it. */
 legend .gate { display:inline-flex; align-items:center; gap:6px; cursor:pointer }
 legend .gate input { margin:0 }
 legend:has(input:checked) { color:var(--fg) }
 .row { display:grid; grid-template-columns:180px 1fr; gap:8px; align-items:center; padding:3px 0 }
 /* The two-up wrapper for .row groups -- every stage fieldset and the Settings
-   preflight block, so a knob sits in the same widget wherever it is typed. */
+   preflight block. */
 .twoup { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:0 16px }
 .twoup .row { grid-template-columns:150px minmax(0,1fr) }
 /* The form's foot: the advanced fold and the reset, both plain links, on the
-   line under the last fieldset rather than in the run bar -- neither runs
-   anything, and the bar is where the buttons that do live. */
+   line under the last fieldset. */
 .formfoot { display:flex; gap:14px; align-items:center; margin:0 0 8px }
 .row label { font-family:var(--font-mono); font-size:12px; color:#c8cdd6; overflow:hidden; text-overflow:ellipsis; white-space:nowrap }
 .row label.req::after { content:" *"; color:var(--err) }
@@ -307,14 +274,13 @@ button.link { background:none; border:none; color:var(--accent); padding:0; font
 .tabs a.na { color:#5a606b; cursor:default }
 .tabs a { padding:6px 12px; cursor:pointer; color:var(--dim); border-radius:6px 6px 0 0 }
 .tabs a.sel { color:var(--fg); background:var(--panel) }
-/* The dock's tab strip is one button per *panel* (Autotag / Curate / ...); the
-   stages inside a panel are picked by `.stagepick` in the bar below, so the
-   strip stays short instead of listing all nine. */
+/* One button per *panel* (Autotag / Curate / ...); the stages inside a panel
+   are picked by `.stagepick` in the bar below. */
 .stagetabs { flex-wrap:wrap; gap:2px 4px }
 .stagetabs a { padding:6px 10px; white-space:nowrap }
 .stagetabs a.na { cursor:pointer }
 .stagetabs a:hover { color:var(--fg) }
-/* In-panel stage picker: a segmented control, not a second row of tabs. */
+/* In-panel stage picker: a segmented control. */
 .stagepick { padding:0; border:none; gap:2px; flex:none }
 .stagepick a { padding:3px 9px; border-radius:5px; font-size:12px; white-space:nowrap }
 .stagepick a.sel { background:var(--line); color:var(--fg); font-weight:600 }
@@ -324,8 +290,7 @@ pre.log { margin:0; font:12px/1.4 var(--font-mono); white-space:pre-wrap; word-b
 .badge { font-size:11px; padding:1px 7px; border-radius:10px; background:#2a2f3a; color:var(--dim) }
 .badge.running { color:var(--warn) } .badge.done { color:var(--ok) } .badge.failed, .badge.cancelled { color:var(--err) }
 /* The pixel-count chip in the preview's size line. --warn is not "small" but
-   "the resize preflight skips this, so every stage sees nothing for it" -- the
-   one thing a size means downstream, said where the size already is. */
+   "the resize preflight skips this, so every stage sees nothing for it". */
 .badge.px { color:var(--ok) } .badge.px.below { color:var(--warn) }
 table { border-collapse:collapse; font-size:12px; width:100% }
 td, th { border-bottom:1px solid var(--line); padding:4px 6px; text-align:left; vertical-align:top; max-width:360px; overflow:hidden; text-overflow:ellipsis }
@@ -344,27 +309,25 @@ dialog h4 { margin:16px 0 4px; color:var(--dim); font-size:11px; text-transform:
 dialog::backdrop { background:#0008 }
 dialog h3 { margin:0 0 10px }
 .dlg-actions { display:flex; gap:8px; justify-content:flex-end; margin-top:12px }
-/* The scroll box each Settings dialog's body sits in. There is exactly one per
-   dialog: the three are separate windows, so nothing is mounted-but-hidden and
-   Save can only ever read the refs of the block on screen. */
+/* The scroll box each Settings dialog's body sits in -- one per dialog, since
+   the three are separate windows and nothing is mounted-but-hidden. */
 .spane { max-height:62vh; overflow:auto }
 .spane > h4:first-child { margin-top:2px }
 .picker ul { list-style:none; padding:0; margin:8px 0; max-height:50vh; overflow:auto; font-family:var(--font-mono); font-size:13px }
 .picker li { padding:3px 6px; cursor:pointer; border-radius:3px } .picker li:hover { background:var(--sel) }
-/* Settings runs two label/value pairs per line -- the panes are lists of short
-   rows, and one 900px-wide column of them was mostly empty gutter. Everything
-   below (.kv, the stage-default rows, the model catalog) collapses back to one
-   column on a narrow window, where two would just wrap mid-value. */
+/* Settings runs two label/value pairs per line. Everything below (.kv, the
+   stage-default rows, the model catalog) collapses back to one column on a
+   narrow window, where two would wrap mid-value. */
 .kv { display:grid; grid-template-columns:110px minmax(0,1fr) 110px minmax(0,1fr); gap:6px 16px; font-size:13px; align-items:baseline } .kv b { color:var(--dim); font-weight:500 }
 .kv > span { min-width:0 }
 .kv .dim { display:block; margin-top:2px }
 .err { color:var(--err) }
 /* Settings > Models: one row per downloadable checkpoint. The panel around it
-   is the scroller, so the list itself just grows with the catalog. */
+   is the scroller. */
 .models { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:6px }
 .modelrow { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:10px; align-items:center; border:1px solid var(--line); border-radius:6px; padding:8px 10px }
-/* Two-up rows are half as wide, so the notes wrap instead of being one clipped
-   line; only the identity lines (repo -> location, used_by) stay on one. */
+/* The notes wrap; only the identity lines (repo -> location, used_by) stay on
+   one. */
 .modelrow .mi > span.wrap { white-space:normal; overflow:visible }
 .modelrow .mi { display:flex; flex-direction:column; gap:2px; min-width:0 }
 .modelrow .mh { display:flex; align-items:center; gap:8px; min-width:0 }

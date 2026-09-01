@@ -1,23 +1,15 @@
 """Dataset image grouping — connected-components clustering on PE-Spatial grids.
 
-The grouping edge is the **same near-twin gate the miner uses**
-(:mod:`anime_tools.grouping.matching`): two images are connected when a large
-*fraction* of their pooled PE-Spatial patch cells find a distinctive mutual
-nearest neighbour. A cheap unit-norm CLS-cosine prefilter (``sim_min``) prunes
-obviously-unrelated pairs first, so the per-artist pass stays ``O(candidate
-pairs)`` rather than ``O(n^2)`` grids.
+Two images are connected when a large *fraction* of their pooled PE-Spatial patch
+cells find a distinctive mutual nearest neighbour
+(:mod:`anime_tools.grouping.matching`); a CLS-cosine prefilter (``sim_min``)
+prunes obviously-unrelated pairs first so the per-artist pass stays ``O(candidate
+pairs)``.
 
-Why grid match, not CLS cosine: a single global descriptor collapses an image to
-one vector, so a tight threshold misses near-duplicates that differ in one region
-while a loose one merges unrelated images sharing a palette. The cell-level gate
-tracks *spatial* overlap, which is what "the same picture" means.
-
-Scope is **per-artist**: components are computed independently within each
-top-level folder under the source dir, so two artists never merge into one group.
-
-``connected_components`` is pure (union-find over a precomputed edge list) and
-``build_groups`` imports the torch-backed primitives lazily, so importing this
-module for the clustering / manifest schema stays torch-free.
+Scope is per-artist: components are computed independently within each top-level
+folder under the source dir. ``build_groups`` imports the torch-backed primitives
+lazily, so importing this module for the clustering / manifest schema stays
+torch-free.
 """
 
 from __future__ import annotations
@@ -29,14 +21,14 @@ import numpy as np
 from anime_tools._json import write_json
 
 MANIFEST_VERSION = 2
-# Stage-B near-twin gate — same semantics as the miner's defaults, but looser on
-# the inlier fraction so a partial overlap (one edited region) still groups.
+# Stage-B near-twin gate; looser on the inlier fraction than the miner's defaults
+# so a partial overlap (one edited region) still groups.
 DEFAULT_CELL_MATCH_MIN = 0.93
 DEFAULT_MATCH_FRAC_MIN = 0.25
 DEFAULT_SIM_MIN = (
     0.5  # Stage-A CLS-cosine prefilter (loose; the grid match is the gate)
 )
-DEFAULT_GRID = 7  # pooled grid edge (G×G cells), mirrors the miner
+DEFAULT_GRID = 7  # pooled grid edge (G×G cells)
 DEFAULT_RATIO = 0.8  # ratio-test distinctiveness (lower = stricter)
 
 
@@ -100,8 +92,8 @@ def _grid_match_edges(
 ) -> list[tuple[int, int]]:
     """Near-twin edges within one artist bucket (Stage-A prefilter → Stage-B grid).
 
-    Runs on ``device`` (the embedding GPU when available). Pooling and the pair
-    match are chunked so peak memory is bounded regardless of bucket size.
+    Runs on ``device``. Pooling and the pair match are chunked so peak memory is
+    bounded regardless of bucket size.
     """
     import torch
 
@@ -151,12 +143,9 @@ def build_groups(
     """Embed every image under ``source_dir``, cluster per-artist, write a manifest.
 
     ``embedder`` is a :class:`anime_tools.grouping.features.Embedder`; its
-    ``.device`` also hosts the grid-match pass. Grouping never loads an encoder
-    itself.
-
-    Reuses the shared feature cache, so a re-run — or a re-run at different
-    thresholds — is just the matching pass. Returns the manifest dict (also
-    written to ``out_path`` as JSON).
+    ``.device`` also hosts the grid-match pass. Reuses the shared feature cache,
+    so a re-run at different thresholds is just the matching pass. Returns the
+    manifest dict (also written to ``out_path`` as JSON).
     """
     # Lazy torch-backed imports so the pure helpers above import without torch.
     import sys
@@ -204,8 +193,7 @@ def build_groups(
         for p in paths
     ]
     dev = embedder.device
-    # Keyed by rel-posix path (not stem): two subfolders' ``1.webp`` are
-    # distinct images and must not share one embedding.
+    # Keyed by rel-posix path, not stem: two subfolders' ``1.webp`` are distinct.
     feats = embed_members(embedder, members, batch_size, num_workers, root=source_dir)
 
     def _rel_key(p: Path) -> str:
@@ -214,8 +202,7 @@ def build_groups(
     groups: list[dict] = []
     gid = 0
     n_grouped = 0
-    # tqdm to stderr (GUI bar): the only progress signal on a cached re-run,
-    # where embedding is skipped.
+    # tqdm to stderr (GUI bar): the only progress signal on a cached re-run.
     for artist in tqdm(
         sorted(by_artist), desc="grouping", unit="artist", file=sys.stderr
     ):

@@ -2,13 +2,10 @@ import { createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import { locale, localeName, LOCALES, setLocale, t } from "../i18n";
 import type { SettingsPane } from "./SettingsDialog";
 
-/** The ☰ menu: everything that is about the app rather than about the dataset
-    — the three Settings dialogs, the Hub token they all need, and the one
-    global "show the prose" preference. Those three rows are the only way to
-    each dialog: they are separate windows, not tabs of one, so this list is
-    where the choice between them is made. The sidebar is deliberately not in
-    here: it folds and unfolds on the edge it moves (`⟨` in the tree's own bar,
-    `⟩` on the rail it leaves behind), so the control is where the motion is. */
+/** The ☰ menu: the three Settings dialogs, the Hub token they all need, and the
+    global "show the prose" preference. The three rows are the only way to each
+    dialog, since they are separate windows rather than tabs. The sidebar fold is
+    not here — it lives on the edge it moves. */
 export function HeaderMenu(props: {
   hasToken: boolean;
   /** Catalog rows still to download — the badge the Models tab used to carry. */
@@ -40,8 +37,7 @@ export function HeaderMenu(props: {
     });
   });
 
-  /** Every item closes the menu; a menu that stays open behind a dialog is a
-      menu you have to dismiss twice. */
+  /** Every item closes the menu, so a dialog does not open behind one. */
   const pick = (run: () => void) => () => {
     setOpen(false);
     run();
@@ -77,9 +73,8 @@ export function HeaderMenu(props: {
             </span>
           </button>
           <hr />
-          {/* The one row that is not a command: the language buttons switch in
-              place and deliberately leave the menu open, so the label you just
-              picked can be read in its own language before it closes. */}
+          {/* The language buttons switch in place and leave the menu open, so
+              the label just picked can be read in its own language. */}
           <div class="hmenu-lang">
             <span>{t().menu.language}</span>
             <span>

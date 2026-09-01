@@ -3,10 +3,9 @@
     python bench/sam3_soft_prompt/sheet_html.py results/<run> [results/<run2> ...] \
         [--out results/compare.html] [--floor 0.3]
 
-Writes a self-contained HTML (sheet images referenced by relative path) with the
-summary table across floors and, per holdout image, every prompt's sheet
-(`[MIT red | soft prompt blue]`) side by side with its hit / FP counts at
-``--floor``. Open the file in a browser.
+Writes one HTML page — the summary table across floors, then every prompt's
+sheet per holdout image with its hit / FP counts at ``--floor``. Sheet images
+are referenced by relative path, so the page has to stay beside the runs.
 """
 
 from __future__ import annotations

@@ -11,22 +11,20 @@ export interface Field {
   help: string;
   required: boolean;
   path: boolean;
-  /** Which chooser the `…` opens — derived server-side from the flag's name,
-      like everything else about it. */
+  /** Which chooser the `…` opens — derived server-side from the flag's name. */
   path_kind: "dir" | "file";
   group: string;
   negate: string | null;
   label: string;
   /** The dest of the boolean this field hangs off, making its group a *drawer*
       (`use_sam` on the text-mask stage). The gate carries its own dest here, so
-      the form knows which field is the checkbox and which are what it folds
-      away; the server drops a shut drawer's values from the argv. */
+      the form knows which field is the checkbox; the server drops a shut
+      drawer's values from the argv. */
   gate: string | null;
   /** Bound to a dataset root — filled server-side from Settings, hidden here. */
   root: RootName | null;
   /** Bound to a Settings *stage default* (`path_pattern` / `tagger_dir` /
-      `checkpoint` / `prompt_embed`) — filled server-side the same way, and
-      hidden here for the same reason. */
+      `checkpoint` / `prompt_embed`) — filled server-side, hidden here. */
   setting: string | null;
   /** This stage's own path under the Settings `report_root` (`captions/autotag`,
       `groups/groups.json`): bound server-side, so hidden here too. Export's
@@ -34,31 +32,30 @@ export interface Field {
   report: string | null;
   /** This generator's own tail(s) under the Settings `mask_root` (`masks_sam`,
       `masks_mit`): bound and hidden the same way. A list on the merge, which
-      names both generators' trees in one flag and so moves with them. */
+      names both generators' trees in one flag. */
   mask: string | string[] | null;
   /** Auto-detected by the stage (`--device`): never shown, never sent. */
   auto: boolean;
   /** Bound like the four above, but shown anyway (`stages.PANEL_FIELDS`):
       Export's destinations are a per-run choice, so the field opens on the
-      Settings value the server resolved into `default` and what is typed over
+      Settings value the server resolved into `default`, and what is typed over
       it wins for that run. Blank falls back to Settings. */
   overridable: boolean;
   /** Not in the stage's `stages.BASIC_FIELDS` row: an ordinary field, folded
       away until the form's Advanced toggle is on. Never set on a drawer's own
-      gate or on a required field — the form cannot do without either. */
+      gate or on a required field. */
   advanced: boolean;
 }
 
 /** The argparse dest a replay-capable stage exposes. Like `--apply` it is
-    GUI-managed, not typed into the form: the Apply dialog is its only route. */
+    GUI-managed, never typed into the form. */
 export const REPLAY_FIELD = "from_report";
 
 /** Mirrors `stages.REPORT_SETTING` / `stages.MASK_SETTING`: the two stage
     defaults with no argparse field behind them, so the Settings dialog renders
-    their rows by hand. Neither can be a plain stage default: several stages
-    spell `--report_dir` / `--mask-dir` identically, and one shared value would
-    have them write over each other, so only the *root* is the setting and each
-    stage keeps its own tail. */
+    their rows by hand. Only the *root* is the setting and each stage keeps its
+    own tail — several stages spell `--report_dir` / `--mask-dir` identically and
+    one shared value would have them write over each other. */
 export const REPORT_SETTING = "report_root";
 export const MASK_SETTING = "mask_root";
 
@@ -76,18 +73,15 @@ export interface Stage {
   available: boolean;
   error?: string;
   doc: string;
-  /** Has `--apply`: the Run passes it, so the pass writes rather than
-      describing. A stage without one never had the distinction and writes
-      either way. */
+  /** Has `--apply`: the Run passes it. A stage without one writes either way. */
   apply?: boolean;
   /** Has `--from_report`, which is also what says its report is a caption diff:
-      the run bar reads that report back for the panel, and Undo replays it
-      backwards. */
+      the run bar reads it back for the panel, and Undo replays it backwards. */
   replay?: boolean;
   /** Has `--path_pattern`: a run can be narrowed to the selected image. */
   scoped?: boolean;
-  /** Kept out of the dock: not something you run by hand. `resize` is the one
-      -- it runs as a preflight, and its knobs live in the Settings dialog. */
+  /** Kept out of the dock: `resize` runs as a preflight, and its knobs live in
+      the Settings dialog. */
   hidden?: boolean;
   /** The stage id that runs automatically before this one, or null. */
   preprocess?: string | null;
@@ -196,8 +190,7 @@ export interface DatasetItem {
   name: string;
   stem: string;
   /** One flag per `DatasetList.ladder` rung — the row's caption dot strip.
-      Keyed by rung rather than spelled out as fields, so a rung the server
-      adds appears here without a type change. */
+      Keyed by rung, so a rung the server adds needs no type change. */
   captions: Record<string, boolean>;
   /** The resized image exists under the dst root — matched on stem, since
       resize may have re-encoded. Everything downstream of resize walks that
@@ -207,8 +200,8 @@ export interface DatasetItem {
 }
 
 /** One rung of the server's caption ladder (`dataset.CAPTION_LADDER`). The
-    sidebar draws its dot strip from these rather than from a copy of the names,
-    which is what keeps the strip and `DatasetItem.captions` in step. */
+    sidebar draws its dot strip from these, which keeps the strip and
+    `DatasetItem.captions` in step. */
 export interface Rung {
   kind: VersionKind;
   editable: boolean;
@@ -241,7 +234,7 @@ export interface DatasetGroups {
   /** Built by an older manifest version; the components still list. */
   stale: boolean;
   /** The tree it was built from. Not the `src` root ⇒ the rels join onto
-      nothing, which is the one failure worth saying out loud. */
+      nothing. */
   source_dir: string;
   groups: DatasetGroup[];
 }
@@ -272,9 +265,9 @@ export interface Clause {
 }
 
 /** One tag's half-open `[start, end)` slice of the caption text the parse was
-    run on — `position_clauses.TagSpan`. The editor draws a box around each one,
-    which is how a tag is delimited on screen without the browser ever deciding
-    where a tag ends. `clause` is -1 in the flat bag, else the clause it is in. */
+    run on — `position_clauses.TagSpan`. The editor boxes each one, so the
+    browser never decides where a tag ends. `clause` is -1 in the flat bag, else
+    the clause it is in. */
 export interface Span {
   start: number;
   end: number;
@@ -293,17 +286,17 @@ export interface Parsed {
     stage writes against (`proposals.CAPTION_KIND`). */
 export type CaptionKind = "master" | "revised";
 
-/** One rung of the caption ladder, by id. The file rungs are named
-    (`master`, `revised`, the `history` and `variants` placeholders); a sidecar
-    rung expands server-side into one id per caption it holds, so `v0`, `r1` and
-    `revised@2` are rung ids too and the set is not closed here. */
+/** One rung of the caption ladder, by id. The file rungs are named (`master`,
+    `revised`, the `history` and `variants` placeholders); a sidecar rung expands
+    server-side into one id per caption it holds, so `v0`, `r1` and `revised@2`
+    are rung ids too and the set is not closed here. */
 export type VersionKind = CaptionKind | "history" | "variants" | (string & {});
 
 /** What a tree row can select: the image itself, or one caption under it. */
 export type NodeKind = "image" | VersionKind;
 
-/** The selection: one dataset image, and which of its files is on screen. It
-    is mirrored into the URL hash (`#rel|kind`), so a GUI link points at it. */
+/** The selection: one dataset image, and which of its files is on screen.
+    Mirrored into the URL hash (`#rel|kind`), so a GUI link points at it. */
 export interface Sel {
   rel: string;
   kind: NodeKind;
@@ -313,15 +306,14 @@ export interface Sel {
     is stored in, and the near-twin components the Groups stage found in it. */
 export type TreeMode = "tree" | "groups";
 
-/** One caption of one image: a rung of the ladder, already parsed.
-    `editable` is the rung's, not the file's — a variant is read-only whether or
-    not it is on disk, and Phase 2 makes the original master read-only the same
-    way. */
+/** One caption of one image: a rung of the ladder, already parsed. `editable`
+    is the rung's, not the file's — a variant is read-only whether or not it is
+    on disk. */
 export interface CaptionEntry {
   kind: VersionKind;
   /** The `CAPTION_LADDER` rung this came out of, which is not always its
-      `kind`: an expanded sidecar entry is called `v1` or `revised@2`, and this
-      is what it wears the colour and the label of. */
+      `kind`: an expanded sidecar entry is called `v1` or `revised@2`, and wears
+      the rung's colour and label. */
   rung: VersionKind;
   /** The one extra line a badge carries — a history entry's who and when.
       Empty for a file rung. */
@@ -340,9 +332,8 @@ export interface CaptionEntry {
 // ---- proposals (mirrors anime_tools/gui/proposals.py) ----
 
 /** What a finished Run changed about one image, as its report wrote it down.
-    A Run writes for real, so `before` is what the caption used to say — the
-    version now sitting one badge to the left of it. Both texts arrive already
-    parsed: the browser never splits a caption itself. */
+    A Run writes for real, so `before` is what the caption used to say. Both
+    texts arrive already parsed: the browser never splits a caption itself. */
 export interface Proposal {
   rel: string;
   image: string;
@@ -355,8 +346,8 @@ export interface Proposal {
   after_parsed: Parsed | null;
 }
 
-/** The index of a Run's changes: which images it touched. The full
-    text of one comes from `api.proposal` as the selection lands on it. */
+/** The index of a Run's changes: which images it touched. The full text of one
+    comes from `api.proposal` as the selection lands on it. */
 export interface ProposalIndex {
   stage: string;
   apply: boolean;
@@ -389,14 +380,10 @@ export interface ImageInfo {
   too_small: boolean | null;
 }
 
-/** One line the OCR stage read out of the image, from `{stem}.ocr.txt`.
-
-    Not a caption and not a version of one: `box` is where it sits in the image
-    (the axis-aligned bound of the detector's quad) and `score` is the
-    recognizer's mean per-character confidence. There is no language field: the
-    model reads fifty languages and returns a string, never a language, so one
-    could only be guessed back off the characters — and a guess drawn from a
-    two-character fragment is confident and worthless. Generated, so the panel
+/** One line the OCR stage read out of the image, from `{stem}.ocr.txt`. Not a
+    caption: `box` is the axis-aligned bound of the detector's quad and `score`
+    the recognizer's mean per-character confidence. The model returns a string
+    and never a language, so there is no language field. Generated, so the panel
     renders it read-only. */
 export interface OcrLine {
   seq: number;
@@ -419,16 +406,15 @@ export interface ItemDetail {
   /** Every caption this image has, oldest first: the ladder's file rungs, then
       the sidecar expanded into one entry per label. The panel's badge row. */
   versions: CaptionEntry[];
-  /** The text found *in* the picture, in reading order — empty for an image the
-      OCR stage never ran on, and for one it ran on and found nothing in. The
-      two are deliberately the same answer here: both mean "no text on file". */
+  /** The text found *in* the picture, in reading order. Empty both for an image
+      the OCR stage never ran on and for one it found no text in. */
   ocr: OcrLine[];
 }
 
 /** One Danbooru tag as the KB knows it — `/api/tags/describe`, behind a click
     on any tag chip. `installed` false means the KB CSV was never downloaded
     (Settings › Models › Danbooru tag KB); `known` false means it is downloaded
-    and this simply is not a Danbooru tag (an Anima quality tag, a typo). */
+    and this is not a Danbooru tag (an Anima quality tag, a typo). */
 export interface TagInfo {
   tag: string;
   installed: boolean;

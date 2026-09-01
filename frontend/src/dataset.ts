@@ -16,12 +16,9 @@ function parseHash(): Sel | null {
 /** The image browser: the listing the sidebar draws, which row is selected, and
  * the detail of that one row.
  *
- * The selection is the page's address — it is mirrored into the location hash
- * both ways, so a link into the GUI opens on an image and the Back button walks
- * the images you looked at. Everything else here exists to keep the listing
- * truthful without re-walking the tree: `reloadRels` re-stats named rows in
- * place after a job wrote, and `onSaved` folds a just-saved caption back into
- * the row and the open item.
+ * The selection is mirrored into the location hash both ways, so a link into the
+ * GUI opens on an image and Back walks the images you looked at. `reloadRels`
+ * and `onSaved` keep the listing truthful without re-walking the tree.
  */
 export function createDataset(config: Config) {
   const [query, setQuery] = createSignal("");
@@ -32,9 +29,9 @@ export function createDataset(config: Config) {
     ([q]) => api.dataset({ q }),
   );
   const [sel, setSel] = createSignal<Sel | null>(parseHash());
-  /** Which ordering the sidebar is showing. The grouping manifest is only
-      fetched while group view is up -- it is a file the Groups stage may never
-      have written, and the tree view has no use for it. */
+  /** Which ordering the sidebar is showing. The grouping manifest is fetched
+      only while group view is up -- the Groups stage may never have written
+      it. */
   const [treeMode, setTreeMode] = persisted<TreeMode>("treemode", "tree", (raw) =>
     raw === "groups" ? "groups" : "tree",
   );
@@ -120,7 +117,7 @@ export function createDataset(config: Config) {
     if (rel && by.has(rel)) void refetchItem();
   }
 
-  /** Re-walk the whole tree — what a job that wrote *something unnamed* costs. */
+  /** Re-walk the whole tree, for a job whose report named nothing. */
   function reloadAll() {
     void refetchList();
     void refetchItem();

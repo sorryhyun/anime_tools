@@ -1,11 +1,9 @@
-"""The one tab-delimited caption sidecar format, and the two vocabularies on it.
+"""The tab-delimited caption sidecar format and the two vocabularies on it.
 
-``{stem}.variants.txt`` and ``{stem}.history.txt`` are one format
-(:mod:`anime_tools.captions._sidecar`) with two record shapes. These pin the
-format's own rules once -- the multi-dot stem, the tolerance for a hand-edit,
-the bounded split -- and then pin the two places the callers deliberately
-*differ*, so a later tidy-up cannot quietly make one of them stricter or laxer
-than the code it serves.
+``{stem}.variants.txt`` and ``{stem}.history.txt`` share
+:mod:`anime_tools.captions._sidecar` with two record shapes. Pins the format's
+rules (multi-dot stem, hand-edit tolerance, bounded split) and the two places
+the callers deliberately differ.
 """
 
 from __future__ import annotations
@@ -49,7 +47,7 @@ def test_the_stem_keeps_its_dots():
 
 
 def test_both_public_path_builders_are_the_shared_rule():
-    """Neither module gets to have its own opinion about the stem."""
+    """Both public path builders use the shared stem rule."""
     for p in (Path("d/a.png"), Path("d/a.b.c.txt"), Path("a")):
         assert variants_sidecar_path(p) == sidecar_path(p, VARIANTS_SIDECAR_SUFFIX)
         assert history_sidecar_path(p) == sidecar_path(p, HISTORY_SIDECAR_SUFFIX)
@@ -59,7 +57,7 @@ def test_the_header_is_a_comment_and_names_its_kind():
     assert sidecar_header("variants").startswith("#")
     assert "variants" in sidecar_header("variants")
     assert "history" in sidecar_header("history")
-    # One line: a header that wrapped would parse as a second, malformed record.
+    # One line: a wrapped header would parse as a second, malformed record.
     assert "\n" not in sidecar_header("history")
 
 
@@ -87,11 +85,7 @@ def test_a_crlf_sidecar_is_still_a_sidecar(tmp_path: Path):
 
 
 def test_the_split_is_bounded_so_the_last_field_keeps_its_tabs(tmp_path: Path):
-    """Only the first ``fields - 1`` tabs are delimiters.
-
-    A caption is comma-separated and does not contain tabs, but the format does
-    not depend on that: the text rides last precisely so it cannot be cut.
-    """
+    """Only the first ``fields - 1`` tabs are delimiters; the text rides last."""
     p = tmp_path / "a.txt"
     write_rows(p, sidecar_header("history"), [("1", "now", "edit", "a\tb\tc")])
     assert read_rows(p, 4) == [["1", "now", "edit", "a\tb\tc"]]
@@ -108,7 +102,7 @@ def test_write_then_read_round_trips_and_makes_the_parent(tmp_path: Path):
 
 
 def test_an_empty_row_set_still_leaves_a_header(tmp_path: Path):
-    """The format has no delete case -- that is history's own (see below)."""
+    """The format has no delete case; that is history's own."""
     p = tmp_path / "a.txt"
     write_rows(p, sidecar_header("variants"), [])
     assert p.read_text(encoding="utf-8") == sidecar_header("variants") + "\n"
@@ -119,13 +113,8 @@ def test_an_empty_row_set_still_leaves_a_header(tmp_path: Path):
 
 
 def test_a_missing_sidecar_is_no_history_but_a_bug_for_variants(tmp_path: Path):
-    """The one contract difference between the two readers.
-
-    A caption that has never been rewritten has no history, so ``read_history``
-    answers with the empty list. Every ``read_variants_sidecar`` caller has
-    already established the file is there before it asks, so a missing one is
-    the caller's mistake and stays an error rather than an empty variant set.
-    """
+    """A missing file is an empty list for ``read_history`` and an error for
+    ``read_variants_sidecar``, whose callers have already established it exists."""
     missing = tmp_path / "nope.txt"
     assert read_history(missing) == []
     with pytest.raises(OSError):
@@ -149,14 +138,9 @@ def test_only_history_deletes_itself_when_it_is_empty(tmp_path: Path):
 
 
 def test_the_two_record_shapes_are_what_each_module_says_they_are(tmp_path: Path):
-    """A history record is four fields, a variant two -- and the arities are not
-    interchangeable in the direction that matters.
-
-    Asked for *more* fields than a line carries, the reader drops it: a variants
-    sidecar read as history is empty, which is why each module names its own
-    arity rather than sniffing one. The other direction is not symmetric, and
-    that is the bounded split working as designed rather than a leak -- asked
-    for fewer, the surplus tabs simply ride along inside the last field.
+    """A history record is four fields, a variant two. Asked for more fields than a
+    line carries, the reader drops it; asked for fewer, the surplus tabs ride
+    along inside the last field.
     """
     assert (HISTORY_FIELDS, VARIANTS_FIELDS) == (4, 2)
     variants = variants_sidecar_path(tmp_path / "a.png")

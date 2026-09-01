@@ -1,9 +1,8 @@
 """Anima Tagger checkpoint dir + dataset manifest, as their readers see them.
 
-:class:`TaggerCheckpoint` is the one read side of a checkpoint directory —
-``config.json`` / ``vocab.json`` / ``dataset.json``, the shared "run ``--mode
-build_vocab`` first" exit when a required one is absent, and the
-``index -> name`` map every consumer needs. :class:`TaggerManifest` is the
+:class:`TaggerCheckpoint` reads a checkpoint directory (``config.json`` /
+``vocab.json`` / ``dataset.json``) and exits with "run ``--mode build_vocab``
+first" when a required file is absent. :class:`TaggerManifest` is the
 trainable-sample list inside ``dataset.json``.
 """
 
@@ -72,8 +71,8 @@ class TaggerCheckpoint:
     """The three JSON files of a tagger checkpoint dir, read once.
 
     ``config`` and ``dataset`` are ``None`` when the file is absent and the
-    caller did not ``require`` it — a checkpoint published for inference ships
-    no ``dataset.json``, and the vocab-build modes run before ``config.json``
+    caller did not ``require`` it: an inference checkpoint ships no
+    ``dataset.json``, and the vocab-build modes run before ``config.json``
     exists.
     """
 
@@ -94,9 +93,8 @@ class TaggerCheckpoint:
 
         ``require`` names files from :data:`CHECKPOINT_FILES`; anything present
         but unrequired is read too, so a caller that merely *prefers* the
-        manifest (``derive_groups``' co-occurrence source) just tests for
-        ``None``. ``backend`` asserts ``config.json[backend]`` — and implies
-        ``require=("config", …)``, since there is nothing to assert otherwise.
+        manifest just tests for ``None``. ``backend`` asserts
+        ``config.json[backend]`` and implies ``require=("config", …)``.
         """
         d = Path(path)
         wanted = set(require) | ({"config"} if backend else set())

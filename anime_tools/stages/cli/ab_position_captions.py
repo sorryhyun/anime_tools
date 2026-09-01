@@ -1,15 +1,12 @@
 """A/B two `caption-position` configurations side by side, as contact sheets.
 
-Proposes each image **twice** off one detection + tagging pass, so both sides see
+Proposes each image twice off one detection + tagging pass, so both sides see
 identical crops and only the clause rule under test can differ. `--a_flags` /
-`--b_flags` take any `position_captions.py` flag.
+`--b_flags` take any `position_captions.py` flag. One page per disagreeing image
+plus an `index.html`, most-changed-first; images where both sides agree are
+counted and skipped.
 
-One page per disagreeing image plus an `index.html`, most-changed-first; images
-where both sides agree are counted and skipped. Read-only: writes only under
-`--out`, never a caption.
-
-    make daemon-run ARGS="anime_tools/stages/cli/ab_position_captions.py \\
-        --path_pattern 'ama_mitsuki/*'"
+Read-only: writes only under `--out`, never a caption.
 """
 
 from __future__ import annotations
@@ -31,10 +28,8 @@ from anime_tools.captions.position_clauses import parse_caption
 from anime_tools.stages.cli._models import load_tagger
 from anime_tools.stages.cli.position_captions import options_from_flag_string
 
-# The sheet geometry and ink are the review sheet's, imported rather than
-# retyped: an A/B page and a review page are read in the same sitting, so a
-# background that drifted between them would read as a difference in the thing
-# under test. Only what this sheet decides for itself is declared below.
+# Geometry and ink are shared with the review sheet, so a background that
+# drifted between them cannot read as a difference in the thing under test.
 from anime_tools.stages.multiview_sheet import (
     _BG,
     _DIM,
@@ -55,8 +50,8 @@ _PANEL = 560  # narrower than the review sheet's: two columns share the width
 _RULE = (52, 52, 60)
 # A-vs-B contrast, this sheet's own; boxes use the shared BOX_COLORS so a box
 # means the same subject it means on a review sheet.
-_A = _DIM  # the incumbent reads as neutral…
-_B = (80, 200, 120)  # …the challenger as the thing to look at
+_A = _DIM  # incumbent
+_B = (80, 200, 120)  # challenger
 
 
 def parse_args() -> argparse.Namespace:
@@ -217,8 +212,8 @@ def main() -> None:
 
     detect_args.device = args.device
     detect_fn, part_detect_fn, _model, _proc = build_detect_fn(detect_args)
-    # Detector-side A/B: a B side with a different subject prompt gets its own
-    # detector on the same loaded SAM3.
+    # A B side with a different subject prompt gets its own detector on the same
+    # loaded SAM3.
     b_detect_fn, b_part_detect_fn = detect_fn, part_detect_fn
     if (b_detect_args.prompt, b_detect_args.prompt_embed) != (
         detect_args.prompt,
@@ -244,7 +239,7 @@ def main() -> None:
         stats["seen"] += 1
         rel = str(image_path.relative_to(dst))
         # The master, not the revised caption: after one `--apply` the revised
-        # side carries clauses and `is_candidate` would reject the whole corpus.
+        # side carries clauses and `is_candidate` would reject the corpus.
         caption_path = (src / rel).with_suffix(".txt")
         if not caption_path.exists():
             stats["no_caption"] += 1

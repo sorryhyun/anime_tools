@@ -3,14 +3,7 @@
 ``anime_tools.gui.stages`` builds the GUI form by introspecting each stage's
 ``build_parser()``, so an argparse detail is a UI contract: a dropped ``dest=``
 renames a form field, a lost ``--foo-bar`` alias breaks a saved command line,
-and a drifted default silently changes what a run does. Before
-``stages/cli/_args.py`` and ``_detection.py`` existed those declarations were
-retyped once per parser — and the multiview audit's copy had already lost every
-long-form alias, most of its help, and (a live bug) a whole option field.
-
-These tests are the standing version of the before/after schema snapshot that
-guarded the consolidation: they assert the shared blocks still produce one
-spelling everywhere, and that the flags and the options they build stay in step.
+and a drifted default silently changes what a run does.
 """
 
 from __future__ import annotations
@@ -51,9 +44,8 @@ ALL_STAGES = {
 }
 
 
-# Declared in the detection group but read off the namespace by
-# ``build_detect_fn`` rather than through the options object: the soft prompt is
-# a tensor the detector loads, not a threshold the pipeline runs under.
+# Declared in the detection group but read off the namespace by ``build_detect_fn``
+# rather than through the options object.
 DETECTOR_ONLY = frozenset({"prompt_embed"})
 
 
@@ -93,14 +85,8 @@ def parsers() -> dict[str, dict[str, argparse.Action]]:
 def test_shared_flags_keep_one_spelling(parsers, dest, flags, default):
     """Every stage that takes one of these takes it identically.
 
-    ``--report_dir``'s default is per-stage (it names the stage's own report
-    directory), so only its spelling is pinned; ``correct_captions`` requires
-    its roots rather than defaulting them, and is exempt on that one point.
-    ``--checkpoint`` is declared once in ``masking/_sam3.py``, beside the
-    ``load_sam3`` it feeds, so the download button and every loader name the
-    same file; ``--prompt_embed`` comes from ``_detection.py`` the same way.
-    Both are ⚙ Settings stage defaults in the GUI, which only holds while every
-    stage that takes one takes it identically.
+    ``--report_dir``'s default is per-stage, so only its spelling is pinned;
+    ``correct_captions`` requires its roots rather than defaulting them.
     """
     seen = 0
     for name, acts in parsers.items():
@@ -117,7 +103,7 @@ def test_shared_flags_keep_one_spelling(parsers, dest, flags, default):
 
 
 def test_every_caption_stage_is_dry_run_by_default(parsers):
-    """``--apply`` is the whole safety model: nothing is written without it."""
+    """Nothing is written without ``--apply``."""
     for name in CAPTION_STAGES:
         apply_action = parsers[name]["apply"]
         assert apply_action.option_strings == ["--apply"]
@@ -125,18 +111,15 @@ def test_every_caption_stage_is_dry_run_by_default(parsers):
 
 
 def test_report_dir_defaults_are_distinct(parsers):
-    """Each stage reports into its own directory — a shared default would have
-    one stage's ``--from_report`` replay read another's report."""
+    """Each stage reports into its own directory, so one stage's ``--from_report``
+    cannot read another's report."""
     defaults = [parsers[name]["report_dir"].default for name in CAPTION_STAGES]
     assert len(set(defaults)) == len(defaults)
 
 
 def test_the_curated_apply_reads_the_report_the_audit_writes():
-    """``audit_apply_curated``'s accept list names rows of the audit's
-    ``report.json``, so its ``--report`` default is the audit's
-    ``--report_dir`` default plus the file written there — one path split in
-    half, and the halves have drifted apart before (the GUI now binds both to
-    the Settings ``report_root``, which only makes sense while they agree)."""
+    """``audit_apply_curated``'s ``--report`` default is the audit's
+    ``--report_dir`` default plus the file written there."""
     report = actions(audit_apply_curated.build_parser())["report"]
     assert report.default == f"{audit_multiview.DEFAULT_REPORT_DIR}/report.json"
 
@@ -145,10 +128,8 @@ def test_the_curated_apply_reads_the_report_the_audit_writes():
 
 
 def test_the_two_sam3_stages_declare_identical_detection_flags(parsers):
-    """The audit imports ``build_detect_fn`` from the position CLI and hands it
-    its own namespace, so a flag that differs between them is a detector that
-    behaves differently for no stated reason. Only the flags one stage pins for
-    itself (:data:`OPTIONAL_FLAGS`) and its help text may differ.
+    """The audit hands its own namespace to the position CLI's ``build_detect_fn``,
+    so only :data:`OPTIONAL_FLAGS` and help text may differ.
     """
     position, audit = parsers["position"], parsers["audit"]
     shared = detection_dests(position_captions) & detection_dests(audit_multiview)
@@ -161,22 +142,17 @@ def test_the_two_sam3_stages_declare_identical_detection_flags(parsers):
 
 
 def test_the_audit_pins_the_flags_it_does_not_ask_for(parsers):
-    """``min_instances`` is what the audit *is* (two subjects on a `1girl`
-    caption), and it never blanks crops or relaxes a strict count — so it
-    declares none of the three and takes the dataclass default."""
+    """The audit declares none of :data:`OPTIONAL_FLAGS` and takes the dataclass
+    defaults; the position stage declares all of them."""
     for dest in OPTIONAL_FLAGS:
         assert dest not in parsers["audit"], f"the audit now declares {dest}"
         assert dest in parsers["position"], f"the position stage lost {dest}"
 
 
 def test_the_sam3_mask_stages_share_the_catalog_flags():
-    """The two masking CLIs are not in ``ALL_STAGES`` above because they belong
-    to the *masking* family (which spells ``--path-pattern`` its own way). What
-    they do share is the ⚙ Settings stage defaults, declared in
-    ``masking/_sam3.py`` beside the loaders they feed — a drift here is a
-    Download button that writes where no loader looks. The text stage takes
-    ``--checkpoint`` alone: its prompts are all textual, and ``--prompt_embed``
-    stands in for the *subject* phrase and nothing else.
+    """The masking CLIs share the ⚙ Settings stage defaults declared in
+    ``masking/_sam3.py``. The text stage takes ``--checkpoint`` alone, since
+    ``--prompt_embed`` stands in for the subject phrase only.
     """
     masks, position, text = (
         actions(generate_masks.build_parser()),
@@ -192,9 +168,7 @@ def test_the_sam3_mask_stages_share_the_catalog_flags():
 
 
 def test_the_sam3_mask_stage_defaults_to_the_phrase_its_soft_prompt_encodes():
-    """``--prompt_embed`` stands in for :data:`SUBJECT_PROMPT` and nothing else,
-    so a default ``--focus-prompts`` naming some other phrase would leave the
-    shipped soft prompt loaded and unused."""
+    """The default ``--focus-prompts`` is the phrase ``--prompt_embed`` encodes."""
     args = generate_masks.build_parser().parse_args(
         ["--image-dir", "i", "--mask-dir", "m"]
     )
@@ -208,8 +182,7 @@ def test_a_prompt_flag_is_a_comma_separated_list():
         "text",
     )
     assert generate_masks.prompt_list("") == ()
-    # The GUI drops a blank field back to the default, so "none of them" needs
-    # a word — the one --prompt_embed already takes.
+    # The GUI drops a blank field back to the default, so "none of them" needs a word.
     assert generate_masks.prompt_list("none") == ()
 
 
@@ -217,9 +190,8 @@ def test_a_prompt_flag_is_a_comma_separated_list():
 
 
 def test_detection_options_reads_every_detection_flag_the_parser_declares():
-    """A knob added to ``add_detection_args`` but not to ``detection_options``
-    parses fine and does nothing — the failure mode this pairing exists to make
-    impossible. Every detection-group dest must reach the options object.
+    """Every detection-group dest reaches the options object; one that does not
+    would parse fine and do nothing.
     """
     parser = position_captions.build_parser()
     declared = detection_dests(position_captions) - DETECTOR_ONLY
@@ -239,12 +211,8 @@ def _twist(value):
 
 
 def test_every_option_field_is_wired_to_the_flag_that_names_it():
-    """The two halves together cover the whole dataclass.
-
-    Field by field: change the namespace value, rebuild, and require the option
-    to move. A field that does not move is one ``build_options_from_args``
-    stopped passing through — the flag still parses, the run still succeeds,
-    and the knob silently does nothing.
+    """Field by field: twist the namespace value, rebuild, and require the option
+    to move — a field that does not is one ``build_options_from_args`` drops.
     """
     parser = position_captions.build_parser()
     dests = {a.dest for a in parser._actions}
@@ -262,10 +230,8 @@ def test_every_option_field_is_wired_to_the_flag_that_names_it():
 
 
 def test_the_audit_builds_its_options_off_the_shared_detection_half():
-    """``detection_options(args, min_instances=2, …)`` — the audit's whole
-    options construction. It used to be an inline rebuild that had already
-    dropped ``mask_containment_threshold``; this pins that the shared values
-    arrive and the pinned ones win.
+    """The audit's options come from ``detection_options(args, min_instances=2)``:
+    the shared values arrive and the pinned ones win.
     """
     audit_args = audit_multiview.build_parser().parse_args([])
     position_args = position_captions.build_parser().parse_args([])
@@ -283,21 +249,12 @@ def test_the_audit_builds_its_options_off_the_shared_detection_half():
 
 
 def test_the_device_flag_has_no_copies_left():
-    """One ``--device`` declaration, imported — not eleven re-typed ones.
+    """``--device`` is declared only in ``_device.py``.
 
-    ``device`` is a :data:`anime_tools.gui.stages.AUTO_FIELDS` dest: neither
-    shown on the form nor put on the argv, so the child resolves it itself
-    through :func:`anime_tools._device.resolve_device`. That only works while
-    every CLI defaults it to ``None``, and the flag lived next to the resolver
-    only in prose — eleven parsers spelled it out by hand, in four different
-    help texts and two of them with none at all.
-    ``test_shared_flags_keep_one_spelling`` above pins the result across the
-    stages; this pins the *cause*, so a twelfth parser cannot reintroduce the
-    drift by copying a line instead of calling :func:`_device.add_device_arg`.
-
-    ``bench/`` is outside the package and deliberately hard-defaults
-    ``--device`` to ``cuda`` (it is GPU-only training and eval), so it is not
-    in scope here and is not reached by ``rglob`` over the package either.
+    It is a :data:`anime_tools.gui.stages.AUTO_FIELDS` dest — neither shown on
+    the form nor put on the argv — so the child resolves it through
+    :func:`anime_tools._device.resolve_device`, which only works while every CLI
+    defaults it to ``None``.
     """
     from anime_tools import _device
 

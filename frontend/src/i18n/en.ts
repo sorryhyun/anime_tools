@@ -2,13 +2,12 @@
  * checked against.
  *
  * Stage titles, argparse labels and help, and the model catalog's rows are
- * Python-side text and stay as they arrive — re-typing them here is what
- * `frontend/CLAUDE.md` forbids; a caption, a path and a tag are data and are
- * never translated either.
+ * Python-side text and stay as they arrive; captions, paths and tags are data
+ * and are never translated.
  *
- * `en` is the schema: every other locale is declared `: Dict` (see `ko.ts`,
- * `ja.ts`, `zh.ts`), so a missing or misspelled key is a type error rather than
- * a blank label at runtime.
+ * `en` is the schema: every other locale is declared `: Dict` (`ko.ts`, `ja.ts`,
+ * `zh.ts`), so a missing or misspelled key is a type error rather than a blank
+ * label at runtime.
  */
 const en = {
   langName: "English",
@@ -125,7 +124,7 @@ const en = {
     revised: "revised",
     variants: "variants",
     /* One line per ladder rung, looked up as `where_<rung>`: what this version
-     *is*, which is the question a badge cannot answer by itself. */
+     *is*. */
     where_master: "hand-written; the stages only read it",
     where_history: "what this caption used to say, before the run that replaced it",
     where_revised: "stage output; the next run rewrites it and keeps this text as a version",

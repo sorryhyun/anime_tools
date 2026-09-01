@@ -1,12 +1,8 @@
 """Render one contact sheet per finding so a human can judge it at a glance.
 
-``report.json`` cannot show which boxes SAM drew or what the tagger read off
-each. A sheet puts that on one page: the full image with the boxes overlaid, the
-crops the tagger saw (colour-matched to their box), the identity read from each,
-and the proposed caption edit.
-
-One file per finding rather than one grid for the run, so a page can be flipped
-through, deleted as it is cleared, and named after the image it judges.
+One page per finding: the full image with the boxes overlaid, the crops the
+tagger saw (colour-matched to their box), the identity read from each, and the
+proposed caption edit.
 """
 
 from __future__ import annotations
@@ -37,14 +33,14 @@ _DIM = (150, 150, 158)
 _PANEL_BG = (36, 36, 42)
 
 # Per-verdict accent, and a per-instance palette so a crop tile's border matches
-# the box it came from — that pairing is the point of the sheet.
+# the box it came from.
 _VERDICT_COLOR = {
     MULTIPLE_VIEWS: (80, 200, 120),
     EXTRA_CHARACTER: (240, 160, 60),
 }
 _UNSURE_COLOR = (140, 150, 170)
-# The only copy: the review and A/B sheets import it, so a numbered box and its
-# crop card read as the same subject on all three surfaces.
+# Shared with the review and A/B sheets, so a numbered box and its crop card
+# read as the same subject on all three surfaces.
 BOX_COLORS = [
     (255, 90, 90),
     (90, 170, 255),
@@ -65,7 +61,7 @@ _FONT_CANDIDATES = (
 def _font(size: int, bold: bool = False) -> ImageFont.ImageFont:
     """A real TTF if the system or matplotlib has one, else PIL's bitmap default.
 
-    Falls back rather than raising: a sheet with an ugly font is still usable.
+    Never raises — a sheet with an ugly font is still usable.
     """
     names = list(_FONT_CANDIDATES)
     try:
@@ -107,13 +103,8 @@ def _text(
 
 
 def _identity_line(finding_crop) -> str:
-    """The identity the verdict used — or why it was thrown away.
-
-    Both discard paths are spelled out rather than shown as a blank: after "why
-    wasn't this a view pair" the reviewer's next question is which of the two
-    fired — a low-score box (shredded mask, so the read is noise) or a crop with
-    no legible identity in it.
-    """
+    """The identity the verdict used — or which discard path threw it away: a
+    low-score box, or a crop with no legible identity in it."""
     read = ", ".join(v for _, v in sorted(finding_crop.raw_groups.items()))
     if not finding_crop.reliable:
         return f"low-score box — identity ignored (read: {read or 'nothing'})"
@@ -251,11 +242,8 @@ def render_contact_sheet(
 
 
 def sheet_path(sheets_dir: Path, finding: MultiviewFinding) -> Path:
-    """Mirror the dataset layout, prefixed so a directory listing sorts by verdict.
-
-    Reviewing goes verdict-first, and a filename prefix is the only sort key a
-    plain image viewer offers.
-    """
+    """Mirror the dataset layout, prefixed so a directory listing sorts by
+    verdict — the only sort key a plain image viewer offers."""
     rel = Path(finding.image)
     stem = f"{finding.verdict.replace(' ', '-')}_{finding.confidence}_{rel.stem}.png"
     return sheets_dir / rel.parent / stem

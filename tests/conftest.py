@@ -3,7 +3,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-# CPU-only unless opted in (mirrors the trainer's suite; keeps runs deterministic).
+# CPU-only unless opted in.
 if os.environ.get("ANIMA_TEST_GPU") != "1":
     os.environ["CUDA_VISIBLE_DEVICES"] = ""
 

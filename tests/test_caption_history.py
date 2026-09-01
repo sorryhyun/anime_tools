@@ -1,9 +1,7 @@
 """The caption history sidecar: what a write replaces, kept as a version.
 
-A stage run writes for real now -- the run bar has no Apply gate -- so the text
-it overwrites has to survive somewhere or it is simply gone. These pin the three
-halves of that: the sidecar itself, the one caption write that pushes into it,
-and the ladder that turns it into badges.
+Three halves: the sidecar, the caption write that pushes into it, and the
+ladder that turns it into badges.
 """
 
 from __future__ import annotations
@@ -57,12 +55,8 @@ def test_nothing_worth_recording_is_not_recorded(tmp_path):
 
 
 def test_the_cap_drops_the_oldest_and_never_renumbers(tmp_path):
-    """A badge you are looking at must not become a different version.
-
-    Sequence numbers continue from the highest ever recorded rather than from
-    the list length, so trimming the front cannot make ``revised@2`` mean two
-    different captions at two different times.
-    """
+    """Sequences continue from the highest ever recorded, not the list length, so
+    trimming the front never renumbers a surviving version."""
     cap = tmp_path / "a.txt"
     for i in range(6):
         push_history(cap, f"tag{i}", by="position", limit=3)
@@ -92,8 +86,7 @@ def test_drop_history_removes_it(tmp_path):
 
 
 def test_the_caption_write_pushes_only_when_asked(tmp_path):
-    """``history_by`` is per call site, not automatic: a rung the ladder gives
-    no history rung would only accumulate a file nothing reads."""
+    """``history_by`` is per call site, not automatic."""
     cap = tmp_path / "a.txt"
     write_caption(cap, "1girl")
     write_caption(cap, "1girl, solo")
@@ -114,8 +107,7 @@ def test_creating_a_caption_records_no_version(tmp_path):
 
 
 def test_a_replay_files_the_same_version_the_live_pass_would(tmp_path):
-    """``ReplaySpec.history_by`` is what keeps ``--from_report --apply`` and the
-    stage's own apply writing the same two files."""
+    """``--from_report --apply`` files the same version the live pass would."""
     from anime_tools.stages.replay import apply_one
 
     cap = tmp_path / "a.txt"
@@ -175,7 +167,7 @@ def client(tmp_path, monkeypatch):
 
 
 def test_an_edit_is_a_version_and_the_badge_row_says_what_it_was(client):
-    """The panel's promise: an edit leaves what it replaced one badge away."""
+    """An edit leaves what it replaced one badge away."""
     c, _home = client
     r = c.put(
         "/api/dataset/item",
@@ -192,19 +184,14 @@ def test_an_edit_is_a_version_and_the_badge_row_says_what_it_was(client):
     ]
     was = it["versions"][1]
     assert was["text"] == "1girl, solo" and not was["editable"]
-    # It wears its rung's colour and its own label, and says who replaced it.
     assert was["rung"] == "history" and was["note"].startswith("edit · ")
-    # Already parsed, like every other version: the browser splits no caption.
+    # Already parsed: the browser splits no caption.
     assert was["parsed"]["flat_tags"] == ["1girl", "solo"]
     assert it["versions"][2]["text"] == "1girl, solo, smile"
 
 
 def test_the_master_rung_keeps_no_history(client):
-    """``image_dataset/`` is the input tree, so nothing of ours lands in it.
-
-    The ladder is the one declaration of which rungs keep versions
-    (``HISTORY_OF``), so this is the ladder's answer, not a second rule.
-    """
+    """``image_dataset/`` is the input tree: no history sidecar lands in it."""
     c, home = client
     c.put("/api/dataset/item", json={"rel": "a.png", "kind": "master", "text": "1boy"})
     assert not (home / "image_dataset" / ("a" + HISTORY_SIDECAR_SUFFIX)).exists()

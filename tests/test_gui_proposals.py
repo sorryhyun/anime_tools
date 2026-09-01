@@ -1,10 +1,8 @@
 """The Run → Apply → Undo loop, read off the stage reports.
 
-``Run`` writes a report; the caption panel shows it as a per-image diff; ``Apply``
-replays it; ``Undo`` reads the *apply* report back and puts the captions where
-they were. All three go through :mod:`anime_tools.gui.proposals`, which is what
-this file exercises — plus the one thing that can silently rot: its copy of each
-stage's report shape.
+Run writes a report, the panel shows it as a per-image diff, Apply replays it,
+and Undo reads the apply report back. All three go through
+:mod:`anime_tools.gui.proposals`, including its copy of each stage's report shape.
 """
 
 from __future__ import annotations
@@ -37,8 +35,7 @@ def home(tmp_path, monkeypatch):
     (src / "a.txt").write_text("1girl, solo", encoding="utf-8")
     _png(dst / "a.png")
     (dst / "a.txt").write_text("1girl, solo", encoding="utf-8")
-    # A jpg master re-encoded to png on the way into the resized tree: the join
-    # back from a report's ``image`` has to survive that.
+    # A jpg master re-encoded to png on the way into the resized tree.
     _png(src / "sub" / "b.jpg")
     _png(dst / "sub" / "b.png")
     return tmp_path
@@ -92,8 +89,7 @@ def _autotag_report(home: Path, *, apply: bool = False) -> Path:
 
 
 def test_proposals_are_keyed_by_dataset_rel(home, roots):
-    """Reports name images in the *resized* tree; the sidebar selects source
-    rels. A re-encoded image (``b.jpg`` → ``b.png``) has to join on the stem."""
+    """Reports name resized-tree images; a re-encoded one joins on the stem."""
     found = P.read(_autotag_report(home), roots, "autotag")
     assert sorted(found) == ["a.png", "sub/b.jpg"]
     assert found["a.png"].after == "safe, 1girl, solo, long hair"
@@ -102,15 +98,14 @@ def test_proposals_are_keyed_by_dataset_rel(home, roots):
 
 
 def test_a_row_that_changes_nothing_is_not_a_proposal(home, roots):
-    """``skip:unchanged`` rows carry a before and an after that are the same
-    text — showing them as a diff would be a diff of nothing."""
+    """``skip:unchanged`` rows are not proposals: before and after are one text."""
     found = P.read(_autotag_report(home), roots, "autotag")
     assert all(p.before != p.after for p in found.values())
 
 
 def test_the_revised_caption_is_the_position_stage_s_target(home, roots):
-    """``position_captions`` only ever rewrites ``workspace/resized``,
-    so its diff belongs on the *derived* card, not the master's."""
+    """``position_captions`` rewrites ``workspace/resized``, so its diff is
+    ``revised``."""
     report = {
         "summary": {"apply": False},
         "images": [
@@ -136,16 +131,14 @@ def test_a_stage_that_proposes_nothing_is_refused(home, roots):
 
 
 def test_the_parsed_pair_never_needs_a_client_side_split(home, roots):
-    """Both texts go out already parsed: the caption grammar has exactly one
-    implementation, and a browser-side comma split would not be it."""
+    """Both texts go out already parsed; the browser splits no caption."""
     p = P.read(_autotag_report(home), roots, "autotag")["a.png"].to_dict()
     assert p["after_parsed"]["flat_tags"] == ["safe", "1girl", "solo", "long hair"]
     assert p["before_parsed"]["flat_tags"] == ["1girl", "solo"]
 
 
 def test_a_reread_after_a_rerun_is_not_the_cached_answer(home, roots):
-    """The read is cached per (path, mtime) — a second Run over the same report
-    path must not serve the first one's proposals."""
+    """The read is cached per (path, mtime), so a re-run is not the cached answer."""
     path = _autotag_report(home)
     first = P.read(path, roots, "autotag")["a.png"].after
     report = json.loads(path.read_text(encoding="utf-8"))
@@ -161,8 +154,7 @@ def test_a_reread_after_a_rerun_is_not_the_cached_answer(home, roots):
 
 
 def _apply_report(home: Path) -> Path:
-    """What a replayed ``--apply`` run writes (``stages.replay.ReplayRow``):
-    ``before``/``after``, whatever the source stage called them."""
+    """What a replayed ``--apply`` run writes: ``before``/``after`` rows."""
     report = {
         "stage": "autotag_captions",
         "apply": True,
@@ -196,8 +188,7 @@ def test_undo_restores_what_the_apply_overwrote(home, roots):
 
     out = P.undo(_apply_report(home), roots, "autotag")
     assert (src / "a.txt").read_text(encoding="utf-8") == "1girl, solo"
-    # A row whose before-text was empty was a file the run *created*: its
-    # inverse is a delete, not a write of nothing.
+    # An empty before-text means the run created the file: the inverse is a delete.
     assert not (src / "sub" / "b.txt").exists()
     assert out["restored"] == 1 and out["removed"] == 1
     assert sorted(out["written"]) == ["a.png", "sub/b.jpg"]
@@ -225,8 +216,7 @@ def test_undo_twice_is_a_no_op_not_a_second_revert(home, roots):
 
 
 def test_undoing_the_clause_rewrite_drops_the_stale_sidecar(home, roots):
-    """``.variants.txt`` wins over the caption at encode time, so a sidecar left
-    beside a restored caption would keep training the applied text."""
+    """``.variants.txt`` wins at encode time, so an undo drops the stale one."""
     dst = home / "workspace" / "resized"
     (dst / "a.txt").write_text("1girl. On the left, solo.", encoding="utf-8")
     (dst / "a.variants.txt").write_text(
@@ -256,13 +246,9 @@ def test_undoing_the_clause_rewrite_drops_the_stale_sidecar(home, roots):
 
 
 def test_the_report_shapes_match_the_stages_own_replay_specs():
-    """:data:`P.SHAPES` holds a copy of each CLI's ``REPLAY_SPEC``, kept out of
-    the server process because those modules import torch. The ``ReplaySpec``
-    *class* is imported, so this is now a whole-object comparison — the whole
-    diff is wrong if any field drifts, including one added later.
-
-    OCR is in neither side: it writes only its own sidecar tree and touches no
-    caption, so it has nothing to replay and nothing to undo.
+    """:data:`P.SHAPES` holds a copy of each CLI's ``REPLAY_SPEC``, kept out of the
+    server process because those modules import torch; the ``ReplaySpec`` class
+    itself is imported, so this compares whole objects.
     """
     from anime_tools.stages.cli.audit_multiview import REPLAY_SPEC as audit
     from anime_tools.stages.cli.autotag_captions import REPLAY_SPEC as autotag
@@ -276,11 +262,8 @@ def test_the_report_shapes_match_the_stages_own_replay_specs():
 
 
 def test_the_audit_gate_is_the_only_thing_its_replay_closes_over():
-    """The audit's writable set is a verdict/confidence gate rather than a row
-    status, so its module-level spec leaves ``row_filter`` open and the replay
-    path fills it in. Everything else about the spec — the half
-    :data:`P.SHAPES` mirrors — is pinned by the test above; this pins that the
-    gate is the *only* thing the closure changes, so the mirror stays complete.
+    """The audit's spec leaves ``row_filter`` open for the replay path to fill in,
+    and that gate is the only thing the closure changes.
     """
     from dataclasses import replace
 
@@ -307,11 +290,7 @@ def client(home):
 
 
 def _finished_job(mgr, home, *, apply: bool, report: Path):
-    """A finished job record pointing at ``report``.
-
-    Built rather than run: these endpoints only ever read ``stage``, ``apply``
-    and ``report_path``, and spawning a real child would only test the runner.
-    """
+    """A finished job record pointing at ``report``, built rather than run."""
     from anime_tools.gui.jobs import Job
 
     job = Job(
@@ -346,8 +325,7 @@ def test_the_index_is_rels_only_and_one_proposal_carries_the_text(client):
 
 
 def test_undo_refuses_a_run_that_wrote_nothing(client):
-    """A dry run has nothing to put back; "undo" could then only mean undoing
-    some other run that happens to share the report shape."""
+    """A dry run has nothing to put back."""
     c, mgr, home = client
     job = _finished_job(mgr, home, apply=False, report=_autotag_report(home))
     r = c.post(f"/api/jobs/{job.id}/undo")
@@ -377,9 +355,8 @@ def test_undo_over_http_restores_and_names_what_to_reload(client):
 
 
 def test_undo_dispatches_an_export_report_to_the_reverter(home, roots, tmp_path):
-    """`P.undo` takes the stage id, and `export`'s rows are file copies rather
-    than before/after captions — so it branches instead of trying to read them
-    through a `ReplaySpec` it has no shape for."""
+    """Export's rows are file copies, not before/after captions, so `P.undo`
+    branches to `revert_export`."""
     from anime_tools._json import write_json
     from anime_tools.gui import proposals as P
     from anime_tools.stages.export_workspace import ExportPaths, run_export
@@ -403,8 +380,8 @@ def test_undo_dispatches_an_export_report_to_the_reverter(home, roots, tmp_path)
     assert got["stage"] == "export"
     assert got["removed"] == len(rows) and got["restored"] == 0
     assert not (out / "resized" / "a.png").exists()
-    # The rels it reports back are dataset rels the sidebar can re-stat: the
-    # resized tree calls the second image `sub/b.png`, the master `sub/b.jpg`.
+    # Dataset rels the sidebar can re-stat: the resized tree calls the second
+    # image `sub/b.png`, the master `sub/b.jpg`.
     assert set(got["written"]) == {"a.png", "sub/b.jpg"}
 
 

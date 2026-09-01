@@ -1,11 +1,10 @@
 """Build a dbv4-backed AnimaTagger checkpoint dir from an existing checkpoint.
 
-The new dir carries **only our data** — vocab / rules / groups / dataset split
+The new dir carries only our data — vocab / rules / groups / dataset split
 copied from ``--src``, a ``config.json`` naming the upstream dbv4 repo, and a
 ``thresholds.safetensors`` seeded from the card's per-tag ``best_threshold``
 (tags dbv4 cannot emit get a never-fire threshold until ``train_sidecar.py``
-gives them a score source). No weights are copied or downloaded: the GPL-3.0
-dbv4 weights come from HF under the user's own token at first use.
+gives them a score source). No weights are copied or downloaded.
 """
 
 from __future__ import annotations

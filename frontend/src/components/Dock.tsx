@@ -3,13 +3,9 @@ import { t } from "../i18n";
 import type { Stage } from "../types";
 
 /** The bottom dock: one button per panel, a drag handle for its height, and the
-    open panel's body (the stage runner) as its children.
-
-    The button strip is the stage picker, and only that: the dock is folded by
-    the ▾ in the strip's corner, so pressing the open panel's own button leaves
-    it where it is. Which stage inside a panel runs is picked in the body, so
-    this only ever knows panels — and the body is rendered only while the dock is
-    open, so a folded dock costs nothing. */
+    open panel's body (the stage runner) as its children. The strip only picks a
+    panel — the dock folds by the ▾ in its corner, and which stage inside a panel
+    runs is picked in the body. The body renders only while the dock is open. */
 export function Dock(props: {
   open: boolean;
   height: number;

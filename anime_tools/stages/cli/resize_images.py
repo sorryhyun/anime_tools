@@ -1,20 +1,13 @@
 """Resize the caption master into the bucket-resolution tree every stage reads.
 
-Every other stage walks ``--dst`` (the resized tree), so an image that only
-exists under ``image_dataset/`` is invisible to them: a run scoped to it matches
-nothing and writes nothing. This stage is what puts it there.
+Every other stage walks ``--dst``, so an image that exists only under
+``image_dataset/`` is invisible to them. Each image lands in the ``--target_res``
+tier that resizes it the least, keeping its native aspect inside that tier's
+token band; the geometry matches the trainer's ``make preprocess-resize``, so
+whichever side runs first, the other one skips.
 
-Free-fit geometry: each image lands in the ``--target_res`` tier that resizes it
-the least, keeping its native aspect inside that tier's token band, so the crop
-is under one 16px patch. Identical to the trainer's ``make preprocess-resize``
-(same tier, same solver, same ``anima_resize_*`` PNG keys), so whichever side
-runs first, the other one skips.
-
-Always writes — no dry run, because the pass is idempotent: an output already at
-its target bucket is skipped without a re-decode.
-
-    python -m anime_tools.stages.cli.resize_images
-    python -m anime_tools.stages.cli.resize_images --target_res 1024 1536
+Always writes; there is no dry run, and an image already at its target bucket is
+skipped without a re-decode.
 """
 
 from __future__ import annotations
@@ -44,7 +37,7 @@ DEFAULT_REPORT_DIR = f"{WS.REPORTS}/resize"
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(description=__doc__)
     # The one stage whose glob matches against --src: it walks the master to
-    # populate --dst, where every other stage then looks.
+    # populate --dst.
     add_dataset_args(p, dst_help="Resized image dir", pattern_root="--src")
     p.add_argument(
         "--target_res",
@@ -167,8 +160,7 @@ def main() -> None:
         copy_captions=bool(args.copy_captions),
         overwrite=bool(args.overwrite),
         workers=int(args.workers),
-        # Every line: no per-image output to read afterwards, so the log is the
-        # only progress there is.
+        # Every line: there is no other per-image output.
         progress=make_progress(1),
     )
 
@@ -204,8 +196,8 @@ def main() -> None:
     )
     for line in stats.failures:
         print(f"  fail: {line}")
-    # A skip here is not "left out of training" but "invisible to the rest of
-    # the pipeline", so name them.
+    # A skip here means invisible to every later stage, so name each file rather
+    # than counting them.
     for line in stats.too_small:
         print(f"  too small: {line}")
     if stats.buckets:

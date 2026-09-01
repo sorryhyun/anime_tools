@@ -1,19 +1,10 @@
 """``--from_report``: re-applying a stage's dry run without re-running its models.
 
-The invariants worth pinning are all about *not* trusting a report blindly:
-
-1. **Round trip.** A dry run's report, replayed with ``apply``, writes exactly
-   the text the dry run proposed — byte-for-byte, into the same file the live
-   apply would have written.
-2. **Drift is skipped, not clobbered.** A caption edited between the two passes
-   is counted and left alone. This is the only thing standing between a stale
-   report and silently overwritten hand edits.
-3. **No model.** The whole point is skipping the tagger/SAM3 pass, so the replay
-   path must not so much as import ``torch`` — pinned in a subprocess, the same
-   technique as ``tests/test_boundary.py``.
-4. **Roots must agree**, and an already-applied report is refused: the recorded
-   caption paths are relative to the recorded roots, and an applied report's
-   before-text describes a world that no longer exists.
+1. Round trip: a replayed report writes byte-for-byte what the live apply would.
+2. Drift is skipped, not clobbered — a caption edited between the passes is
+   counted and left alone.
+3. No model: the replay path never imports ``torch`` (pinned in a subprocess).
+4. Roots must agree, and an already-applied report is refused.
 """
 
 from __future__ import annotations
@@ -88,8 +79,7 @@ def _autotag_dry_run(resized: Path, source: Path, *, mode: str = "missing") -> d
 def _position_report(
     resized: Path, source: Path, proposals: list[ImageProposal]
 ) -> dict:
-    """A position-shaped report built from the real dataclass, so a field
-    rename breaks this test rather than the replay."""
+    """A position-shaped report built from the real dataclass."""
     return {
         "summary": {
             "applied": False,
@@ -123,8 +113,7 @@ def test_autotag_round_trip_writes_exactly_the_proposed_text(tmp_path: Path):
 
 
 def test_replay_matches_a_live_apply_byte_for_byte(tmp_path: Path):
-    """The replay is a substitute for the second model pass, so the bytes it
-    writes must be the bytes the live apply would have written."""
+    """The replay writes the bytes the live apply would have written."""
     live_resized, live_source = _dataset(tmp_path / "live", {"a": None})
     run_autotag_captions(
         resized_dir=live_resized,
@@ -146,8 +135,7 @@ def test_replay_matches_a_live_apply_byte_for_byte(tmp_path: Path):
 
 
 def test_merge_mode_round_trips_a_caption_with_clauses(tmp_path: Path):
-    """The replay carries composed text, so clause structure survives it
-    untouched — nothing re-parses or re-splits the caption on the way out."""
+    """The replay carries composed text, so clause structure survives untouched."""
     existing = "safe, 2girls. On the left, akita neru. On the right, kasane teto."
     resized, source = _dataset(tmp_path, {"a": existing})
     report = _autotag_dry_run(resized, source, mode="merge")
@@ -187,8 +175,7 @@ def test_drifted_caption_is_skipped_and_counted(tmp_path: Path):
 
 
 def test_replay_is_idempotent(tmp_path: Path):
-    """Re-running a replay reports already-applied rather than rewriting —
-    so a replay that died halfway can just be run again."""
+    """Re-running a replay reports already-applied rather than rewriting."""
     resized, source = _dataset(tmp_path, {"a": None})
     report = _autotag_dry_run(resized, source)
 
@@ -294,7 +281,7 @@ def test_path_pattern_filters_a_replay(tmp_path: Path):
 
 
 def test_replay_report_names_the_written_images(tmp_path: Path):
-    """The field a UI reads to reload exactly the affected dataset items."""
+    """``written`` names the images a UI should reload."""
     resized, source = _dataset(tmp_path, {"a": None, "b": "safe, 1girl"})
     report = _autotag_dry_run(resized, source)
     report_dir = tmp_path / "reports"
@@ -312,7 +299,7 @@ def test_replay_report_names_the_written_images(tmp_path: Path):
     )
 
     assert out_path.name == REPLAY_REPORT_NAME
-    # The dry run's own report must survive, or a re-run would be impossible.
+    # The dry run's own report survives, so a re-run stays possible.
     assert load_report(report_path)["apply"] is False
 
     emitted = json.loads(out_path.read_text(encoding="utf-8"))
@@ -359,8 +346,7 @@ def test_position_replay_writes_the_derived_caption_not_the_master(tmp_path: Pat
 
 
 def test_position_replay_drops_the_stale_variants_sidecar(tmp_path: Path):
-    """The sidecar outranks ``{stem}.txt`` at encode time, so leaving a
-    pre-clause one behind would keep training the pre-clause caption."""
+    """The sidecar outranks ``{stem}.txt`` at encode time, so a stale one is dropped."""
     original = "safe, 2girls, blue hair"
     proposed = "safe, 2girls. On the left, blue hair."
     resized, source = _dataset(tmp_path, {"a": None})
@@ -423,8 +409,8 @@ def test_position_replay_skips_a_non_proposed_row(tmp_path: Path):
     ],
 )
 def test_replay_cli_does_not_import_torch(tmp_path: Path, module: str, repo_root: Path):
-    """End-to-end through ``main()``: a ``--from_report --apply`` run writes the
-    caption and never pulls torch in — no tagger, no SAM3."""
+    """End-to-end through ``main()``: ``--from_report --apply`` writes the caption
+    and never imports torch."""
     import subprocess
 
     position = module.endswith("position_captions")

@@ -1,26 +1,12 @@
 """Rewrite multi-subject captions into position clauses (SAM3 + Anima Tagger).
 
-Thin CLI over ``anime_tools.stages.position_captions``: detect -> order ->
-crop+blank -> tag -> compose over the resized dataset, plus a review report.
-An attributable tag is MOVED out of the flat bag into its clause (v2);
-``--no_rewrite`` keeps the additive v1 behaviour and ``--flatten`` is the inverse
-pass. See ``docs/position_captions.md``.
+Detect -> order -> crop+blank -> tag -> compose over the resized dataset, moving
+each attributable tag out of the flat bag into its clause (``--flatten`` is the
+inverse pass). Clauses land on the revised caption under ``--dst``, never on the
+caption master. See ``docs/position_captions.md``.
 
-Clauses land on the revised caption under ``--dst``; the caption master is never
-written. Dry-run is the default — ``--apply`` writes, bumps the caption's mtime
-and drops stale ``.variants.txt`` sidecars, so follow it with a TE re-encode.
-``--from_report`` replays a dry run's report without loading SAM3 or the tagger,
-skips any caption edited since, and writes ``apply_report.json``.
-
-    make caption-position                      # dry run over the whole dataset
-    make caption-position ARGS="--apply"       # write the clauses
-    make preprocess-te                         # re-encode (required after apply)
-    make caption-position ARGS="--flatten --apply"   # back the rewrite out
-
-    # the same two-step, paying for SAM3 + the tagger once:
-    python -m anime_tools.stages.cli.position_captions
-    python -m anime_tools.stages.cli.position_captions --apply \
-        --from_report workspace/captions/position/report.json
+Dry-run by default; ``--apply`` writes and drops stale ``.variants.txt``
+sidecars, so follow it with a TE re-encode.
 """
 
 from __future__ import annotations
@@ -81,8 +67,7 @@ TE_NOTE = (
     "`make preprocess-te` now to regenerate the variant sidecars and "
     "re-encode."
 )
-# Both tokenizers pad to this; a caption past it truncates silently, so the tail
-# never reaches the model.
+# Both tokenizers pad to this; a caption past it truncates silently.
 DEFAULT_MAX_TOKENS = 512
 
 
@@ -293,11 +278,7 @@ def parse_args() -> argparse.Namespace:
 
 
 def build_options_from_args(args: argparse.Namespace) -> PositionCaptionOptions:
-    """Parsed CLI -> the options one pass runs under.
-
-    Shared with ``ab_position_captions.py`` so a new knob cannot reach one entry
-    point and not the other.
-    """
+    """Parsed CLI -> the options one pass runs under (shared with the A/B CLI)."""
     return PositionCaptionOptions(
         **detection_options(args),
         max_clause_tags=args.max_clause_tags,
@@ -322,9 +303,9 @@ def options_from_flag_string(
 ) -> tuple[PositionCaptionOptions, argparse.Namespace]:
     """Parse a flag *string* through this CLI's own parser.
 
-    The A/B and review sheets pin themselves to :func:`parse_args` rather than a
-    second parser, hence the ``sys.argv`` swap. Returns ``(options, args)`` — the
-    namespace too, since the detector is built from it.
+    Goes through :func:`parse_args` rather than a second parser, hence the
+    ``sys.argv`` swap. Returns ``(options, args)`` — the namespace too, since the
+    detector is built from it.
     """
     argv = sys.argv
     sys.argv = [argv[0], *flags.split()]
@@ -348,8 +329,7 @@ def build_detect_fn(args: argparse.Namespace, *, model=None, processor=None):
     GOTCHA 2: ``detect_subjects`` calls back per retry and per part prompt on the
     same image, so encoding and raw detections are memoised per image/prompt.
 
-    Returns ``(detect, part_detect, model, processor)``; ``detect`` is pinned to
-    ``args.prompt``.
+    Returns ``(detect, part_detect, model, processor)``.
     """
     import torch
 
@@ -385,8 +365,8 @@ def build_detect_fn(args: argparse.Namespace, *, model=None, processor=None):
             return memo[prompt]
         with torch.autocast(device_type="cuda", dtype=torch.bfloat16):
             if soft_prompt is not None and prompt == args.prompt:
-                # Learned prompt tensor stands in for the subject phrase: the
-                # text encode is skipped, the grounding pass reused as-is.
+                # Learned prompt tensor stands in for the subject phrase, so the
+                # text encode is skipped.
                 out = ground_with_soft_prompt(
                     processor, model, cache["state"], soft_prompt
                 )
@@ -439,7 +419,7 @@ def _run_flatten(args, src: Path, dst: Path, report_dir: Path) -> None:
         "skipped": dict(sorted(stats.skipped.items(), key=lambda kv: -kv[1])),
     }
     # Its own name, not ``report.json``: replaying a flatten would write the
-    # clauses straight back.
+    # clauses back.
     write_json(report_dir / "flatten_report.json", {"summary": summary, "images": rows})
     print(json.dumps(summary, indent=2, ensure_ascii=False))
     print(f"\nreport: {report_dir / 'flatten_report.json'}")
@@ -448,8 +428,6 @@ def _run_flatten(args, src: Path, dst: Path, report_dir: Path) -> None:
 
 # ``drop_variants`` mirrors the stage's own write: a stale
 # ``{stem}.variants.txt`` outranks ``{stem}.txt`` at encode time.
-# ``history_by`` mirrors it too: a replay files the version it replaces under
-# the same name the live pass would have.
 REPLAY_SPEC = ReplaySpec(
     stage="position_captions",
     rows_key="images",
@@ -495,8 +473,8 @@ def main() -> None:
         _run_replay(args, src, dst, report_dir)
         return
 
-    # SAM3 first, tagger second: both stay resident since the pipeline is
-    # per-image (detect -> crop -> tag), not two dataset-wide passes.
+    # Both stay resident: the pipeline is per-image (detect -> crop -> tag), not
+    # two dataset-wide passes.
     detect_fn, part_detect_fn, sam_model, sam_processor = build_detect_fn(args)
     # Not in parse_args(): the --from_report replay returns above and must stay
     # torch-free.
@@ -534,8 +512,6 @@ def main() -> None:
     ]
     embed_path = resolve_prompt_embed(args.prompt_embed)
     summary = {
-        # Row paths are relative to these roots, so ``--from_report`` can refuse
-        # to replay the report against a different pair of trees.
         **stage_report_header(
             src=src, dst=dst, path_pattern=args.path_pattern, apply=args.apply
         ),
@@ -552,8 +528,6 @@ def main() -> None:
         # How much of the flat bag the clauses took. Zero under --no_rewrite.
         "rewritten": stats.rewritten,
         "moved_tags": stats.moved_tags,
-        # ``reuse_ratio`` is the headline for move-don't-invent: a bag tag can
-        # move, a novel one can only ever be an addition.
         "max_novel_tags": args.max_novel_tags,
         "clause_tags": stats.clause_tags,
         "novel_tags": stats.novel_tags,

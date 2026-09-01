@@ -136,8 +136,8 @@ def main() -> None:
 
     num_variants = int(args.caption_shuffle_variants or 0)
     randomize_rate = float(args.caption_tag_randomize_rate or 0.0)
-    # The erasure pool (identity-randomize only) needs both tokenizers. Loaded
-    # tokenizer-only — no encoder weights — so this stays a light pass.
+    # The erasure pool (identity-randomize only) needs both tokenizers, loaded
+    # tokenizer-only — no encoder weights.
     qwen3_tokenizer = None
     t5_tokenizer = None
     if randomize_rate > 0.0 and num_variants >= 2:

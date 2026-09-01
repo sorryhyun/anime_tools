@@ -11,8 +11,7 @@ Takes its two models as injected callables (``detect_fn``/``tag_fn``), staying
 import-free of SAM3/the tagger; ``stages/cli/position_captions.py`` owns
 argparse + model loading.
 
-Per-rule evidence and the knob table live in
-``docs/position_captions.md``.
+Per-rule evidence and the knob table live in ``docs/position_captions.md``.
 """
 
 from __future__ import annotations
@@ -64,8 +63,7 @@ from ._caption_io import write_caption
 from ._walk_captions import iter_captions
 
 # Convenience re-exports: canonical homes are the modules imported above, but
-# every consumer reaches for them on this module. Listed here so they read as
-# the public surface rather than dead imports.
+# consumers reach for them on this module.
 __all__ = [
     "ClauseGroups",
     "ClauseVocabulary",
@@ -178,9 +176,7 @@ class PositionCaptionOptions:
     iou_threshold: float = 0.65
     # Off by default — see ``box_containment``.
     containment_threshold: float = 1.01
-    # On by default, unlike its box counterpart — see ``mask_containment``. Two
-    # boxes nest identically whether the inner one is a fragment or a second
-    # girl in front of the first; their masks do not.
+    # On by default, unlike its box counterpart — see ``mask_containment``.
     mask_containment_threshold: float = 0.8
     # Mask-quality tie-break inside an NMS-matched pair — see
     # ``dedupe_detections``; 0 disables (score-only survivor).
@@ -201,19 +197,19 @@ class PositionCaptionOptions:
     discriminative_only: bool = True
     bag_gated_identity: bool = True
     # On a repeated-subject layout (``multiple views`` / comic panels), keep the
-    # character's own traits — and her name — out of every clause: they belong
-    # to the girl, not to a view of her.
+    # character's own traits and name out of every clause: they belong to the
+    # girl, not to a view of her.
     multi_view_gate: bool = True
     # Let a clause say which *view* it describes (`close-up`, `full body`).
     bind_framing: bool = True
     # Let a view layout's clause carry the anatomy visible in that panel.
     bind_view_anatomy: bool = True
-    # Bag-tag keep relaxation (1.0 = off): a bag tag can only MOVE into a
-    # clause, never be invented, so the crop tagger only has to *localize* it
-    # and its per-tag F1 threshold may be relaxed for that population — which
-    # recovers pose tags whose scores collapse once mask-blanking removes the
-    # scene context. Applied before the attributable/shared census, so a rival
-    # crop's borderline score also BLOCKS a move the strict kept sets allowed.
+    # Bag-tag keep relaxation (1.0 = off): a bag tag can only MOVE into a clause,
+    # never be invented, so the crop tagger only has to *localize* it and its
+    # per-tag F1 threshold may be relaxed — which recovers pose tags whose scores
+    # collapse once mask-blanking removes the scene context. Applied before the
+    # attributable/shared census, so a rival crop's borderline score also BLOCKS
+    # a move the strict kept sets allowed.
     bag_relax: float = 0.35
     # Extra relaxation per word beyond the first (compounds with ``bag_relax``):
     # a more specific tag is less likely to clear on noise. 1.0 = off.
@@ -226,8 +222,8 @@ class PositionCaptionOptions:
     rewrite: bool = True
     # How far the winning crop must clear every other, relative to its own
     # probability (``1 - rival/winner``), before a tag may leave the bag. Gates
-    # only the removal — a tag that fails still enters its clause, degrading to
-    # v1 for it. 0.0 = trust the tagger's thresholds alone.
+    # only the removal — a tag that fails still enters its clause. 0.0 = trust
+    # the tagger's thresholds alone.
     attribution_margin: float = 0.25
 
 
@@ -240,10 +236,10 @@ def detect_subjects(
 ) -> list[Detection]:
     """Detect + dedupe, with two escalations when the count falls short.
 
-    Both fire only when detection undershoots the expected count (on a resolved
-    image they'd only add duplicates): a lower score threshold, which recovers
-    an extreme close-up, then body-part prompts (``part_detect_fn``), which
-    recover a headless panel the subject prompt can't see at any threshold.
+    Both fire only when detection undershoots the expected count: a lower score
+    threshold, which recovers an extreme close-up, then body-part prompts
+    (``part_detect_fn``), which recover a headless panel the subject prompt
+    can't see at any threshold.
 
     GOTCHA: target is ``expected or min_instances``, NOT ``expected`` alone — a
     ``multiple views`` sheet reports ``expected=None`` on purpose (count tags
@@ -281,8 +277,8 @@ def detect_subjects(
         iou_threshold=options.iou_threshold,
         containment_threshold=options.part_containment_threshold,
     )
-    # Top up to the target, no further — a part prompt is a looser concept than
-    # ``girl`` and can fragment into more boxes than there are real panels.
+    # Top up to the target, no further: a part prompt can fragment into more
+    # boxes than there are real panels.
     return merged[: max(target, len(dets))]
 
 
@@ -295,9 +291,8 @@ def _relax_bag_keeps(
 ) -> None:
     """Admit sub-threshold flat-bag tags into each crop's kept set, in place.
 
-    See ``bag_relax`` on :class:`PositionCaptionOptions` for why. Needs the
-    per-tag thresholds ``AnimaTagger.predict`` attaches; a no-op per crop when a
-    stub ``tag_fn`` omits them.
+    Needs the per-tag thresholds ``AnimaTagger.predict`` attaches; a no-op per
+    crop when a stub ``tag_fn`` omits them. See ``bag_relax``.
     """
     relax = options.bag_relax
     word_relax = options.bag_word_relax
@@ -355,8 +350,8 @@ def propose_for_image(
         proposal.status = "skip:too-many-instances"
         return proposal
     # Detection and the caption's count must agree, else we'd write clauses we
-    # can't ground. "Agree" is a range because the ``girl`` prompt picks up
-    # males inconsistently: girls..girls+boys are all consistent.
+    # can't ground. "Agree" is the range girls..girls+boys, because the ``girl``
+    # prompt picks up males inconsistently.
     if options.strict_count and expected:
         boys = caption_boy_count(caption)
         upper = None if boys is None else expected + boys
@@ -431,8 +426,8 @@ def propose_for_image(
                 tags=tags,
                 crop=crop_name,
                 source=det.source,
-                # ``flat_bag`` is ``parsed.tag_keys``, so the probe has to be the
-                # same key — a ``lower()`` one never matched an underscored tag.
+                # ``flat_bag`` is ``parsed.tag_keys``, so the probe must use the
+                # same key or an underscored tag never matches.
                 novel=sum(1 for t in tags if normalize_tag(t) not in flat_bag),
             )
         )
@@ -462,8 +457,7 @@ def propose_for_image(
         proposal.pinned = dict(plan.blocked)
         taken = {normalize_tag(m.tag) for m in plan.moved}
         remaining = [t for t in flat if normalize_tag(t) not in taken]
-        # The rewrite removes text, so an emptied bag is asserted against
-        # rather than assumed impossible.
+        # The rewrite removes text, so guard against emptying the bag.
         if remaining:
             flat = remaining
             proposal.moved = [
@@ -481,11 +475,8 @@ def propose_for_image(
 
 
 def _crop_sink(crops_dir: Path, rel: Path) -> Callable[[int, str, Image.Image], str]:
-    """Save each crop under ``crops_dir`` mirroring the dataset layout.
-
-    The dry-run review artifact: a proposed clause next to the exact pixels the
-    tagger saw is the only way to tell a detection miss from a tagging miss.
-    """
+    """Save each crop under ``crops_dir`` mirroring the dataset layout — the
+    dry-run review artifact, the exact pixels the tagger saw."""
     target = crops_dir / rel.parent
 
     def sink(index: int, position: str, crop: Image.Image) -> str:
@@ -502,9 +493,7 @@ def _save_skip_overlay(
 ) -> None:
     """Draw the detected boxes over a skipped image, under ``_skipped/``.
 
-    A skip produces no crops, so the overlay is the reviewer's only evidence for
-    the rows they must adjudicate: over-detection, missing subject, or wrong
-    caption count?
+    A skip produces no crops, so the overlay is the reviewer's only evidence.
     """
     from PIL import ImageDraw
 
@@ -546,11 +535,9 @@ def run_position_captions(
 
     GOTCHA: the caption master (``source_dir``) is NEVER written — the rewrite
     lands at ``resized_dir/<rel>``, what the TE step encodes, and the master is
-    only the read fallback for an unmirrored image. The stale
-    ``{stem}.variants.txt`` sidecar, which wins over ``{stem}.txt`` at encode
-    time, is dropped alongside the write, which is a rewrite rather than an
-    append — recoverable (:func:`flatten_captions`) but not a no-op, hence
-    ``apply`` defaults off.
+    only the read fallback. The stale ``{stem}.variants.txt`` sidecar, which
+    wins over ``{stem}.txt`` at encode time, is dropped alongside the write.
+    The write replaces rather than appends, so ``apply`` defaults off.
     """
     options = options or PositionCaptionOptions()
     stats = PositionCaptionStats()
@@ -619,13 +606,11 @@ def flatten_captions(
 ) -> tuple[list[dict], PositionCaptionStats]:
     """Undo a rewrite: merge every caption's clauses back into its flat bag.
 
-    Text-only (no SAM3, no tagger, no pixels) since the rewrite moves tags
-    rather than deleting them. Same revised caption as
-    :func:`run_position_captions`.
+    Text-only (no SAM3, no tagger, no pixels), writing the same revised caption
+    as :func:`run_position_captions`.
 
     GOTCHA: hand-written clauses are flattened too — the pass can't tell them
-    from generated ones — which is a real loss of curation if they only ever
-    existed here. Hence the dry-run default.
+    from generated ones. Hence the dry-run default.
     """
     stats = PositionCaptionStats()
     rows: list[dict] = []

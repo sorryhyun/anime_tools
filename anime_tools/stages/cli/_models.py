@@ -1,8 +1,7 @@
 """Loading the Anima Tagger the way every stage CLI loads it.
 
-The load-bearing part: the clause vocabulary is read from the checkpoint the
-tagger actually loaded, never from a second path, so a caller cannot pair one
-model's predictions with another's clause gates.
+The clause vocabulary is read from the checkpoint the tagger actually loaded, so
+a caller cannot pair one model's predictions with another's clause gates.
 """
 
 from __future__ import annotations

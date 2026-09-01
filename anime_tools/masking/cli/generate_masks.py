@@ -1,14 +1,9 @@
-"""SAM3 subject masks: mask a prompt OUT, or keep ONLY a prompt.
+"""SAM3 subject masks, written to ``workspace/masks_sam/``.
 
-Two polarities over the same detector. ``--prompts`` names what is masked out
-(ignored in the loss — speech bubbles, a watermark); ``--focus-prompts`` names
-what is kept, everything else being masked out, which is how the subject is
-isolated from a background. Give both and the focus region is what survives
-minus the ignore regions.
-
-The subject prompt is served by a learned soft prompt by default
-(``--prompt_embed``, the textual inversion of ``anime girl``): same recall,
-markedly less junk than the bare word. Pass ``none`` for the plain text prompt.
+``--prompts`` names what is masked OUT (ignored in the loss); ``--focus-prompts`` names
+what is kept, everything else masked out. Give both and the focus region survives minus
+the ignore regions. The subject prompt is served by a learned soft prompt by default
+(``--prompt_embed``); pass ``none`` for the plain text prompt.
 """
 
 import argparse
@@ -43,9 +38,8 @@ from anime_tools.masking._sam3 import (
     prompt_list,
 )
 
-# Torch-free at import (the safetensors read is deferred), and the same two
-# helpers the position stage resolves its --prompt_embed through, so `none`,
-# a missing shipped default and an explicit bad path mean one thing everywhere.
+# Torch-free at import (the safetensors read is deferred); the same two helpers the
+# position stage resolves its --prompt_embed through.
 from anime_tools.stages.instance_detection import load_soft_prompt, resolve_prompt_embed
 
 
@@ -118,8 +112,8 @@ def main() -> None:
         resolve_path(args.checkpoint) if args.checkpoint else None, args.device
     )
 
-    # The soft prompt stands in for the subject phrase wherever it was asked
-    # for; a prompt it does not name still goes through the text encoder.
+    # The soft prompt stands in for the subject phrase only; every other prompt still
+    # goes through the text encoder.
     soft_prompt = None
     embed_path = resolve_prompt_embed(args.prompt_embed)
     if embed_path is not None:
@@ -189,11 +183,10 @@ def main() -> None:
                         if kernel is not None and focus_mask.any():
                             focus_mask = cv2.dilate(focus_mask, kernel, iterations=1)
                         if not focus_mask.any():
-                            # Subject not found — leave unmasked (train fully)
-                            # rather than zeroing out the whole loss.
+                            # Subject not found — leave unmasked (train fully) rather
+                            # than zeroing out the whole loss.
                             run.note(image_path, "focus not found")
                             continue
-                        # ONLY the focus subject, minus any ignore-prompt regions.
                         trainable = focus_mask * (1 - ignore_mask)
                         save_futures.append(
                             write_mask(mask_path, trainable, pool=run.pool)
@@ -210,8 +203,8 @@ def main() -> None:
                     )
                     run.note(image_path, f"{coverage_pct(ignore_mask):.1f}%")
 
-        # Inside the `with`, before the pool is shut down: a save that raised is
-        # a mask that is not there, and this is the only place it can be seen.
+        # Inside the `with`, before the pool is shut down: a save that raised is a mask
+        # that is not there, and this is the only place it can be seen.
         for f in save_futures:
             f.result()
 

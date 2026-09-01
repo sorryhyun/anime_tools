@@ -1,11 +1,10 @@
-"""PE-Spatial dense grid matching (library primitive).
+"""PE-Spatial dense grid matching.
 
-The one Stage-B match shared by near-twin mining, grouping and dedup: a
-mutual-NN + ratio-test dense cell match between two pooled PE-Spatial patch grids
+Mutual-NN + ratio-test dense cell match between two pooled PE-Spatial patch grids
 (:class:`anime_tools.grouping.features.Feature`).
 
 ``easycontrol_adapters.tools.near_twins.engine`` re-exports these names, so they
-are not free to rename. Pure numpy/torch — no model lifetime owned here.
+are not free to rename.
 """
 
 from __future__ import annotations
@@ -43,9 +42,9 @@ def match_grids(
     """Mutual-NN + ratio-test dense cell match between two pooled grids.
 
     Two images are near-twins when a large *fraction* of their cells find a
-    distinctive mutual nearest neighbour at or above ``cell_min``; raw "has a
-    >0.9 neighbor" inflates badly on anime art's flat colour fields. Unmatched
-    cells localize the difference region.
+    distinctive mutual nearest neighbour at or above ``cell_min`` — the
+    distinctiveness test matters because anime art's flat colour fields give
+    many cells a >0.9 neighbour. Unmatched cells localize the difference region.
     """
     ca, cb = pool_cells(fa.grid16, G), pool_cells(fb.grid16, G)
     N = G * G
@@ -85,18 +84,16 @@ def match_grids(
     )
 
 
-# Scalar ``match_grids`` is for the miner (it needs the full MatchResult); the
-# vectorized path below is for consumers wanting only the inlier fraction over
-# many pairs, and is bit-comparable to it (tests/test_grouping_grid_match.py).
+# The vectorized path below returns only the inlier fraction, and is
+# bit-comparable to the scalar ``match_grids`` above.
 
 
 @torch.no_grad()
 def pool_cells_batch(grids: torch.Tensor, G: int) -> torch.Tensor:
     """[n, 16, 16, D] → [n, G*G, D], L2-normed per cell (on ``grids.device``).
 
-    Batched form of :func:`pool_cells`: pool each image's patch grid to G×G
-    once. Matches the scalar ``1e-8``-additive norm (not ``F.normalize``'s
-    ``max(norm, eps)``) so the two paths agree to float.
+    Uses the ``1e-8``-additive norm, not ``F.normalize``'s ``max(norm, eps)``, so
+    it agrees with :func:`pool_cells` to float.
     """
     t = grids.permute(0, 3, 1, 2)  # [n, D, 16, 16]
     p = F.adaptive_avg_pool2d(t, G)  # [n, D, G, G]
@@ -111,9 +108,8 @@ def match_fracs(
     """Inlier fraction for a batch of grid pairs — vectorized ``match_grids``.
 
     ``cells_a`` / ``cells_b`` are ``[P, N, D]`` unit-norm pooled grids (P pairs,
-    N=G*G cells). Same gate as the scalar path minus the geom-check (the grouping
-    caller leaves it off) and minus diff-cell bookkeeping, so it stays a few
-    fused kernels instead of a Python per-cell loop.
+    N=G*G cells). Same gate as the scalar path, minus the geom-check and the
+    diff-cell bookkeeping.
     """
     sim = cells_a @ cells_b.transpose(-1, -2)  # [P, N, N] cosine
     N = sim.shape[-1]
@@ -132,7 +128,7 @@ def _geom_filter(
 ) -> tuple[list[tuple[int, int]], tuple[float, float]]:
     """RANSAC-lite translation consistency: keep matches near the median offset.
 
-    Rejects "same character, different pose" (whose cell offsets scatter) and
+    Rejects "same character, different pose", whose cell offsets scatter, and
     estimates the crop offset from the surviving translation.
     """
     a = np.array([[i // G, i % G] for i, _ in matched], dtype=np.float32)

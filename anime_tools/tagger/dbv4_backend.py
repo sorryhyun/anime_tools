@@ -2,16 +2,15 @@
 ``animetimm/*.dbv4-full`` danbooru tagger behind the Anima tagger contract.
 
 * :func:`load_dbv4_card` — the repo's ``selected_tags.csv`` + ``meta.json``.
-  **The weights are GPL-3.0 and gated**: never vendored, only ever fetched
-  under the user's own HF token (which implies accepting the repo terms).
-* :func:`align_vocab` — the single join point between dbv4's snake_case names
-  and our space-separated vocab (``rules.yaml`` renames recovered through
-  ``rename_recovery``). Everything downstream indexes by *our* vocab index.
+  The weights are GPL-3.0 and gated: never vendored, only ever fetched under
+  the user's own HF token.
+* :func:`align_vocab` — joins dbv4's snake_case names onto our space-separated
+  vocab (``rules.yaml`` renames recovered through ``rename_recovery``);
+  everything downstream indexes by *our* vocab index.
 * :class:`Dbv4Backend` — image → ``(probs over dbv4 tags, MLP-head hidden
   feature)``; the hidden feature is what the sidecar consumes.
-* :class:`SidecarHead` — a linear head emitting **only** what dbv4 cannot say:
+* :class:`SidecarHead` — a linear head emitting only what dbv4 cannot say:
   copyright, dataset-only characters, the 8-way people-count bucket.
-  ``@artist`` is deliberately not part of it.
 
 dbv4 card categories: 0 general, 4 character, 9 rating — no copyright, no
 artist. Its danbooru rating names are mapped onto Anima's here.

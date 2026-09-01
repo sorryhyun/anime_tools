@@ -1,10 +1,5 @@
-"""Batched grid-match parity + grouping edge-gate behavior.
-
-The grouping path replaced the per-pair scalar ``match_grids`` with a batched
-``match_fracs`` over once-pooled grids. This guards that the two agree on the
-inlier fraction and that the connected-components gate behaves (twins connect,
-unrelated images don't).
-"""
+"""Batched ``match_fracs`` agrees with the per-pair scalar ``match_grids`` on the
+inlier fraction, and the connected-components gate behaves."""
 
 from __future__ import annotations
 
