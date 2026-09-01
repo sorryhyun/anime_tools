@@ -389,6 +389,20 @@ export interface ImageInfo {
   too_small: boolean | null;
 }
 
+/** One line the OCR stage read out of the image, from `{stem}.ocr.txt`.
+
+    Not a caption and not a version of one: `box` is where it sits in the image
+    (the axis-aligned bound of the detector's quad), `lang` is what
+    `anime_tools.ocr.script` classified it as, and `score` the recognizer's mean
+    per-character confidence. Generated, so the panel renders it read-only. */
+export interface OcrLine {
+  seq: number;
+  box: [number, number, number, number];
+  lang: string;
+  score: number;
+  text: string;
+}
+
 export interface ItemDetail {
   rel: string;
   dir: string;
@@ -403,6 +417,10 @@ export interface ItemDetail {
   /** Every caption this image has, oldest first: the ladder's file rungs, then
       the sidecar expanded into one entry per label. The panel's badge row. */
   versions: CaptionEntry[];
+  /** The text found *in* the picture, in reading order — empty for an image the
+      OCR stage never ran on, and for one it ran on and found nothing in. The
+      two are deliberately the same answer here: both mean "no text on file". */
+  ocr: OcrLine[];
 }
 
 /** One Danbooru tag as the KB knows it — `/api/tags/describe`, behind a click

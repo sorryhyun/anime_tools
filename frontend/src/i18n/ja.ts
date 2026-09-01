@@ -95,6 +95,14 @@ const ja: Dict = {
       `リサイズ下限 ${floor} 未満 — この画像はリサイズされないため、workspace/resized を歩く各ステージからは見えません。⚙ 設定 › Preprocess で下限を下げてください。`,
     zoomHint: "⌘/Ctrl+スクロールで拡大 · ドラッグで移動 · ダブルクリックで元に戻す",
   },
+  ocr: {
+    title: "画像内のテキスト",
+    /** {0} is how many lines were recognized. */
+    count: (n: number) => `${n}行`,
+    readOnly: "OCR ステージが生成",
+    scoreHint: "認識器の文字あたり平均信頼度。縦書き日本語は横向きに読まれるため低くなります",
+    boxHint: "画像内の左上座標（ピクセル）",
+  },
   caption: {
     master: "master",
     history: "history",

@@ -263,9 +263,15 @@ def test_the_report_shapes_match_the_stages_own_replay_specs():
     """
     from anime_tools.stages.cli.audit_multiview import REPLAY_SPEC as audit
     from anime_tools.stages.cli.autotag_captions import REPLAY_SPEC as autotag
+    from anime_tools.stages.cli.ocr_captions import REPLAY_SPEC as ocr
     from anime_tools.stages.cli.position_captions import REPLAY_SPEC as position
 
-    assert P.SHAPES == {"autotag": autotag, "position": position, "audit": audit}
+    assert P.SHAPES == {
+        "autotag": autotag,
+        "position": position,
+        "audit": audit,
+        "ocr": ocr,
+    }
 
 
 def test_the_audit_gate_is_the_only_thing_its_replay_closes_over():

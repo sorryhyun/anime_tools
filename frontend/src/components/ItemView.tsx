@@ -2,6 +2,7 @@ import { createEffect, createMemo, createSignal, For, on, Show } from "solid-js"
 import { api } from "../api";
 import { t } from "../i18n";
 import { CaptionCard } from "./CaptionCard";
+import { OcrPanel } from "./OcrPanel";
 import type {
   CaptionEntry,
   ImageInfo,
@@ -312,6 +313,7 @@ export function ItemView(props: {
                   proposalStage={props.proposalStage}
                   onSaved={props.onSaved}
                 />
+                <OcrPanel lines={it().ocr} />
               </div>
             </div>
           </>

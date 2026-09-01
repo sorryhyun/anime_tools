@@ -93,6 +93,14 @@ const zh: Dict = {
       `低于 ${floor} 的缩放下限 — 该图片不会被缩放，因此遍历 workspace/resized 的各个阶段根本看不到它。请在 ⚙ 设置 › Preprocess 中调低下限。`,
     zoomHint: "⌘/Ctrl+滚轮放大 · 拖动平移 · 双击恢复",
   },
+  ocr: {
+    title: "图像中的文字",
+    /** {0} is how many lines were recognized. */
+    count: (n: number) => `${n} 行`,
+    readOnly: "由 OCR 阶段生成",
+    scoreHint: "识别器的平均逐字置信度；竖排日文会被横向读取，因此分数偏低",
+    boxHint: "在图像中的左上角坐标（像素）",
+  },
   caption: {
     master: "master",
     history: "history",

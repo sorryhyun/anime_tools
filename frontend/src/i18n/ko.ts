@@ -93,6 +93,15 @@ const ko: Dict = {
       `리사이즈 하한 ${floor} 미만 — 이 이미지는 리사이즈되지 않으므로, workspace/resized를 걷는 스테이지들에게는 아예 보이지 않습니다. ⚙ 설정 › Preprocess에서 하한을 낮추세요.`,
     zoomHint: "⌘/Ctrl+스크롤로 확대 · 드래그로 이동 · 더블클릭하면 원래 크기",
   },
+  ocr: {
+    title: "이미지 속 텍스트",
+    /** {0} is how many lines were recognized. */
+    count: (n: number) => `${n}줄`,
+    readOnly: "OCR 스테이지가 생성함",
+    scoreHint:
+      "인식기의 글자당 평균 확신도. 세로쓰기 일본어는 눕혀서 읽히므로 점수가 낮게 나옵니다",
+    boxHint: "이미지 안에서의 좌측 상단 좌표(픽셀)",
+  },
   caption: {
     master: "master",
     history: "history",

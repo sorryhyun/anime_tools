@@ -191,6 +191,7 @@ BASIC_FIELDS: dict[str, frozenset[str]] = {
             "caption_shuffle_variants",
         }
     ),
+    "ocr": frozenset({"lang", "tags", "min_score"}),
     "groups": frozenset({"sim_min", "min_size"}),
     "masks_sam": frozenset(
         {"prompts", "focus_prompts", "threshold", "dilate", "force"}
@@ -223,6 +224,7 @@ ROOT_FIELDS: dict[str, dict[str, str]] = {
     # caption stages above: one decode substrate, one geometry. A mask cut from
     # master pixels is only sound while free-fit's crop stays sub-patch — for a
     # ratio-clamped image it lands off the subject.
+    "ocr": {"src": "src", "dst": "dst"},
     "groups": {"source_dir": "dst"},
     "masks_sam": {"image_dir": "dst"},
     "masks_mit": {"image_dir": "dst"},
@@ -312,6 +314,18 @@ STAGES: tuple[Stage, ...] = (
         "stages",
         report=("report_dir", "report.json"),
         short="Audit",
+    ),
+    Stage(
+        "ocr",
+        "OCR text",
+        "anime_tools.stages.cli.ocr_captions",
+        "OCR",
+        "stages",
+        report=("report_dir", "report.json"),
+        notes=(
+            "Writes {stem}.ocr.txt beside the revised caption. The caption "
+            "itself gets at most a script tag — never the recognized string."
+        ),
     ),
     Stage(
         "groups",

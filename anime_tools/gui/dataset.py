@@ -39,6 +39,7 @@ from anime_tools.captions.history import (
     push_history,
     read_history,
 )
+from anime_tools.captions.ocr_sidecar import ocr_sidecar_path, read_ocr
 from anime_tools.captions.position_clauses import parse_caption, tag_spans
 from anime_tools.captions.variants import read_variants_sidecar, variants_sidecar_path
 from anime_tools.grouping.groups import MANIFEST_VERSION
@@ -723,6 +724,25 @@ def caption_versions(roots: Roots, rel: Path) -> list[dict[str, Any]]:
     return out
 
 
+def ocr_lines(roots: Roots, rel: Path) -> list[dict[str, Any]]:
+    """The ``{stem}.ocr.txt`` sidecar beside the revised caption, or ``[]``.
+
+    Deliberately **not** a rung of :data:`CAPTION_LADDER`, though it is a
+    generated sidecar sitting beside a caption exactly like ``variants`` and
+    ``history`` are. Those two hold *captions* — texts that could be written
+    back into the file above them, which is what a rung's badge offers — and
+    this holds the words that are in the picture. Expanding it into the version
+    badges would put ``こんにちは`` in the list of things clicking could make the
+    caption say.
+
+    A missing sidecar is an image with no text found in it, which is the common
+    case here and not an error; the reader
+    (:func:`anime_tools.captions.ocr_sidecar.read_ocr`) already answers ``[]``.
+    """
+    txt = rel.with_suffix(".txt")
+    return [line.to_dict() for line in read_ocr(ocr_sidecar_path(roots.dst / txt))]
+
+
 def item_detail(
     roots: Roots, rel_str: str, *, min_pixels: int = DEFAULT_MIN_PIXELS
 ) -> dict[str, Any]:
@@ -748,6 +768,7 @@ def item_detail(
         "resized": _image_info(_sibling_image(roots.dst / rel.parent, rel.stem)),
         "mask": _image_info(mask_path(roots, rel)),
         "versions": caption_versions(roots, rel),
+        "ocr": ocr_lines(roots, rel),
     }
 
 

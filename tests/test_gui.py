@@ -157,6 +157,7 @@ def test_scoped_stages_are_the_ones_taking_a_pattern():
         "position",
         "correct",
         "audit",
+        "ocr",
         "masks_sam",
         "masks_mit",
         # Export narrows the same way: publishing just the image on screen.
@@ -741,6 +742,7 @@ def test_only_resized_tree_stages_get_the_preflight():
         "position",
         "correct",
         "audit",
+        "ocr",
         "masks_sam",
         "masks_mit",
         "groups",

@@ -668,3 +668,41 @@ def test_an_unreadable_manifest_is_a_400(client, home):
     p.parent.mkdir(parents=True, exist_ok=True)
     p.write_text("{not json", encoding="utf-8")
     assert c.get("/api/dataset/groups").status_code == 400
+
+
+def test_the_ocr_sidecar_reaches_the_panel_without_being_a_caption_version(client):
+    """The sidecar is evidence about the picture, not a version of the caption.
+
+    So it rides its own key rather than the ladder: expanding it into the badge
+    row would offer to make the caption say ``こんにちは``.
+    """
+    c, home = client
+    dst = home / "workspace" / "resized"
+    (dst / "sub" / "b.ocr.txt").write_text(
+        "# anima caption ocr — auto-generated, do not hand-edit\n"
+        "1\t10,20,300,60\tja\t0.971\tこんにちは\n"
+        "2\t5,5,90,25\ten\t0.870\tSALE\n",
+        encoding="utf-8",
+    )
+    it = c.get("/api/dataset/item", params={"rel": "sub/b.jpg"}).json()
+    assert [ln["text"] for ln in it["ocr"]] == ["こんにちは", "SALE"]
+    assert it["ocr"][0] == {
+        "seq": 1,
+        "box": [10, 20, 300, 60],
+        "lang": "ja",
+        "score": 0.971,
+        "text": "こんにちは",
+    }
+    # Not a rung: no badge in the row came out of the sidecar, so nothing in
+    # the panel offers to make the caption say what the picture says.
+    assert not any(
+        v["kind"] == "ocr" or v.get("rung") == "ocr" for v in it["versions"]
+    )
+    assert not any("こんにちは" in (v.get("text") or "") for v in it["versions"])
+
+
+def test_an_image_with_no_ocr_sidecar_answers_an_empty_list(client):
+    """A missing sidecar is an image the stage never read *and* one it read and
+    found nothing in. Deliberately the same answer: both mean no text on file."""
+    c, _ = client
+    assert c.get("/api/dataset/item", params={"rel": "a.png"}).json()["ocr"] == []

@@ -83,6 +83,19 @@ CTD_ONNX_DIR = "models/mit"
 CTD_ONNX_FILENAME = "comictextdetector.pt.onnx"
 CTD_ONNX_URL = f"https://github.com/{CTD_GH_REPO}/releases/download/{CTD_ONNX_RELEASE}"
 
+# PP-OCRv6 — text detection + recognition, as the official ONNX mirrors of the
+# Paddle inference models. ONNX and not Paddle because `inference.yml` beside
+# each graph carries everything the wrapping code needs (the recognizer's
+# 18,708-character dictionary, the detector's DB thresholds), so onnxruntime and
+# opencv — both already here — are the whole runtime, and a second deep-learning
+# framework does not enter a py3.13 / numpy>=2 / torch stack for one 19M model.
+# Like the CTD net below, neither has a flag: `anime_tools.ocr._onnx` reads these
+# paths, so a Download button cannot write where the loader does not look.
+PPOCR_DET_REPO = "PaddlePaddle/PP-OCRv6_medium_det_onnx"
+PPOCR_REC_REPO = "PaddlePaddle/PP-OCRv6_medium_rec_onnx"
+PPOCR_FILES = ("inference.onnx", "inference.yml")
+PPOCR_DIR = "models/ppocr"
+
 # Danbooru tag KB — the ~114k-row classified tag table every correction pass
 # types its tags against, and what the GUI's click-a-tag panel reads. A CSV in a
 # GitHub repo, so it rides ``_fetch_http`` like the soft prompt does. Its
@@ -108,6 +121,17 @@ def default_ctd_onnx_path() -> Path:
     """``<home>/models/mit/comictextdetector.pt.onnx`` — the only place the MIT
     stage's ``--ctd-gate`` looks, and what the catalog row writes."""
     return resolve_path(CTD_ONNX_DIR) / CTD_ONNX_FILENAME
+
+
+def default_ppocr_det_dir() -> Path:
+    """``<home>/models/ppocr/det`` — the only place the OCR stage's detector is
+    read from, and what the ``ppocr_det`` row writes."""
+    return resolve_path(PPOCR_DIR) / "det"
+
+
+def default_ppocr_rec_dir() -> Path:
+    """``<home>/models/ppocr/rec`` — the recognizer's half of the same."""
+    return resolve_path(PPOCR_DIR) / "rec"
 
 
 def http_timeout() -> float:
@@ -393,6 +417,27 @@ def catalog() -> tuple[Asset, ...]:
             notes="Optional; needs the row above. Rewrites its blurbs in "
             "English, which the caption panel prefers. The 45 MB mirror it "
             "joins stays in the hub cache.",
+        ),
+        Asset(
+            id="ppocr_det",
+            title="PP-OCRv6 text detection",
+            repo=PPOCR_DET_REPO,
+            files=PPOCR_FILES,
+            dest=default_ppocr_det_dir(),
+            used_by="OCR text",
+            stages=("ocr",),
+            notes="62 MB. Finds the text lines the recognizer below reads.",
+        ),
+        Asset(
+            id="ppocr_rec",
+            title="PP-OCRv6 text recognition",
+            repo=PPOCR_REC_REPO,
+            files=PPOCR_FILES,
+            dest=default_ppocr_rec_dir(),
+            used_by="OCR text",
+            stages=("ocr",),
+            notes="77 MB. English, Chinese and Japanese: its dictionary is "
+            "both kana plus 15,565 han characters, and no hangul.",
         ),
         Asset(
             id="mit_text",

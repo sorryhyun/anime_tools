@@ -7,7 +7,7 @@ repository.
 
 `anime_tools` is the dataset-curation half split out of the `anima_lora` trainer:
 caption grammar + correction, the Anima Tagger (dbv4), position clauses, multiview audit, PE-Spatial
-grouping, SAM3/MIT masking. It is consumed as a git dependency (no PyPI).
+grouping, SAM3/MIT masking, PP-OCRv6 text recognition. It is consumed as a git dependency (no PyPI).
 **Dependency direction is one-way: the trainer imports this package; this package never imports the
 trainer** (`library.*`, `networks`, `train`, `gui`, `scripts`, `bench`) — `tests/test_boundary.py`
 greps every module for that, and also asserts `anime_tools.captions.*` + `tagger.dbv4_meta` import
@@ -108,14 +108,22 @@ helper.
   **`_sidecar.py` is the one tab-delimited sidecar format** — `sidecar_header` / `sidecar_path` /
   `read_rows` / `write_rows` — so the multi-dot-stem rule (`with_name`, not `with_suffix`, or
   `a.b.png` loses its `.b`) and the hand-edit tolerance (blank, `#` and wrong-arity lines skipped,
-  never raised) are stated once; what is left in the two modules above it is what a record *means*.
-  The one contract they do not share is the missing file: history answers `[]`, variants raises,
-  because every caller of the latter has already established the file is there.
+  never raised) are stated once; what is left in the three modules above it is what a record *means*.
+  The one contract they do not all share is the missing file: history and ocr answer `[]`, variants
+  raises, because every caller of the latter has already established the file is there.
   `variants.py` writes the tab-delimited `.variants.txt` sidecar (`v0` = pristine);
   `history.py` writes the `.history.txt` one in the same shape — every version a write superseded,
   `seq ⇥ when ⇥ by ⇥ text`, oldest first and capped at `HISTORY_LIMIT`, which is what a run bar
   with no Apply gate stands on and what the GUI's `revised@N` badges are read from; a sequence is
   never renumbered by the trim, so a badge cannot change meaning while you look at it.
+  `ocr_sidecar.py` writes the third, `.ocr.txt` — `seq ⇥ box ⇥ lang ⇥ score ⇥ text`, in reading
+  order — and is the one that is **not a caption**: variants and history both name texts that could
+  be written back into the file above them, which is what a ladder rung's badge offers, while a
+  record here names words that are *in the picture*. That is why it is not a `Rung`, why nothing
+  downstream encodes it, and why it is absent from `docs/contract.md` — curation-private in the
+  same sense as the near-twin feature cache. Empty deletes the file, like history: an image with no
+  text in it has no OCR, and a re-run over re-cropped pixels drops the old claim rather than
+  leaving it standing.
   `index.py` builds `caption_index.json`; `tag_drop_groups.py` implements `--caption_drop_groups`.
   Gate/group sets for position clauses are **data** in `captions/data/clause_vocabulary.yaml`
   (loaded by `clause_vocabulary.py`) — retune there, not in Python.
@@ -147,6 +155,8 @@ helper.
   mask-blanked crops → tagger → v2 rewrite that *moves* bound tags out of the bag;
   five move rules + four gates, see `docs/position_captions.md`), `captions.py` (mirror master →
   `workspace/resized/` with correction + variants, re-attaching clauses), `multiview_audit.py`,
+  `ocr.py` (PP-OCRv6 → `{stem}.ocr.txt` + at most a *script tag* in the caption — see the `ocr/`
+  bullet for why the recognized string never enters the caption),
   and `export_workspace.py` — **the only thing that writes outside the workspace**:
   six artifact kinds (`image`/`caption`/`variants`/`mask`/`master`/`index`) each decided on their
   own against the destination (`identical` by byte compare for text, by `(size, mtime_ns)` for
