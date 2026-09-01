@@ -84,12 +84,19 @@ RESIZED = DEFAULT_ROOTS["dst"]
 MASKS = DEFAULT_ROOTS["masks"]
 REPORTS = f"{WORKSPACE}/{REPORTS_SUBDIR}"
 GROUPS = f"{WORKSPACE}/groups"
-"""The four workspace paths the CLI defaults are written in terms of.
+OCR_SUBDIR = "ocr"
+OCR = f"{WORKSPACE}/{OCR_SUBDIR}"
+"""The five workspace paths the CLI defaults are written in terms of.
 
 Every ``--dst`` / ``--report_dir`` / ``--out`` default is one of these plus the
 stage's own tail, so the CLI and GUI halves cannot disagree — and
 ``gui.stages.report_subpath``, which drops the first component of a report
 default to get that tail, keeps seeing exactly one component in front of it.
+
+:data:`OCR` is a tree of its own rather than a sidecar beside each caption
+because what it holds is not a caption: it is the text that is *in the picture*,
+and keeping it out of the resized tree is what lets it be published, deleted or
+regenerated without touching a single caption.
 """
 
 MASKS_SAM = f"{WORKSPACE}/masks_sam"

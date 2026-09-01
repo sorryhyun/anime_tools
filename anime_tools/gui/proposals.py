@@ -60,20 +60,9 @@ SHAPES: dict[str, ReplaySpec] = {
         drop_variants=True,
         history_by="position",
     ),
-    # OCR's caption half only: a row's ``lines`` are the sidecar, which an undo
-    # leaves alone. They describe the image rather than the caption, so putting
-    # one back would mean re-reading the pixels, which is the run itself.
-    "ocr": ReplaySpec(
-        stage="ocr_captions",
-        rows_key="rows",
-        stats_key="stats",
-        ok_status="ok",
-        before_field="existing",
-        after_field="proposed",
-        target_root="dst",
-        drop_variants=True,
-        history_by="ocr",
-    ),
+    # OCR is deliberately absent. It writes only its own sidecar tree and touches
+    # no caption, so it has nothing to propose and nothing to undo — a run of it
+    # is not a proposal, it is a readout.
     # The audit gates on verdict/confidence rather than a row status, so there
     # is no ``ok_status`` to match: a row is a proposal when it proposes text.
     "audit": ReplaySpec(

@@ -6,10 +6,11 @@ recognizer, and :meth:`OcrEngine.read` turns an image path into
 The weights are ONNX and the runtime is ``onnxruntime`` — see
 :mod:`anime_tools.ocr._onnx` for why that is not PaddlePaddle.
 
-:mod:`anime_tools.ocr.script` is the torch-free, weights-free half: which
-language a recognized line is in, and which Danbooru tag (if any) a caption may
-say so with. It is importable on its own, which is what lets the caption side
-and the tests reason about the tag map without a 139 MB download.
+A run answers *what does the picture say*, and only that. It does not answer
+what language it says it in: PP-OCRv6 is one model over fifty languages and
+returns a string, so a language could only be guessed back off the characters,
+and a guess drawn from a two-character fragment is confident and worthless. The
+recognized string is what goes in the sidecar, for a person to read.
 """
 
 from anime_tools.ocr._onnx import (
@@ -20,17 +21,12 @@ from anime_tools.ocr._onnx import (
     load_ocr,
     reading_order,
 )
-from anime_tools.ocr.script import LANGS, parse_langs, script_of, tags_for
 
 __all__ = [
-    "LANGS",
     "OcrEngine",
     "OcrWeightsMissing",
     "TextDetector",
     "TextRecognizer",
     "load_ocr",
-    "parse_langs",
     "reading_order",
-    "script_of",
-    "tags_for",
 ]

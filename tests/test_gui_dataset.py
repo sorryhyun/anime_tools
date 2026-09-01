@@ -674,14 +674,17 @@ def test_the_ocr_sidecar_reaches_the_panel_without_being_a_caption_version(clien
     """The sidecar is evidence about the picture, not a version of the caption.
 
     So it rides its own key rather than the ladder: expanding it into the badge
-    row would offer to make the caption say ``こんにちは``.
+    row would offer to make the caption say ``こんにちは``. It also lives in its
+    own tree rather than beside the caption — the panel joins it to the item by
+    the same relative path every other root joins by.
     """
     c, home = client
-    dst = home / "workspace" / "resized"
-    (dst / "sub" / "b.ocr.txt").write_text(
+    ocr = home / "workspace" / "ocr" / "sub"
+    ocr.mkdir(parents=True)
+    (ocr / "b.ocr.txt").write_text(
         "# anima caption ocr — auto-generated, do not hand-edit\n"
-        "1\t10,20,300,60\tja\t0.971\tこんにちは\n"
-        "2\t5,5,90,25\ten\t0.870\tSALE\n",
+        "1\t10,20,300,60\t0.971\tこんにちは\n"
+        "2\t5,5,90,25\t0.870\tSALE\n",
         encoding="utf-8",
     )
     it = c.get("/api/dataset/item", params={"rel": "sub/b.jpg"}).json()
@@ -689,15 +692,12 @@ def test_the_ocr_sidecar_reaches_the_panel_without_being_a_caption_version(clien
     assert it["ocr"][0] == {
         "seq": 1,
         "box": [10, 20, 300, 60],
-        "lang": "ja",
         "score": 0.971,
         "text": "こんにちは",
     }
     # Not a rung: no badge in the row came out of the sidecar, so nothing in
     # the panel offers to make the caption say what the picture says.
-    assert not any(
-        v["kind"] == "ocr" or v.get("rung") == "ocr" for v in it["versions"]
-    )
+    assert not any(v["kind"] == "ocr" or v.get("rung") == "ocr" for v in it["versions"])
     assert not any("こんにちは" in (v.get("text") or "") for v in it["versions"])
 
 

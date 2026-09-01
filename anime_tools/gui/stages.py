@@ -191,7 +191,7 @@ BASIC_FIELDS: dict[str, frozenset[str]] = {
             "caption_shuffle_variants",
         }
     ),
-    "ocr": frozenset({"lang", "tags", "min_score"}),
+    "ocr": frozenset({"min_score"}),
     "groups": frozenset({"sim_min", "min_size"}),
     "masks_sam": frozenset(
         {"prompts", "focus_prompts", "threshold", "dilate", "force"}
@@ -220,11 +220,12 @@ ROOT_FIELDS: dict[str, dict[str, str]] = {
     "position": {"src": "src", "dst": "dst"},
     "correct": {"src": "src", "dst": "dst"},
     "audit": {"src": "src", "dst": "dst"},
-    # Grouping and the two mask generators read the *resized* tree, like the
+    # OCR, grouping and the two mask generators read the *resized* tree, like the
     # caption stages above: one decode substrate, one geometry. A mask cut from
     # master pixels is only sound while free-fit's crop stays sub-patch — for a
-    # ratio-clamped image it lands off the subject.
-    "ocr": {"src": "src", "dst": "dst"},
+    # ratio-clamped image it lands off the subject. OCR binds no `src` because it
+    # reads no caption; its sidecars go to their own tree, not a dataset root.
+    "ocr": {"dst": "dst"},
     "groups": {"source_dir": "dst"},
     "masks_sam": {"image_dir": "dst"},
     "masks_mit": {"image_dir": "dst"},
@@ -323,8 +324,8 @@ STAGES: tuple[Stage, ...] = (
         "stages",
         report=("report_dir", "report.json"),
         notes=(
-            "Writes {stem}.ocr.txt beside the revised caption. The caption "
-            "itself gets at most a script tag — never the recognized string."
+            "Writes {stem}.ocr.txt into the OCR tree, mirroring the resized "
+            "tree. Reads and writes no caption."
         ),
     ),
     Stage(

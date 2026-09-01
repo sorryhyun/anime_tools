@@ -31,7 +31,7 @@ from pathlib import Path
 from typing import Any
 
 from anime_tools import workspace as WS
-from anime_tools._env import curation_home, resolve_path
+from anime_tools._env import curation_home, resolve_path, workspace_dir
 from anime_tools._json import read_json
 from anime_tools._walk import IMAGE_EXTENSIONS, glob_images_pathlib
 from anime_tools.captions.history import (
@@ -725,22 +725,25 @@ def caption_versions(roots: Roots, rel: Path) -> list[dict[str, Any]]:
 
 
 def ocr_lines(roots: Roots, rel: Path) -> list[dict[str, Any]]:
-    """The ``{stem}.ocr.txt`` sidecar beside the revised caption, or ``[]``.
+    """The image's ``{stem}.ocr.txt`` from the OCR tree, or ``[]``.
 
-    Deliberately **not** a rung of :data:`CAPTION_LADDER`, though it is a
-    generated sidecar sitting beside a caption exactly like ``variants`` and
-    ``history`` are. Those two hold *captions* — texts that could be written
-    back into the file above them, which is what a rung's badge offers — and
-    this holds the words that are in the picture. Expanding it into the version
-    badges would put ``こんにちは`` in the list of things clicking could make the
-    caption say.
+    Deliberately **not** a rung of :data:`CAPTION_LADDER`, and not even in the
+    same tree: ``variants`` and ``history`` hold *captions* — texts that could be
+    written back into the file above them, which is what a rung's badge offers —
+    and this holds the words that are in the picture. Expanding it into the
+    version badges would put ``こんにちは`` in the list of things clicking could
+    make the caption say.
+
+    Joined to the item by the same relative path every other root is, so the
+    panel needs no state to find it.
 
     A missing sidecar is an image with no text found in it, which is the common
     case here and not an error; the reader
     (:func:`anime_tools.captions.ocr_sidecar.read_ocr`) already answers ``[]``.
     """
     txt = rel.with_suffix(".txt")
-    return [line.to_dict() for line in read_ocr(ocr_sidecar_path(roots.dst / txt))]
+    sidecar = ocr_sidecar_path(workspace_dir() / WS.OCR_SUBDIR / txt)
+    return [line.to_dict() for line in read_ocr(sidecar)]
 
 
 def item_detail(

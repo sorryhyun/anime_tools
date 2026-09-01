@@ -260,17 +260,18 @@ def test_the_report_shapes_match_the_stages_own_replay_specs():
     the server process because those modules import torch. The ``ReplaySpec``
     *class* is imported, so this is now a whole-object comparison — the whole
     diff is wrong if any field drifts, including one added later.
+
+    OCR is in neither side: it writes only its own sidecar tree and touches no
+    caption, so it has nothing to replay and nothing to undo.
     """
     from anime_tools.stages.cli.audit_multiview import REPLAY_SPEC as audit
     from anime_tools.stages.cli.autotag_captions import REPLAY_SPEC as autotag
-    from anime_tools.stages.cli.ocr_captions import REPLAY_SPEC as ocr
     from anime_tools.stages.cli.position_captions import REPLAY_SPEC as position
 
     assert P.SHAPES == {
         "autotag": autotag,
         "position": position,
         "audit": audit,
-        "ocr": ocr,
     }
 
 

@@ -392,13 +392,15 @@ export interface ImageInfo {
 /** One line the OCR stage read out of the image, from `{stem}.ocr.txt`.
 
     Not a caption and not a version of one: `box` is where it sits in the image
-    (the axis-aligned bound of the detector's quad), `lang` is what
-    `anime_tools.ocr.script` classified it as, and `score` the recognizer's mean
-    per-character confidence. Generated, so the panel renders it read-only. */
+    (the axis-aligned bound of the detector's quad) and `score` is the
+    recognizer's mean per-character confidence. There is no language field: the
+    model reads fifty languages and returns a string, never a language, so one
+    could only be guessed back off the characters — and a guess drawn from a
+    two-character fragment is confident and worthless. Generated, so the panel
+    renders it read-only. */
 export interface OcrLine {
   seq: number;
   box: [number, number, number, number];
-  lang: string;
   score: number;
   text: string;
 }

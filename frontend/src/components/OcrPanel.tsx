@@ -10,8 +10,8 @@ import type { OcrLine } from "../types";
     made to say — and these are the words that are in the image. Putting
     `こんにちは` in the badge row would offer to make the caption say it.
 
-    So it reads as evidence sitting under the captions: what was found, in what
-    language, how sure the recognizer was. Read-only, because the sidecar is
+    So it reads as evidence sitting under the captions: what was found and how
+    sure the recognizer was. Read-only, because the sidecar is
     generated — editing it would be editing a claim about pixels, and the way to
     change it is to run the stage again. */
 export function OcrPanel(props: { lines: OcrLine[] }) {
@@ -29,7 +29,6 @@ export function OcrPanel(props: { lines: OcrLine[] }) {
               {(line) => (
                 <tr>
                   <td class="dim seq">{line.seq}</td>
-                  <td class="dim lang">{line.lang}</td>
                   <td class="text">{line.text}</td>
                   {/* The score is the one number worth reading per line: a
                       vertical Japanese column comes back sideways and scores
