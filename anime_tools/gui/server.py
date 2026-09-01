@@ -290,6 +290,22 @@ def create_app(
     def index() -> FileResponse:
         return FileResponse(STATIC / "index.html")
 
+    @app.get("/assets/{name}")
+    def asset(name: str) -> FileResponse:
+        """Serve a sibling of index.html -- today only the bundled woff2.
+
+        The bundle inlines its script and stylesheet but not the font: at
+        1.7 MB the base64 of it was 92% of the committed file, rewritten by
+        every frontend commit. Beside the page it is one immutable object.
+        A path param never spans "/", so `name` cannot climb out of STATIC;
+        the checks below are for a name that simply is not an asset.
+        """
+        p = STATIC / name
+        if name == "index.html" or name.startswith(".") or not p.is_file():
+            raise HTTPException(404, "not found")
+        mime = mimetypes.guess_type(name)[0] or "application/octet-stream"
+        return FileResponse(p, media_type=mime)
+
     @app.get("/api/info")
     def info() -> dict[str, Any]:
         return {

@@ -43,7 +43,7 @@ test:
 hooks:  ## point git at scripts/hooks (ruff + prettier on staged files)
 	git config core.hooksPath scripts/hooks
 	@echo "git hooks: scripts/hooks (bypass one commit with git commit --no-verify)"
-frontend:  ## rebuild anime_tools/gui/static/index.html from frontend/ (needs bun)
+frontend:  ## rebuild anime_tools/gui/static/ (page + font) from frontend/ (needs bun)
 	$(BUILD_FRONTEND)
 frontend-dev:  ## bun dev server with hot reload, proxying /api to a running `make gui`
 	$(FRONTEND_DEV)

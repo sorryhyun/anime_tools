@@ -12,9 +12,12 @@ and come from the system emoji family. One variable file at 1.7 MB beats three s
 2.0 MB *and* gives every weight in between, so 400/500/600/700 in `styles.css`
 are all real instances, never synthesised.
 
-`scripts/build_frontend.sh` inlines this file into
-`anime_tools/gui/static/index.html` as a base64 `data:` URL — the built GUI is
-one self-contained file with no font request at runtime, online or off. Han
+`scripts/build_frontend.sh` copies this file into
+`anime_tools/gui/static/` beside the built page, which loads it from
+`/assets/PretendardVariable.subset.woff2` — one request to the local server, no
+network at runtime, online or off. It used to be inlined as a base64 `data:`
+URL; at 1.7 MB that made it 92% of every committed bundle, so it rides along as
+its own file instead (`frontend/build.ts` explains the split). Han
 ideographs (JA/ZH) and emoji are outside the subset and fall back to the system
 families named in the `--font-ui` stack, exactly as the Qt GUI does.
 

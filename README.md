@@ -131,7 +131,7 @@ home: `ANIME_TOOLS_HOME` → `ANIMA_HOME` → current directory
 make install       # install bun (frontend bundler) + uv sync
 uv run pytest -q
 make gui           # dev server on http://127.0.0.1:8790, opens your browser
-make frontend      # rebuild anime_tools/gui/static/index.html from frontend/ (Solid, needs bun)
+make frontend      # rebuild anime_tools/gui/static/ from frontend/ (Solid, needs bun)
 make frontend-dev  # bun dev server with hot reload on :5173, proxying /api to `make gui`
 ```
 
@@ -143,12 +143,12 @@ calls the `.ps1` twin of each setup script — `scripts/ensure_bun.ps1`,
 (`winget install GnuWin32.Make`, or scoop/choco); everything else the targets
 touch — uv, bun, python — is cross-platform.
 
-The GUI frontend lives in `frontend/` (TypeScript / Solid) and builds into one
-self-contained `anime_tools/gui/static/index.html` that is **committed** — git
-installs ship it as-is, and CI fails if it drifts from `frontend/src`. Users
-never need bun. bun is the whole toolchain (`frontend/build.ts` drives
-`Bun.build` and inlines script, CSS and the bundled Pretendard into the one
-file); there is no Vite, webpack or Rollup in the tree.
+The GUI frontend lives in `frontend/` (TypeScript / Solid) and builds into
+`anime_tools/gui/static/` — `index.html` with script and CSS inlined, plus the
+bundled Pretendard beside it — which is **committed**: git installs ship it
+as-is, and CI fails if it drifts from `frontend/src`. Users never need bun. bun
+is the whole toolchain (`frontend/build.ts` drives `Bun.build`); there is no
+Vite, webpack or Rollup in the tree.
 
 `tests/test_boundary.py` pins the one rule of the split: this package never
 imports the trainer (`library.*`, `networks`, `train`).

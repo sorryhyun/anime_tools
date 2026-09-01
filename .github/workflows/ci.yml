@@ -23,6 +23,7 @@ jobs:
       - uses: oven-sh/setup-bun@v2
       # Same prettier pass the pre-commit hook runs (scripts/hooks/pre-commit).
       - run: cd frontend && bun install --frozen-lockfile && bun run format:check
-      # The built frontend (anime_tools/gui/static/index.html) is committed; fail if stale.
+      # The built frontend (anime_tools/gui/static/) is committed -- the page and the
+      # font beside it; fail if either drifts from frontend/.
       - run: scripts/build_frontend.sh
-      - run: git diff --exit-code -- anime_tools/gui/static/index.html
+      - run: git diff --exit-code -- anime_tools/gui/static/

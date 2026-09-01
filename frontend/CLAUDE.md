@@ -8,11 +8,20 @@ how the browser half is built is here and not repeated there.
 
 ## What this is
 
-Solid + TypeScript, bundled by `bun` into **`anime_tools/gui/static/index.html`**
-— one file, fonts and CSS inlined, committed to the repo. The bundle is a build
-artifact that is nevertheless checked in (the installed package ships no
-toolchain), so **every source change here needs `make frontend`**; CI fails on
-drift between `frontend/src` and that file.
+Solid + TypeScript, bundled by `bun` into **`anime_tools/gui/static/`** —
+`index.html` with script and CSS inlined, and the woff2 it points at beside it
+(served from `/assets/<name>`). Both are build artifacts that are nevertheless
+checked in (the installed package ships no toolchain), so **every source change
+here needs `make frontend`**; CI fails on drift between `frontend/src` and that
+directory.
+
+The font is the one thing not folded into the page. Inlined as a base64 `data:`
+URL it was 2.25 MB of a 2.45 MB file — 92% of a blob git re-stored for every
+one-line CSS edit — while the page itself is ~150 KB. Beside the page it is one
+immutable object in history and the diff of a frontend change is the part that
+actually moved. Nothing depends on the page being a *single* file: it is served
+over HTTP by `gui/server.py`, never opened as `file://`, and the wheel's
+`package-data` is `static/*`, which globs the whole (flat) directory.
 
 ```bash
 make frontend        # rebuild the committed bundle (scripts/build_frontend.sh)

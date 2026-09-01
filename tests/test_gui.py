@@ -7,6 +7,7 @@ reported *unavailable*, never as an import error.
 from __future__ import annotations
 
 import json
+import re
 import sys
 import threading
 import time
@@ -465,6 +466,22 @@ def test_index_and_info(client):
     assert c.get("/api/info").json()["home"] == str(home)
     ids = [s["id"] for s in c.get("/api/stages").json()]
     assert ids == [s.id for s in S.STAGES]
+
+
+def test_bundle_assets_resolve(client):
+    """The page is not self-contained -- the font sits beside it -- so the two
+    halves have to agree: every ``url()`` the built CSS still points at must be
+    a name ``/assets`` actually serves, or the GUI renders in a fallback face."""
+    c, _ = client
+    refs = re.findall(r"url\((/assets/[^)]+)\)", c.get("/").text)
+    assert refs, "the bundle references no assets -- did build.ts start inlining again?"
+    for ref in refs:
+        r = c.get(ref)
+        assert r.status_code == 200, ref
+        assert r.headers["content-type"] == "font/woff2"
+    # The route is the page's siblings, not the page itself, and not a guess.
+    assert c.get("/assets/index.html").status_code == 404
+    assert c.get("/assets/nope.woff2").status_code == 404
 
 
 def test_files_are_confined_to_the_dataset(client):

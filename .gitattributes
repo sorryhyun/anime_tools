@@ -1,0 +1,4 @@
+# The bundle is generated (frontend/build.ts) and minified onto one line: a
+# rendered diff of it is noise, and CI's `git diff --exit-code` over the tree
+# still catches drift with diffing off.
+anime_tools/gui/static/index.html -diff linguist-generated

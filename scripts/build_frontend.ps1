@@ -1,5 +1,6 @@
-# Build the Solid frontend into anime_tools/gui/static/index.html (one self-contained
-# file) -- Windows twin of build_frontend.sh. Needs bun (https://bun.sh) and nothing
+# Build the Solid frontend into anime_tools/gui/static/ -- index.html with its script
+# and stylesheet inlined, plus the woff2 it points at. Windows twin of
+# build_frontend.sh. Needs bun (https://bun.sh) and nothing
 # else; users never run this, the built file is committed and CI fails if it drifts.
 $ErrorActionPreference = "Stop"
 Set-Location (Join-Path $PSScriptRoot "..\frontend")

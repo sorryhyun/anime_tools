@@ -347,7 +347,10 @@ helper.
   but everything the server owns (stage titles, argparse labels and help, the model catalog) stays
   as it arrives, which is the same rule that keeps flags from being re-typed in the browser.
   Frontend source is `frontend/` (Solid + TS, bundled by `bun` into the committed
-  `gui/static/index.html`; `make frontend`, CI fails on drift) and **`frontend/CLAUDE.md` is that
+  `gui/static/` — `index.html` with script and CSS inlined, and the 1.7 MB woff2 *beside* it rather
+  than base64'd into it, served by the one `/assets/{name}` route; inlined it was 92% of the file
+  and git re-stored all of it for every one-line CSS edit; `make frontend`, CI fails on drift over
+  the whole directory) and **`frontend/CLAUDE.md` is that
   half's own guide** — how the browser half is put together (the composables, the conventions,
   the build) is written there and only there, and this bullet is the server side of the same seam.
   Settings also lists `downloads.catalog()` with a Download button per model (`/api/models`,
@@ -364,7 +367,8 @@ helper.
   the canvas editor's properties panel binds to); `canvas.json` is the source of truth for which
   boards exist and where they sit; `python3 design/build.py` wraps each into a Design Component with
   `helmet.html` and the inlined Pretendard Latin subset (the artboard iframe has no network egress,
-  so the face rides inside the file — the same trick `frontend/build.ts` plays for the shipped GUI).
+  so the face rides inside the file — which is why the *canvas* still base64s a font the shipped GUI
+  no longer does: there is no server beside an artboard to fetch it from).
   Seeding and publishing need the `/design` skill's payload, which lives outside the repo:
   `design/README.md` has the loop and the artifact URL. Edits made in the published editor do
   **not** flow back — port them into `boards/`.

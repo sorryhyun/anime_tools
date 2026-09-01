@@ -1,15 +1,23 @@
 #!/usr/bin/env bun
-// Bundle the Solid frontend into ONE self-contained
-// anime_tools/gui/static/index.html.
+// Bundle the Solid frontend into anime_tools/gui/static/: index.html plus the
+// assets it points at (today: one woff2).
 //
-// The server only routes "/", the wheel's package-data is `static/*`, and git
-// installs (`uv tool install ... git+...`) ship the committed file as-is -- so
-// script, stylesheet and font all end up inline, with nothing left to fetch.
-// Bun's bundler emits them as separate artifacts and rewrites the references;
-// this script folds them back together.
+// Git installs (`uv tool install ... git+...`) ship this directory as committed
+// and the wheel's package-data is `static/*`, so whatever lands here is what
+// runs -- there is no toolchain on the far side to rebuild it. Script and
+// stylesheet therefore go INSIDE index.html: they are the half that changes
+// every commit, and one file means one artifact to keep in sync. The font does
+// not. Inlined as a base64 `data:` URL it was 2.25 MB of a 2.45 MB bundle --
+// 92% of a blob git had to store anew for a one-line CSS edit -- so it is
+// written beside index.html instead, served from /assets/<name> (the flat
+// layout is what `static/*` globs), and stays one immutable object in history.
+// Bun's bundler already emits it as a separate artifact and rewrites the
+// url() to it; this script keeps that split and folds back only the rest.
+import { unlink } from "node:fs/promises";
 import { solidPlugin } from "./solid-plugin";
 
-const OUT = "../anime_tools/gui/static/index.html";
+const OUT_DIR = "../anime_tools/gui/static";
+const OUT = `${OUT_DIR}/index.html`;
 
 const result = await Bun.build({
   entrypoints: ["./src/index.tsx"],
@@ -18,6 +26,9 @@ const result = await Bun.build({
   format: "esm",
   minify: true,
   sourcemap: "none",
+  // Name assets for their source, not their content: a hashed name would make
+  // a font bump a new file and leave the old one in the committed directory.
+  naming: { asset: "[name].[ext]" },
 });
 if (!result.success) {
   for (const log of result.logs) console.error(String(log));
@@ -26,9 +37,9 @@ if (!result.success) {
 
 let js = "";
 let css = "";
-// Assets Bun split out of the CSS (the woff2), keyed by the hashed filename it
+// Assets Bun split out of the CSS (the woff2), keyed by the filename it
 // rewrote the url() to.
-const assets = new Map<string, { type: string; bytes: Uint8Array }>();
+const assets = new Map<string, Uint8Array>();
 
 for (const out of result.outputs) {
   // Bun reports artifact paths with the host separator (`.\font.woff2` on
@@ -37,18 +48,33 @@ for (const out of result.outputs) {
   const name = out.path.replaceAll("\\", "/").replace(/^\.\//, "");
   if (out.kind === "entry-point") js = await out.text();
   else if (name.endsWith(".css")) css += await out.text();
-  else assets.set(name, { type: out.type, bytes: new Uint8Array(await out.arrayBuffer()) });
+  else assets.set(name, new Uint8Array(await out.arrayBuffer()));
 }
 if (!js) throw new Error("no entry-point artifact");
 if (!css) throw new Error("no css artifact -- did src/index.tsx stop importing styles.css?");
 
-// Inline every asset the CSS still points at. `format(woff2)` survives; only
-// the url() target changes, so @font-face keeps working with zero requests.
-for (const [name, asset] of assets) {
-  const dataUrl = `data:${asset.type.split(";")[0]};base64,${Buffer.from(asset.bytes).toString("base64")}`;
+// Write every asset the CSS points at beside index.html and re-anchor the
+// url() at the route that serves it. Bun writes the reference relative to the
+// stylesheet, which would resolve against "/" once the CSS is inlined into the
+// page -- correct today, but only by coincidence, so name the route outright.
+// One `replace` pass and not two `replaceAll`s: the replacement now CONTAINS
+// the name, and a second sweep would nest it (`/assets//assets/font.woff2`).
+const written = new Set(["index.html"]);
+for (const [name, bytes] of assets) {
+  const ref = new RegExp(`(?:\\./)?${name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`, "g");
   const before = css;
-  css = css.replaceAll(`./${name}`, dataUrl).replaceAll(name, dataUrl);
+  css = css.replace(ref, `/assets/${name}`);
   if (css === before) throw new Error(`asset ${name} is not referenced by the bundled CSS`);
+  await Bun.write(`${OUT_DIR}/${name}`, bytes);
+  written.add(name);
+}
+
+// An asset that stops being referenced would otherwise sit in the committed
+// directory forever: CI diffs this tree, and a file nothing writes never drifts.
+for (const stale of new Bun.Glob("*").scanSync(OUT_DIR)) {
+  if (written.has(stale)) continue;
+  await unlink(`${OUT_DIR}/${stale}`);
+  console.log(`removed stale ${stale}`);
 }
 
 // A literal `</script` inside the payload would close the tag early; in JS,
@@ -57,10 +83,10 @@ for (const [name, asset] of assets) {
 const safe = (s: string) => s.replaceAll("</", "<\\/");
 if (/<\/style/i.test(css)) throw new Error("bundled CSS contains `</style` and cannot be inlined");
 
-// The wheel ships this one file and nothing else, so the embedded font's
-// attribution has to ride along with it (frontend/fonts/README.md is not
-// installed anywhere).
-const NOTICE = `<!--\n  anime_tools GUI - generated by frontend/build.ts, do not edit.\n  Embedded font: Pretendard (c) 2021 Kil Hyung-jin, SIL Open Font License 1.1\n  https://github.com/orioncactus/pretendard\n-->`;
+// frontend/fonts/README.md is not installed anywhere, so the font's attribution
+// has to ride in what the wheel does ship -- and it ships this page beside the
+// woff2 itself.
+const NOTICE = `<!--\n  anime_tools GUI - generated by frontend/build.ts, do not edit.\n  Bundled font (served from /assets): Pretendard (c) 2021 Kil Hyung-jin,\n  SIL Open Font License 1.1 - https://github.com/orioncactus/pretendard\n-->`;
 
 let html = await Bun.file("index.html").text();
 const tag = /\s*<script type="module" src="\/src\/index\.tsx"><\/script>/;
@@ -74,6 +100,5 @@ html = html
 await Bun.write(OUT, html);
 
 const kb = (n: number) => `${(n / 1024).toFixed(0)} KB`;
-console.log(
-  `${OUT}  ${kb(Buffer.byteLength(html))}  (js ${kb(js.length)}, css+font ${kb(css.length)})`,
-);
+console.log(`${OUT}  ${kb(Buffer.byteLength(html))}  (js ${kb(js.length)}, css ${kb(css.length)})`);
+for (const [name, bytes] of assets) console.log(`${OUT_DIR}/${name}  ${kb(bytes.length)}`);
