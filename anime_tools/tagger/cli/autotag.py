@@ -15,7 +15,7 @@ from __future__ import annotations
 import argparse
 import logging
 
-from anime_tools._device import resolve_device
+from anime_tools._device import add_device_arg, resolve_device
 from anime_tools._env import resolve_path, setup_logging
 from anime_tools.tagger.tagger import (
     DEFAULT_TAGGER_DIR,
@@ -39,7 +39,7 @@ def main() -> None:
         default=DEFAULT_TAGGER_DIR,
         help="Tagger checkpoint dir (repo-relative; auto-downloaded if missing).",
     )
-    p.add_argument("--device", default=None, help="torch device (default: auto).")
+    add_device_arg(p)
     p.add_argument(
         "--min_confidence",
         type=float,

@@ -32,7 +32,7 @@ from pathlib import Path
 from PIL import Image
 
 from anime_tools.captions.position_clauses import compose_caption, parse_caption
-from anime_tools.captions.taxonomy import RATING_LITERALS
+from anime_tools.captions.taxonomy import RATING_LITERALS, normalize_tag
 
 from ._caption_io import read_caption, write_caption
 
@@ -86,7 +86,10 @@ class AutotagStats:
 
 
 def _has_rating(tags: tuple[str, ...]) -> bool:
-    return any(t.strip().lower() in RATING_LITERALS for t in tags)
+    # The rating literals are single spaceless words, so the underscore fold is
+    # a no-op here — but it is the one tag key in this module, and a second
+    # spelling of "same tag?" is exactly what ``merge_tags`` got wrong.
+    return any(normalize_tag(t) in RATING_LITERALS for t in tags)
 
 
 def merge_tags(existing: str, tagged: str) -> tuple[str, tuple[str, ...]]:
@@ -96,24 +99,29 @@ def merge_tags(existing: str, tagged: str) -> tuple[str, tuple[str, ...]]:
     counts as present, so merging after ``caption-position`` never duplicates a
     clause tag back into the flat bag. The tagger's leading rating is dropped
     when the caption already carries one — two ratings contradict.
+
+    Presence is keyed on :func:`normalize_tag`, which is the whole point here:
+    the tagger emits ``speech bubble`` where a hand-written master may hold
+    ``speech_bubble``, so a local ``lower()`` appended the tagger's spelling of
+    every underscored tag the caption already carried.
     """
     parsed = parse_caption(existing)
-    seen = {t.strip().lower() for t in parsed.flat_tags}
+    seen = set(parsed.tag_keys)
     for clause in parsed.clauses:
-        seen.update(t.strip().lower() for t in clause.tags)
+        seen.update(normalize_tag(t) for t in clause.tags)
 
     keep_rating = not _has_rating(parsed.flat_tags)
     added: list[str] = []
     for index, tag in enumerate(t.strip() for t in tagged.split(",")):
         if not tag:
             continue
-        low = tag.lower()
-        if low in seen:
+        key = normalize_tag(tag)
+        if key in seen:
             continue
         # ``predict_caption`` always puts the rating in slot 0.
-        if index == 0 and low in RATING_LITERALS and not keep_rating:
+        if index == 0 and key in RATING_LITERALS and not keep_rating:
             continue
-        seen.add(low)
+        seen.add(key)
         added.append(tag)
 
     if not added:

@@ -26,6 +26,7 @@ from pathlib import Path
 
 import yaml
 
+from anime_tools.captions import tag_groups as tg
 from anime_tools.captions.correction import load_tag_knowledge_base
 
 # Single-subject predicate on space-form tag *names*; ``role_markers`` and the
@@ -472,6 +473,96 @@ def merge_apply(
     return text, notes
 
 
+# The two halves of a groups pass, shared by ``--mode derive_groups`` and
+# ``build_vocab --derive_groups``. What differs between those two is *upstream*
+# of both halves and stays with the caller: where ``solo_sets`` came from (the
+# manifest, or a caption scan the build already did) and where ``kb`` came from
+# (an explicit --tag_cache, or find_tag_csv() with a warn-and-skip fallback).
+
+
+def derive_from_args(
+    args: argparse.Namespace,
+    vocab: dict,
+    kb,
+    rules,
+    solo_sets: list[set[str]],
+    *,
+    source: str,
+) -> tuple[list[dict], list[str], int]:
+    """Score one groups pass and log it: ``(rows, unmatched, n_general)``.
+
+    The five tuning knobs are declared once, on the one ``tagger.cli.main``
+    parser, and both modes read the same namespace — so they are lifted off
+    ``args`` here rather than respelled per call site: the ten-argument
+    :func:`derive_rows` call was written out twice, which is two places for a
+    renamed knob to be missed and a default to drift.
+
+    ``source`` is the caller's one-phrase name for where ``solo_sets`` came
+    from, so the log line says which corpus the co-occurrence was measured on —
+    the number is only as trustworthy as its source.
+    """
+    logger.info(
+        "co-occurrence from %s — %d single-subject samples", source, len(solo_sets)
+    )
+    rows, unmatched = derive_rows(
+        vocab,
+        kb,
+        rules,
+        solo_sets,
+        min_group_size=args.min_group_size,
+        min_member_freq=args.min_member_freq,
+        min_group_support=args.min_group_support,
+        softmax_cooc_max=args.softmax_cooc_max,
+        borderline_cooc_max=args.borderline_cooc_max,
+    )
+    n_general = sum(1 for t in vocab["tags"] if t["category"] == "general")
+    n_softmax = sum(1 for r in rows if r["mode"] == "softmax_when_solo")
+    logger.info(
+        "%d general tags (%d matched in KB, %d unmatched) → %d candidate groups "
+        "(%d softmax_when_solo, %d multilabel)",
+        n_general,
+        n_general - len(unmatched),
+        len(unmatched),
+        len(rows),
+        n_softmax,
+        len(rows) - n_softmax,
+    )
+    return rows, unmatched, n_general
+
+
+def write_merged_groups(
+    rows: list[dict],
+    dest: Path,
+    preserve: Path | None,
+    *,
+    min_group_size: int,
+) -> tg.TagGroups:
+    """Merge ``rows`` onto ``preserve``, back ``dest`` up, write it, read it back.
+
+    Returns the written file loaded through :func:`tag_groups.load_groups` — the
+    real consumer, so a merge that cannot be loaded fails here rather than at
+    the next run. It is returned rather than discarded because the caller that
+    goes on to *use* the groups (``build_vocab``) would otherwise parse the file
+    it just wrote a second time.
+
+    The backup is ``<dest>.bak`` (``groups.yaml`` → ``groups.yaml.bak``) and is
+    taken whenever ``dest`` exists, including when ``dest`` *is* ``preserve`` —
+    safe, because :func:`merge_apply` has already read that file into memory,
+    and precisely the case where a backup is worth having.
+    """
+    text, notes = merge_apply(rows, preserve, min_group_size=min_group_size)
+    if dest.exists():
+        backup = dest.with_suffix(dest.suffix + ".bak")
+        backup.write_text(dest.read_text(encoding="utf-8"), encoding="utf-8")
+        logger.info("backed up %s → %s", dest, backup)
+    dest.write_text(text, encoding="utf-8")
+    merged = tg.load_groups(dest)
+    for n in notes:
+        logger.info("  %s", n)
+    logger.info("wrote merged groups.yaml (%d groups) → %s", len(merged.groups), dest)
+    return merged
+
+
 def cmd_derive_groups(args: argparse.Namespace) -> None:
     out_dir = Path(args.out_dir)
     ckpt = TaggerCheckpoint.from_dir(out_dir, require=("vocab",))
@@ -494,55 +585,20 @@ def cmd_derive_groups(args: argparse.Namespace) -> None:
     else:
         solo_sets = _solo_sets_from_captions(args.caption_roots, rules)
         source = "caption scan"
-    logger.info(
-        "co-occurrence from %s — %d single-subject samples", source, len(solo_sets)
-    )
 
-    rows, unmatched = derive_rows(
-        vocab,
-        kb,
-        rules,
-        solo_sets,
-        min_group_size=args.min_group_size,
-        min_member_freq=args.min_member_freq,
-        min_group_support=args.min_group_support,
-        softmax_cooc_max=args.softmax_cooc_max,
-        borderline_cooc_max=args.borderline_cooc_max,
-    )
-
-    n_general = sum(1 for t in vocab["tags"] if t["category"] == "general")
-    n_softmax = sum(1 for r in rows if r["mode"] == "softmax_when_solo")
-    logger.info(
-        "%d general tags → %d candidate groups (%d softmax_when_solo, %d multilabel); "
-        "%d general tags unmatched in KB",
-        n_general,
-        len(rows),
-        n_softmax,
-        len(rows) - n_softmax,
-        len(unmatched),
+    rows, unmatched, n_general = derive_from_args(
+        args, vocab, kb, rules, solo_sets, source=source
     )
 
     if args.report:
         _print_report(rows, unmatched, n_general)
 
     if args.apply:
-        preserve = Path(args.preserve_groups) if args.preserve_groups else None
-        text, notes = merge_apply(rows, preserve, min_group_size=args.min_group_size)
-        dest = Path(args.out_yaml) if args.out_yaml else out_dir / "groups.yaml"
-        # Safe even when dest == preserve: merge_apply already read it into memory.
-        if dest.exists():
-            backup = dest.with_suffix(dest.suffix + ".bak")
-            backup.write_text(dest.read_text(), encoding="utf-8")
-            logger.info("backed up %s → %s", dest, backup)
-        dest.write_text(text, encoding="utf-8")
-        # Validate the merged file loads through the real consumer.
-        from anime_tools.captions import tag_groups as tg
-
-        merged = tg.load_groups(dest)
-        for n in notes:
-            logger.info("  %s", n)
-        logger.info(
-            "wrote merged groups.yaml (%d groups) → %s", len(merged.groups), dest
+        write_merged_groups(
+            rows,
+            Path(args.out_yaml) if args.out_yaml else out_dir / "groups.yaml",
+            Path(args.preserve_groups) if args.preserve_groups else None,
+            min_group_size=args.min_group_size,
         )
     elif args.out_yaml:
         Path(args.out_yaml).write_text(emit_yaml(rows), encoding="utf-8")

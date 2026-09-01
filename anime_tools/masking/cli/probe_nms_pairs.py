@@ -22,7 +22,7 @@ from pathlib import Path
 from PIL import Image
 
 from anime_tools import workspace as WS
-from anime_tools._device import resolve_device
+from anime_tools._device import add_device_arg, resolve_device
 from anime_tools._env import resolve_path
 from anime_tools._json import write_json
 from anime_tools._walk import walk_images
@@ -63,7 +63,7 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--iou_threshold", type=float, default=0.65)
     p.add_argument("--min_area_frac", type=float, default=0.005)
     add_checkpoint_arg(p)
-    p.add_argument("--device", default=None, help="cuda|cpu (default: auto)")
+    add_device_arg(p)
     args = p.parse_args()
     args.device = resolve_device(args.device)
     return args

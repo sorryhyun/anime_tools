@@ -46,6 +46,7 @@ from anime_tools.captions.position_clauses import (
     ordered_indices,
     parse_caption,
 )
+from anime_tools.captions.taxonomy import normalize_tag
 from anime_tools.stages.instance_detection import (
     Detection,
     box_area,
@@ -430,7 +431,9 @@ def propose_for_image(
                 tags=tags,
                 crop=crop_name,
                 source=det.source,
-                novel=sum(1 for t in tags if t.strip().lower() not in flat_bag),
+                # ``flat_bag`` is ``parsed.tag_keys``, so the probe has to be the
+                # same key — a ``lower()`` one never matched an underscored tag.
+                novel=sum(1 for t in tags if normalize_tag(t) not in flat_bag),
             )
         )
 
@@ -457,8 +460,8 @@ def propose_for_image(
             margin=options.attribution_margin,
         )
         proposal.pinned = dict(plan.blocked)
-        taken = {m.tag.strip().lower() for m in plan.moved}
-        remaining = [t for t in flat if t.strip().lower() not in taken]
+        taken = {normalize_tag(m.tag) for m in plan.moved}
+        remaining = [t for t in flat if normalize_tag(t) not in taken]
         # The rewrite removes text, so an emptied bag is asserted against
         # rather than assumed impossible.
         if remaining:

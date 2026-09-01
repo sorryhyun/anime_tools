@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import argparse
 import dataclasses
+from pathlib import Path
 
 import pytest
 
@@ -279,3 +280,31 @@ def test_the_audit_builds_its_options_off_the_shared_detection_half():
         if name in OPTIONAL_FLAGS:
             continue
         assert shared[name] == value, f"{name} differs between the two stages"
+
+
+def test_the_device_flag_has_no_copies_left():
+    """One ``--device`` declaration, imported — not eleven re-typed ones.
+
+    ``device`` is a :data:`anime_tools.gui.stages.AUTO_FIELDS` dest: neither
+    shown on the form nor put on the argv, so the child resolves it itself
+    through :func:`anime_tools._device.resolve_device`. That only works while
+    every CLI defaults it to ``None``, and the flag lived next to the resolver
+    only in prose — eleven parsers spelled it out by hand, in four different
+    help texts and two of them with none at all.
+    ``test_shared_flags_keep_one_spelling`` above pins the result across the
+    stages; this pins the *cause*, so a twelfth parser cannot reintroduce the
+    drift by copying a line instead of calling :func:`_device.add_device_arg`.
+
+    ``bench/`` is outside the package and deliberately hard-defaults
+    ``--device`` to ``cuda`` (it is GPU-only training and eval), so it is not
+    in scope here and is not reached by ``rglob`` over the package either.
+    """
+    from anime_tools import _device
+
+    package = Path(_device.__file__).parent
+    carriers = sorted(
+        p.relative_to(package).as_posix()
+        for p in package.rglob("*.py")
+        if '"--device"' in p.read_text(encoding="utf-8")
+    )
+    assert carriers == ["_device.py"]

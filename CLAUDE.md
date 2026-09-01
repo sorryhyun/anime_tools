@@ -90,7 +90,11 @@ helper.
   bucket ordering. **`taxonomy.py` is the one tag-*shape* vocabulary** (pure stdlib, no vocab,
   no model): `normalize_tag` (trim / `_`→` ` / lower / collapse — the key every "does the caption
   already say this?" comparison uses, including `position_clauses.tag_keys` and
-  `clause_rewrite._cmp_key`, so the two danbooru spellings of a tag can never read as two tags),
+  `clause_rewrite._cmp_key`, so the two danbooru spellings of a tag can never read as two tags —
+  and `tests/test_tag_taxonomy.py` greps every module under `stages/` for the bare `.lower()` that
+  should be this call, the exemptions stated once in the guard; the two it was written for were
+  live bugs, `autotag`'s `merge` appending a second copy of every underscored tag and the caption
+  mirror's clause re-attach re-asserting the tag it had just moved out),
   `is_count_tag`/`count_of`/`exact_count` (the one count regex — there is a test asserting the
   pattern appears nowhere else in the package),
   `SINGLE_COUNT_NAMES`/`is_solo_names`/`solo_multi_indices` (the `softmax_when_solo` predicate,
@@ -101,6 +105,12 @@ helper.
   `group_router.from_vocab` (which now only moves the revived `ResolvedGroup`s onto a device);
   `tag_groups.resolved_from_dict` is the inverse of `resolved_to_dict` that makes that revival
   possible, and `tag_rules.load_rules` is `from_dict` over the parsed YAML rather than its twin.
+  **`_sidecar.py` is the one tab-delimited sidecar format** — `sidecar_header` / `sidecar_path` /
+  `read_rows` / `write_rows` — so the multi-dot-stem rule (`with_name`, not `with_suffix`, or
+  `a.b.png` loses its `.b`) and the hand-edit tolerance (blank, `#` and wrong-arity lines skipped,
+  never raised) are stated once; what is left in the two modules above it is what a record *means*.
+  The one contract they do not share is the missing file: history answers `[]`, variants raises,
+  because every caller of the latter has already established the file is there.
   `variants.py` writes the tab-delimited `.variants.txt` sidecar (`v0` = pristine);
   `history.py` writes the `.history.txt` one in the same shape — every version a write superseded,
   `seq ⇥ when ⇥ by ⇥ text`, oldest first and capped at `HISTORY_LIMIT`, which is what a run bar
@@ -122,6 +132,13 @@ helper.
   `dbv4_cache_stems` / `load_dbv4_cache` (the stem list rides in the safetensors metadata,
   and a cache built for another manifest is misaligned row-for-row, so every reader checks it) +
   `multi_hot_from_manifest`; `calibrate.DEFAULT_SWEEP` is the one threshold sweep.
+  **`derive_groups.derive_from_args` + `write_merged_groups` are the one groups-derivation
+  orchestration**, shared by `--mode derive_groups --apply` and `build_vocab --derive_groups`,
+  which used to spell the ten-argument `derive_rows` call and the backup-then-write twice.
+  `derive_from_args` reads the five knobs off the one `main.py` namespace, so they can be renamed
+  in a single place. What stays with each caller is where `solo_sets` comes from (the manifest, or
+  a caption scan) and where the KB comes from (`--tag_cache`, or `find_tag_csv()` with a
+  warn-and-skip that must never raise).
 - **`stages/`**: caption-master stages and their thin CLIs — `resize.py` (mirrors `image_dataset/` →
   `workspace/resized/` at free-fit bucket geometry; every other stage walks the *resized* tree,
   so an image that is only in the master is invisible to them — which is why the GUI runs this as an
@@ -172,6 +189,11 @@ helper.
   other shape (one whole-directory `.npz` stamped `(newest mtime, count, version)`) and they are
   deliberately not unified. `features.IMAGE_EXTS` is `_walk.IMAGE_EXTENSIONS` lowercased,
   so grouping enumerates the same pool the stages process and the GUI browses.
+  **`features.read_tags` is the one caption read on the grouping side** — through `parse_caption`
+  and keyed by `normalize_tag`, so a clause header is never read as a tag and the underscore
+  spelling of one matches. `match_decensored.has_censor_tag` was the last hand-`split(",")` in the
+  package and now goes through it, which is what makes the captions bullet's rule true repo-wide
+  rather than only of `captions/` and `stages/`.
   `build_groups --source-dir` defaults to `workspace/resized/`, not the master: grouping embeds the
   pixels every other stage reads. Output `groups.json` is `MANIFEST_VERSION = 2`.
 - **`masking/`**: SAM3 subject masks, SAM3/UNet++/ComicTextDetector text masks, merge → 8-bit L
@@ -225,11 +247,26 @@ helper.
   declaration order), `plan_mask_jobs` (walk → mirror the source subdir → skip existing unless
   `--force` → mkdir), `write_mask`/`write_ignore_mask` (the one home for `detected=1 → alpha=0`),
   and `mask_name`/`mask_path_for`/`iter_masks` on the read side, which `merge_masks` and
-  `gui/dataset.mask_path` look masks up through.
+  `gui/dataset.mask_path` look masks up through — **and `mask_run`, the scaffolding both generators
+  wrap their inner loop in**, which is where the flags declared above are read *back*: the two roots
+  home-anchored, the plan drawn from the walk flags, the I/O pool and the progress bar opened and
+  closed together, and the closing line. An empty plan is a loop that runs zero times saying
+  `No images to process.`, rather than an early return retyped in each stage. `coverage_pct` is the
+  shared half of the progress line — the arithmetic only, denominated in the mask's own size so no
+  caller can transpose a `(w, h)`; each stage keeps its own wording. `_masks.py` deliberately does
+  **not** import `_sam3`, so `autocast` stays a line in each `main`: `gui/dataset.py` imports
+  `mask_name` from here, and the import would drag `_sam3`'s `np.bool` side effect into the GUI.
 - **`comfyui/anima_tagger/`** (not part of the installed package — `packages.find` only includes
   `anime_tools*`): the Anima Tagger ComfyUI node (`AnimaTaggerLoader` + `AnimaTaggerCaption`,
   `ANIMA_TAGGER` socket). Imports `anime_tools.tagger.AnimaTagger` from the installed package,
-  vendors nothing; users link/copy the directory into `custom_nodes/`.
+  vendors nothing; users link/copy the directory into `custom_nodes/`. What it imports is
+  `AnimaTagger` **plus the checkpoint machinery**: `ensure_tagger_checkpoint` and the `dbv4_meta`
+  constants. That preflight is the point — for a dbv4 checkpoint it ends by fetching the gated
+  GPL-3.0 caformer backbone, so the terms/token failure and the multi-GB download happen while the
+  loader node is running rather than mid-predict. The node used to carry a verbatim fork of all of
+  it, which had already drifted into skipping exactly that. What stays local is the ComfyUI shell:
+  the dropdown, the IMAGE→PIL conversion, and a `HOME` that ends at `folder_paths.base_path` where
+  `_env.curation_home()` would end at the CWD.
   Its `pyproject.toml` is the Comfy-registry manifest (`comfy node publish` runs from that
   directory). Moved here from the standalone `ComfyUI-Anima-Tagger` repo 2026-08-30.
 - **`gui/`** (torch-free — `test_boundary` runs `create_app()` and asserts no `torch` in
@@ -280,7 +317,9 @@ helper.
   is what the run bar fetches back and Undo replays) but it still lives under `report_root`.
   A blank `report_root` means *beside the `dst` root* (`server.report_root`), which is what keeps
   reports with the tree they describe when the dataset moves off the literal `workspace/` every CLI
-  defaults to. `MASK_SETTING` (`mask_root`) is the second root of exactly that shape and for
+  defaults to. Both are one helper — `_root_beside` — with a different key and a different
+  sibling, so a third root of this kind is one more wrapper and the stop-at-the-home rule is stated
+  once. `MASK_SETTING` (`mask_root`) is the second root of exactly that shape and for
   exactly that reason: the two mask generators spell `--mask-dir` identically, so one shared value
   would have them write `{stem}_mask.png` over each other and leave `merge_masks` one tree to union
   instead of two. `mask_subpath` splits each CLI default the same way `report_subpath` does — and
@@ -435,8 +474,14 @@ helper.
   `walk_images`; grouping and the tagger's caption-sibling lookup derive their extension lists from
   it rather than retyping them), `_json.py` (`read_json` / `write_json` — UTF-8 both ways,
   `ensure_ascii=False`, `indent=2`, parent dir created, no trailing newline; a bare `open(path)`
-  reads in the platform codepage, which is not UTF-8 on Windows), `_device.py::resolve_device` (the
-  one `cuda if available` probe, with the broken-driver fallback), `_hf.py` (tests patch this path),
+  reads in the platform codepage, which is not UTF-8 on Windows),
+  `_device.py::add_device_arg`/`resolve_device`
+  (the `--device` flag and the one `cuda if available` probe that answers it, with the
+  broken-driver fallback — beside each other because they are one fact: `device` is an
+  `AUTO_FIELDS` dest the GUI neither shows nor sends, which only holds while every CLI defaults it
+  to `None`. Eleven parsers used to spell the flag by hand, in four help texts and two with none;
+  `tests/test_stage_cli_args.py` now pins that exactly one declaration exists. `bench/` is out of
+  scope and defaults to `cuda` on purpose), `_hf.py` (tests patch this path),
   `path_filter.py::filter_paths_by_glob` (the one `path_pattern` implementation).
 
 Where things are written matters, and since 2026-08-31 there is **one answer**:

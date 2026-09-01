@@ -27,11 +27,12 @@ from pathlib import Path
 from PIL import Image, ImageDraw
 
 from anime_tools import workspace as WS
-from anime_tools._device import resolve_device
+from anime_tools._device import add_device_arg, resolve_device
 from anime_tools._env import resolve_path
 from anime_tools._json import write_json
 from anime_tools._walk import walk_images
 from anime_tools.captions.position_clauses import parse_caption
+from anime_tools.captions.taxonomy import normalize_tag
 from anime_tools.stages.cli._models import load_tagger
 from anime_tools.stages.cli.position_captions import options_from_flag_string
 from anime_tools.stages.multiview_sheet import BOX_COLORS, _fit, _font
@@ -89,14 +90,16 @@ def parse_args() -> argparse.Namespace:
         help="Also render pre-detection skips (single-subject etc.) as rows. "
         "Off by default — nothing was proposed and there is nothing to see",
     )
-    p.add_argument("--device", default=None, help="cuda|cpu (default: auto)")
+    add_device_arg(p)
     args = p.parse_args()
     args.device = resolve_device(args.device)
     return args
 
 
 def flat_key_set(caption: str) -> set[str]:
-    return {t.strip().lower() for t in parse_caption(caption).flat_tags if t.strip()}
+    # ``parsed.tag_keys`` minus the blanks: the same shared key the rewrite
+    # itself compares on, so this sheet's verdicts read the bag it read.
+    return {key for t in parse_caption(caption).flat_tags if (key := normalize_tag(t))}
 
 
 def classify(tag: str, before_bag: set[str], after_bag: set[str]) -> str:
@@ -106,7 +109,7 @@ def classify(tag: str, before_bag: set[str], after_bag: set[str]) -> str:
     re-derivation drifts: ``moved`` = the bag gave it up, ``novel`` = a crop
     invention the master never carried, ``duplicated`` = still flat as well.
     """
-    key = tag.strip().lower()
+    key = normalize_tag(tag)
     if key not in before_bag:
         return "novel"
     return "duplicated" if key in after_bag else "moved"

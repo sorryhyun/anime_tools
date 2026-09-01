@@ -17,6 +17,7 @@ from anime_tools.captions.position_clauses import (
     has_clauses,
     parse_caption,
 )
+from anime_tools.captions.taxonomy import normalize_tag
 from anime_tools.captions.variants import (
     build_erasure_token_pool,
     generate_caption_variants,
@@ -104,17 +105,22 @@ def _reattach_clauses(corrected: str, existing: str) -> str:
 
     A clause the master itself carries survives the correction pass on its own;
     this only fires when the destination has clauses and the source does not.
+
+    All three sides are keyed on :func:`normalize_tag`: the master holds the
+    hand-written spelling and the clause holds the tagger's, so a local
+    ``lower()`` read ``long_hair`` and ``long hair`` as two tags and re-asserted
+    the moved one in the bag — the duplication this function exists to prevent.
     """
     prev = parse_caption(existing)
-    prev_bag = {t.strip().lower() for t in prev.flat_tags}
+    prev_bag = prev.tag_keys
     moved = {
         key
         for clause in prev.clauses
         for t in clause.tags
-        if (key := t.strip().lower()) and key not in prev_bag
+        if (key := normalize_tag(t)) and key not in prev_bag
     }
     bag = [
-        t for t in parse_caption(corrected).flat_tags if t.strip().lower() not in moved
+        t for t in parse_caption(corrected).flat_tags if normalize_tag(t) not in moved
     ]
     return compose_caption(bag, prev.clauses)
 
@@ -225,11 +231,16 @@ def write_corrected_preprocess_captions(
                 "tag_randomize_rate > 0 requires qwen3_tokenizer and t5_tokenizer "
                 "(load them tokenizer-only) to build the dual-single erasure pool."
             )
+        # Split rather than parsed: the corrected caption is this pass's own
+        # output and the pool only cares about the tag *set*, clauses included.
+        # Keyed the shared way anyway, so "is this pool word itself a real tag?"
+        # is asked in the one form — behaviour-neutral here, since a pool word
+        # is a single ascii word and never carries an underscore.
         real_tags = {
-            t.strip().lower()
+            key
             for e in entries
             for t in e.corrected.split(",")
-            if t.strip()
+            if (key := normalize_tag(t))
         }
         erasure_pool = build_erasure_token_pool(
             qwen3_tokenizer, t5_tokenizer, exclude=real_tags

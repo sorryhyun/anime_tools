@@ -43,7 +43,7 @@ from anime_tools.captions.position_clauses import (
     ordered_indices,
     parse_caption,
 )
-from anime_tools.captions.taxonomy import count_of, exact_count
+from anime_tools.captions.taxonomy import count_of, exact_count, normalize_tag
 from anime_tools.stages.instance_detection import Detection, crop_instance
 
 from ._walk_captions import iter_captions
@@ -273,14 +273,17 @@ def propose_caption(caption: str, tag: str) -> str:
     A minimal splice, not a re-correction — the ordering pass buckets tags
     properly. An ``Ngirls`` suggestion is the exception: it *replaces* the stale
     count in place, since two girls-counts in one bag contradict each other.
+
+    "Already there?" is :func:`normalize_tag`, the shared key — the suggestion
+    is spelled the tagger's way and the bag may be spelled the master's.
     """
     parsed = parse_caption(caption)
     flat = [t for t in parsed.flat_tags if t.strip()]
-    lowered = [t.strip().lower() for t in flat]
-    if tag.lower() in lowered:
+    keys = [normalize_tag(t) for t in flat]
+    if normalize_tag(tag) in keys:
         return caption.strip()
     count_at = next(
-        (i for i, t in enumerate(lowered) if exact_count(t, "girl") is not None),
+        (i for i, t in enumerate(keys) if exact_count(t, "girl") is not None),
         None,
     )
     if exact_count(tag, "girl") is not None and count_at is not None:

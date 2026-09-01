@@ -23,29 +23,39 @@ from pathlib import Path
 from PIL import Image, ImageDraw
 
 from anime_tools import workspace as WS
-from anime_tools._device import resolve_device
+from anime_tools._device import add_device_arg, resolve_device
 from anime_tools._env import resolve_path
 from anime_tools._json import write_json
 from anime_tools._walk import walk_images
 from anime_tools.captions.position_clauses import parse_caption
 from anime_tools.stages.cli._models import load_tagger
 from anime_tools.stages.cli.position_captions import options_from_flag_string
-from anime_tools.stages.multiview_sheet import BOX_COLORS, _fit, _font, _text
+
+# The sheet geometry and ink are the review sheet's, imported rather than
+# retyped: an A/B page and a review page are read in the same sitting, so a
+# background that drifted between them would read as a difference in the thing
+# under test. Only what this sheet decides for itself is declared below.
+from anime_tools.stages.multiview_sheet import (
+    _BG,
+    _DIM,
+    _FG,
+    _MARGIN,
+    BOX_COLORS,
+    SHEET_WIDTH,
+    _fit,
+    _font,
+    _text,
+)
 from anime_tools.stages.position_captions import (
     is_candidate,
     propose_for_image,
 )
 
-SHEET_WIDTH = 1400
-_MARGIN = 20
-_PANEL = 560
-_BG = (24, 24, 28)
-_FG = (232, 232, 236)
-_DIM = (150, 150, 158)
+_PANEL = 560  # narrower than the review sheet's: two columns share the width
 _RULE = (52, 52, 60)
 # A-vs-B contrast, this sheet's own; boxes use the shared BOX_COLORS so a box
 # means the same subject it means on a review sheet.
-_A = (150, 150, 158)  # the incumbent reads as neutral…
+_A = _DIM  # the incumbent reads as neutral…
 _B = (80, 200, 120)  # …the challenger as the thing to look at
 
 
@@ -72,7 +82,7 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--a_label", default=None)
     p.add_argument("--b_label", default=None)
     p.add_argument("--limit", type=int, default=0, help="0 = no cap")
-    p.add_argument("--device", default=None, help="cuda|cpu (default: auto)")
+    add_device_arg(p)
     args = p.parse_args()
     args.device = resolve_device(args.device)
     return args

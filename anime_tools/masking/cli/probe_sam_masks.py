@@ -24,7 +24,7 @@ import numpy as np
 from PIL import Image, ImageDraw
 
 from anime_tools import workspace as WS
-from anime_tools._device import resolve_device
+from anime_tools._device import add_device_arg, resolve_device
 from anime_tools._env import resolve_path
 from anime_tools._json import write_json
 from anime_tools._walk import walk_images
@@ -92,7 +92,7 @@ def parse_args() -> argparse.Namespace:
         "proposal including the ones the audit filters out",
     )
     add_checkpoint_arg(p)
-    p.add_argument("--device", default=None, help="cuda|cpu (default: auto)")
+    add_device_arg(p)
     p.add_argument("--out", default=f"{WS.REPORTS}/mask_probe")
     p.add_argument(
         "--summary",

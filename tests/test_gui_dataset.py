@@ -199,6 +199,65 @@ def test_item_detail_matches_a_re_encoded_resized_image(client):
     assert v0["parsed"]["flat_tags"] == ["1boy", "solo", "night"]
 
 
+def test_every_badge_has_the_same_keys_however_it_was_read(client, home):
+    """A caption file and a row inside a sidecar are one wire shape.
+
+    The panel reads these keys off whichever badge is selected, so an entry the
+    expanded branch builds from text it already holds must be indistinguishable
+    -- key for key -- from one read off a caption file. It is the same builder
+    (``_version_entry``); this is the guard that keeps it so.
+    """
+    c, _ = client
+    (home / "workspace/resized/sub/b.history.txt").write_text(
+        "# anima caption history — auto-generated, do not hand-edit\n"
+        "1\t2026-01-01T00:00:00Z\tautotag\t1boy\n"
+        "2\t2026-01-02T00:00:00Z\t\t1boy, night\n",
+        encoding="utf-8",
+    )
+    it = c.get("/api/dataset/item", params={"rel": "sub/b.jpg"}).json()
+    versions = it["versions"]
+    assert [v["kind"] for v in versions] == [
+        "master",
+        "revised@1",
+        "revised@2",
+        "revised",
+        "v0",
+        "v1",
+    ]
+    shapes = {tuple(v) for v in versions}
+    assert len(shapes) == 1
+    assert shapes.pop() == (
+        "kind",
+        "rung",
+        "note",
+        "path",
+        "exists",
+        "editable",
+        "mtime",
+        "text",
+        "parsed",
+    )
+    # An expanded entry's ``kind`` is its badge and its ``rung`` is the ladder
+    # row it came out of, which is what the frontend colours it by; an
+    # unexpanded one is its own rung.
+    assert [(v["kind"], v["rung"]) for v in versions[1:3]] == [
+        ("revised@1", "history"),
+        ("revised@2", "history"),
+    ]
+    assert all(v["kind"] == v["rung"] for v in (versions[0], versions[3]))
+    # Read once for the whole sidecar: every row it holds wears the file's own
+    # name and mtime, and carries its text parsed.
+    hist = versions[1:3]
+    assert {v["path"] for v in hist} == {"workspace/resized/sub/b.history.txt"}
+    assert len({v["mtime"] for v in hist}) == 1
+    assert [v["note"] for v in hist] == [
+        "autotag · 2026-01-01T00:00:00Z",
+        "2026-01-02T00:00:00Z",
+    ]
+    assert hist[1]["parsed"]["flat_tags"] == ["1boy", "night"]
+    assert all(v["exists"] and not v["editable"] for v in hist)
+
+
 def test_item_detail_flags_an_image_under_the_resize_floor(client):
     """The panel says why a stage over this image would do nothing at all.
 

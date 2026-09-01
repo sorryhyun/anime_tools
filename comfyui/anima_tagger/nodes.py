@@ -8,6 +8,12 @@
 ``ANIMA_TAGGER`` is a plain string in ComfyUI's type system, so the
 AnimaDirectEdit node in ``comfyui-anima-directedit`` consumes the same socket
 with no code-level dependency on this package.
+
+*What a tagger checkpoint is* — the repo it ships from, which files each backend
+requires, the backend test, the fetch — belongs to ``anime_tools`` and is
+imported from it. What stays here is the ComfyUI shell: the dropdown, the
+IMAGE→PIL conversion, and ``HOME``, the one question ComfyUI answers
+differently.
 """
 
 from __future__ import annotations
@@ -15,15 +21,37 @@ from __future__ import annotations
 import json
 import logging
 import os
-import shutil
 from pathlib import Path
 
+import comfy.model_management
 import numpy as np
 import torch
+from PIL import Image
+
+try:
+    from anime_tools.tagger import AnimaTagger
+    from anime_tools.tagger.dbv4_meta import DEFAULT_TAGGER_DIR, TAGGER_HF_REPO
+
+    # ``_is_dbv4_dir`` is private, but it is the package's one answer to "is this
+    # checkpoint dbv4-backed?", and both the dropdown and the loader's log line
+    # ask it. A second spelling here is exactly the fork this module used to be.
+    from anime_tools.tagger.tagger import _is_dbv4_dir, ensure_tagger_checkpoint
+except ImportError as e:  # pragma: no cover — install-time guidance
+    # No extra to name: `anime_tools` has had none since 0.3 (torch, sam3 and
+    # the rest are plain dependencies), so this is the spelling that works and
+    # the one this node's own pyproject.toml declares.
+    raise ImportError(
+        "comfyui-anima-tagger needs the `anime-tools` package: "
+        "pip install 'anime-tools @ git+https://github.com/sorryhyun/anime_tools'"
+    ) from e
+
+logger = logging.getLogger(__name__)
 
 # Relative ``tagger_dir`` values resolve under ``HOME``: ``ANIME_TOOLS_HOME`` /
 # ``ANIMA_HOME`` when set, else the ComfyUI base directory, else this node's
-# parent dir.
+# parent dir. Deliberately *not* ``_env.curation_home()``, whose last resort is
+# the CWD — under ComfyUI that is wherever the server happened to be launched
+# from, while ``folder_paths.base_path`` is the install the user keeps models in.
 HERE = Path(__file__).resolve().parent
 
 
@@ -42,42 +70,13 @@ def _home() -> Path:
 
 HOME = _home()
 
-# Auto-fetched when ``tagger_dir`` is missing required files, so the node works
-# out of the box while ``tagger_dir`` can still name a custom checkpoint.
-_HF_TAGGER_REPO = "sorryhyun/anima-tagger"
-_REQUIRED_FILES = ("config.json", "model.safetensors", "vocab.json", "rules.yaml")
-# dbv4-backed checkpoints ship no weights of ours — the GPL-3.0 caformer
-# backbone is fetched from its own gated upstream repo by the library (needs
-# `timm` + an HF token that accepted the terms). Only vocab/rules/thresholds +
-# the sidecar head live on our repo.
-_DBV4_REQUIRED_FILES = ("config.json", "vocab.json", "rules.yaml")
-_DBV4_OPTIONAL_FILES = (
-    "thresholds.safetensors",
-    "groups.yaml",
-    "sidecar.safetensors",
-    "sidecar.json",
-)
-
-
-def _is_dbv4_dir(tdir: Path) -> bool:
-    try:
-        import json
-
-        with open(tdir / "config.json", encoding="utf-8") as f:
-            return json.load(f).get("backend") == "dbv4"
-    except (OSError, ValueError):
-        return False
-
-
-_OPTIONAL_FILES = ("thresholds.safetensors", "groups.yaml")
-
-# The shipped default is the **dbv4-backed** checkpoint (``dbv4/`` subfolder of
-# ``sorryhyun/anima-tagger``): an external caformer trunk projected onto our
-# vocab plus our sidecar head. It uses NO PE encoder, which is why this node
-# exposes no PE inputs; a legacy PE-head checkpoint still loads and resolves its
-# encoders through the registry default, also with no knob here.
-_HF_SUBFOLDER = "dbv4"
-_DEFAULT_TAGGER_DIR = "models/captioners/anima-tagger-dbv4"
+# The shipped default (``DEFAULT_TAGGER_DIR``) is the **dbv4-backed** checkpoint:
+# the ``dbv4/`` subfolder of ``sorryhyun/anima-tagger``, an external caformer
+# trunk projected onto our vocab plus our sidecar head. It uses NO PE encoder,
+# which is why this node exposes no PE inputs; a legacy PE-head checkpoint still
+# loads and resolves its encoders through the registry default, also with no knob
+# here. Which files either shape requires, and where they come from, is
+# ``ensure_tagger_checkpoint``'s business rather than this module's.
 
 
 def _list_tagger_dirs() -> list[str]:
@@ -105,7 +104,10 @@ def _list_tagger_dirs() -> list[str]:
                 cfg_d = json.load(f)
         except (OSError, ValueError):
             continue
-        if cfg_d.get("backend") != "dbv4" and not cfg_d.get("aux_encoder"):
+        # The dbv4 half of the test is the package's, so the dropdown and the
+        # loader cannot disagree about what a dbv4 checkpoint is; only the legacy
+        # ``aux_encoder`` shape, which the package has no name for, is read here.
+        if not _is_dbv4_dir(p) and not cfg_d.get("aux_encoder"):
             continue
         out.append(str(p.relative_to(HOME)))
     return out
@@ -118,81 +120,6 @@ def _dropdown(default: str, found: list[str]) -> list[str]:
     selectable as the auto-fetch target.
     """
     return [default] + [p for p in found if p != default]
-
-
-def _ensure_tagger_dir(tdir: Path, hf_subfolder: str = "") -> None:
-    """If ``tdir`` is missing any required tagger file, fetch the whole
-    checkpoint from ``sorryhyun/anima-tagger`` into it.
-
-    ``hf_subfolder`` prefixes the repo path so different versions can be pulled
-    from one repo; downloads are flattened into ``tdir`` so the loader's
-    directory contract stays uniform across versions. Optional files are
-    best-effort — a 404 just means the published checkpoint doesn't ship one.
-    """
-    if all((tdir / f).exists() for f in _REQUIRED_FILES):
-        return
-    if all((tdir / f).exists() for f in _DBV4_REQUIRED_FILES) and _is_dbv4_dir(tdir):
-        return
-    from huggingface_hub import hf_hub_download
-    from huggingface_hub.utils import EntryNotFoundError
-
-    logger.info(
-        "AnimaTaggerLoader: %s is missing required files - fetching %s%s (one-time).",
-        tdir,
-        _HF_TAGGER_REPO,
-        f"/{hf_subfolder}" if hf_subfolder else "",
-    )
-    tdir.mkdir(parents=True, exist_ok=True)
-
-    def _fetch_flat(fname: str) -> Path:
-        repo_path = f"{hf_subfolder}/{fname}" if hf_subfolder else fname
-        downloaded = Path(
-            hf_hub_download(
-                repo_id=_HF_TAGGER_REPO,
-                filename=repo_path,
-                local_dir=str(tdir),
-            )
-        )
-        dest = tdir / fname
-        if downloaded.resolve() != dest.resolve():
-            dest.parent.mkdir(parents=True, exist_ok=True)
-            shutil.move(str(downloaded), str(dest))
-        return dest
-
-    # config.json first — it decides whether model.safetensors (PE head) is
-    # needed, or just data + sidecar (dbv4 backend).
-    _fetch_flat("config.json")
-    if _is_dbv4_dir(tdir):
-        required, optional = _DBV4_REQUIRED_FILES, _DBV4_OPTIONAL_FILES
-    else:
-        required, optional = _REQUIRED_FILES, _OPTIONAL_FILES
-    for fname in required:
-        if fname != "config.json":
-            _fetch_flat(fname)
-    for fname in optional:
-        try:
-            _fetch_flat(fname)
-        except EntryNotFoundError:
-            logger.debug(
-                "optional file %s not present on %s%s",
-                fname,
-                _HF_TAGGER_REPO,
-                f"/{hf_subfolder}" if hf_subfolder else "",
-            )
-
-
-import comfy.model_management
-from PIL import Image
-
-try:
-    from anime_tools.tagger import AnimaTagger
-except ImportError as e:  # pragma: no cover — install-time guidance
-    raise ImportError(
-        "comfyui-anima-tagger needs the `anime-tools[tagger]` package: "
-        "pip install 'anime-tools[tagger] @ git+https://github.com/sorryhyun/anime_tools'"
-    ) from e
-
-logger = logging.getLogger(__name__)
 
 
 def _comfy_image_to_pil(image_tensor: torch.Tensor) -> Image.Image:
@@ -213,7 +140,7 @@ class AnimaTaggerLoader:
         return {
             "required": {
                 "tagger_dir": (
-                    _dropdown(_DEFAULT_TAGGER_DIR, _list_tagger_dirs()),
+                    _dropdown(DEFAULT_TAGGER_DIR, _list_tagger_dirs()),
                     {
                         "tooltip": (
                             "AnimaTagger checkpoint directory, picked from "
@@ -221,7 +148,7 @@ class AnimaTaggerLoader:
                             "models/captioners/ (any dir with a config.json). "
                             "The first row is the default dbv4-backed "
                             "checkpoint; if it's missing required files it's "
-                            f"auto-fetched from {_HF_TAGGER_REPO} on first use."
+                            f"auto-fetched from {TAGGER_HF_REPO} on first use."
                         ),
                     },
                 ),
@@ -236,7 +163,7 @@ class AnimaTaggerLoader:
         "Load an AnimaTagger checkpoint. Output socket is consumed by "
         "AnimaTaggerCaption (image -> caption) and AnimaDirectEdit. ComfyUI "
         "memoizes the output, so re-running the graph reuses the same "
-        f"instance without reloading. The tagger checkpoint ({_HF_TAGGER_REPO}) "
+        f"instance without reloading. The tagger checkpoint ({TAGGER_HF_REPO}) "
         "is auto-downloaded if its path doesn't exist yet; the dbv4 backend "
         "needs no PE vision encoder, so there is nothing else to pick."
     )
@@ -247,7 +174,17 @@ class AnimaTaggerLoader:
         tdir = Path(tagger_dir.strip())
         if not tdir.is_absolute():
             tdir = HOME / tdir
-        _ensure_tagger_dir(tdir, hf_subfolder=_HF_SUBFOLDER)
+        # The package's preflight, not a copy of it: for a dbv4 checkpoint
+        # ``ensure_tagger_checkpoint`` ends by fetching the **gated GPL-3.0**
+        # caformer backbone, so the token/terms failure — and the multi-GB
+        # download — happen here, while the loader node is the one running, and
+        # not in the middle of the first predict, which under ComfyUI is a
+        # queued prompt stalling on an error nothing on the graph explains.
+        # It also downloads through ``anime_tools._hf``, which turns a gated
+        # 401/403 into a FileNotFoundError naming the accept-terms recovery.
+        # Repo and subfolder are its defaults (``sorryhyun/anima-tagger``,
+        # ``dbv4/``) — the same ones ``DEFAULT_TAGGER_DIR`` above is named for.
+        ensure_tagger_checkpoint(tdir)
         device = comfy.model_management.get_torch_device()
         logger.info(
             "AnimaTaggerLoader: loading %s on %s (backend=%s)",

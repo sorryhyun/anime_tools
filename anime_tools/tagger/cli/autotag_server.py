@@ -31,7 +31,7 @@ import argparse
 import logging
 import sys
 
-from anime_tools._device import resolve_device
+from anime_tools._device import add_device_arg, resolve_device
 from anime_tools._env import resolve_path, setup_logging
 from anime_tools.tagger.tagger import (
     DEFAULT_TAGGER_DIR,
@@ -56,7 +56,7 @@ def _emit(line: str) -> None:
 def main() -> None:
     p = argparse.ArgumentParser(description="Resident Anima autotag worker")
     p.add_argument("--tagger_dir", default=DEFAULT_TAGGER_DIR)
-    p.add_argument("--device", default=None)
+    add_device_arg(p)
     args = p.parse_args()
 
     from PIL import Image

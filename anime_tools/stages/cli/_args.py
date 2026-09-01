@@ -13,6 +13,7 @@ from __future__ import annotations
 import argparse
 
 from anime_tools import workspace as WS
+from anime_tools._device import add_device_arg
 from anime_tools.tagger.dbv4_meta import DEFAULT_TAGGER_DIR
 
 PATTERN_HELP = "fnmatch glob (| to OR-combine) on the path relative to {root}"
@@ -95,7 +96,7 @@ def add_model_args(p: argparse.ArgumentParser) -> None:
         default=None,
         help=f"Anima Tagger checkpoint dir (default: {DEFAULT_TAGGER_DIR})",
     )
-    p.add_argument("--device", default=None, help="cuda|cpu (default: auto)")
+    add_device_arg(p)
 
 
 def make_progress(every: int, *, first: bool = False):

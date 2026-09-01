@@ -95,6 +95,33 @@ def test_merge_keeps_the_rating_when_the_caption_has_none():
     assert merged == "1girl, blue hair, sensitive, smile"
 
 
+def test_merge_reads_the_two_underscore_spellings_as_one_tag():
+    """The master's ``speech_bubble`` and the tagger's ``speech bubble``.
+
+    The regression: on a bare ``lower()`` key every underscored tag in the
+    caption came back as "novel" and was appended in the tagger's spelling, so
+    one ``--mode merge`` pass doubled a hand-written bag. The shared
+    :func:`normalize_tag` key is what folds the underscore, and the caption's
+    own spelling is the one that stays.
+    """
+    merged, added = merge_tags(
+        "1girl, long_hair, speech_bubble",
+        "1girl, long hair, speech bubble, blue eyes",
+    )
+    assert added == ("blue eyes",)
+    assert merged == "1girl, long_hair, speech_bubble, blue eyes"
+    # …and the other direction, since neither side owns the convention.
+    assert merge_tags("1girl, long hair", "1girl, long_hair")[1] == ()
+
+
+def test_merge_treats_an_underscored_clause_tag_as_present():
+    """The clause half of the same key: a bound tag is present in either spelling."""
+    existing = "safe, 2girls. On the left, long_hair."
+    merged, added = merge_tags(existing, "safe, 2girls, long hair, smile")
+    assert added == ("smile",)
+    assert merged == "safe, 2girls, smile. On the left, long_hair."
+
+
 def test_merge_is_case_insensitive_and_idempotent():
     first, added = merge_tags("safe, 1girl, Blue Hair", "safe, 1girl, blue hair")
     assert added == ()

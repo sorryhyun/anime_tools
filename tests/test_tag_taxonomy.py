@@ -207,3 +207,40 @@ def test_dedupe_count_tags_keeps_top_score_per_family():
     kept = {"1girl": 0.9, "solo": 0.95}
     dedupe_count_tags(kept)
     assert set(kept) == {"1girl", "solo"}
+
+
+def test_no_stage_compares_tags_with_a_bare_lower():
+    """One tag key under ``stages/`` — :func:`normalize_tag`, not a local ``lower()``.
+
+    The underscore is the whole difference: the tagger emits ``speech bubble``
+    where a hand-written master holds ``speech_bubble``, so a ``lower()`` key
+    reads one tag as two. That is how ``autotag --mode merge`` came to append
+    the tagger's spelling of every underscored tag the caption already carried,
+    and how the caption mirror came to re-assert a moved tag in the bag *and*
+    in its clause — two shipped stages, one missing fold.
+
+    So the grep is over the whole tree rather than the sites that were wrong,
+    and the exemptions are stated here, once. Both are strings that are not tags
+    at all: an argparse enum and a CLI "off" sentinel, each matched against a
+    literal this repo spells itself, where lowercasing *is* the whole rule and
+    ``_``→`` `` would be wrong.
+    """
+    package = Path(tx.__file__).parents[1]
+    stages = package / "stages"
+    exempt = {
+        (
+            "resize.py",
+            "value = str(crop_anchor or DEFAULT_CROP_ANCHOR).strip().lower()",
+        ),
+        (
+            "instance_detection.py",
+            "if spec is None or spec.strip().lower() in _PROMPT_EMBED_OFF:",
+        ),
+    }
+    found = {
+        (path.relative_to(stages).as_posix(), line.strip())
+        for path in stages.rglob("*.py")
+        for line in path.read_text(encoding="utf-8").splitlines()
+        if ".lower()" in line
+    }
+    assert found == exempt

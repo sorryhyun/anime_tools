@@ -14,6 +14,7 @@ import logging
 import os
 from pathlib import Path
 
+from anime_tools._device import add_device_arg
 from anime_tools._env import (
     load_dotenv,
     setup_logging,
@@ -68,11 +69,7 @@ def parse_args() -> argparse.Namespace:
         ],
         default="build_vocab",
     )
-    p.add_argument(
-        "--device",
-        default=None,
-        help="Torch device for predict (default: cuda if available).",
-    )
+    add_device_arg(p)
     # Vocab-build inputs default to subpaths of ``$CAPTION_CORPUS_DIR``.
     raw_default = _corpus_default("retrieved")
     curated_default = _corpus_default("selected")

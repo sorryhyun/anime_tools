@@ -2573,3 +2573,41 @@ def test_bag_relax_blocks_a_move_the_strict_sets_grant(pipeline_bits):
     assert "maid" in parsed.flat_tags
     assert not any("maid" in c.tags for c in parsed.clauses)
     assert "maid" not in {m["tag"] for m in relaxed.moved}
+
+
+# ----- the corrector's clause re-attach ------------------------------------
+
+
+def test_reattach_reads_the_two_underscore_spellings_as_one_tag():
+    """A moved tag comes back in the clause only, in either spelling.
+
+    ``_reattach_clauses`` recovers the moved set from the destination caption —
+    a tag its clauses carry that its own bag does not — and takes it back out of
+    the freshly corrected bag. The master spells it ``long hair`` and the clause
+    the rewrite wrote spells it ``long_hair``, so on a bare ``lower()`` key the
+    two never matched: the tag was re-asserted flat *and* bound, which is the
+    duplication the function exists to prevent.
+    """
+    from anime_tools.stages.captions import _reattach_clauses
+
+    out = _reattach_clauses(
+        "1girl, blue eyes, long hair",
+        "1girl, blue_eyes. On the left, long_hair.",
+    )
+    assert out == "1girl, blue eyes. On the left, long_hair."
+    parsed = parse_caption(out)
+    assert "long hair" not in parsed.flat_tags and "long_hair" not in parsed.flat_tags
+    # ``blue_eyes`` is in the destination's own bag, so it was never moved and
+    # the corrected spelling survives untouched.
+    assert parsed.flat_tags == ("1girl", "blue eyes")
+
+
+def test_reattach_keeps_a_bag_tag_the_clause_also_carries():
+    """v1's degraded case — bound *and* still flat — is not a move."""
+    from anime_tools.stages.captions import _reattach_clauses
+
+    out = _reattach_clauses(
+        "2girls, maid",
+        "2girls, maid. On the left, maid.",
+    )
+    assert out == "2girls, maid. On the left, maid."

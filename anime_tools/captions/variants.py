@@ -10,7 +10,11 @@ Torch-free so the caption-correction step and the GUI can reuse all three:
   arguments.
 * the ``{stem}.variants.txt`` sidecar read/write pair — the single source of
   truth: the caption step writes it, the TE step encodes exactly its lines, and
-  the GUI previews it.
+  the GUI previews it. The *file shape* it is written in belongs to
+  :mod:`anime_tools.captions._sidecar` and is shared with
+  ``{stem}.history.txt``; what stays here is the vocabulary — a record is a
+  ``(label, text)`` pair, and the labels are the ``v*``/``r*`` names the TE
+  cache layout is keyed by.
 """
 
 from __future__ import annotations
@@ -19,10 +23,17 @@ import random
 from collections.abc import Callable, Collection
 from pathlib import Path
 
+from anime_tools.captions._sidecar import (
+    read_rows,
+    sidecar_header,
+    sidecar_path,
+    write_rows,
+)
 from anime_tools.captions.position_clauses import is_clause_header
 
 VARIANTS_SIDECAR_SUFFIX = ".variants.txt"
-_SIDECAR_HEADER = "# anima caption variants — auto-generated, do not hand-edit"
+VARIANTS_FIELDS = 2
+"""``label ⇥ text`` — and the text may hold tabs, being last."""
 
 
 def build_erasure_token_pool(
@@ -237,12 +248,10 @@ def generate_caption_variants(
 def variants_sidecar_path(image_or_caption_path: Path) -> Path:
     """``{stem}.variants.txt`` next to a resized image (or its ``.txt`` caption).
 
-    ``with_name``, not ``with_suffix``, so a multi-dot stem is preserved:
-    ``a.b.png`` → ``a.b.variants.txt``.
+    A multi-dot stem is preserved (``a.b.png`` → ``a.b.variants.txt``); the rule
+    and the reason are :func:`anime_tools.captions._sidecar.sidecar_path`'s.
     """
-    p = image_or_caption_path
-    stem = p.name[: -len(p.suffix)] if p.suffix else p.name
-    return p.with_name(stem + VARIANTS_SIDECAR_SUFFIX)
+    return sidecar_path(image_or_caption_path, VARIANTS_SIDECAR_SUFFIX)
 
 
 def write_variants_sidecar(path: Path, variants: list[tuple[str, str]]) -> None:
@@ -250,30 +259,22 @@ def write_variants_sidecar(path: Path, variants: list[tuple[str, str]]) -> None:
 
     ``variants`` is an ordered ``(label, text)`` list (``v0``, ``v1`` …, then
     ``r1`` …); v0 is the pristine/corrected caption that also lives in
-    ``{stem}.txt``. Tab-delimited because captions are comma-separated and never
-    contain tabs, so the split is unambiguous.
+    ``{stem}.txt``. An empty list still writes the file: unlike a history, a
+    variant set is what the TE step encodes, so *no variants* is a statement and
+    not an absence.
     """
-    lines = [_SIDECAR_HEADER]
-    for label, text in variants:
-        lines.append(f"{label}\t{text}")
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    write_rows(path, sidecar_header("variants"), variants)
 
 
 def read_variants_sidecar(path: Path) -> list[tuple[str, str]]:
     """Parse a ``{stem}.variants.txt`` into an ordered ``(label, text)`` list.
 
-    Comment and blank lines are skipped; a line without a tab is ignored
-    (defensive against hand-edits). Order is preserved so the TE writer can map
-    ``v*``/``r*`` labels straight onto its flat cache layout.
+    ``path`` must exist — every caller reaches here having already decided the
+    sidecar is there (:mod:`anime_tools.stages.captions` to compare it against
+    what it would generate, the GUI to expand it into badges), so a missing one
+    is a bug in the caller rather than an empty variant set. Past that, records
+    arrive with the format's own tolerance for a hand-edit (see
+    :mod:`anime_tools.captions._sidecar`). Order is preserved so the TE writer
+    can map ``v*``/``r*`` labels straight onto its flat cache layout.
     """
-    out: list[tuple[str, str]] = []
-    for raw in path.read_text(encoding="utf-8").splitlines():
-        line = raw.rstrip("\r")
-        if not line or line.lstrip().startswith("#"):
-            continue
-        label, sep, text = line.partition("\t")
-        if not sep:
-            continue
-        out.append((label.strip(), text))
-    return out
+    return [(label.strip(), text) for label, text in read_rows(path, VARIANTS_FIELDS)]

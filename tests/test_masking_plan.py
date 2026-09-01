@@ -10,6 +10,7 @@ mirrored by eye.
 
 from __future__ import annotations
 
+import argparse
 from pathlib import Path
 
 import numpy as np
@@ -17,9 +18,11 @@ import pytest
 from PIL import Image
 
 from anime_tools.masking._masks import (
+    coverage_pct,
     iter_masks,
     mask_name,
     mask_path_for,
+    mask_run,
     plan_mask_jobs,
     write_ignore_mask,
     write_mask,
@@ -144,6 +147,91 @@ def test_the_merge_reads_exactly_what_the_two_generators_write():
     assert default(merge_masks, "mask_dirs") == [sam, mit]
     assert default(merge_masks, "output_dir") == WS.MASKS
     assert WS.MASKS not in (sam, mit), "a generator writes the merged root"
+
+
+# ---- the run scaffolding -----------------------------------------------
+
+
+def run_args(images: Path, masks: Path, **over) -> argparse.Namespace:
+    """The flags ``mask_run`` reads back — every one of them declared in the
+    same module, which is the point of reading them there."""
+    return argparse.Namespace(
+        **{
+            "image_dir": str(images),
+            "mask_dir": str(masks),
+            "recursive": True,
+            "path_pattern": None,
+            "force": False,
+            "workers": 2,
+            **over,
+        }
+    )
+
+
+def test_the_run_resolves_both_roots_and_plans_the_walk(tree, capsys):
+    images, masks = tree
+    with mask_run(run_args(images, masks)) as run:
+        assert (run.image_dir, run.mask_dir) == (images, masks)
+        assert masks.is_dir(), "the output root exists before the first write"
+        assert run.total == 4
+        assert [p.relative_to(masks).as_posix() for _, p in run.items] == [
+            "a_mask.png",
+            "artist_x/one_mask.png",
+            "artist_x/two_mask.png",
+            "artist_y/one_mask.png",
+        ]
+        # The pool is the run's, so `write_mask(..., pool=run.pool)` is the
+        # generators' whole I/O story.
+        run.pool.submit(write_mask, run.items[0][1], np.ones((2, 2), np.uint8)).result()
+        run.advance()
+        run.note(run.items[0][0], "41.2%")
+
+    assert capsys.readouterr().out.strip() == f"Masks saved to {masks}/"
+
+
+def test_the_run_narrows_by_the_same_walk_flags(tree):
+    images, masks = tree
+    with mask_run(run_args(images, masks, recursive=False)) as run:
+        assert [p.name for _, p in run.items] == ["a_mask.png"]
+    with mask_run(run_args(images, masks, path_pattern="artist_y/*")) as run:
+        assert [p.name for _, p in run.items] == ["one_mask.png"]
+
+
+def test_nothing_to_do_is_a_sentence_not_a_directory(tmp_path, capsys):
+    """An empty plan is not an error and not an early return: the caller's loop
+    runs zero times, and the closing line says so rather than naming a tree
+    nothing landed in."""
+    images = tmp_path / "images"
+    images.mkdir()
+    masks = tmp_path / "masks"
+
+    seen = []
+    with mask_run(run_args(images, masks)) as run:
+        assert run.total == 0
+        seen = [item for item in run.items]
+
+    assert seen == []
+    assert capsys.readouterr().out.strip() == "No images to process."
+
+
+def test_a_run_that_raised_does_not_sign_off(tree, capsys):
+    """The closing line is past the ``finally``: the pool and the bar still
+    close, but a traceback is not followed by "Masks saved to"."""
+    images, masks = tree
+    with pytest.raises(RuntimeError), mask_run(run_args(images, masks)) as run:
+        assert run.total == 4
+        raise RuntimeError("model exploded")
+    assert capsys.readouterr().out.strip() == ""
+
+
+def test_coverage_is_the_masks_own_denominator(tmp_path):
+    """Polarity-blind and shape-blind: the three call sites mean different
+    things by the number, and none of them passes a ``(w, h)`` to transpose."""
+    m = np.zeros((4, 8), dtype=np.uint8)  # non-square, so a transpose would show
+    assert coverage_pct(m) == 0.0
+    m[:, :2] = 1
+    assert coverage_pct(m) == pytest.approx(25.0)
+    assert coverage_pct(1 - m) == pytest.approx(75.0)
 
 
 # ---- the drawer seam ---------------------------------------------------

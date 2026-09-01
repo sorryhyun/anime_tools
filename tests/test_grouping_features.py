@@ -1,10 +1,15 @@
 """Grouping feature primitives: caption-grammar tag reads + collision-free keys.
 
-Two regressions:
+Three regressions:
 
 - ``read_tags`` used to hand-``split(",")`` the sidecar, so a position clause
   leaked garbage tags (``"white socks. on the left"``) into the grouping tag
   set. It now goes through ``position_clauses.parse_caption``.
+- ``match_decensored.has_censor_tag`` was the second copy of that same split,
+  and the one place it mattered most: a caption is *tiered* on the answer, so a
+  clause header read as a tag, or ``convenient_hair`` unmatched for its
+  underscore, decides whether an image gets decensored at all. It reads through
+  ``read_tags`` and keys through ``normalize_tag`` now.
 - ``embed_members`` used to key its result by bare ``stem`` while nothing
   enforces unique stems tree-wide, so two subfolders' ``1.png`` silently shared
   one embedding. Keyed by rel-posix path (``root=``) now.
@@ -51,6 +56,58 @@ def test_read_tags_empty_and_missing(tmp_path):
     empty.write_text("", encoding="utf-8")
     assert read_tags(empty) == set()
     assert read_tags(tmp_path / "missing.txt") == set()
+
+
+# ---------------------------------------------------------------------------
+# match_decensored.has_censor_tag — the same read, one tier decision downstream
+
+
+def _sincos(monkeypatch, tmp_path, stem: str, caption: str):
+    from anime_tools.grouping.cli import match_decensored as M
+
+    monkeypatch.setattr(M, "SINCOS_DIR", tmp_path)
+    (tmp_path / f"{stem}.txt").write_text(caption, encoding="utf-8")
+    return M
+
+
+def test_has_censor_tag_ignores_a_clause_header(monkeypatch, tmp_path):
+    """``split(",")`` glued the header on: ``"censored. on the left"`` was a
+    'tag', and every clause-bearing caption after a censor tag stayed true for
+    the wrong reason — while ``"...censored"`` mid-clause made an uncensored
+    image look censored."""
+    M = _sincos(
+        monkeypatch,
+        tmp_path,
+        "a",
+        "safe, 2girls, white socks. On the left, akita neru, censored bikini.",
+    )
+    # The censor word only appears inside a position clause: whole-image
+    # censoring is a flat-bag property, so this image is not censored.
+    assert M.has_censor_tag("a") is False
+
+    _sincos(
+        monkeypatch,
+        tmp_path,
+        "b",
+        "safe, 2girls, mosaic censoring. On the left, akita neru.",
+    )
+    assert M.has_censor_tag("b") is True
+
+
+def test_has_censor_tag_matches_the_underscore_spelling(monkeypatch, tmp_path):
+    """``convenient_hair`` is the danbooru form; a private ``.lower()`` never
+    folded the underscore, so the one censor tag with no 'censor' in it was
+    invisible. ``normalize_tag`` keys both spellings the same."""
+    M = _sincos(monkeypatch, tmp_path, "a", "safe, 1girl, convenient_hair")
+    assert M.has_censor_tag("a") is True
+    assert M.is_censor_tag("convenient_hair") is True
+    assert M.is_censor_tag("Convenient Hair") is True
+
+
+def test_has_censor_tag_on_uncensored_and_on_a_missing_sidecar(monkeypatch, tmp_path):
+    M = _sincos(monkeypatch, tmp_path, "a", "safe, 1girl, uncensored, pussy")
+    assert M.has_censor_tag("a") is False
+    assert M.has_censor_tag("nosuchstem") is False
 
 
 # ---------------------------------------------------------------------------

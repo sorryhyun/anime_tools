@@ -31,7 +31,7 @@ from safetensors.torch import load_file as st_load
 from safetensors.torch import save_file as st_save
 from torch.utils.data import DataLoader, Dataset
 
-from anime_tools._device import resolve_device
+from anime_tools._device import add_device_arg, resolve_device
 from anime_tools._json import write_json
 from anime_tools.captions import tag_rules as tr
 from anime_tools.captions.taxonomy import classify_people
@@ -83,7 +83,7 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--train_batch", type=int, default=256)
     p.add_argument("--min_support", type=int, default=5)
     p.add_argument("--seed", type=int, default=42)
-    p.add_argument("--device", default=None)
+    add_device_arg(p)
     p.add_argument("--cache_only", action="store_true")
     p.add_argument("--limit", type=int, default=0, help="debug: first N images")
     return p.parse_args()

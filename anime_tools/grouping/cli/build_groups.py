@@ -14,6 +14,7 @@ import argparse
 import importlib
 
 from anime_tools import workspace as WS
+from anime_tools._device import add_device_arg
 from anime_tools._env import resolve_path
 from anime_tools.grouping.groups import (
     DEFAULT_CELL_MATCH_MIN,
@@ -99,7 +100,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument(
         "--num-workers", type=int, default=4, help="DataLoader image-decode workers"
     )
-    p.add_argument("--device", default=None, help="cuda|cpu (default: auto)")
+    add_device_arg(p)
     return p
 
 

@@ -106,43 +106,57 @@ def stage_defaults(settings: Mapping[str, Any]) -> dict[str, str]:
     }
 
 
+def _root_beside(settings: Mapping[str, Any], key: str, sibling: Path) -> str:
+    """A Settings root that stages hang their own tails off, home-relative:
+    whatever ``key`` holds, and *beside* ``sibling`` when it holds nothing.
+
+    Two settings have exactly this shape, for the same underlying reason: a
+    handful of stages spell one flag identically, so what Settings holds has to
+    be a root each of them appends a tail to rather than a directory they all
+    write into. The blank case is then the same rule twice -- follow the tree
+    these outputs belong to, so they move when the dataset moves.
+
+    *Beside* stops at the curation home. A ``sibling`` of one component — a bare
+    ``resized``, or the pre-workspace ``post_image_dataset`` a settings file
+    written before the workspace still pins — has the home itself for a parent,
+    and the rule would then strew the tails across the project root. The
+    workspace is where the tools write (:mod:`anime_tools.workspace`), so that
+    is the answer instead.
+    """
+    got = str((settings.get(S.SETTINGS_KEY) or {}).get(key) or "").strip()
+    if got:
+        return got
+    beside = PurePosixPath(D.rel_to_home(sibling)).parent.as_posix()
+    return D.WS.WORKSPACE if beside in (".", "", "/") else beside
+
+
 def report_root(settings: Mapping[str, Any], roots: D.Roots) -> str:
     """Where every stage's report lands, home-relative — the root only; each
     stage appends its own tail (``S.Field.report``), so no two share a
-    ``--report_dir``. Blank means *beside the* ``dst`` *root*, so reports follow
-    the resized tree they describe wherever the dataset moves.
+    ``--report_dir``: one shared directory would have one stage's
+    ``--from_report`` replay read another stage's report.
 
-    *Beside* stops at the curation home. A ``dst`` of one component — a bare
-    ``resized``, or the pre-workspace ``post_image_dataset`` a settings file
-    written before the workspace still pins — has the home itself for a parent,
-    and the rule would then strew ``captions/`` and ``groups/`` across the
-    project root. The workspace is where the tools write
-    (:mod:`anime_tools.workspace`), so that is the answer instead.
+    Blank means *beside the* ``dst`` *root*, so reports follow the resized tree
+    they describe wherever the dataset moves — see :func:`_root_beside` for
+    where *beside* stops, and why ``captions/`` and ``groups/`` do not end up in
+    the project root.
     """
-    got = str((settings.get(S.SETTINGS_KEY) or {}).get(S.REPORT_SETTING) or "").strip()
-    if got:
-        return got
-    beside = PurePosixPath(D.rel_to_home(roots.dst)).parent.as_posix()
-    return D.WS.WORKSPACE if beside in (".", "", "/") else beside
+    return _root_beside(settings, S.REPORT_SETTING, roots.dst)
 
 
 def mask_root(settings: Mapping[str, Any], roots: D.Roots) -> str:
     """Where each generator's *own* mask tree lands, home-relative — the root
     only; each generator appends its own tail (``S.Field.mask``), because two
     generators sharing a ``--mask-dir`` would overwrite each other's
-    ``{stem}_mask.png`` and leave ``merge_masks`` one tree to union.
+    ``{stem}_mask.png`` at the same relative path and leave ``merge_masks`` one
+    tree to union instead of two.
 
     Blank means *beside the* ``masks`` *root*, so the intermediates sit next to
-    the merged tree they feed, and follow it when the dataset moves. The same
-    stop-at-the-home rule as :func:`report_root`, for the same reason: a
-    one-component ``masks`` root would otherwise strew ``masks_sam/`` and
-    ``masks_mit/`` across the project root.
+    the merged tree they feed, and follow it when the dataset moves — the same
+    stop-at-the-home rule as :func:`report_root`, spelled once in
+    :func:`_root_beside`.
     """
-    got = str((settings.get(S.SETTINGS_KEY) or {}).get(S.MASK_SETTING) or "").strip()
-    if got:
-        return got
-    beside = PurePosixPath(D.rel_to_home(roots.masks)).parent.as_posix()
-    return D.WS.WORKSPACE if beside in (".", "", "/") else beside
+    return _root_beside(settings, S.MASK_SETTING, roots.masks)
 
 
 def preprocess_min_pixels(settings: Mapping[str, Any]) -> int:

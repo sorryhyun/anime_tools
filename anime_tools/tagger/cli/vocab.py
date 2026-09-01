@@ -501,13 +501,21 @@ def cmd_build_vocab(args: argparse.Namespace) -> None:
     # onto any curated --groups (preserved verbatim), and use the result as the
     # groups source — so one build_vocab call replaces a separate derive_groups.
     groups_src = Path(args.groups) if args.groups else None
+    # The derive write reads its own product back to validate it; that load is
+    # the one this function needs, so it is carried here instead of parsing the
+    # file we just wrote a second time.
+    merged: tg.TagGroups | None = None
     if getattr(args, "derive_groups", False):
         from anime_tools.captions.correction import (
             find_tag_csv,
             load_tag_knowledge_base,
         )
 
-        from .derive_groups import derive_rows, merge_apply, solo_sets_from_index
+        from .derive_groups import (
+            derive_from_args,
+            solo_sets_from_index,
+            write_merged_groups,
+        )
 
         csv_path = (
             Path(args.tag_cache)
@@ -521,42 +529,27 @@ def cmd_build_vocab(args: argparse.Namespace) -> None:
                 "derivation — using --groups as-is"
             )
         else:
-            kb = load_tag_knowledge_base(csv_path)
-            solo_sets = solo_sets_from_index(index)
-            rows, unmatched = derive_rows(
+            rows, _unmatched, _n_general = derive_from_args(
+                args,
                 vocab,
-                kb,
+                load_tag_knowledge_base(csv_path),
                 rules,
-                solo_sets,
-                min_group_size=args.min_group_size,
-                min_member_freq=args.min_member_freq,
-                min_group_support=args.min_group_support,
-                softmax_cooc_max=args.softmax_cooc_max,
-                borderline_cooc_max=args.borderline_cooc_max,
-            )
-            # Preserve --groups verbatim if it exists; else merge onto nothing.
-            preserve = groups_src if (groups_src and groups_src.exists()) else None
-            text, notes = merge_apply(
-                rows, preserve, min_group_size=args.min_group_size
+                solo_sets_from_index(index),
+                # The scan above, not a second pass over the corpus — this build
+                # already holds the index derive_groups would have to rebuild.
+                source="this build's caption scan",
             )
             derived_path = out_dir / "groups.yaml"
-            if derived_path.exists() and derived_path != preserve:
-                derived_path.with_suffix(".yaml.bak").write_text(
-                    derived_path.read_text(), encoding="utf-8"
-                )
-            derived_path.write_text(text, encoding="utf-8")
-            n_general = sum(1 for t in vocab["tags"] if t["category"] == "general")
-            logger.info(
-                "derived groups (%d solo samples, %d/%d general tags matched): %s → %s",
-                len(solo_sets),
-                n_general - len(unmatched),
-                n_general,
-                "; ".join(notes),
+            merged = write_merged_groups(
+                rows,
                 derived_path,
+                # Preserve --groups verbatim if it exists; else merge onto nothing.
+                groups_src if (groups_src and groups_src.exists()) else None,
+                min_group_size=args.min_group_size,
             )
             groups_src = derived_path
     if groups_src is not None and groups_src.exists():
-        groups = tg.load_groups(groups_src)
+        groups = merged if merged is not None else tg.load_groups(groups_src)
         name_to_cat = {
             t["name"]: str(t.get("category", "general")) for t in vocab["tags"]
         }

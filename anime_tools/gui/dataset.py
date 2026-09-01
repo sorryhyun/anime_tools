@@ -600,35 +600,71 @@ def parsed_caption(text: str) -> dict[str, Any]:
     }
 
 
-def _caption_entry(
-    kind: str, p: Path, *, editable: bool, rung: str = "", note: str = ""
+def _version_entry(
+    kind: str,
+    *,
+    path: str,
+    exists: bool,
+    editable: bool,
+    mtime: float | None,
+    text: str,
+    rung: str = "",
+    note: str = "",
 ) -> dict[str, Any]:
-    """One rung, as the panel gets it: the text, the parse of it, and whether
-    the editor over it is a field or a read-out.
+    """One caption version as the panel gets it — the badge's wire shape, and
+    the one place it is spelled.
+
+    Every badge on the item panel is one of these, whether its text is a whole
+    caption file (:func:`_caption_entry`) or one row inside a sidecar that holds
+    many (:func:`caption_versions`). Those two differ only in how they came by
+    the text -- one goes to disk per entry, the other cannot -- never in which
+    keys they hand over, so a key added here reaches the whole badge row rather
+    than half of it.
 
     ``rung`` is the :data:`CAPTION_LADDER` row this entry came out of, which is
     not always its ``kind``: an expanded sidecar entry is called ``v1`` or
     ``revised@2`` and would otherwise leave the panel guessing which badge
-    colour and which label it wears. ``note`` is the one extra line a badge can
-    carry (a history entry's *who and when*)."""
-    entry: dict[str, Any] = {
+    colour and which label it wears. It defaults to ``kind`` because for every
+    unexpanded rung that is what it is. ``note`` is the one extra line a badge
+    can carry (a history entry's *who and when*).
+
+    ``exists`` is told, not read off ``text``: an empty caption file is a
+    caption that says nothing, which is a different answer from a rung nobody
+    ever wrote, and only the second one draws hollow.
+    """
+    return {
         "kind": kind,
         "rung": rung or kind,
         "note": note,
-        "path": rel_to_home(p),
-        "exists": p.is_file(),
+        "path": path,
+        "exists": exists,
         "editable": editable,
-        "mtime": None,
+        "mtime": mtime,
+        "text": text,
+        "parsed": parsed_caption(text) if exists else None,
     }
-    if entry["exists"]:
-        text = p.read_text(encoding="utf-8").strip()
-        entry["text"] = text
-        entry["mtime"] = p.stat().st_mtime
-        entry["parsed"] = parsed_caption(text)
-    else:
-        entry["text"] = ""
-        entry["parsed"] = None
-    return entry
+
+
+def _caption_entry(
+    kind: str, p: Path, *, editable: bool, rung: str = "", note: str = ""
+) -> dict[str, Any]:
+    """One caption *file* as a version: read it, or say it is not there.
+
+    An absent file is still an entry, hollow, so the rung keeps its place on the
+    badge row and can say what is missing. Whether the editor over it is a field
+    or a read-out is ``editable``, which is the rung's, not the file's.
+    """
+    exists = p.is_file()
+    return _version_entry(
+        kind,
+        path=rel_to_home(p),
+        exists=exists,
+        editable=editable,
+        mtime=p.stat().st_mtime if exists else None,
+        text=p.read_text(encoding="utf-8").strip() if exists else "",
+        rung=rung,
+        note=note,
+    )
 
 
 def _expanded(rung: Rung, sidecar: Path) -> list[tuple[str, str, str]]:
@@ -666,20 +702,22 @@ def caption_versions(roots: Roots, rel: Path) -> list[dict[str, Any]]:
         if not rows:
             out.append(_caption_entry(r.kind, p, editable=r.editable))
             continue
+        # The sidecar is one file, however many captions it holds: it is stat'd
+        # and named once, here, and each row then arrives with its text already
+        # in hand -- which is why these entries are built rather than read.
         mtime = p.stat().st_mtime
         home = rel_to_home(p)
         out.extend(
-            {
-                "kind": label,
-                "rung": r.kind,
-                "note": note,
-                "path": home,
-                "exists": True,
-                "editable": False,
-                "mtime": mtime,
-                "text": text,
-                "parsed": parsed_caption(text),
-            }
+            _version_entry(
+                label,
+                path=home,
+                exists=True,
+                editable=False,
+                mtime=mtime,
+                text=text,
+                rung=r.kind,
+                note=note,
+            )
             for label, note, text in rows
         )
     return out

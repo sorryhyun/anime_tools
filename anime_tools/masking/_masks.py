@@ -1,19 +1,30 @@
-"""What every mask generator does around the model: flags, plan, write, read.
+"""What every mask generator does around the model: flags, plan, run, write, read.
 
 Declaration *order* is part of the argparse contract (``gui.stages.fields_of``
 walks ``parser._actions`` in order and the form follows it), which is why the
 flag helpers come in small contiguous blocks the generators interleave their own
 flags between rather than one all-or-nothing call.
+
+The flags declared here are also read back here, in :func:`mask_run`: the walk,
+the output tree and the I/O pool are this module's own vocabulary, so a
+generator that spells one of them differently from the way it was declared is a
+mistake that cannot be made in the first place.
 """
 
 from __future__ import annotations
 
 import argparse
+from collections.abc import Iterator
+from concurrent.futures import ThreadPoolExecutor
+from contextlib import contextmanager
+from dataclasses import dataclass
 from pathlib import Path
 
 import numpy as np
 from PIL import Image
+from tqdm import tqdm
 
+from anime_tools._env import resolve_path
 from anime_tools._walk import walk_images
 
 MASK_SUFFIX = "_mask.png"
@@ -106,13 +117,6 @@ def add_force_arg(p: argparse.ArgumentParser) -> None:
     p.add_argument("--force", action="store_true", help="Regenerate existing masks")
 
 
-def add_device_arg(p: argparse.ArgumentParser) -> None:
-    """``--device``, ``None`` so the CLI resolves it in-process: the dest is in
-    :data:`anime_tools.gui.stages.AUTO_FIELDS`, never shown and never sent.
-    """
-    p.add_argument("--device", type=str, default=None, help="cuda|cpu (default: auto)")
-
-
 def add_workers_arg(
     p: argparse.ArgumentParser, *, help: str = "I/O workers (default: 4)"
 ) -> None:
@@ -200,6 +204,101 @@ def write_ignore_mask(path: Path, detected: np.ndarray, *, pool=None):
     (trained on). The one home for that inversion.
     """
     return write_mask(path, 1 - np.asarray(detected), pool=pool)
+
+
+# ---- the run -----------------------------------------------------------
+
+
+def coverage_pct(mask: np.ndarray) -> float:
+    """What share of the frame ``mask`` covers, as a percentage.
+
+    Denominated in the mask's *own* size rather than a ``(w, h)`` passed
+    alongside it: every mask here is the frame, and the one way this arithmetic
+    goes wrong is a caller handing it the transposed pair. Deliberately
+    polarity-blind — the generators call it on a keep mask and on an ignore
+    mask, and what the number is *called* on the progress line is theirs to say.
+    """
+    return 100 * np.count_nonzero(mask) / mask.size
+
+
+@dataclass(slots=True)
+class MaskRun:
+    """One generator's pass: where it reads, where it writes, what is left to do.
+
+    ``items`` is the plan (see :func:`plan_mask_jobs`) — a list rather than an
+    iterator because a batching generator indexes ahead of the loop to prefetch.
+    ``pool`` is the shared I/O pool ``write_mask`` submits saves to; the progress
+    bar is private, reached through the two methods below, so ``tqdm`` stays out
+    of the stages entirely.
+    """
+
+    image_dir: Path
+    mask_dir: Path
+    items: list[tuple[Path, Path]]
+    pool: ThreadPoolExecutor
+    _bar: tqdm
+
+    @property
+    def total(self) -> int:
+        return len(self.items)
+
+    def advance(self) -> None:
+        """One image dealt with — called before the branches, so an image that
+        gets no mask still moves the bar."""
+        self._bar.update(1)
+
+    def note(self, image_path: Path, what: str) -> None:
+        """``name: what`` beside the bar. ``what`` is the stage's own wording
+        (``train 41.2%``, ``skipped (ctd-gated)``, ``focus not found``); only the
+        shape of the line is shared."""
+        self._bar.set_postfix_str(f"{image_path.name}: {what}")
+
+
+@contextmanager
+def mask_run(
+    args: argparse.Namespace, *, desc: str = "Generating masks"
+) -> Iterator[MaskRun]:
+    """The scaffolding both generators wrap their inner loop in.
+
+    Owns the four things that are the same whatever the detector is: the two
+    roots are home-anchored (the ``--mask-dir`` defaults above are written
+    home-relative, so a run from another directory has to mean the same tree the
+    GUI and the merge do), the output root exists before the first write, the
+    plan is drawn from the walk flags this module declared, and the bar and the
+    pool are closed in that order — the bar first, so its line is finished
+    before the closing sentence prints over it.
+
+    Draining those saves is the caller's, not this function's: the batching
+    generator holds futures it has to see the results of, and a future whose
+    exception nobody reads is a mask that silently did not get written. Do it
+    inside the ``with``.
+
+    Nothing to do is not an error and not an early return: ``items`` is empty,
+    the loop the caller writes does not run, the bar never draws (it is
+    constructed disabled) and the closing line says so instead of naming a
+    directory nothing landed in.
+    """
+    image_dir = resolve_path(args.image_dir)
+    mask_dir = resolve_path(args.mask_dir)
+    mask_dir.mkdir(parents=True, exist_ok=True)
+
+    items = plan_mask_jobs(
+        image_dir,
+        mask_dir,
+        recursive=args.recursive,
+        pattern=args.path_pattern,
+        force=args.force,
+    )
+
+    pool = ThreadPoolExecutor(max_workers=args.workers)
+    bar = tqdm(total=len(items), desc=desc, disable=not items)
+    try:
+        yield MaskRun(image_dir, mask_dir, items, pool, bar)
+    finally:
+        bar.close()
+        pool.shutdown()
+    # Past the `finally`, so a run that raised does not sign off as if it had not.
+    print(f"Masks saved to {mask_dir}/" if items else "No images to process.")
 
 
 # ---- the read side -----------------------------------------------------

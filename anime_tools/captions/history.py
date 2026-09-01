@@ -10,12 +10,16 @@ version rungs above them.
 
 Deliberately the *same shape* as ``{stem}.variants.txt`` — a comment header and
 tab-delimited lines beside the caption it belongs to — because it is the same
-kind of thing: a generated sidecar naming captions that are not the file. Two
-consequences follow from living beside the caption rather than in a tree of its
-own. The history moves with its rung (Phase 2 relocates the revised master and
-its history follows with no code change), and the only path a writer needs is
-the one it was already holding, which is what keeps
-:func:`anime_tools.stages._caption_io.write_caption` a function of one path.
+kind of thing: a generated sidecar naming captions that are not the file. That
+shape is :mod:`anime_tools.captions._sidecar`, which the two share; what is left
+here is history's own vocabulary — a record is a *superseded caption*, so it
+carries a sequence, a moment and a hand, and a file with none left is deleted
+rather than written empty. Two consequences follow from living beside the
+caption rather than in a tree of its own. The history moves with its rung
+(Phase 2 relocates the revised master and its history follows with no code
+change), and the only path a writer needs is the one it was already holding,
+which is what keeps :func:`anime_tools.stages._caption_io.write_caption` a
+function of one path.
 
 Torch-free, stdlib-only, and import-light for the same reason ``variants`` is:
 :mod:`anime_tools.stages.replay` imports it from inside a function.
@@ -27,8 +31,16 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
+from anime_tools.captions._sidecar import (
+    read_rows,
+    sidecar_header,
+    sidecar_path,
+    write_rows,
+)
+
 HISTORY_SIDECAR_SUFFIX = ".history.txt"
-_SIDECAR_HEADER = "# anima caption history — auto-generated, do not hand-edit"
+HISTORY_FIELDS = 4
+"""``seq ⇥ when ⇥ by ⇥ text`` — and the text may hold tabs, being last."""
 
 HISTORY_LIMIT = 10
 """How many superseded versions one caption keeps.
@@ -65,34 +77,26 @@ class HistoryEntry:
 def history_sidecar_path(caption_path: Path) -> Path:
     """``{stem}.history.txt`` beside a caption (or its image).
 
-    ``with_name``, not ``with_suffix``, so a multi-dot stem survives:
-    ``a.b.txt`` → ``a.b.history.txt``. Same rule as
-    :func:`anime_tools.captions.variants.variants_sidecar_path`, and for the
-    same reason.
+    A multi-dot stem survives (``a.b.txt`` → ``a.b.history.txt``); the rule and
+    the reason are :func:`anime_tools.captions._sidecar.sidecar_path`'s.
     """
-    p = caption_path
-    stem = p.name[: -len(p.suffix)] if p.suffix else p.name
-    return p.with_name(stem + HISTORY_SIDECAR_SUFFIX)
+    return sidecar_path(caption_path, HISTORY_SIDECAR_SUFFIX)
 
 
 def read_history(path: Path) -> list[HistoryEntry]:
     """Parse a history sidecar into an ordered list, oldest first.
 
-    ``path`` is the *sidecar*. Comment and blank lines are skipped and a line
-    that does not carry the four fields is ignored, the way the variants reader
-    tolerates a hand-edit: a damaged sidecar costs you history, never a run.
+    ``path`` is the *sidecar*, and a missing one is simply no history — a
+    caption that has never been rewritten has none, which is not a condition
+    worth raising over. Past that, records arrive with the format's own
+    tolerance (see :mod:`anime_tools.captions._sidecar`) and this adds one of
+    its own: a record whose sequence is not an integer has no badge to wear, so
+    it is dropped the same way a malformed line is.
     """
     if not path.is_file():
         return []
     out: list[HistoryEntry] = []
-    for raw in path.read_text(encoding="utf-8").splitlines():
-        line = raw.rstrip("\r")
-        if not line or line.lstrip().startswith("#"):
-            continue
-        parts = line.split("\t", 3)
-        if len(parts) != 4:
-            continue
-        seq, at, by, text = parts
+    for seq, at, by, text in read_rows(path, HISTORY_FIELDS):
         try:
             n = int(seq)
         except ValueError:
@@ -102,15 +106,21 @@ def read_history(path: Path) -> list[HistoryEntry]:
 
 
 def write_history(path: Path, entries: list[HistoryEntry]) -> None:
-    """Write the sidecar, or delete it when there is nothing left to say."""
+    """Write the sidecar, or delete it when there is nothing left to say.
+
+    The delete is history's own: a caption with no superseded versions has no
+    history, and an empty file claiming otherwise is a badge row that draws
+    nothing. (The variants sidecar has no such case — v0 is always a variant.)
+    """
     if not entries:
         if path.is_file():
             path.unlink()
         return
-    lines = [_SIDECAR_HEADER]
-    lines += [f"{e.seq}\t{e.at}\t{e.by}\t{e.text}" for e in entries]
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    write_rows(
+        path,
+        sidecar_header("history"),
+        ((str(e.seq), e.at, e.by, e.text) for e in entries),
+    )
 
 
 def push_history(

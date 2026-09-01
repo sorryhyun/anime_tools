@@ -28,6 +28,7 @@ import numpy as np
 from PIL import Image
 
 from anime_tools._walk import glob_images_pathlib
+from anime_tools.captions.taxonomy import normalize_tag
 
 from ._decensored import DECEN_DIR, OUT_DIR, SINCOS_DIR
 
@@ -57,19 +58,40 @@ _CENSOR_EXTRA = {"convenient hair"}  # hair censor without the word 'censor'
 
 
 def is_censor_tag(tag: str) -> bool:
-    """True if a single tag asserts the image is censored (not un/decensored)."""
-    t = tag.strip().lower()
+    """True if a single tag asserts the image is censored (not un/decensored).
+
+    Keyed through :func:`~anime_tools.captions.taxonomy.normalize_tag`, the
+    grammar's one tag key, rather than a private ``.strip().lower()``: that fold
+    misses the underscore, so the danbooru spelling ``convenient_hair`` never
+    reached :data:`_CENSOR_EXTRA` and its images were tiered ``no_censor_tag``.
+    ``normalize_tag`` is idempotent, so a caller that already normalized (which
+    :func:`has_censor_tag` does) pays nothing.
+    """
+    t = normalize_tag(tag)
     if t in _NOT_CENSOR:
         return False
     return "censor" in t or t in _CENSOR_EXTRA
 
 
 def has_censor_tag(stem: str) -> bool:
-    txt = SINCOS_DIR / f"{stem}.txt"
-    if not txt.exists():
-        return False
-    tags = txt.read_text(errors="ignore").replace("\n", ",").split(",")
-    return any(is_censor_tag(t) for t in tags)
+    """True if ``stem``'s caption sidecar says the image is censored.
+
+    Read through :func:`~anime_tools.grouping.features.read_tags` — the caption
+    grammar — never a hand ``split(",")``: the period is the clause delimiter,
+    so splitting on commas glues a clause header onto the tag before it
+    (``"white socks. On the left"``) and offers the result up as a tag. The flat
+    bag ``read_tags`` returns is also the right *scope* for this question:
+    being censored is a property of the whole image, so the clause tags it drops
+    (what the girl on the left is wearing) are exactly the ones that must not
+    vote. A missing sidecar reads as an empty bag, which is "no censor tag".
+
+    The import is deferred because it reaches ``features`` and so torch, while
+    :func:`descriptors` runs on a spawn pool that re-imports this module in
+    every worker — and no worker ever asks this question.
+    """
+    from anime_tools.grouping.features import read_tags
+
+    return any(is_censor_tag(t) for t in read_tags(SINCOS_DIR / f"{stem}.txt"))
 
 
 def _dct2(a: np.ndarray) -> np.ndarray:

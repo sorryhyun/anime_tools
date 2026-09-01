@@ -20,20 +20,18 @@ the blk head misses is no longer masked; --no-ctd-gate restores raw UNet++ outpu
 from __future__ import annotations
 
 import argparse
-from concurrent.futures import ThreadPoolExecutor
 from functools import cache
 from typing import TYPE_CHECKING
 
 import cv2
 import numpy as np
 from PIL import Image
-from tqdm import tqdm
 
 if TYPE_CHECKING:
     from torch import nn
 
 from anime_tools import workspace as WS
-from anime_tools._device import resolve_device
+from anime_tools._device import add_device_arg, resolve_device
 from anime_tools._env import resolve_path
 
 # Both nets are catalog rows so the GUI can pre-fetch them. The UNet++ is read
@@ -44,13 +42,13 @@ from anime_tools.downloads import MIT_TEXT_FILENAME as _HF_FILENAME
 from anime_tools.downloads import MIT_TEXT_REPO as _HF_REPO
 from anime_tools.downloads import default_ctd_onnx_path
 from anime_tools.masking._masks import (
-    add_device_arg,
     add_force_arg,
     add_mask_dir_args,
     add_walk_args,
     add_workers_arg,
+    coverage_pct,
     gated_group,
-    plan_mask_jobs,
+    mask_run,
     write_ignore_mask,
 )
 
@@ -408,86 +406,63 @@ def main() -> None:
         )
         print(f"SAM3 prompts: {', '.join(sam_prompts)}")
 
-    # Home-anchored like the SAM3 generator's — see its note.
-    image_dir = resolve_path(args.image_dir)
-    masks_dir = resolve_path(args.mask_dir)
-    masks_dir.mkdir(parents=True, exist_ok=True)
-
-    work_items = plan_mask_jobs(
-        image_dir,
-        masks_dir,
-        recursive=args.recursive,
-        pattern=args.path_pattern,
-        force=args.force,
-    )
-
-    total = len(work_items)
-    if total == 0:
-        print("No images to process.")
-        return
-
-    pool = ThreadPoolExecutor(max_workers=args.workers)
     amp = autocast(args.device)
 
-    pbar = tqdm(total=total, desc="Generating masks")
-    for image_path, mask_path in work_items:
-        pil_image = Image.open(image_path).convert("RGB")
-        img_np = np.array(pil_image)
-        h, w = img_np.shape[:2]
+    with mask_run(args) as run:
+        for image_path, mask_path in run.items:
+            pil_image = Image.open(image_path).convert("RGB")
+            img_np = np.array(pil_image)
+            h, w = img_np.shape[:2]
 
-        pbar.update(1)
+            run.advance()
 
-        text_mask = np.zeros((h, w), dtype=np.uint8)
-        # Worth distinguishing in the progress line: nothing masked because the
-        # page has no text reads the same as nothing masked because the gate
-        # threw all of it away, and only the second is a knob to reconsider.
-        gated_away = False
+            text_mask = np.zeros((h, w), dtype=np.uint8)
+            # Worth distinguishing in the progress line: nothing masked because
+            # the page has no text reads the same as nothing masked because the
+            # gate threw all of it away, and only the second is a knob to
+            # reconsider.
+            gated_away = False
 
-        if model is not None:
-            unet = _detect_mask(
-                model,
-                img_np,
-                device=args.device,
-                text_threshold=args.text_threshold,
-            )
-            text_mask = (unet > 127).astype(np.uint8)
-            if ctd is not None and text_mask.any():
-                text_mask = _keep_text_blocks(ctd, img_np, text_mask)
-                gated_away = not text_mask.any()
-
-        if processor is not None:
-            with amp:
-                state = processor.set_image(pil_image)
-                text_mask = np.maximum(
-                    text_mask,
-                    detect_union(
-                        processor,
-                        sam_model,
-                        state,
-                        sam_prompts,
-                        (h, w),
-                        args.sam_threshold,
-                    ),
+            if model is not None:
+                unet = _detect_mask(
+                    model,
+                    img_np,
+                    device=args.device,
+                    text_threshold=args.text_threshold,
                 )
+                text_mask = (unet > 127).astype(np.uint8)
+                if ctd is not None and text_mask.any():
+                    text_mask = _keep_text_blocks(ctd, img_np, text_mask)
+                    gated_away = not text_mask.any()
 
-        if not text_mask.any():
-            why = " (ctd-gated)" if gated_away else ""
-            pbar.set_postfix_str(f"{image_path.name}: skipped{why}")
-            continue
+            if processor is not None:
+                with amp:
+                    state = processor.set_image(pil_image)
+                    text_mask = np.maximum(
+                        text_mask,
+                        detect_union(
+                            processor,
+                            sam_model,
+                            state,
+                            sam_prompts,
+                            (h, w),
+                            args.sam_threshold,
+                        ),
+                    )
 
-        # One dilation over the union, not one per detector: the two overlap on
-        # a lettered balloon, and dilating twice would grow that seam twice.
-        if dilate_kernel is not None:
-            text_mask = cv2.dilate(text_mask, dilate_kernel, iterations=1)
+            if not text_mask.any():
+                why = " (ctd-gated)" if gated_away else ""
+                run.note(image_path, f"skipped{why}")
+                continue
 
-        write_ignore_mask(mask_path, text_mask, pool=pool)
+            # One dilation over the union, not one per detector: the two overlap
+            # on a lettered balloon, and dilating twice would grow that seam
+            # twice.
+            if dilate_kernel is not None:
+                text_mask = cv2.dilate(text_mask, dilate_kernel, iterations=1)
 
-        masked_pct = 100 * np.count_nonzero(text_mask) / (w * h)
-        pbar.set_postfix_str(f"{image_path.name}: {masked_pct:.1f}%")
-
-    pbar.close()
-    pool.shutdown(wait=True)
-    print(f"Masks saved to {masks_dir}/")
+            write_ignore_mask(mask_path, text_mask, pool=run.pool)
+            run.note(image_path, f"{coverage_pct(text_mask):.1f}%")
 
 
 if __name__ == "__main__":
