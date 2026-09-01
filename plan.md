@@ -1,7 +1,8 @@
 # Workspace + Export
 
-Status: **Phases 1, 3 and 5 done**, 2026-08-31; Phase 4's caption ladder done
-2026-09-01. The rest of Phase 4 and then Phase 2 are pending, in that order.
+Status: **Phases 1, 3 and 5 done**, 2026-08-31; Phase 4's caption ladder — and
+then the version history that let it take Apply's job — done 2026-09-01. The
+rest of Phase 4 and then Phase 2 are pending, in that order.
 Reframes the curation side around a **workspace** the tools own, and an explicit
 **Export** that publishes from it.
 
@@ -269,13 +270,47 @@ registry cannot infer — telling the user what is *pending*:
 > and a run's diff rides under the editor when its rung is the one on screen and
 > is a one-line pointer to that badge otherwise.
 
+### Then: the ladder took Apply's job ✅
+
+> **Landed 2026-09-01.** Apply is gone from the run bar. A Run passes `--apply`
+> and writes; the bar is **Run / Run batch / Undo**.
+>
+> Apply existed because a stage run was irreversible in the one way that
+> mattered — it overwrote the derived caption and the previous text was simply
+> gone — so the write had to be inspected first. The ladder makes that false:
+> `captions/history.py` writes a `{stem}.history.txt` sidecar in the variants
+> sidecar's shape, every caption write into that rung pushes what it replaced
+> onto it (`_caption_io.write_caption(history_by=…)`, threaded through
+> `apply_one` and `ReplaySpec.history_by` so a replay files the same version its
+> live pass would), and the ladder expands it into `revised@1`, `revised@2` …
+> badges. The question Apply was asking is now answered *after* the run, on the
+> caption, by clicking one badge to the left.
+>
+> Two names moved with it. The `dst` rung is **`revised`**, not `derived` — a
+> caption there is the master revised by a stage, which is what the badge should
+> say — and a `CaptionEntry` now carries the `rung` it came out of, so
+> `revised@2` wears the history rung's colour rather than the panel guessing a
+> hue from the shape of an id.
+>
+> **This takes Phase 2's name.** That phase's sketch below calls the master
+> overlay `Rung("revised", "master", …)`; `revised` is the `dst` rung now, so
+> the overlay needs its own name when it lands. The rest of the sketch stands as
+> written.
+>
+> The report a run leaves is unchanged and still read back — as the diff of what
+> it *did*, and as the sidebar dots on the rows it touched — and Undo still
+> replays it backwards, itself pushing a version, so an unintended Undo is one
+> badge away as well. What is gone from the frontend is `ApplyDialog.tsx`, the
+> `applyBlocked` / freshness gating and `formKey`: a diff that no longer gates a
+> write does not need to be dropped when the form moves on.
+
 ---
 
 ## Phase 2 — the master overlay
 
 Last, because it is the one change with blast radius.
 
-`stages/_walk_captions.py` already owns the one-line rule "derived first, master
+`stages/_walk_captions.py` already owns the one-line rule "revised first, master
 as the read-only fallback". It gets a twin of exactly the same shape:
 
 ```python
@@ -317,10 +352,11 @@ can name `master`.
   specs — in the CLIs **and** in the hand-copies in `gui/proposals.SHAPES`.
   `tests/test_gui_proposals.py` compares them field for field, so the two move
   together or the test says so.
-- `proposals.CAPTION_KIND`: `{"src": "master", "dst": "derived"}` →
-  `{"master": "revised", "dst": "derived"}`.
-- **`dataset.CAPTION_LADDER` gains one row**:
-  `Rung("revised", "master", editable=True)` between `master` and `derived`,
+- `proposals.CAPTION_KIND`: `{"src": "master", "dst": "revised"}` →
+  `{"master": "<the overlay's name>", "dst": "revised"}`.
+- **`dataset.CAPTION_LADDER` gains one row**: the master overlay, editable, in
+  the `master` root, between `master` and `history` — **not** under the name
+  `revised`, which the `dst` rung took when Apply was removed (see above) —
   with `master` flipped to `editable=False` — `image_dataset/` is no longer
   writable, and `CAPTION_KINDS`, `caption_paths`, the row's `captions` map, the
   panel's badges and the sidebar's dot strip are all derived from that tuple, so
@@ -334,7 +370,9 @@ can name `master`.
 - `anime_tools/stages/_walk_captions.py` — `resolve_master`, `resolve_caption`
 - `anime_tools/stages/replay.py` — `apply_one`, `replay_rows`, `ReplaySpec` docstring
 - `anime_tools/stages/{autotag,multiview_audit}.py` and their CLIs
-- `anime_tools/gui/{proposals,dataset}.py`
+- `anime_tools/gui/{proposals,dataset}.py` — plus `HISTORY_OF`, if the overlay
+  rung is to keep versions the way `revised` does (it should: it is the rung
+  autotag and the audit will be writing)
 - `frontend/src/i18n/*.ts`, `frontend/src/styles.css` — the new rung's label and hue
 - `tests/test_gui_proposals.py`, `tests/test_replay.py`, `tests/test_gui_dataset.py`
 
@@ -345,6 +383,7 @@ can name `master`.
 | Test | Why |
 |---|---|
 | `tests/test_gui_dataset.py` | roots grew to five; caption kinds grew to three |
+| `tests/test_caption_history.py` | **new** — the sidecar, the write seam, the badges |
 | `tests/test_gui_groups.py` | the manifest now resolves under `workspace/` |
 | `tests/test_gui_proposals.py` | the two `ReplaySpec` copies flip `target_root` |
 | `tests/test_stage_cli_args.py` | the export stage's shared flags |

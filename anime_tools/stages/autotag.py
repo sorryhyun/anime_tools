@@ -2,7 +2,7 @@
 
 Walks the resized tree and writes ``.txt`` sidecars back into the caption
 **master**, because it *creates* the caption every later stage reads — unlike
-the clause rewrite, which only ever touches the derived caption.
+the clause rewrite, which only ever touches the revised caption.
 
 Three modes, because the right policy depends on whether the corpus is
 hand-captioned:

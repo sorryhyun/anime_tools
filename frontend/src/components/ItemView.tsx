@@ -80,13 +80,10 @@ export function ItemView(props: {
   /** Which caption version the panel shows. The panel picks for itself when
       this is `image` — see `CaptionCard`. */
   onSelectCaption: (kind: VersionKind) => void;
-  /** What the last Run proposed for this image, or undefined. It rides under
-      the editor when the version it rewrites is the one on screen. */
+  /** What the last Run changed about this image, or undefined. It rides under
+      the editor when the version it rewrote is the one on screen. */
   proposal?: Proposal;
   proposalStage?: string;
-  /** The caption kind whose diff was dropped, because the form changed since
-      the run. */
-  droppedKind?: VersionKind;
   /** The one global "show explanations" preference: the prose under a card is
       the same kind of text the ? hides everywhere else. */
   help: boolean;
@@ -299,10 +296,11 @@ export function ItemView(props: {
               </div>
 
               {/* One caption panel, not one card per tree: an image has a
-                  *ladder* of captions (the hand-written master, what the stages
-                  derived from it, then the generated v0…vN) and the panel's
-                  badges are that ladder. Which tree a version lives in is an
-                  answer it gives, not a question it asks. */}
+                  *ladder* of captions (the hand-written master, the versions
+                  the revised caption used to be, that caption, then the
+                  generated v0…vN) and the panel's badges are that ladder. Which
+                  tree a version lives in is an answer it gives, not a question
+                  it asks. */}
               <div class="captions">
                 <CaptionCard
                   help={props.help}
@@ -312,7 +310,6 @@ export function ItemView(props: {
                   onSelect={props.onSelectCaption}
                   proposal={props.proposal}
                   proposalStage={props.proposalStage}
-                  dropped={props.droppedKind !== undefined}
                   onSaved={props.onSaved}
                 />
               </div>

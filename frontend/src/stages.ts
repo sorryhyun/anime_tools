@@ -2,7 +2,7 @@ import { createEffect, createMemo, createResource, on } from "solid-js";
 import { createStore, reconcile } from "solid-js/store";
 import { api } from "./api";
 import { persisted } from "./state";
-import { REPLAY_FIELD, type Field, type Stage, type Values } from "./types";
+import { type Field, type Stage, type Values } from "./types";
 import type { Config } from "./config";
 
 /** The stage registry and the forms over it: which stage is open, what its form
@@ -26,13 +26,6 @@ export function createStages(config: Config) {
   const resetForm = () => setForms(curId(), reconcile({}));
   // The saved forms ride in on the same settings read the config store took.
   void config.loaded.then((s) => setForms(reconcile(structuredClone(s.values ?? {}))));
-
-  /** The form as it matters to a replay: everything the stage actually reads,
-      minus the managed field itself. */
-  const formKey = (v: Values) => {
-    const { [REPLAY_FIELD]: _managed, ...rest } = v ?? {};
-    return JSON.stringify(rest);
-  };
 
   /** The stages the dock offers: everything but the hidden ones, which are not
       run by hand (`resize` runs itself, in front of the stages that need it). */
@@ -97,7 +90,6 @@ export function createStages(config: Config) {
     values,
     setValue,
     resetForm,
-    formKey,
     shown,
     panels,
     curPanel,

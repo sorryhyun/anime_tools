@@ -67,8 +67,13 @@ export interface Stage {
   available: boolean;
   error?: string;
   doc: string;
+  /** Has `--apply`: the Run passes it, so the pass writes rather than
+      describing. A stage without one never had the distinction and writes
+      either way. */
   apply?: boolean;
-  /** Has `--from_report`: Apply can write a dry run's proposals as-is. */
+  /** Has `--from_report`, which is also what says its report is a caption diff:
+      the run bar reads that report back for the panel, and Undo replays it
+      backwards. */
   replay?: boolean;
   /** Has `--path_pattern`: a run can be narrowed to the selected image. */
   scoped?: boolean;
@@ -276,14 +281,14 @@ export interface Parsed {
 }
 
 /** A writable caption file — what `PUT /api/dataset/item` accepts and what a
-    stage proposes against (`proposals.CAPTION_KIND`). */
-export type CaptionKind = "master" | "derived";
+    stage writes against (`proposals.CAPTION_KIND`). */
+export type CaptionKind = "master" | "revised";
 
 /** One rung of the caption ladder, by id. The file rungs are named
-    (`master`, `derived`, the `variants` placeholder); a sidecar rung expands
-    server-side into one id per label it holds, so `v0`, `v1`, `r1` … are rung
-    ids too and the set is not closed here. */
-export type VersionKind = CaptionKind | "variants" | (string & {});
+    (`master`, `revised`, the `history` and `variants` placeholders); a sidecar
+    rung expands server-side into one id per caption it holds, so `v0`, `r1` and
+    `revised@2` are rung ids too and the set is not closed here. */
+export type VersionKind = CaptionKind | "history" | "variants" | (string & {});
 
 /** What a tree row can select: the image itself, or one caption under it. */
 export type NodeKind = "image" | VersionKind;
@@ -305,6 +310,13 @@ export type TreeMode = "tree" | "groups";
     way. */
 export interface CaptionEntry {
   kind: VersionKind;
+  /** The `CAPTION_LADDER` rung this came out of, which is not always its
+      `kind`: an expanded sidecar entry is called `v1` or `revised@2`, and this
+      is what it wears the colour and the label of. */
+  rung: VersionKind;
+  /** The one extra line a badge carries — a history entry's who and when.
+      Empty for a file rung. */
+  note: string;
   path: string;
   exists: boolean;
   editable: boolean;
@@ -318,8 +330,10 @@ export interface CaptionEntry {
 
 // ---- proposals (mirrors anime_tools/gui/proposals.py) ----
 
-/** One image's pending change, as a finished Run wrote it down. Both texts
-    arrive already parsed — the browser never splits a caption itself. */
+/** What a finished Run changed about one image, as its report wrote it down.
+    A Run writes for real, so `before` is what the caption used to say — the
+    version now sitting one badge to the left of it. Both texts arrive already
+    parsed: the browser never splits a caption itself. */
 export interface Proposal {
   rel: string;
   image: string;
@@ -332,7 +346,7 @@ export interface Proposal {
   after_parsed: Parsed | null;
 }
 
-/** The index of a Run's proposals: which images it wants to change. The full
+/** The index of a Run's changes: which images it touched. The full
     text of one comes from `api.proposal` as the selection lands on it. */
 export interface ProposalIndex {
   stage: string;

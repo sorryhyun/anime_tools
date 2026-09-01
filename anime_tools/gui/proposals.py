@@ -58,6 +58,7 @@ SHAPES: dict[str, ReplaySpec] = {
         after_field="proposed",
         target_root="dst",
         drop_variants=True,
+        history_by="position",
     ),
     # The audit gates on verdict/confidence rather than a row status, so there
     # is no ``ok_status`` to match: a row is a proposal when it proposes text.
@@ -73,7 +74,7 @@ SHAPES: dict[str, ReplaySpec] = {
 }
 """GUI stage id → the report shape its CLI declares. Copied, not imported."""
 
-CAPTION_KIND: dict[str, str] = {"src": "master", "dst": "derived"}
+CAPTION_KIND: dict[str, str] = {"src": "master", "dst": "revised"}
 """Which of the two editable captions a stage's ``target_root`` names."""
 
 # ``apply_one``'s ladder, said from the undo side: putting a caption back is an
@@ -262,7 +263,10 @@ def undo(report_path: Path, roots: D.Roots, stage: str) -> dict[str, Any]:
             # An undo is an apply with the two texts swapped — same drift
             # ladder, same write, and the same drop of the variants sidecar,
             # which wins over the caption at encode time and is just as stale
-            # against the text being put back.
+            # against the text being put back. It supersedes a version like any
+            # other write, so the text being undone is filed under ``undo``
+            # rather than vanishing: an undo you did not mean is then one badge
+            # away, which is the whole promise of the history rung.
             status = apply_one(
                 target,
                 after,
@@ -270,6 +274,7 @@ def undo(report_path: Path, roots: D.Roots, stage: str) -> dict[str, Any]:
                 apply=True,
                 newline=shape.newline,
                 drop_variants=shape.drop_variants,
+                history_by="undo" if shape.history_by else None,
             )
             if status != "written":
                 skipped[_UNDO_STATUS.get(status, status)] += 1
@@ -293,6 +298,13 @@ def undo(report_path: Path, roots: D.Roots, stage: str) -> dict[str, Any]:
                 sidecar = variants_sidecar_path(target)
                 if sidecar.is_file():
                     sidecar.unlink()
+            if shape.history_by:
+                # The versions of a caption that no longer exists are versions
+                # of nothing — and this run is what created it, so there is no
+                # earlier text the history could still be describing.
+                from anime_tools.captions.history import drop_history
+
+                drop_history(target)
 
     images = [*restored, *removed]
     return {

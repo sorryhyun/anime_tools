@@ -4,8 +4,8 @@ import type { Clause, Parsed, Proposal } from "../types";
 import { ClauseRow } from "./ClauseRow";
 import { Tag } from "./TagLens";
 
-/** What a finished **Run** proposes for this caption, shown against what is on
-    disk.
+/** What a finished **Run** changed about this caption — it writes, so this is a
+    record of the edit, not an offer. The version it replaced is a badge above.
 
     Both sides arrive already parsed (`/api/jobs/{id}/proposal` runs them
     through `parse_caption`), so the diff compares *tags and clauses* — the
@@ -57,8 +57,8 @@ export function CaptionDiff(props: {
   proposal: Proposal;
   /** The stage that proposed it, for the header ("proposed by Autotag captions"). */
   stage: string;
-  /** True once the caption on disk no longer matches the Run's before-text —
-      the proposal is then stale and Apply would skip this row. */
+  /** True once the caption on disk no longer holds what the Run wrote — an
+      edit, or a later run, has moved past it, so this diff is history. */
   stale?: boolean;
 }) {
   const d = createMemo(() => rows(props.proposal.before_parsed, props.proposal.after_parsed));
@@ -66,10 +66,10 @@ export function CaptionDiff(props: {
     <div classList={{ diff: true, stale: !!props.stale }}>
       <div class="card-h">
         <span class="dot proposal" />
-        <b>{t().diff.proposed}</b>
+        <b>{t().diff.written}</b>
         <span class="dim">{t().diff.by(props.stage)}</span>
         <span class="sp" />
-        <Show when={props.stale} fallback={<span class="badge">{t().diff.notApplied}</span>}>
+        <Show when={props.stale} fallback={<span class="badge">{t().diff.onDisk}</span>}>
           <span class="badge miss" title={t().diff.staleHint}>
             {t().diff.stale}
           </span>

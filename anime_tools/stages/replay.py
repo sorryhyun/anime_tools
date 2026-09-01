@@ -52,7 +52,7 @@ class ReplaySpec:
 
     ``target_root`` is the tree ``caption_path`` is relative to: ``"src"`` for
     the stages that write the caption master, ``"dst"`` for the clause rewrite,
-    which only ever touches the derived caption.
+    which only ever touches the revised caption.
     """
 
     stage: str
@@ -69,9 +69,12 @@ class ReplaySpec:
     after_field: str = "proposed"
     target_root: str = "src"
     # Passed straight to ``_caption_io.write_caption``, which spells out the
-    # invariants they encode.
+    # invariants they encode. ``history_by`` is the name the superseded version
+    # is filed under, and naming it here is what makes a replay push the same
+    # history entry the stage's own apply would have.
     newline: bool = False
     drop_variants: bool = False
+    history_by: str | None = None
 
 
 @dataclass
@@ -213,6 +216,7 @@ def apply_one(
     apply: bool,
     newline: bool = False,
     drop_variants: bool = False,
+    history_by: str | None = None,
 ) -> str:
     """Write one proposal if — and only if — the file still says what it said.
 
@@ -253,7 +257,13 @@ def apply_one(
         return "drifted"
     if not apply:
         return "would-write"
-    write_caption(target, after, newline=newline, drop_variants=drop_variants)
+    write_caption(
+        target,
+        after,
+        newline=newline,
+        drop_variants=drop_variants,
+        history_by=history_by,
+    )
     return "written"
 
 
@@ -312,6 +322,7 @@ def replay_rows(
             apply=apply,
             newline=spec.newline,
             drop_variants=spec.drop_variants,
+            history_by=spec.history_by,
         )
         if status == "written":
             entry.status = status

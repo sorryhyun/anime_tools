@@ -2,13 +2,13 @@
 
 What an already-landed run did to the captions, and whether the detector saw
 what you think it saw. One row per image: the detection overlay, the
-mask-blanked crops, and the master caption next to the derived one now on disk,
+mask-blanked crops, and the master caption next to the revised one now on disk,
 every clause tag marked moved / novel / duplicated.
 
 The **after** side is read from disk (`--dst`), not re-proposed, so the sheet
 shows what actually trains. Detection is re-run only to recover the (unpersisted)
 crops and boxes, proposing from the master under `--src` — after one `--apply`
-the derived caption carries clauses and `is_candidate` would reject the corpus.
+the revised caption carries clauses and `is_candidate` would reject the corpus.
 A fresh proposal that disagrees with disk flags the row `drift`.
 
 Read-only: writes only under `--out`, never a caption.
@@ -69,7 +69,7 @@ def parse_args() -> argparse.Namespace:
     p.add_argument(
         "--dst",
         default=WS.RESIZED,
-        help="Resized tree — images, and the derived caption (after) as applied",
+        help="Resized tree — images, and the revised caption (after) as applied",
     )
     p.add_argument("--path_pattern", dest="path_pattern", default="*")
     p.add_argument("--out", default=f"{WS.REPORTS}/position_review")

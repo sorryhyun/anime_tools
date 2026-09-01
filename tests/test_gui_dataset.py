@@ -68,12 +68,17 @@ def test_listing_joins_the_three_trees(client):
         "name": "a.png",
         "stem": "a",
         # One flag per ladder rung, keyed by rung: the sidebar's dot strip.
-        "captions": {"master": True, "derived": False, "variants": False},
+        "captions": {
+            "master": True,
+            "history": False,
+            "revised": False,
+            "variants": False,
+        },
         "resized": False,  # resize has not run over this one
         "mask": True,  # flat masks/{stem}_mask.png is the legacy fallback
     }
     b = by_rel["sub/b.jpg"]
-    assert b["dir"] == "sub" and b["captions"]["derived"] and b["captions"]["variants"]
+    assert b["dir"] == "sub" and b["captions"]["revised"] and b["captions"]["variants"]
     assert not b["mask"]
     # …and `resized` is matched on stem, so the jpg -> png re-encode still counts.
     assert b["resized"]
@@ -83,7 +88,7 @@ def test_the_listing_carries_the_caption_ladder(client):
     """The dot strip is drawn from the server's rungs, not a copy of their names.
 
     Same declaration as the row's ``captions`` map and the panel's badges, which
-    is what makes Phase 2's ``revised`` overlay one line rather than three.
+    is what makes Phase 2's master overlay one line rather than three.
     """
     from anime_tools.gui import dataset as D
 
@@ -91,11 +96,12 @@ def test_the_listing_carries_the_caption_ladder(client):
     body = c.get("/api/dataset").json()
     assert body["ladder"] == [
         {"kind": "master", "editable": True},
-        {"kind": "derived", "editable": True},
+        {"kind": "history", "editable": False},
+        {"kind": "revised", "editable": True},
         {"kind": "variants", "editable": False},
     ]
     assert [r["kind"] for r in body["ladder"]] == list(body["items"][0]["captions"])
-    assert D.CAPTION_KINDS == ("master", "derived")
+    assert D.CAPTION_KINDS == ("master", "revised")
     # A missing root still says what the rungs are, so the strip has a shape.
     assert c.get("/api/dataset", params={"src": "nowhere"}).json()["ladder"]
 
@@ -140,7 +146,7 @@ def test_item_detail_parses_the_caption_grammar(client):
     it = c.get("/api/dataset/item", params={"rel": "a.png"}).json()
     assert it["image"]["width"] == 8 and it["mask"]["path"].endswith("a_mask.png")
     assert it["resized"] is None
-    master, derived, variants = it["versions"]
+    master, history, revised, variants = it["versions"]
     assert master["kind"] == "master" and master["exists"] and master["editable"]
     # Clauses come parsed: the browser never splits a caption on commas.
     assert master["parsed"] == {
@@ -162,10 +168,12 @@ def test_item_detail_parses_the_caption_grammar(client):
             }
         ],
     }
-    assert derived["kind"] == "derived" and not derived["exists"]
+    assert revised["kind"] == "revised" and not revised["exists"]
     assert (
-        derived["text"] == "" and derived["parsed"] is None and derived["mtime"] is None
+        revised["text"] == "" and revised["parsed"] is None and revised["mtime"] is None
     )
+    # Never written, so nothing it used to be: the history rung is hollow too.
+    assert history["kind"] == "history" and not history["exists"]
     # No sidecar, but the rung it would fill keeps its place on the badge row.
     assert variants["kind"] == "variants"
     assert not variants["exists"] and not variants["editable"]
@@ -178,8 +186,14 @@ def test_item_detail_matches_a_re_encoded_resized_image(client):
     assert it["resized"]["path"] == "workspace/resized/sub/b.png"
     # The sidecar rung expands into one badge per label, each already parsed:
     # a variant is a caption, so the browser does not split it either.
-    assert [v["kind"] for v in it["versions"]] == ["master", "derived", "v0", "v1"]
-    v0 = it["versions"][2]
+    assert [v["kind"] for v in it["versions"]] == [
+        "master",
+        "history",
+        "revised",
+        "v0",
+        "v1",
+    ]
+    v0 = it["versions"][3]
     assert v0["exists"] and not v0["editable"]
     assert v0["path"].endswith("sub/b.variants.txt")
     assert v0["parsed"]["flat_tags"] == ["1boy", "solo", "night"]
@@ -254,11 +268,15 @@ def test_writing_a_caption_round_trips(client, home):
     assert r.json()["variants_stale"] is False
 
 
-def test_writing_a_derived_caption_flags_the_stale_sidecar(client, home):
+def test_writing_a_revised_caption_flags_the_stale_sidecar(client, home):
     c, _ = client
     r = c.put(
         "/api/dataset/item",
-        json={"rel": "sub/b.jpg", "kind": "derived", "text": "1boy, solo, night, rain"},
+        json={
+            "rel": "sub/b.jpg",
+            "kind": "revised",
+            "text": "1boy, solo, night, rain",
+        },
     )
     assert r.json()["variants_stale"] is True
     # ...and the sidecar itself is left alone; regenerating it is the stage's job.
@@ -268,7 +286,7 @@ def test_writing_a_derived_caption_flags_the_stale_sidecar(client, home):
 def test_writing_creates_the_destination_folder(client, home):
     c, _ = client
     c.put(
-        "/api/dataset/item", json={"rel": "a.png", "kind": "derived", "text": "1girl"}
+        "/api/dataset/item", json={"rel": "a.png", "kind": "revised", "text": "1girl"}
     )
     assert (home / "workspace" / "resized" / "a.txt").read_text() == "1girl"
 

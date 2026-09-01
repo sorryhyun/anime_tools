@@ -10,12 +10,13 @@ import type { JobStatus, Stage, Values } from "../types";
     panel holds more than one stage the bar leads with a picker for them, which
     is why several CLIs can share one button.
 
-    The bar is one loop, spelled out rather than hidden behind a mode toggle:
-    **Run** the selected image, **Run batch** every image the Settings
-    `path_pattern` names, **Apply** the diff those wrote down, **Undo** it again
-    out of the same report. A stage with no `--apply` (correct, the mask
-    generators, groups) has no dry pass to look at: its Run *is* the write, and
-    there is nothing to undo. */
+    The bar is two buttons and a way back: **Run** the selected image, **Run
+    batch** every image the Settings `path_pattern` names, **Undo** what the
+    last one wrote, out of the report it wrote. A Run *writes* — there is no
+    Apply in front of it, because the caption ladder is what that gate was
+    standing in for: the text a run replaces becomes a version badge beside the
+    caption (`revised@2`), so what a run did is read after it, on the caption,
+    rather than agreed to before it in a dialog. */
 export function StagePanel(props: {
   cur?: Stage;
   /** Every stage under the open dock button, including the current one: the
@@ -36,10 +37,6 @@ export function StagePanel(props: {
   rel?: string | null;
   /** Run: `rel` narrows it to one image, null runs the batch. */
   onRun: (rel: string | null) => void;
-  /** Apply: no scope of its own -- it writes whatever the last Run proposed. */
-  onApply: () => void;
-  /** Why Apply is off, or "" when it is on. */
-  applyBlocked: string;
   onUndo: () => void;
   /** Why Undo is off, or "" when it is on. */
   undoBlocked: string;
@@ -91,7 +88,7 @@ export function StagePanel(props: {
 
           <Show when={scoped()}>
             <button
-              classList={{ primary: !cur()?.apply }}
+              class="primary"
               disabled={off() || noImage()}
               title={aim()}
               onClick={() => props.onRun(props.rel ?? null)}
@@ -100,23 +97,13 @@ export function StagePanel(props: {
             </button>
           </Show>
           <button
-            classList={{ primary: !scoped() && !cur()?.apply }}
+            classList={{ primary: !scoped() }}
             disabled={off()}
             title={t().stage.batchHint}
             onClick={() => props.onRun(null)}
           >
             {scoped() ? t().stage.runBatch : t().stage.run}
           </button>
-          <Show when={cur()?.apply}>
-            <button
-              class="primary"
-              disabled={off() || !!props.applyBlocked}
-              title={props.applyBlocked || t().stage.applyHint}
-              onClick={props.onApply}
-            >
-              {t().stage.apply}
-            </button>
-          </Show>
 
           {/* One button, two jobs: nothing to undo while something is running,
               and a long pass has to stay stoppable. */}

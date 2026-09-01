@@ -64,11 +64,12 @@ const en = {
       `showing ${shown} of ${total} — narrow it with the filter`,
     more: (n: number) => `+ ${n} more`,
     capMaster: "master — image_dataset, the hand-written caption",
-    capDerived: "derived — workspace/resized, the stage output",
+    capHistory: "history — .history.txt, what the revised caption used to say",
+    capRevised: "revised — workspace/resized, the stage output",
     capVariants: "variants — .variants.txt, generated and read-only",
     onDisk: "on disk",
     capMissing: "missing",
-    flagPending: "the last run proposes a change here",
+    flagPending: "the last run changed this image",
     flagResized: "resized — workspace/resized has this image",
     flagMask: "has a mask",
     root: "(root)",
@@ -111,23 +112,26 @@ const en = {
   },
   caption: {
     master: "master",
-    derived: "derived",
-    whereMaster: "hand-written; the stages only read it",
-    whereDerived: "stage output; overwritten by the next correct/position run",
+    history: "history",
+    revised: "revised",
     variants: "variants",
-    whereVariants:
-      "generated — v0 is the pristine derived caption; a hand edit here is overwritten",
-    diffHere: "the last run rewrites this version",
-    /** {0} is the version the run writes, e.g. "derived". */
-    diffElsewhere: (kind: string) => `the last run rewrites ${kind} — open it`,
+    /* One line per ladder rung, looked up as `where_<rung>`: what this version
+     *is*, which is the question a badge cannot answer by itself. */
+    where_master: "hand-written; the stages only read it",
+    where_history: "what this caption used to say, before the run that replaced it",
+    where_revised: "stage output; the next run rewrites it and keeps this text as a version",
+    where_variants:
+      "generated — v0 is the pristine revised caption; a hand edit here is overwritten",
+    diffHere: "the last run rewrote this version",
+    /** {0} is the version the run wrote, e.g. "revised". */
+    diffElsewhere: (kind: string) => `the last run rewrote ${kind} — open it`,
     new: "new",
     revert: "Revert",
     save: "Save",
     saveHint: "⌘/Ctrl+Enter",
     empty: "no caption file yet — type one and save",
-    saved: "saved — follow with the trainer's TE re-encode",
+    saved: "saved — the previous text is a version above; follow with the trainer's TE re-encode",
     savedStale: "saved — .variants.txt is now stale; re-run correct + the trainer's TE re-encode",
-    dropped: "diff dropped — the form changed since the run; Run again to recompute",
     noCaption: "no caption",
     tags: (n: number) => `${n} tag${n === 1 ? "" : "s"}`,
     clauses: (n: number) => `${n} clause${n === 1 ? "" : "s"}`,
@@ -136,12 +140,12 @@ const en = {
     bag: "bag",
   },
   diff: {
-    proposed: "proposed",
+    written: "written",
     by: (stage: string) => `by ${stage}`,
     lastRun: "the last run",
-    notApplied: "not applied yet",
-    stale: "stale",
-    staleHint: "the caption changed since the run — Apply will skip it",
+    onDisk: "on disk",
+    stale: "superseded",
+    staleHint: "the caption changed after this run — what it says now is in the editor above",
     reordered: "same tags, reordered — see the text below.",
   },
   tag: {
@@ -155,23 +159,6 @@ const en = {
     unknown: "not a Danbooru tag — an Anima quality tag, a position phrase, or a typo.",
     noDescription: "no wiki description for this tag.",
     matchedAs: (name: string) => `matched as “${name}”.`,
-  },
-  applyDlg: {
-    title: "Apply for real?",
-    /** {0} the stage title, {1} the scope (a rel, or the pattern). */
-    writesTo: "{0} will write to {1}",
-    everyImage: "every image {0} names",
-    changes: (n: number) => `— ${n} caption${n === 1 ? "" : "s"} change`,
-    /** {0} is <code>--apply</code>. */
-    noReport:
-      "This stage keeps no replayable report — Apply runs it again with {0}, so it writes what this pass computes.",
-    /** {0} is the report path, as a <code>. */
-    replay:
-      "Writing the run's proposals ({0}) — no model loads. A caption edited since that run is skipped, not overwritten.",
-    /** {0} the derived root, {1} `missing`, {2} the master root, {3} the TE target, {4} Undo. */
-    where:
-      "Caption stages write under {0} (autotag {1} creates masters under {2}). Any caption change must be followed by the trainer's TE re-encode ({3}). {4} puts these captions back, from the same report.",
-    apply: "Apply",
   },
   picker: {
     title: "Choose a path",
@@ -189,7 +176,7 @@ const en = {
     rootHelp: {
       src: "input — source images + hand-written master captions; never written",
       master: "workspace — revised master captions",
-      dst: "workspace — resized images + derived captions + .variants.txt",
+      dst: "workspace — resized images + revised captions + their versions + .variants.txt",
       masks: "workspace — {stem}_mask.png, mirroring the source subdirs",
       out: "output — where Export publishes; the tree the trainer reads",
     },
@@ -224,14 +211,12 @@ const en = {
   stage: {
     run: "Run",
     runBatch: "Run batch",
-    apply: "Apply",
     undo: "Undo",
     cancel: "Cancel",
     aim: (rel: string) => `just ${rel}`,
     noImage: "select an image in the sidebar first",
     batchHint: "every image the Settings path_pattern names",
-    applyHint: "write what the run proposed",
-    undoHint: "put back the captions the last Apply wrote",
+    undoHint: "put back the captions the last run wrote",
     missingModels: (n: number) => `↓ ${n} model${n === 1 ? "" : "s"} missing`,
     missingModelsHint: (names: string) =>
       `Not downloaded yet: ${names}. The first Run fetches them itself — this only moves the wait to a moment you pick.`,
@@ -245,15 +230,10 @@ const en = {
     reset: "reset to defaults",
   },
   runner: {
-    noDryPass: "this stage has no dry pass — Run writes",
-    runFirst: "Run first — Apply writes what the run proposed",
-    formChanged: "the form changed since the run — Run again",
-    noChanges: "that run proposed no changes — nothing to write",
     nothingToUndo: "nothing to undo",
-    nothingApplied: "nothing applied yet — Undo puts back an Apply",
+    nothingApplied: "nothing run yet — Undo puts back what a run wrote",
     following: (id: string) => `running ${id}`,
     exit: (code: number | null) => `exit ${code}`,
-    proposals: (n: number) => `${n} proposal${n === 1 ? "" : "s"}`,
     changed: (n: number) => `${n} file(s) changed`,
     undoing: "undoing…",
     undone: (restored: number, removed: number) =>

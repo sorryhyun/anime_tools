@@ -65,7 +65,7 @@ correction → TE) reads. Chain order is pinned by a test in `tests/test_preproc
 ## Position-clause generation (`make caption-position`)
 
 SAM3 `girl` instances → reading order (row-aware, so 2×2 view sheets get `top left`/`bottom right`)
-→ mask-blanked crops → Anima Tagger → the **derived** caption rewritten
+→ mask-blanked crops → Anima Tagger → the **revised** caption rewritten
 (`post_image_dataset/resized/<rel>.txt` — the file the mirror writes and TE encodes;
 the hand-written master under `image_dataset/` is never written, only read as the fallback for a
 not-yet-mirrored image).

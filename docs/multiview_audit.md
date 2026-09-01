@@ -80,7 +80,7 @@ signals then argue about what it means, and `--apply` requires two to agree:
 **Verdicts**: `multiple views` / `extra-character` / `unsure` / `count-explained`.
 
 **Writes**: `--apply` writes the **caption master** (`image_dataset/`), unlike the
-clause rewrite which only touches the derived caption — a missing `multiple views`
+clause rewrite which only touches the revised caption — a missing `multiple views`
 is a fact about the picture that every later stage should read down from. Append
 at the end of the flat bag, via `compose_caption` so trailing clauses survive.
 Default `--apply_verdicts` is `multiple views` only, `--apply_confidence` is

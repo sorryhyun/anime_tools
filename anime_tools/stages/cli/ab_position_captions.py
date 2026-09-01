@@ -233,7 +233,7 @@ def main() -> None:
     for index, image_path in enumerate(images, 1):
         stats["seen"] += 1
         rel = str(image_path.relative_to(dst))
-        # The master, not the derived caption: after one `--apply` the derived
+        # The master, not the revised caption: after one `--apply` the revised
         # side carries clauses and `is_candidate` would reject the whole corpus.
         caption_path = (src / rel).with_suffix(".txt")
         if not caption_path.exists():

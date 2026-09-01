@@ -9,14 +9,17 @@ import type { CaptionEntry, CaptionKind, Parsed, Proposal, VersionKind } from ".
  * caption.
  *
  * An image's captions are a *ladder* (`dataset.CAPTION_LADDER`) -- the
- * hand-written master, what the stages derived from it, then the generated
- * `v0…vN` -- not a set of unrelated files, and the workspace/Export split is
- * what makes that true: the trees are where the tools keep their working
- * copies, and Export is the moment one of them becomes training data. So the
- * panel does not ask which *tree* you meant before you can type. It opens on
- * the caption you are almost always here for -- what the last run wrote, or
- * failing that the newest writable one on disk -- and the older versions are
- * badges beside it, one click away, filled when the file exists.
+ * hand-written master, every version the revised caption used to be, that
+ * caption itself, then the generated `v0…vN` -- not a set of unrelated files,
+ * and the workspace/Export split is what makes that true: the trees are where
+ * the tools keep their working copies, and Export is the moment one of them
+ * becomes training data. So the panel does not ask which *tree* you meant
+ * before you can type. It opens on the caption you are almost always here for
+ * -- what the last run wrote, or failing that the newest writable one on disk
+ * -- and the other versions are badges beside it, one click away.
+ *
+ * The `revised@N` badges are also why the run bar needs no Apply: a run writes,
+ * and what it wrote over is right there, one badge to the left.
  */
 
 /** A caption and the parse of it, kept together: the parse arrives ~a debounce
@@ -27,20 +30,18 @@ interface Snap {
   parsed: Parsed | null;
 }
 
-/** A rung's name. The three file rungs are translated; a sidecar label
-    (`v0`, `r1`, …) is its own name in every language and is passed through. */
+/** A rung's name. The file rungs are translated; an expanded label (`v0`,
+    `r1`, `revised@2`) is its own name in every language and is passed through.
+    A version knows which rung it came out of, so neither the label nor the
+    colour is inferred from the shape of an id. */
 const label = (k: VersionKind) => (t().caption as Record<string, unknown>)[k] as string | undefined;
-const vlabel = (k: VersionKind) => label(k) ?? k;
+const vlabel = (e: CaptionEntry) => label(e.kind) ?? e.kind;
 /** Which of the dot hues a badge wears — the same colours the sidebar's dot
-    strip uses, so a badge and its dot are recognisably the same file. Anything
-    the palette does not name is a sidecar label, which wears the sidecar's. */
-const hue = (k: VersionKind) => (label(k) ? k : "variants");
+    strip uses, so a badge and its dot are recognisably the same file. */
+const hue = (e: CaptionEntry) => e.rung;
+/** The one line under the header saying what this version *is*, by rung. */
 const where = (e: CaptionEntry) =>
-  e.editable
-    ? e.kind === "master"
-      ? t().caption.whereMaster
-      : t().caption.whereDerived
-    : t().caption.whereVariants;
+  (t().caption as Record<string, unknown>)[`where_${e.rung}`] as string | undefined;
 
 /** Debounce the live parse so a keystroke isn't a request. */
 function debounced<T>(source: () => T, ms: number) {
@@ -63,13 +64,10 @@ export function CaptionCard(props: {
       anything else (an image row was clicked) leaves the choice to us. */
   kind: VersionKind;
   onSelect: (kind: VersionKind) => void;
-  /** What the last Run proposed for *this* image, or undefined. Shown below the
-      editor until an Apply writes it (or another Run replaces it). */
+  /** What the last Run changed about *this* image, or undefined. Shown below
+      the editor until another Run replaces it. */
   proposal?: Proposal;
   proposalStage?: string;
-  /** The run's diff for this caption was dropped (the form changed since); say
-      so where it stood instead of letting it vanish silently. */
-  dropped?: boolean;
   /** The global "show explanations" preference — the same ? that folds the
       prose in the dock and in Settings folds this card's. */
   help: boolean;
@@ -215,12 +213,12 @@ export function CaptionCard(props: {
                 mod: dirtyIn(v.kind),
               }}
               title={`${v.path} — ${v.exists ? t().tree.onDisk : t().tree.capMissing}${
-                dirtyIn(v.kind) ? ` · ${t().caption.unsaved}` : ""
-              }`}
+                v.note ? ` · ${v.note}` : ""
+              }${dirtyIn(v.kind) ? ` · ${t().caption.unsaved}` : ""}`}
               onClick={() => props.onSelect(v.kind)}
             >
-              <span class={`dot ${hue(v.kind)}`} />
-              {vlabel(v.kind)}
+              <span class={`dot ${hue(v)}`} />
+              {vlabel(v)}
               <Show when={props.proposal?.kind === v.kind}>
                 <span class="dot proposal" title={t().caption.diffHere} />
               </Show>
@@ -233,7 +231,7 @@ export function CaptionCard(props: {
         {(e) => (
           <>
             <div class="card-h" style="margin-top:8px">
-              <b title={e().path}>{vlabel(e().kind)}</b>
+              <b title={e().path}>{vlabel(e())}</b>
               <Show when={!e().exists}>
                 <span class="badge">{t().caption.new}</span>
               </Show>
@@ -255,6 +253,11 @@ export function CaptionCard(props: {
                 </button>
               </Show>
             </div>
+            {/* A history badge says *when* it stopped being the caption, which
+                is the only thing about it the path cannot say. */}
+            <Show when={e().note}>
+              <div class="dim hint">{e().note}</div>
+            </Show>
             <Show when={props.help}>
               <div class="dim hint" title={e().path}>
                 {where(e())} · {root()}
@@ -302,20 +305,17 @@ export function CaptionCard(props: {
             when={diffHere()}
             fallback={
               <button class="link hint" onClick={() => props.onSelect(p().kind)}>
-                {t().caption.diffElsewhere(vlabel(p().kind))}
+                {t().caption.diffElsewhere(label(p().kind) ?? p().kind)}
               </button>
             }
           >
             <CaptionDiff
               proposal={p()}
               stage={props.proposalStage ?? t().diff.lastRun}
-              stale={(entry()?.text ?? "").trim() !== p().before.trim()}
+              stale={(entry()?.text ?? "").trim() !== p().after.trim()}
             />
           </Show>
         )}
-      </Show>
-      <Show when={!props.proposal && props.dropped}>
-        <div class="dim hint">{t().caption.dropped}</div>
       </Show>
     </div>
   );

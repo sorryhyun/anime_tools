@@ -102,6 +102,10 @@ helper.
   `tag_groups.resolved_from_dict` is the inverse of `resolved_to_dict` that makes that revival
   possible, and `tag_rules.load_rules` is `from_dict` over the parsed YAML rather than its twin.
   `variants.py` writes the tab-delimited `.variants.txt` sidecar (`v0` = pristine);
+  `history.py` writes the `.history.txt` one in the same shape — every version a write superseded,
+  `seq ⇥ when ⇥ by ⇥ text`, oldest first and capped at `HISTORY_LIMIT`, which is what a run bar
+  with no Apply gate stands on and what the GUI's `revised@N` badges are read from; a sequence is
+  never renumbered by the trim, so a badge cannot change meaning while you look at it.
   `index.py` builds `caption_index.json`; `tag_drop_groups.py` implements `--caption_drop_groups`.
   Gate/group sets for position clauses are **data** in `captions/data/clause_vocabulary.yaml`
   (loaded by `clause_vocabulary.py`) — retune there, not in Python.
@@ -132,19 +136,21 @@ helper.
   pixels — which `shutil.copy2` restores, so a re-export is a walk and a stat apiece),
   `master` being the one row that publishes back over the *input* tree because that is where the
   contract says the caption master lives. It always copies (independent bytes),
-  takes no `--from_report` (it loads no model, so Apply just runs the pass again and re-decides
-  every row at write time), and `revert_export` deletes what an apply created and restores the text
+  takes no `--from_report` (it loads no model, so there is nothing a replay would save re-deciding),
+  and `revert_export` deletes what an apply created and restores the text
   it overwrote — a pixel it overwrote reports `not-undoable`, since re-exporting is the way back.
-  Stages are dry-run by default and write `report.json`; `--apply` writes for real.
+  Stages are dry-run by default from the **CLI** and write `report.json`; `--apply` writes for real.
+  The GUI always passes it (see the `gui/` bullet's run bar).
   The thin CLIs share their scaffolding rather than retyping it — `cli/_args.py` (dataset roots,
   apply/replay, model flags, the progress closure), `cli/_detection.py` (the SAM3 detection group
   **and** the `detection_options` that reads it back, declared together so they cannot disagree),
   `cli/_models.py`, `cli/_report.py`, and `replay.run_replay_cli` for the `--from_report` half.
   Below the CLIs, three modules own what every stage does to a caption *file*:
   `_caption_io.py` (`read_caption`/`write_caption` — the trailing-newline invariant, which only
-  `audit_multiview` sets, and the `{stem}.variants.txt` drop, which every write into the *derived*
-  tree needs, are arguments here rather than comments in four files), `_walk_captions.py`
-  (`resolve_caption`/`iter_captions` — derived caption first, master as the read-only fallback;
+  `audit_multiview` sets, the `{stem}.variants.txt` drop, which every write into the *revised*
+  tree needs, and `history_by`, which pushes the text being replaced onto `{stem}.history.txt`
+  before overwriting it, are arguments here rather than comments in four files), `_walk_captions.py`
+  (`resolve_caption`/`iter_captions` — revised caption first, master as the read-only fallback;
   the clause rewrite, its flatten twin and the multiview audit share it, while `autotag` and
   `ab_position_captions` deliberately read the master only and so stay out), and `replay.apply_one`,
   **the one drift-guarded write**: `no-proposal` → `missing-caption` → `already-applied` → `drifted`
@@ -277,16 +283,19 @@ helper.
   so the torch-free `--from_report` replay path stays torch-free).
   A stage that takes a `--path_pattern` is `scoped`: `POST /api/jobs` with a `rel` narrows that
   pattern to the one image (`dataset.item_pattern` → `<dir>/<stem>.*`), which is what the run bar's
-  **Run** sends, while **Run batch** sends none and gets the Settings pattern. The bar is one loop —
-  **Run** / **Run batch** compute the proposals and write only the report; `proposals.py` reads that
-  report back as per-image before/after rows keyed by *dataset rel* (`/api/jobs/{id}/proposals` for
-  the index the sidebar dots, `/proposal?rel=` for the one caption on screen, both parsed
-  server-side) so the caption panel shows the diff; **Apply** then replays that exact report
-  (`--from_report`, no model loads, so it can only write what the diff showed) at the scope the Run
-  ran at, which is why it stays disabled until a Run has produced one; **Undo** reads the apply
-  report's before-text back (`POST /api/jobs/{id}/undo`, skipping any caption edited since,
-  deleting one the run created), and is the same button as **Cancel**, which it becomes while a job
-  is running. `proposals.py` is `stages/replay.py` seen from the server:
+  **Run** sends, while **Run batch** sends none and gets the Settings pattern. **A Run writes** —
+  it always passes `--apply`, and there is no Apply button in front of it, because the caption
+  ladder is what that gate was standing in for: the text a run replaces becomes a version badge
+  beside the caption (`revised@2`), so *what did that do to my caption?* is answered after the write
+  and on the caption, rather than in a dialog you had to agree to first. The report the run leaves
+  is still read back, as the record of what it **did**: `proposals.py` keys its before/after rows by
+  *dataset rel* (`/api/jobs/{id}/proposals` for the index the sidebar dots, `/proposal?rel=` for the
+  one caption on screen, both parsed server-side) so the caption panel shows the diff under the
+  editor. **Undo** reads that same report's before-text back (`POST /api/jobs/{id}/undo`, skipping
+  any caption edited since, deleting one the run created) and is the same button as **Cancel**,
+  which it becomes while a job is running; being a write, it leaves its own version behind, so an
+  undo you did not mean is one badge away too. `proposals.py` is `stages/replay.py` seen from the
+  server:
   `load_report` / `report_rows` / `apply_one` are imported (replay is torch-free by construction),
   and an Undo is `apply_one` with the two texts swapped. Only the three `ReplaySpec` **instances**
   in `proposals.SHAPES` are hand-copied — importing a stage CLI would pull torch in —
@@ -299,7 +308,7 @@ helper.
   `dataset.py` joins the trees (`src`/`dst`/`masks`, keyed by the same relative path —
   plus the additive `master` and `out` roots the workspace phase declared) into the sidebar's
   image→caption tree, reads/writes single captions, and renders thumbnails.
-  **Only `master` and `derived` are writable** — `.variants.txt` is generated.
+  **Only `master` and `revised` are writable** — `.variants.txt` and `.history.txt` are generated.
   The sidebar draws that one listing in **two orderings**: `tree` (the folders) and `groups` (the
   near-twin components the Groups stage found). `load_groups` reads `<report_root>/<GROUPS_SUBPATH>`
   — the same `report_subpath` tail `build_groups`' own `--out` gets, pinned to it by
@@ -309,18 +318,23 @@ helper.
   and whatever no component claims falls into an `ungrouped` bucket rather than off the tree.
   A missing manifest is not an error (the Groups stage may never have run); an unparseable one is
   a 400. An image's captions are a **ladder**, not a set of unrelated files —
-  `dataset.CAPTION_LADDER`, a `Rung` per caption (the hand-written `master`, the `derived` one the
-  stages write, the generated `variants` sidecar), declared once and travelling to the browser
+  `dataset.CAPTION_LADDER`, a `Rung` per caption (the hand-written `master`, the `history` of what
+  the revised caption used to say, the `revised` one the stages write, the generated `variants`
+  sidecar), declared once and travelling to the browser
   **twice**: as the `captions` flag map on each `/api/dataset` row (the strip of dots, filled on
   disk, hollow not, each the button that opens that version) and as `caption_versions`' ordered
-  `versions` on `/api/dataset/item`, where the sidecar rung is *expanded* into one entry per label
-  it holds (`v0`, `v1`, `r1`…) because those are versions of the caption in the same sense the
-  rungs above them are. So the panel is **one editor with a badge per version**, not a card per
+  `versions` on `/api/dataset/item`, where a sidecar rung is *expanded* into one entry per caption
+  it holds (`v0`, `v1`, `r1`… and `revised@1`, `revised@2`…) because those are versions of the
+  caption in the same sense the rungs above them are — each carrying the `rung` it came out of, so
+  a badge's colour and label are read off the ladder rather than guessed from the shape of its id.
+  So the panel is **one editor with a badge per version**, not a card per
   tree: it opens on what the last run rewrote, else the newest writable caption on disk, and which
   tree a version lives in is an answer it gives rather than a question it asks before you can type.
-  `CAPTION_KINDS` (what `write_caption` accepts) is the ladder's `editable` rungs, and the listing
-  ships the rungs themselves as `ladder`, so `DatasetTree` retypes no names — adding
-  Phase 2's `revised` overlay is one `Rung` plus its label and dot colour.
+  `CAPTION_KINDS` (what `write_caption` accepts) is the ladder's `editable` rungs, `HISTORY_OF` is
+  the same tuple read for which rungs keep versions (only `revised`: `image_dataset/` is the input
+  tree and nothing of ours lands in it until Phase 2 moves that write into the workspace), and the
+  listing ships the rungs themselves as `ladder`, so `DatasetTree` retypes no names — adding
+  Phase 2's master overlay is one `Rung` plus its label and dot colour.
   **The browser never splits a caption**:
   clause structure comes from `parse_caption` via `/api/dataset/item` and `/api/dataset/parse`,
   which also answer `spans` — every tag's `[start, end)` in the very text they parsed,
@@ -338,7 +352,7 @@ helper.
   at Settings › Models) rather than erroring. A stage marked `hidden` gets no dock button:
   `resize` is the only one — `preprocess_for()` puts it in front of every stage bound to the `dst`
   root — which is every stage that opens an image (autotag/position/correct/audit **and**
-  masks_sam/masks_mit/groups), scoped to the same images, so per-image Apply resizes just that
+  masks_sam/masks_mit/groups), scoped to the same images, so a per-image Run resizes just that
   image. Only `audit_apply` (captions only, no pixels) and the two `NO_PREFLIGHT` names sit outside
   it. A job is therefore a *sequence* of `Step`s sharing one slot, one log and one SSE stream
   (`jobs.py`); a failing step stops the chain. Its knobs have no form to live on, so they are the
@@ -359,8 +373,9 @@ helper.
   as a published Claude Design canvas — six artboards built to read at a glance:
   a hero board (`Main`, *At a glance*) holding an annotated miniature of the whole GUI plus the
   colour-as-disk-state legend, then Foundations (depth ladder / text ramp / meaning hues, type,
-  geometry), Controls, the dataset-tree rows, the caption card and its diff, and the Run → diff →
-  Apply loop. **Every value on the boards is lifted from `frontend/src/styles.css` and the
+  geometry), Controls, the dataset-tree rows, the caption card and its diff, and the
+  Run → versions → Undo loop. **Every value on the boards is lifted from `frontend/src/styles.css`
+  and the
   components beside it — a number that drifts from the source is a bug, not a design choice**,
   so a change to the GUI's CSS is a change to the board that documents it.
   `boards/<Name>.html` holds one artboard's body (inline `style=` attributes, because that is what
@@ -440,10 +455,14 @@ actually run at, and answers `pixels` plus a tri-state `too_small` whose `null` 
 rather than fine, so the size line's pixel-count chip is `--warn` below the floor, plain above it,
 and absent when no floor applied. `resize.below_min_pixels` is the one spelling of the predicate,
 shared by the stage and the panel.
-autotag/position/correction stages write the **derived** caption under `workspace/resized/`;
+autotag/position/correction stages write the **revised** caption under `workspace/resized/`;
 the hand-written master under `image_dataset/` is only read as fallback
 (autotag `missing` is the exception that creates masters — until Phase 2 moves that to the
-`workspace/master/` overlay). `python -m anime_tools.workspace.migrate` moves a pre-workspace tree
+`workspace/master/` overlay). Each such write pushes the text it replaces onto that caption's
+`{stem}.history.txt` (`captions/history.py`, capped at `HISTORY_LIMIT`), which is what makes a run
+safe to write without an Apply gate in front of it: the previous version is a badge in the panel,
+and Undo replays the run's report backwards. `python -m anime_tools.workspace.migrate` moves a
+pre-workspace tree
 over; it warns about, and never rewrites, a root explicitly pinned to the old path in ⚙ Settings.
 **Export** (`stages/export_workspace.py`) is the one way out: it is a normal stage —
 dry-run by default, `--path_pattern`-scoped, in the dock — but `NO_PREFLIGHT` keeps the resize

@@ -8,7 +8,6 @@ import { createLayout } from "./layout";
 import { createRunner } from "./runner";
 import { createStages } from "./stages";
 import type { Stage } from "./types";
-import { ApplyDialog } from "./components/ApplyDialog";
 import { DatasetTree } from "./components/DatasetTree";
 import { Dock } from "./components/Dock";
 import { Header } from "./components/Header";
@@ -36,7 +35,6 @@ export default function App() {
     openDock: () => layout.setDockOpen(true),
   });
   const downloads = createDownloads(config);
-  const [confirmOpen, setConfirmOpen] = createSignal(false);
 
   // A job the page did not start -- one already running when it loaded, or
   // started from another tab -- belongs to whichever follower it came from.
@@ -119,7 +117,6 @@ export default function App() {
         onSelectCaption={(kind) => dataset.setSel({ rel: dataset.sel()?.rel ?? "", kind })}
         proposal={runner.shownProposal()}
         proposalStage={stages.cur()?.title}
-        droppedKind={runner.droppedKind()}
         help={layout.help()}
         onSaved={dataset.onSaved}
       />
@@ -150,8 +147,6 @@ export default function App() {
           status={runner.status()}
           rel={dataset.rel()}
           onRun={runner.run}
-          onApply={() => setConfirmOpen(true)}
-          applyBlocked={runner.applyBlocked()}
           onUndo={runner.undo}
           undoBlocked={runner.undoBlocked()}
           onCancel={runner.cancel}
@@ -161,15 +156,6 @@ export default function App() {
           onHelp={layout.toggleHelp}
         />
       </Dock>
-
-      <ApplyDialog
-        open={confirmOpen()}
-        title={stages.cur()?.title}
-        pending={runner.pending()}
-        pattern={config.stageDefaults().path_pattern}
-        onConfirm={runner.apply}
-        onClose={() => setConfirmOpen(false)}
-      />
 
       {/* One card for every tag chip in the app; it floats, so it is mounted
           at the root rather than inside the caption panel. */}

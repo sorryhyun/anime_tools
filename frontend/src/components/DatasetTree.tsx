@@ -28,7 +28,8 @@ const AUTO_EXPAND_MAX = 400;
     to call it wears its own id. */
 const CAP_HINT: Record<string, () => string> = {
   master: () => t().tree.capMaster,
-  derived: () => t().tree.capDerived,
+  history: () => t().tree.capHistory,
+  revised: () => t().tree.capRevised,
   variants: () => t().tree.capVariants,
 };
 const capHint = (k: VersionKind) => CAP_HINT[k]?.() ?? k;

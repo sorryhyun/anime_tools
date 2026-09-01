@@ -58,11 +58,13 @@ nothing fetched, no business rule lives there. The state is five composables at
   stage CLI's own argparse (`gui/stages.py` dumps it in a child interpreter), so
   **nothing about a flag is ever re-typed here** — a label, a default or a choice
   list in this directory is a bug.
-- **`runner.ts`** — the Run → diff → Apply → Undo loop, and the one job the dock
-  follows. Run computes proposals and writes only the report; Apply replays *that
-  report*, so it can write nothing the diff did not show, which is why it stays
-  blocked until a Run has produced one and why the run is dropped the moment the
-  form moves on.
+- **`runner.ts`** — the Run → versions → Undo loop, and the one job the dock
+  follows. A Run *writes* (`--apply`, always): there is no Apply button, because
+  the caption ladder is what that gate was standing in for — the text a run
+  replaces becomes a version badge beside the caption, so what a run did is read
+  after it and on the caption rather than agreed to in a dialog first. The
+  report it leaves is still read back, as the diff of what it *did* and the dots
+  on the rows it touched, and Undo replays that report backwards.
 
 Plus **`downloads.ts`** (a weights fetch: the same job slot, but it reports into
 the Settings dialog rather than the dock) and **`state.ts`**, the two primitives
@@ -103,8 +105,8 @@ dicts and says which module writes each one.
   it registers (a listener, an `EventSource`) is torn down in its own
   `onCleanup`, so App never has to remember to.
 - Components under `components/` **draw and emit** — they hold view-local state
-  (an expanded folder, a draft caption) but never fetch a stage, decide what
-  Apply may write, or reach into another component's state.
+  (an expanded folder, a draft caption) but never fetch a stage, decide what a
+  Run may write, or reach into another component's state.
 - Two drag sizes are deliberately *not* `persisted`: the dock height and
   `ItemView`'s `--cap-w` move on every pointermove, so each saves once on
   pointerup instead of at frame rate.

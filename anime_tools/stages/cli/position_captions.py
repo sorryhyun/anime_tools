@@ -6,7 +6,7 @@ An attributable tag is MOVED out of the flat bag into its clause (v2);
 ``--no_rewrite`` keeps the additive v1 behaviour and ``--flatten`` is the inverse
 pass. See ``docs/position_captions.md``.
 
-Clauses land on the derived caption under ``--dst``; the caption master is never
+Clauses land on the revised caption under ``--dst``; the caption master is never
 written. Dry-run is the default — ``--apply`` writes, bumps the caption's mtime
 and drops stale ``.variants.txt`` sidecars, so follow it with a TE re-encode.
 ``--from_report`` replays a dry run's report without loading SAM3 or the tagger,
@@ -446,8 +446,10 @@ def _run_flatten(args, src: Path, dst: Path, report_dir: Path) -> None:
     print_dry_run_footer(args.apply, TE_NOTE)
 
 
-# ``drop_variants`` mirrors ``_write_derived_caption``: a stale
+# ``drop_variants`` mirrors the stage's own write: a stale
 # ``{stem}.variants.txt`` outranks ``{stem}.txt`` at encode time.
+# ``history_by`` mirrors it too: a replay files the version it replaces under
+# the same name the live pass would have.
 REPLAY_SPEC = ReplaySpec(
     stage="position_captions",
     rows_key="images",
@@ -457,6 +459,7 @@ REPLAY_SPEC = ReplaySpec(
     after_field="proposed",
     target_root="dst",
     drop_variants=True,
+    history_by="position",
 )
 
 

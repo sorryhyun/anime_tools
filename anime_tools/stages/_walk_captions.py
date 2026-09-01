@@ -1,6 +1,6 @@
 """Which caption file a stage reads for a resized image — once, for all of them.
 
-The **derived** caption (``workspace/resized/<rel>.txt``) is authoritative when
+The **revised** caption (``workspace/resized/<rel>.txt``) is authoritative when
 it exists; the hand-written **master** is the read-only fallback for an image
 the mirror pass has not reached yet. Derived-first matters because that text is
 already order-corrected and carries an earlier run's position clauses, which is
@@ -11,7 +11,7 @@ every run.
 :func:`iter_captions` is that rule plus the walk around it. Stages that
 deliberately read one tree do **not** go through here: autotag reads (and
 writes) the master, and ``ab_position_captions`` reads it on purpose, because
-after one ``--apply`` the derived side already carries clauses and every rule in
+after one ``--apply`` the revised side already carries clauses and every rule in
 it would skip.
 
 Torch-free.
@@ -37,7 +37,7 @@ class CaptionStats(Protocol):
 class CaptionItem(NamedTuple):
     """One walked image and the caption that speaks for it.
 
-    ``dst_caption`` is where a rewrite would be *written* (always the derived
+    ``dst_caption`` is where a rewrite would be *written* (always the revised
     tree), which is not necessarily where ``caption`` was *read* from.
     """
 

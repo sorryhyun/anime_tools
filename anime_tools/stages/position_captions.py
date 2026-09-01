@@ -596,7 +596,12 @@ def run_position_captions(
         if token_count_fn is not None and proposal.proposed:
             proposal.tokens = token_count_fn(proposal.proposed)
         if apply:
-            write_caption(dst_caption, proposal.proposed, drop_variants=True)
+            write_caption(
+                dst_caption,
+                proposal.proposed,
+                drop_variants=True,
+                history_by="position",
+            )
             stats.written += 1
 
     return rows, stats
@@ -612,7 +617,7 @@ def flatten_captions(
     """Undo a rewrite: merge every caption's clauses back into its flat bag.
 
     Text-only (no SAM3, no tagger, no pixels) since the rewrite moves tags
-    rather than deleting them. Same derived caption as
+    rather than deleting them. Same revised caption as
     :func:`run_position_captions`.
 
     GOTCHA: hand-written clauses are flattened too — the pass can't tell them
@@ -641,6 +646,11 @@ def flatten_captions(
             }
         )
         if apply:
-            write_caption(dst_caption, flattened, drop_variants=True)
+            write_caption(
+                dst_caption,
+                flattened,
+                drop_variants=True,
+                history_by="flatten",
+            )
             stats.written += 1
     return rows, stats

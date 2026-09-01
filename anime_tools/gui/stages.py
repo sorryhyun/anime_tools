@@ -225,7 +225,7 @@ STAGES: tuple[Stage, ...] = (
         "anime_tools.stages.cli.correct_captions",
         "Curate",
         "tokenizers",
-        notes="Writes the derived captions under the resized tree; the master is never edited.",
+        notes="Writes the revised captions under the resized tree; the master is never edited.",
         short="Correct",
     ),
     Stage(

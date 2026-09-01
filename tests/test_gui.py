@@ -981,14 +981,14 @@ def test_dataset_items_refreshes_only_what_it_is_asked_for(client):
     assert r.status_code == 200
     rows = r.json()["items"]
     assert [x["rel"] for x in rows] == ["sub/b.png", "a.png"]
-    assert rows[0]["dir"] == "sub" and rows[0]["captions"]["derived"] is False
+    assert rows[0]["dir"] == "sub" and rows[0]["captions"]["revised"] is False
     # A caption written since the listing shows up on the refreshed row.
     dst = tmp_path / "workspace" / "resized" / "sub"
     dst.mkdir(parents=True)
     (dst / "b.txt").write_text("1girl.")
     assert c.post("/api/dataset/items", json={"rels": ["sub/b.png"]}).json()["items"][
         0
-    ]["captions"]["derived"]
+    ]["captions"]["revised"]
 
 
 def test_dataset_items_drops_what_it_cannot_refresh(client):

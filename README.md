@@ -57,24 +57,31 @@ source image, and under each one its captions as child nodes —
 ▾ chars/alice
   ▾ chars_alice_001.png
       master      image_dataset/…/chars_alice_001.txt      (editable)
-      derived     post_image_dataset/resized/…/….txt       (editable)
+      revised@1   …/….history.txt                          (what it used to say)
+      revised     workspace/resized/…/….txt                (editable)
       variants    …/….variants.txt                         (generated, read-only)
 ```
 
 Selecting an image shows it (source / resized / mask) beside its captions,
 each with its flat tag bag and position clauses broken out — parsed by
 `captions.position_clauses` server-side, never by splitting on commas in the
-browser. Master and derived are editable: type, watch the clause preview
-update, **Save**. Editing is a file write, so it must still be followed by the
-trainer's TE re-encode; a derived edit also says so, because it leaves the
-`.variants.txt` sidecar stale. `↑`/`↓` (or `j`/`k`) walk the images, the filter
+browser. The captions are a **ladder** — the hand-written `master`, every version the
+`revised` caption used to be, that caption, then the generated `v0…vN` — and the
+panel is one editor with a badge per version. `master` and `revised` are
+editable: type, watch the clause preview update, **Save**. Editing is a file
+write, so it must still be followed by the trainer's TE re-encode; a `revised`
+edit also says so, because it leaves the `.variants.txt` sidecar stale. Every
+write to `revised`, by hand or by a stage, keeps what it replaced as a
+`revised@N` badge beside it. `↑`/`↓` (or `j`/`k`) walk the images, the filter
 box narrows the tree, and `#<rel>|<kind>` in the URL is a link to one caption.
 
 The **stage runner is the bottom dock**: its button strip *is* the stage list
 (grouped: captions / grouping / masking), so one click picks a stage and a
 second click on the open one folds the dock away. Fill the form (generated from
-the CLI's own `--help`), **Dry run**, then **Apply** — the dataset stays on
-screen throughout, and refreshes when the job finishes. The run's newest output
+the CLI's own `--help`) and **Run** it, on the selected image or over the whole
+batch — the dataset stays on screen throughout, and refreshes when the job
+finishes. A Run writes: what it replaced is a version badge on the caption, and
+**Undo** puts it back from the report the run wrote. The run's newest output
 line shows in the stage bar; the log / `report.json` / job-history panels are
 being reworked. Stages run as `python -m …` subprocesses, one at a time; the server
 never loads a model. `--host 0.0.0.0` exposes it on the LAN for a headless GPU
@@ -99,7 +106,7 @@ the rich editor.
 
 ```
 image_dataset/**/{stem}.png + {stem}.txt        caption master   ← autotag / position / correction write here
-post_image_dataset/resized/{stem}.txt           derived caption  ← stages.captions mirrors + corrects
+post_image_dataset/resized/{stem}.txt           revised caption  ← stages.captions mirrors + corrects
 post_image_dataset/resized/{stem}.variants.txt  shuffle / dropout variants (tab-delimited, v0 = pristine)
 post_image_dataset/captions/caption_index.json  typed-tag index (character / copyright / artist / count)
 models/captioners/anima-tagger-dbv4/            tagger checkpoint (auto-fetched from sorryhyun/anima-tagger)

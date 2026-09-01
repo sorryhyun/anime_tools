@@ -5,15 +5,15 @@ the *same relative path* in each (:mod:`anime_tools.workspace` owns the layout):
 
 ``src``     ``image_dataset/<rel>``            source image + hand-written master caption
 ``master``  ``workspace/master/<rel>``         the revised master overlay (empty until Phase 2 fills it)
-``dst``     ``workspace/resized/<rel>``        resized image + derived caption + ``.variants.txt``
+``dst``     ``workspace/resized/<rel>``        resized image + revised caption + ``.variants.txt`` + ``.history.txt``
 ``masks``   ``workspace/masks/<rel>``          ``{stem}_mask.png`` (nested; flat is the legacy fallback)
 ``out``     ``post_image_dataset/``            the export destination -- browsed by nothing, written by Export
 
 An image's captions are a **ladder**, not a set of unrelated files
-(:data:`CAPTION_LADDER`): the hand-written master, then whatever the stages
-derived from it, then the generated variants. That order is declared once here
-and travels to the browser twice -- as the dots on a sidebar row
-(:func:`_row`) and as the badges over the one caption editor
+(:data:`CAPTION_LADDER`): the hand-written master, the versions the revised
+caption used to be, that caption itself, then the generated variants. That order
+is declared once here and travels to the browser twice -- as the dots on a
+sidebar row (:func:`_row`) and as the badges over the one caption editor
 (:func:`caption_versions`) -- so a rung is added in one place rather than three.
 Only the rungs marked ``editable`` can be written; ``.variants.txt`` is
 generated, and editing the caption above it makes the sidecar stale, which
@@ -34,6 +34,11 @@ from anime_tools import workspace as WS
 from anime_tools._env import curation_home, resolve_path
 from anime_tools._json import read_json
 from anime_tools._walk import IMAGE_EXTENSIONS, glob_images_pathlib
+from anime_tools.captions.history import (
+    history_sidecar_path,
+    push_history,
+    read_history,
+)
 from anime_tools.captions.position_clauses import parse_caption, tag_spans
 from anime_tools.captions.variants import read_variants_sidecar, variants_sidecar_path
 from anime_tools.grouping.groups import MANIFEST_VERSION
@@ -57,30 +62,60 @@ class Rung:
     ``root`` names the :class:`Roots` field the file lives in, so the ladder is
     also the whole answer to "where is this caption" -- there is no second table
     mapping a kind to a tree.
+
+    ``expand`` marks the two rungs that are not one caption but a *sidecar* of
+    many: ``"variants"`` holds the generated ``v0``/``v1``/``r1`` … samples and
+    ``"history"`` the versions a write superseded. Both are one file on disk and
+    one dot on a sidebar row, and both open out into a badge apiece in the
+    panel (:func:`caption_versions`).
     """
 
     kind: str
     root: str
     editable: bool
-    sidecar: bool = False
-    """The generated ``.variants.txt`` beside the caption, not the caption."""
+    expand: str | None = None
+    """``"variants"`` / ``"history"`` — the sidecar beside the caption, not the
+    caption."""
+    of: str = ""
+    """Which rung a history sidecar records the past of. Its badges wear that
+    rung's name (``revised@2``), so the two are named here together rather than
+    the panel inferring one from the other."""
 
 
 CAPTION_LADDER: tuple[Rung, ...] = (
     Rung("master", "src", editable=True),
-    Rung("derived", "dst", editable=True),
-    Rung("variants", "dst", editable=False, sidecar=True),
+    Rung("history", "dst", editable=False, expand="history", of="revised"),
+    Rung("revised", "dst", editable=True),
+    Rung("variants", "dst", editable=False, expand="variants"),
 )
 """The captions of one image, oldest first.
 
-Phase 2 of ``plan.md`` inserts ``Rung("revised", "master", editable=True)``
-between the first two and flips ``master`` to ``editable=False`` -- which is the
-whole GUI half of that phase, because the sidebar strip, the panel's badges and
-:func:`write_caption`'s guard all read this tuple.
+``history`` sits *above* ``revised`` because that is what it is: the versions
+that caption used to be, oldest first, back to the cap in
+:mod:`anime_tools.captions.history`. It is what makes a stage run safe to write
+straight to disk -- the run bar has no Apply gate, so the text a run replaces
+survives as a badge rather than only as an Undo.
+
+Phase 2 of ``plan.md`` inserts the revised-master rung between ``master`` and
+``history`` and flips ``master`` to ``editable=False`` -- which is the whole GUI
+half of that phase, because the sidebar strip, the panel's badges and
+:func:`write_caption`'s guard all read this tuple. (That phase's sketch called
+that rung ``revised``; the name is taken -- see ``plan.md``.)
 """
 
 CAPTION_KINDS = tuple(r.kind for r in CAPTION_LADDER if r.editable)
 """The writable rungs — what :func:`write_caption` accepts."""
+
+_SIDECAR_PATH = {
+    "variants": variants_sidecar_path,
+    "history": history_sidecar_path,
+}
+"""``Rung.expand`` → the sidecar path beside a caption. The one place a rung
+that is a sidecar becomes a filename."""
+
+HISTORY_OF = {r.of: r.kind for r in CAPTION_LADDER if r.expand == "history"}
+"""Editable rung → the history rung recording it, for the writers that push a
+version before overwriting one. Empty for a rung the ladder gives no history."""
 
 
 def ladder_schema() -> list[dict[str, Any]]:
@@ -313,7 +348,7 @@ def item_pattern(rel: str) -> str:
 def _sibling_image(directory: Path, stem: str) -> Path | None:
     """The image named ``stem`` in ``directory``, whatever its extension: the
     resize step may re-encode (``.jpg`` master → ``.png`` resized), so the
-    derived tree is matched on stem, not on the full relative path."""
+    revised tree is matched on stem, not on the full relative path."""
     for ext in IMAGE_EXTENSIONS:
         p = directory / f"{stem}{ext}"
         if p.is_file():
@@ -363,7 +398,7 @@ def caption_paths(roots: Roots, rel: Path) -> dict[str, Path]:
     out: dict[str, Path] = {}
     for r in CAPTION_LADDER:
         p = getattr(roots, r.root) / txt
-        out[r.kind] = variants_sidecar_path(p) if r.sidecar else p
+        out[r.kind] = _SIDECAR_PATH[r.expand](p) if r.expand else p
     return out
 
 
@@ -565,11 +600,21 @@ def parsed_caption(text: str) -> dict[str, Any]:
     }
 
 
-def _caption_entry(kind: str, p: Path, *, editable: bool) -> dict[str, Any]:
+def _caption_entry(
+    kind: str, p: Path, *, editable: bool, rung: str = "", note: str = ""
+) -> dict[str, Any]:
     """One rung, as the panel gets it: the text, the parse of it, and whether
-    the editor over it is a field or a read-out."""
+    the editor over it is a field or a read-out.
+
+    ``rung`` is the :data:`CAPTION_LADDER` row this entry came out of, which is
+    not always its ``kind``: an expanded sidecar entry is called ``v1`` or
+    ``revised@2`` and would otherwise leave the panel guessing which badge
+    colour and which label it wears. ``note`` is the one extra line a badge can
+    carry (a history entry's *who and when*)."""
     entry: dict[str, Any] = {
         "kind": kind,
+        "rung": rung or kind,
+        "note": note,
         "path": rel_to_home(p),
         "exists": p.is_file(),
         "editable": editable,
@@ -586,14 +631,28 @@ def _caption_entry(kind: str, p: Path, *, editable: bool) -> dict[str, Any]:
     return entry
 
 
+def _expanded(rung: Rung, sidecar: Path) -> list[tuple[str, str, str]]:
+    """A sidecar rung's captions as ``(label, note, text)``, oldest first.
+
+    The two sidecars are read by their own modules and differ only in what a
+    label is worth saying about: a variant's label *is* its name (``v0``), while
+    a history entry is the ``revised`` caption at a moment, so it wears that
+    rung's name plus its sequence, and its note says who replaced it and when.
+    """
+    if rung.expand == "history":
+        return [(e.label(rung.of), e.note(), e.text) for e in read_history(sidecar)]
+    return [(label, "", text) for label, text in read_variants_sidecar(sidecar)]
+
+
 def caption_versions(roots: Roots, rel: Path) -> list[dict[str, Any]]:
     """Every caption this image has, oldest first — the panel's badge row.
 
-    :data:`CAPTION_LADDER` in order, with the sidecar rung *expanded* into one
-    entry per label it holds (``v0``, ``v1``, ``r1``…), because those are
-    versions of the caption in exactly the sense the rungs above them are. An
-    absent sidecar still contributes its one hollow ``variants`` rung, so the
-    badge that would hold them keeps its place and can say what is missing.
+    :data:`CAPTION_LADDER` in order, with a sidecar rung *expanded* into one
+    entry per caption it holds — ``v0``, ``v1``, ``r1``… for the variants, and
+    ``revised@1``, ``revised@2``… for the versions a write superseded — because
+    those are versions of the caption in exactly the sense the rungs above them
+    are. An absent sidecar still contributes its one hollow rung, so the badge
+    that would hold them keeps its place and can say what is missing.
 
     Every entry arrives parsed. A variant is a caption like any other and the
     browser is not allowed to split one, so the spans its boxes are drawn from
@@ -603,7 +662,7 @@ def caption_versions(roots: Roots, rel: Path) -> list[dict[str, Any]]:
     out: list[dict[str, Any]] = []
     for r in CAPTION_LADDER:
         p = caps[r.kind]
-        rows = read_variants_sidecar(p) if r.sidecar and p.is_file() else []
+        rows = _expanded(r, p) if r.expand and p.is_file() else []
         if not rows:
             out.append(_caption_entry(r.kind, p, editable=r.editable))
             continue
@@ -612,6 +671,8 @@ def caption_versions(roots: Roots, rel: Path) -> list[dict[str, Any]]:
         out.extend(
             {
                 "kind": label,
+                "rung": r.kind,
+                "note": note,
                 "path": home,
                 "exists": True,
                 "editable": False,
@@ -619,7 +680,7 @@ def caption_versions(roots: Roots, rel: Path) -> list[dict[str, Any]]:
                 "text": text,
                 "parsed": parsed_caption(text),
             }
-            for label, text in rows
+            for label, note, text in rows
         )
     return out
 
@@ -653,11 +714,16 @@ def item_detail(
 
 
 def write_caption(roots: Roots, rel_str: str, kind: str, text: str) -> dict[str, Any]:
-    """Write one caption file. ``master`` and ``derived`` only.
+    """Write one caption file. The ladder's editable rungs only.
 
     A caption is a single line by contract, so newlines fold to spaces. An empty
     body is refused rather than treated as a delete — losing a caption should
     take more than a stray select-all.
+
+    A hand edit supersedes a version exactly the way a stage run does, so it
+    pushes the same history — a rung the ladder gives no history rung simply
+    gets none (:data:`HISTORY_OF`), rather than this being the second place that
+    decides which rungs keep one.
     """
     if kind not in CAPTION_KINDS:
         raise DatasetError(f"not an editable caption: {kind!r}")
@@ -668,15 +734,17 @@ def write_caption(roots: Roots, rel_str: str, kind: str, text: str) -> dict[str,
     if not body:
         raise DatasetError("refusing to write an empty caption")
 
-    p = caption_paths(roots, rel)[kind]
+    caps = caption_paths(roots, rel)
+    p = caps[kind]
+    if kind in HISTORY_OF and p.is_file():
+        push_history(p, p.read_text(encoding="utf-8").strip(), by="edit")
     p.parent.mkdir(parents=True, exist_ok=True)
     p.write_text(body, encoding="utf-8")
 
     entry = _caption_entry(kind, p, editable=True)
-    # The sidecar was generated from the previous derived text, so its v0 no
+    # The sidecar was generated from the previous revised text, so its v0 no
     # longer matches what the TE step would encode.
-    sidecar = caption_paths(roots, rel)["variants"]
-    entry["variants_stale"] = kind == "derived" and sidecar.is_file()
+    entry["variants_stale"] = kind == "revised" and caps["variants"].is_file()
     return entry
 
 

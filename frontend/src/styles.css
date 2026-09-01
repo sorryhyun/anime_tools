@@ -87,7 +87,11 @@ aside { grid-column:1; grid-row:2/4; border-right:1px solid var(--line); backgro
 .tn.grp .tl { color:var(--accent) }
 .tn .tl .dim { font-size:inherit }
 .dot { width:7px; height:7px; flex:none; border-radius:50%; background:var(--dim) }
-.dot.master { background:var(--accent) } .dot.derived { background:var(--ok) } .dot.variants { background:var(--warn) }
+.dot.master { background:var(--accent) } .dot.revised { background:var(--ok) } .dot.variants { background:var(--warn) }
+/* The versions the revised caption used to be. Deliberately the dim default and
+   not a hue of its own: history is the rung you read, never the one you work
+   in, and four saturated colours in one strip is three too many. */
+.dot.history { background:var(--dim) }
 .dot.proposal { background:var(--warn) }
 /* An image's caption ladder, as a strip on its own row rather than a labelled
    child per rung under a chevron: filled is a file on disk, hollow is not, and
@@ -98,7 +102,8 @@ aside { grid-column:1; grid-row:2/4; border-right:1px solid var(--line); backgro
 .caps .dot.off { background:none; box-shadow:inset 0 0 0 1px var(--line) }
 .caps .dot:hover { box-shadow:0 0 0 3px #ffffff14 }
 .caps .dot.on { box-shadow:0 0 0 2px var(--bg), 0 0 0 3px currentColor }
-.caps .dot.master.on { color:var(--accent) } .caps .dot.derived.on { color:var(--ok) } .caps .dot.variants.on { color:var(--warn) }
+.caps .dot.master.on { color:var(--accent) } .caps .dot.revised.on { color:var(--ok) } .caps .dot.variants.on { color:var(--warn) }
+.caps .dot.history.on { color:var(--dim) }
 .caps .dot.off.on { box-shadow:inset 0 0 0 1px var(--line), 0 0 0 2px var(--bg), 0 0 0 3px var(--dim) }
 .flags { margin-left:auto; display:flex; gap:4px; align-items:center }
 /* The mask flag draws its own colour, so it gets a size and nothing else. An
@@ -106,10 +111,10 @@ aside { grid-column:1; grid-row:2/4; border-right:1px solid var(--line); backgro
    text to land at the same visual weight as the `r` beside it. */
 .flag.mask { font-size:14px; line-height:1 }
 /* `r` = the resized copy exists, in --ok because it lives in the dst tree, the
-   same root the derived caption's dot is green for. */
+   same root the revised caption's dot is green for. */
 .flag.rz { color:var(--ok); font:600 13px var(--font-mono); line-height:1 }
-/* This image is one the last Run wants to change -- so a batch's diff is a
-   thing you can walk down, not a thing you go looking for. */
+/* This image is one the last Run changed -- so a batch's diff is a thing you
+   can walk down, not a thing you go looking for. */
 .flag.prop { color:var(--accent); font-size:9px }
 
 /* ---- centre: one dataset item ----
@@ -148,13 +153,14 @@ main { grid-column:2; grid-row:2; display:grid; grid-template-rows:auto minmax(0
    would otherwise break onto a second line one character at a time. */
 .card-h .badge, .card-h button { flex:none; white-space:nowrap }
 .hint { font-size:12px; margin:4px 0 }
-/* The caption ladder, as the badges over the one editor: master, whatever the
-   stages derived from it, then the generated v0…vN. Same readout as the
-   sidebar's dot strip -- filled dot = on disk, hollow = not -- so a badge and
-   the row's dot are recognisably the same file, and the badge is also the
-   switch that puts that version in the field below. A rung added to
-   `dataset.CAPTION_LADDER` wants one `.dot.<kind>` colour here, beside the
-   three below; without one it falls through to the sidecar's. */
+/* The caption ladder, as the badges over the one editor: master, every version
+   the revised caption used to be, that caption, then the generated v0…vN. Same
+   readout as the sidebar's dot strip -- filled dot = on disk, hollow = not --
+   so a badge and the row's dot are recognisably the same file, and the badge is
+   also the switch that puts that version in the field below. An expanded rung's
+   badges wear their *rung's* colour (`CaptionEntry.rung`), so `revised@2` is a
+   history dot and not a guess made from the shape of its name; a rung added to
+   `dataset.CAPTION_LADDER` wants one `.dot.<kind>` colour here. */
 .vbs { display:flex; flex-wrap:wrap; align-items:center; gap:4px }
 .vb { display:flex; align-items:center; gap:5px; padding:2px 8px; border-radius:10px; background:none; border:1px solid transparent; color:var(--dim); font-size:11px }
 /* Background-only, like the ☰ menu's rows: the base `button:hover` accent ring
@@ -274,8 +280,7 @@ textarea { min-height:52px; resize:vertical }
 button { background:#2a2f3a; color:var(--fg); border:1px solid var(--line); border-radius:5px; padding:6px 12px; cursor:pointer; font-size:13px }
 button:hover { border-color:var(--accent) } button:disabled { opacity:.45; cursor:default }
 button.primary { background:var(--accent); color:var(--input); border-color:transparent; font-weight:600 }
-button.primary:disabled, button.danger:disabled { background:#2a2f3a; color:var(--dim); border-color:var(--line) }
-button.danger { background:var(--err); color:var(--input); border-color:transparent; font-weight:600 }
+button.primary:disabled { background:#2a2f3a; color:var(--dim); border-color:var(--line) }
 button.link { background:none; border:none; color:var(--accent); padding:0; font-size:inherit }
 .tabs { display:flex; align-items:center; gap:2px; padding:6px 12px 0; border-bottom:1px solid var(--line) }
 .tabs.sub { padding:6px 10px 0 }

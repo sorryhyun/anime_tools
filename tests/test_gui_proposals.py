@@ -108,7 +108,7 @@ def test_a_row_that_changes_nothing_is_not_a_proposal(home, roots):
     assert all(p.before != p.after for p in found.values())
 
 
-def test_the_derived_caption_is_the_position_stage_s_target(home, roots):
+def test_the_revised_caption_is_the_position_stage_s_target(home, roots):
     """``position_captions`` only ever rewrites ``workspace/resized``,
     so its diff belongs on the *derived* card, not the master's."""
     report = {
@@ -126,7 +126,7 @@ def test_the_derived_caption_is_the_position_stage_s_target(home, roots):
     p = home / "pos.json"
     p.write_text(json.dumps(report), encoding="utf-8")
     got = P.read(p, roots, "position")["a.png"]
-    assert got.kind == "derived"
+    assert got.kind == "revised"
     assert got.path == "workspace/resized/a.txt"
 
 

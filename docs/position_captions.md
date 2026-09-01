@@ -3,7 +3,7 @@
 SAM3 detects the subjects, they are put in reading order, each mask-blanked crop
 is tagged by the Anima Tagger, and the caption is **rewritten** so each attribute
 is asserted once, in the clause of the subject it belongs to. The rewrite lands
-on the **derived** captions under `workspace/resized/`; the hand-written master
+on the **revised** captions under `workspace/resized/`; the hand-written master
 in `image_dataset/` is never written. Dry run is the default.
 
 The measurement logs behind each rule — sweep tables, A/B results, dated
@@ -114,7 +114,7 @@ Per candidate image (`anime_tools/stages/position_captions.py`):
    standing inside the padded box contributes their hair to this subject's tags.
 4. **Tag** — Anima Tagger per crop, then clause selection (below).
 5. **Rewrite** — the tags a clause has earned leave the flat bag and
-   `compose_caption(flat_tags, clauses)` is written to the derived caption.
+   `compose_caption(flat_tags, clauses)` is written to the revised caption.
 
 Models are injected as `detect_fn` / `tag_fn` callables, so the orchestration
 module imports neither SAM3 nor the tagger and unit-tests with stubs; the CLI
@@ -390,7 +390,7 @@ carries `applied: true`, so feeding it back in is refused above; `--flatten
 
 ### Where the rewrite lands, and the one trap left in the ops sequence
 
-The clauses go to the **derived** caption beside the resized image
+The clauses go to the **revised** caption beside the resized image
 (`workspace/resized/<rel>.txt`) — the file the caption mirror writes and the TE
 step encodes. The master under `image_dataset/` is **never** written; it is only
 the read fallback for an image the caption step has not mirrored yet. Three
@@ -527,8 +527,9 @@ you. Only the standalone `--apply` path needs a manual `make preprocess-te`.
 Precedence is env → config, with the CLI flag winning over both; the GUI always
 exports the env var, so its checkbox **initializes from the config key** and a
 CLI-side `true` cannot be silently cancelled by a GUI run exporting `0`. Applying
-without a review step rewrites the derived captions in place and there is no undo
-button in the GUI — nothing of yours is at risk, since the master is untouched,
+without a review step rewrites the revised captions in place — nothing of yours
+is at risk, since the master is untouched and the text it replaced is kept as a
+`revised@N` version beside it (the GUI shows those as badges and has an Undo),
 but the rewritten text is what trains until you look at it. The pass is
 idempotent and reversible from the CLI (`--flatten --apply`), yet a dry run with
 `--crops` is still the way to eyeball proposals first.
@@ -578,7 +579,7 @@ idempotent and reversible from the CLI (`--flatten --apply`), yet a dry run with
 | `anime_tools/stages/position_captions.py` | Pipeline orchestration (`propose_for_image`, `flatten_captions`); models injected as `detect_fn` / `tag_fn` |
 | `anime_tools/stages/cli/position_captions.py` | CLI shell — argparse + SAM3/tagger loading (`build_options_from_args` is shared with the A/B tool) |
 | `anime_tools/stages/cli/ab_position_captions.py` | A/B two flag sets off **one** detect+tag pass. Pass sides as `--a_flags=--foo` — the `=` is required, argparse reads a `-`-leading value as the next option |
-| `anime_tools/stages/cli/review_position_captions.py` | Contact sheet for an **applied** run — overlay, crops, master vs derived caption, moved / novel / duplicated marks, `drift` flag |
+| `anime_tools/stages/cli/review_position_captions.py` | Contact sheet for an **applied** run — overlay, crops, master vs revised caption, moved / novel / duplicated marks, `drift` flag |
 | `anime_tools/downloads.py` | `DEFAULT_SUBJECT_PROMPT_EMBED` and the `soft_prompt` asset row that fetches it |
 | `anime_tools/captions/variants.py` / `correction.py` | Atomic-clause variant generation; clause-aware order correction |
 | `tests/test_position_captions.py` | Unit tests (grammar round-trip, ordering, selection, skip paths, the rewrite rules) |

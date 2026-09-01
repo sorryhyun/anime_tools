@@ -11,11 +11,22 @@ Every caption write carries the same two invariants:
 *The variants sidecar*
     ``{stem}.variants.txt`` wins over ``{stem}.txt`` at encode time, so a
     caption rewritten without dropping its sidecar keeps training the *old*
-    text. Every write into the derived tree passes ``drop_variants=True``;
+    text. Every write into the revised tree passes ``drop_variants=True``;
     writes into the caption master never need it, because the sidecar lives
-    beside the derived caption.
+    beside the revised caption.
 
-Torch-free, and deliberately import-light: the sidecar path helper is imported
+*The history sidecar*
+    A run writes for real -- there is no Apply gating it -- so the text it
+    replaces has to survive the write or it is simply gone. ``history_by``
+    names who is writing and pushes the current text into
+    ``{stem}.history.txt`` first; the GUI's caption ladder shows those as
+    ``revised@1``, ``revised@2`` … beside the live caption. It is per call site
+    rather than automatic because a rung with no history rung on the ladder
+    would only be accumulating a file nothing reads -- which is the caption
+    master today (``image_dataset/`` is the input tree, and Phase 2 is what
+    moves its writes into the workspace).
+
+Torch-free, and deliberately import-light: both sidecar helpers are imported
 inside the function so :mod:`anime_tools.stages.replay` stays importable
 without :mod:`anime_tools.captions`.
 """
@@ -37,12 +48,18 @@ def write_caption(
     *,
     newline: bool = False,
     drop_variants: bool = False,
+    history_by: str | None = None,
 ) -> None:
-    """Write one caption, creating its directory and honouring both invariants.
+    """Write one caption, creating its directory and honouring the invariants.
 
-    See the module docstring for what ``newline`` and ``drop_variants`` are
-    protecting.
+    See the module docstring for what ``newline``, ``drop_variants`` and
+    ``history_by`` are protecting. The history push happens *before* the write,
+    since what it records is the text about to be replaced.
     """
+    if history_by is not None and path.is_file():
+        from anime_tools.captions.history import push_history
+
+        push_history(path, read_caption(path), by=history_by)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(text + ("\n" if newline else ""), encoding="utf-8")
     if drop_variants:

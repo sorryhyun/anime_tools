@@ -93,7 +93,7 @@ def _build_variant_rows(
 def _reattach_clauses(corrected: str, existing: str) -> str:
     """Put ``existing``'s position clauses back onto a freshly corrected caption.
 
-    Position clauses live in the *derived* layer, so a plain mirror would drop
+    Position clauses live in the *revised* layer, so a plain mirror would drop
     them on the next preprocess — the master has no clauses, so the corrected
     caption has none either.
 
@@ -246,7 +246,7 @@ def write_corrected_preprocess_captions(
         else:
             # No ``drop_variants``: the sidecar is this pass's own output and
             # is rebuilt (or removed) a few lines down.
-            write_caption(e.dst, e.corrected)
+            write_caption(e.dst, e.corrected, history_by="correct")
             stats.written += 1
 
         sidecar = variants_sidecar_path(e.dst)

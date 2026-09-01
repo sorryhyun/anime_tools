@@ -87,7 +87,7 @@ def build_parser() -> argparse.ArgumentParser:
         default=False,
         help=(
             "Also copy .txt / .caption sidecars next to the resized image. Off "
-            "by default: the derived caption is written by the correct stage, "
+            "by default: the revised caption is written by the correct stage, "
             "which would otherwise be overwritten by the raw master."
         ),
     )
