@@ -49,6 +49,33 @@ def build_parser() -> argparse.ArgumentParser:
         help="Drop a recognized line below this mean per-character confidence (0-1)",
     )
     p.add_argument(
+        "--min_chars",
+        "--min-chars",
+        dest="min_chars",
+        type=int,
+        default=3,
+        help="Drop a line shorter than this many non-space characters, after "
+        "the CJK join — one or two glyphs is a misread screentone far more "
+        "often than it is a word",
+    )
+    p.add_argument(
+        "--keep_en",
+        "--keep-en",
+        dest="skip_en",
+        action="store_false",
+        help="Keep ASCII-only lines. Dropped by default: on a scanned comic they "
+        "are the page number, the URL and the romaji sfx, never the dialogue",
+    )
+    p.add_argument(
+        "--no_join_cjk",
+        "--no-join-cjk",
+        dest="join_cjk",
+        action="store_false",
+        help="Record each CJK box on its own line. Joined by default: a balloon "
+        "of vertical Japanese is detected as one box per column, and the columns "
+        "are one sentence",
+    )
+    p.add_argument(
         "--min_box_px",
         "--min-box-px",
         dest="min_box_px",
@@ -118,6 +145,9 @@ def main() -> None:
         engine = load_ocr(
             device=device,
             min_score=args.min_score,
+            min_chars=args.min_chars,
+            skip_en=args.skip_en,
+            join_cjk=args.join_cjk,
             min_box_px=args.min_box_px,
             max_boxes=args.max_boxes,
             limit_side=args.det_limit_side,
@@ -130,7 +160,7 @@ def main() -> None:
         resized_dir=resized_dir,
         ocr_dir=ocr_dir,
         read_fn=engine.read,
-        read_many_fn=engine.read_many,
+        read_iter_fn=engine.read_iter,
         path_pattern=args.path_pattern,
         apply=args.apply,
         progress=make_progress(25, first=True),
@@ -140,6 +170,9 @@ def main() -> None:
         report_dir,
         {
             "min_score": args.min_score,
+            "min_chars": args.min_chars,
+            "skip_en": bool(args.skip_en),
+            "join_cjk": bool(args.join_cjk),
             "min_box_px": args.min_box_px,
             "max_boxes": args.max_boxes,
             "det_limit_side": args.det_limit_side,

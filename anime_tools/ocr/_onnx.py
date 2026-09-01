@@ -19,6 +19,7 @@ from typing import Any
 
 from anime_tools.captions.ocr_sidecar import OcrLine
 from anime_tools.downloads import default_ppocr_det_dir, default_ppocr_rec_dir
+from anime_tools.ocr._text import join_cjk, keep_line
 
 ONNX_NAME = "inference.onnx"
 CONFIG_NAME = "inference.yml"
@@ -38,6 +39,13 @@ MIN_BOX_SIDE = 3
 
 DET_STRIDE = 32
 """DB's downsampling factor: every side the detector is fed is a multiple of it."""
+
+DET_MEAN = (0.485 * 255, 0.456 * 255, 0.406 * 255)
+DET_STD = (0.229 * 255, 0.224 * 255, 0.225 * 255)
+"""The ImageNet statistics the detector was trained on, pre-scaled to the 0-255 the
+decoder hands over: ``(v / 255 - m) / s`` is ``(v - 255m) / 255s``, which is one pass
+over the pixels instead of three. BGR order, matching upstream and :meth:`_preprocess`.
+"""
 
 
 def _pad_to(limit_side: int) -> int:
@@ -67,7 +75,7 @@ def _is_gpu(session) -> bool:
 def _cv2_single_threaded() -> Iterator[None]:
     """Take OpenCV's own thread pool away for the duration.
 
-    :meth:`OcrEngine.read_many` already spreads whole images across a pool; OpenCV
+    :meth:`OcrEngine.read_iter` already spreads whole images across a pool; OpenCV
     fanning out inside each one is a second layer of threads over the same cores.
     Restored on the way out — this is a process-wide setting.
     """
@@ -208,6 +216,12 @@ class TextDetector:
         (:func:`_pad_to`). The pad is ``BORDER_REPLICATE`` rather than a constant, so DB
         finds no text box along the border's hard edge; the band is cut off the
         probability map before the contour pass regardless.
+
+        The normalize writes each channel straight into the CHW tensor the session is
+        fed, with :data:`DET_MEAN` / :data:`DET_STD` folded into one pass. It is the
+        whole CPU cost of an image that has no text in it, and the arithmetic chain it
+        replaces — ``astype`` then ``/255`` then two broadcasts then a ``transpose``
+        copy — swept an 11 MB array five times over for the same numbers.
         """
         import cv2
         import numpy as np
@@ -222,10 +236,11 @@ class TextDetector:
             resized = cv2.copyMakeBorder(
                 resized, 0, side - rh, 0, side - rw, cv2.BORDER_REPLICATE
             )
-        x = resized.astype(np.float32) / 255.0
-        x -= np.array([0.485, 0.456, 0.406], dtype=np.float32)
-        x /= np.array([0.229, 0.224, 0.225], dtype=np.float32)
-        return x.transpose(2, 0, 1)[None], w / rw, h / rh, (rh, rw)
+        x = np.empty((1, 3, *resized.shape[:2]), dtype=np.float32)
+        for i, channel in enumerate(cv2.split(resized)):
+            np.subtract(channel, DET_MEAN[i], out=x[0, i], dtype=np.float32)
+            x[0, i] *= 1.0 / DET_STD[i]
+        return x, w / rw, h / rh, (rh, rw)
 
     @staticmethod
     def _mini_box(contour):
@@ -394,17 +409,36 @@ class TextRecognizer:
             f"{len(chars)} characters — the two files are not a pair"
         )
 
+    @staticmethod
+    def _need(ratio: float) -> int:
+        """The narrowest width a crop of this aspect ratio fits in, upstream's
+        ``max(320, ceil(48 * ratio))``."""
+        return max(REC_MIN_WIDTH, math.ceil(REC_HEIGHT * ratio))
+
     def _width(self, max_ratio: float) -> int:
         """The width a batch of this aspect ratio is padded to.
 
-        Upstream's is ``max(320, ceil(48 * max_ratio))`` — one width per batch, which on
-        the GPU is one re-plan per batch. Rounding up to the next multiple of
-        :data:`REC_MIN_WIDTH` collapses that to a two- or three-rung ladder.
+        Upstream's is one width per batch, which on the GPU is one re-plan per batch.
+        Rounding up to the next multiple of :data:`REC_MIN_WIDTH` collapses that to a
+        two- or three-rung ladder.
         """
-        need = max(REC_MIN_WIDTH, math.ceil(REC_HEIGHT * max_ratio))
+        need = self._need(max_ratio)
         if not self.fixed_shape:
             return need
         return REC_MIN_WIDTH * math.ceil(need / REC_MIN_WIDTH)
+
+    @classmethod
+    def _rung(cls, crop) -> int:
+        """The width this crop would be padded to on its own — its batching key.
+
+        **Padding a crop past the width it needs costs accuracy**, not just time: the
+        recognizer reads the zeros. Measured on one line, the same crop answers
+        ``スリスリ`` at 0.92 padded to 320 and ``ス=入ー`` at 0.37 padded to 1280. So a
+        batch is drawn from one rung and every member gets the width it asked for; what
+        a crop reads no longer depends on which crops it was queued beside.
+        """
+        ratio = crop.shape[1] / max(crop.shape[0], 1)
+        return REC_MIN_WIDTH * math.ceil(cls._need(ratio) / REC_MIN_WIDTH)
 
     def _resize(self, crop, width: int):
         """One crop, height-normalized and right-padded to the batch's width."""
@@ -459,7 +493,13 @@ class TextRecognizer:
         return np.stack(rows)
 
     def recognize(self, crops: Sequence, pool=None) -> list[tuple[str, float]]:
-        """Recognize every crop, batched by aspect ratio so padding stays cheap.
+        """Recognize every crop, batched by width rung so nothing is over-padded.
+
+        A batch holds one rung only (:meth:`_rung`), sorted by ratio inside it so the
+        CPU path — which pads to the batch's exact need rather than to the rung — stays
+        tight as well. Batching the aspect-sorted list by position instead would let a
+        narrow crop ride along at a wide neighbour's width, and the pad is not free:
+        it changes what the crop says.
 
         With a ``pool``, the two CPU halves — building each padded batch, and the CTC
         decode over an 18,710-wide logit field — run on it, leaving this thread with
@@ -467,13 +507,15 @@ class TextRecognizer:
         """
         if not crops:
             return []
-        order = sorted(
-            range(len(crops)),
-            key=lambda i: crops[i].shape[1] / max(crops[i].shape[0], 1),
-        )
+        rungs: dict[int, list[int]] = {}
+        for i, crop in enumerate(crops):
+            rungs.setdefault(self._rung(crop), []).append(i)
+        for group in rungs.values():
+            group.sort(key=lambda i: crops[i].shape[1] / max(crops[i].shape[0], 1))
         chunks = [
-            order[s : s + self.batch_size]
-            for s in range(0, len(order), self.batch_size)
+            group[s : s + self.batch_size]
+            for _, group in sorted(rungs.items())
+            for s in range(0, len(group), self.batch_size)
         ]
         mapper = pool.map if pool is not None else map
 
@@ -500,7 +542,8 @@ def crop_quad(bgr, box):
     A box taller than 1.5× its width is rotated a quarter turn (upstream's rule). Known
     weak point: genuinely **vertical** Japanese becomes a row of glyphs each lying on its
     side, and the recognizer answers junk at a low score — the score floor is what keeps
-    that out of the sidecar.
+    that out of the sidecar. What survives arrives one column per box, which is what
+    :func:`~anime_tools.ocr._text.join_cjk` puts back together.
     """
     import cv2
     import numpy as np
@@ -547,8 +590,16 @@ class OcrEngine:
     min_score: float = 0.6
     min_box_px: int = 12
     max_boxes: int = 64
+
+    min_chars: int = 3
+    skip_en: bool = True
+    join_cjk: bool = True
+    """The content filters, applied to what came back rather than to what was
+    fed in (:mod:`anime_tools.ocr._text`): join a balloon's boxes into one line,
+    drop the ASCII-only ones, then drop what is left under ``min_chars``."""
+
     chunk_size: int = 32
-    """How many images :meth:`read_many` holds in flight at once: the recognizer gets
+    """How many images :meth:`read_iter` holds in flight at once: the recognizer gets
     every chunk's crops in one pool of lines, at the price of holding that many decoded
     images — two chunks' worth while the next prefetches — in RAM."""
 
@@ -563,27 +614,37 @@ class OcrEngine:
         return self.read_many([image_path])[0]
 
     def read_many(self, image_paths: Sequence[Path]) -> list[list[OcrLine]]:
+        """:meth:`read_iter` drained into a list, one entry per path."""
+        return list(self.read_iter(image_paths))
+
+    def read_iter(self, image_paths: Sequence[Path]) -> Iterator[list[OcrLine]]:
         """:meth:`read` over many images, batching what is batchable.
 
         A chunk is decoded and normalized on the pool, detected one image per forward,
         post-processed on the pool, and then *all* of its crops are recognized as one pool
         of lines — recognition is typically one or two crops per image, and its fixed cost
         dwarfs its content unless a whole chunk's crops queue up together. Results are
-        scattered back by index, so this returns what a ``read``-per-path loop would have.
+        scattered back by index, so this yields what a ``read``-per-path loop would have,
+        in the order the paths arrived.
 
         Chunk *n+1* is decoded before chunk *n* reaches the sessions, on a thread of its
         own rather than on ``pool`` — a pool task that waits on the same pool deadlocks at
         ``workers=1``.
+
+        **Yielding image by image is what keeps that prefetch alive.** The caller writes
+        and reports as each result lands, so it has no reason to hand the run over in
+        slices — and a slice the size of a chunk is a chunk with nothing decoded behind
+        it, which parks the GPU for a whole chunk's decode. The whole run goes in one
+        call; only the chunking below is a batch boundary.
         """
         from concurrent.futures import ThreadPoolExecutor
 
         paths = list(image_paths)
         if not paths:
-            return []
+            return
         size = max(1, self.chunk_size)
         chunks = [paths[s : s + size] for s in range(0, len(paths), size)]
 
-        out: list[list[OcrLine]] = []
         with (
             _cv2_single_threaded(),
             ThreadPoolExecutor(max_workers=max(1, self.workers)) as pool,
@@ -594,8 +655,7 @@ class OcrEngine:
                 loaded = pending.result()
                 if i + 1 < len(chunks):
                     pending = ahead.submit(self._load_chunk, chunks[i + 1], pool)
-                out.extend(self._read_chunk(chunk, loaded, pool))
-        return out
+                yield from self._read_chunk(chunk, loaded, pool)
 
     def _load_chunk(self, paths: Sequence[Path], pool) -> list:
         """One chunk decoded and normalized, on the pool. The prefetched half."""
@@ -705,6 +765,16 @@ class OcrEngine:
                     text=text,
                 )
             )
+        # Join before filtering: a column of two glyphs is only short until the
+        # rest of its balloon is on it, and a merged block sits where neither
+        # part did, so reading order is settled afterwards.
+        if self.join_cjk:
+            lines = join_cjk(lines)
+        lines = [
+            ln
+            for ln in lines
+            if keep_line(ln.text, min_chars=self.min_chars, skip_en=self.skip_en)
+        ]
         # Numbered only once the order is final, so a sidecar's sequence reads
         # top-to-bottom rather than recording detection order.
         return [
@@ -719,6 +789,9 @@ def load_ocr(
     min_score: float = 0.6,
     min_box_px: int = 12,
     max_boxes: int = 64,
+    min_chars: int = 3,
+    skip_en: bool = True,
+    join_cjk: bool = True,
     limit_side: int = DET_LIMIT_SIDE,
     batch_size: int = 8,
     chunk_size: int = 32,
@@ -731,6 +804,9 @@ def load_ocr(
         min_score=min_score,
         min_box_px=min_box_px,
         max_boxes=max_boxes,
+        min_chars=min_chars,
+        skip_en=skip_en,
+        join_cjk=join_cjk,
         chunk_size=chunk_size,
         workers=workers,
     )

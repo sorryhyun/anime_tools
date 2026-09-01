@@ -72,9 +72,9 @@ def test_a_damaged_record_costs_its_line_and_never_the_run(tmp_path: Path):
 # ---- what reaches the sidecar -----------------------------------------
 
 
-def test_every_recognized_line_reaches_the_sidecar_numbered_in_order():
-    """There is no language filter: the score floor is the only one, and every
-    line clearing it is renumbered in order."""
+def test_every_line_the_reader_hands_over_reaches_the_sidecar_in_order():
+    """The stage is not where a line is dropped — the reader has already
+    filtered and joined — so every line it is handed is renumbered in order."""
     lines = [line("SALE", seq=7), line("!?", seq=9), line("心", seq=40)]
     kept = number_lines(lines)
     assert [(ln.seq, ln.text) for ln in kept] == [(1, "SALE"), (2, "!?"), (3, "心")]
@@ -158,7 +158,7 @@ def test_an_image_with_no_text_is_counted_and_leaves_no_sidecar(tmp_path: Path):
 
 
 def test_the_batched_reader_answers_what_the_one_at_a_time_reader_does(tmp_path: Path):
-    """``read_many_fn`` is a pure substitution for ``read_fn``."""
+    """``read_iter_fn`` is a pure substitution for ``read_fn``."""
     from PIL import Image
 
     dst, ocr = _dataset(tmp_path)
@@ -173,11 +173,66 @@ def test_the_batched_reader_answers_what_the_one_at_a_time_reader_does(tmp_path:
         resized_dir=dst,
         ocr_dir=ocr,
         read_fn=lambda _p: list(lines),
-        read_many_fn=lambda paths: [list(lines) for _ in paths],
+        read_iter_fn=lambda paths: (list(lines) for _ in paths),
         apply=False,
     )
     assert [r.to_row() for r in one] == [r.to_row() for r in many]
     assert stats_one.lines == stats_many.lines == 3
+
+
+def test_the_reader_gets_the_whole_run_in_one_call(tmp_path: Path):
+    """The stage does no chunking of its own.
+
+    A slice the size of the reader's chunk is a chunk with nothing decoded behind
+    it, which idles the GPU for every decode; the reader prefetches across the run
+    instead, and only can if it is handed the run.
+    """
+    from PIL import Image
+
+    dst, ocr = _dataset(tmp_path)
+    for i in range(40):
+        Image.new("RGB", (64, 64), "white").save(dst / f"b{i:02d}.png")
+    calls: list[int] = []
+
+    def reader(paths):
+        calls.append(len(paths))
+        for _ in paths:
+            yield [line("SALE")]
+
+    _, stats = run_ocr(
+        resized_dir=dst,
+        ocr_dir=ocr,
+        read_fn=lambda _p: [],
+        read_iter_fn=reader,
+        apply=False,
+    )
+    assert calls == [41] and stats.lines == 41
+
+
+def test_a_result_is_written_before_the_reader_has_finished(tmp_path: Path):
+    """An ``--apply`` streams: the reader is still working when the first sidecar
+    lands, which is what lets its decode overlap the stage's writes."""
+    from PIL import Image
+
+    dst, ocr = _dataset(tmp_path)
+    for name in ("b", "c"):
+        Image.new("RGB", (64, 64), "white").save(dst / f"{name}.png")
+    seen: list[list[str]] = []
+
+    def reader(paths):
+        for _ in paths:
+            seen.append(sorted(p.name for p in ocr.glob("*.ocr.txt")))
+            yield [line("SALE")]
+
+    run_ocr(
+        resized_dir=dst,
+        ocr_dir=ocr,
+        read_fn=lambda _p: [],
+        read_iter_fn=reader,
+        apply=True,
+    )
+    # The third image is read only after the first two sidecars are on disk.
+    assert seen == [[], ["a.ocr.txt"], ["a.ocr.txt", "b.ocr.txt"]]
 
 
 # ---- the pieces of the engine that need no weights ---------------------
@@ -236,6 +291,78 @@ def test_the_vocabulary_is_derived_from_the_graph_not_assumed():
     assert TextRecognizer._vocab(chars, FakeSession(4)) == ["<blank>", "a", "b", "c"]
     with pytest.raises(RuntimeError, match="not a pair"):
         TextRecognizer._vocab(chars, FakeSession(9))
+
+
+def _fake_recognizer(widths: list[int], *, fixed_shape: bool):
+    """A recognizer whose session records the width of every batch it is fed."""
+    np = pytest.importorskip("numpy")
+    from anime_tools.ocr._onnx import TextRecognizer
+
+    class FakeInput:
+        name = "x"
+
+    class FakeSession:
+        def get_inputs(self):
+            return [FakeInput()]
+
+        def run(self, _outputs, feed):
+            batch = feed["x"]
+            widths.append(batch.shape[-1])
+            return [np.zeros((batch.shape[0], 4, 2), dtype="float32")]
+
+    return TextRecognizer(
+        session=FakeSession(),
+        vocab=["<blank>", "a"],
+        batch_size=8,
+        fixed_shape=fixed_shape,
+    )
+
+
+def test_a_crop_is_never_padded_past_the_width_it_needs():
+    """A batch is drawn from one width rung.
+
+    Padding a crop past its own width is not merely wasted compute — the
+    recognizer reads the zeros, and the same crop answers something different at
+    320 than at 1280. Batching the aspect-sorted list by position let one wide
+    crop drag seven narrow ones up to its width, which made what a line said
+    depend on which lines happened to be queued beside it.
+    """
+    np = pytest.importorskip("numpy")
+    pytest.importorskip("cv2")
+
+    widths: list[int] = []
+    rec = _fake_recognizer(widths, fixed_shape=True)
+    crops = [np.zeros((48, 48, 3), dtype="uint8") for _ in range(7)]
+    crops.append(np.zeros((48, 2000, 3), dtype="uint8"))
+
+    assert len(rec.recognize(crops)) == len(crops)
+    # Two batches, not one: the wide crop is alone on its rung.
+    assert sorted(widths) == [320, 2240]
+
+
+def test_the_rung_batching_still_fills_a_batch():
+    """Crops of one rung batch together up to ``batch_size``, so the fix costs
+    partial batches only at a rung boundary."""
+    np = pytest.importorskip("numpy")
+    pytest.importorskip("cv2")
+
+    widths: list[int] = []
+    rec = _fake_recognizer(widths, fixed_shape=True)
+    rec.recognize([np.zeros((48, 60, 3), dtype="uint8") for _ in range(20)])
+    assert widths == [320, 320, 320]  # 8 + 8 + 4, all on one rung
+
+
+def test_a_cpu_batch_pads_to_its_own_need_not_the_rung():
+    """``fixed_shape`` off, the batch keeps the exact width its widest member
+    needs — the rung is the grouping key, never the tensor width."""
+    np = pytest.importorskip("numpy")
+    pytest.importorskip("cv2")
+
+    widths: list[int] = []
+    rec = _fake_recognizer(widths, fixed_shape=False)
+    # 48x400 needs ceil(48 * 400/48) = 400, inside the 640 rung.
+    rec.recognize([np.zeros((48, 400, 3), dtype="uint8")])
+    assert widths == [400]
 
 
 # ---- one input shape per session ---------------------------------------
@@ -380,3 +507,153 @@ def test_the_loader_and_the_download_catalog_name_one_directory():
     for row in (rows["ppocr_det"], rows["ppocr_rec"]):
         assert row.stages == ("ocr",)
         assert set(row.files) == {"inference.onnx", "inference.yml"}
+
+
+# ---- the content filters and the CJK join ------------------------------
+#
+# A comic page is where the two models are least like each other: the detector
+# finds every balloon column, and the recognizer answers each one as its own
+# string. What reaches the sidecar is decided here, on the strings and their
+# boxes, with no weights in sight.
+
+
+def _col(text: str, x0: int, *, y0: int = 20, y1: int = 120, w: int = 20, score=0.9):
+    """One vertical column of a balloon."""
+    return line(text, box=(x0, y0, x0 + w, y1), score=score)
+
+
+def _row(text: str, y0: int, *, x0: int = 10, x1: int = 110, h: int = 20, score=0.9):
+    """One horizontal line of a balloon."""
+    return line(text, box=(x0, y0, x1, y0 + h), score=score)
+
+
+def test_min_chars_drops_a_stray_glyph_and_skip_en_drops_the_page_number():
+    from anime_tools.ocr._text import keep_line
+
+    assert keep_line("こんにちは", min_chars=3, skip_en=True)
+    assert not keep_line("あ", min_chars=3, skip_en=True)
+    # Two glyphs is under the floor; whitespace is not a character.
+    assert not keep_line("は い", min_chars=3, skip_en=True)
+    assert not keep_line("12", min_chars=3, skip_en=True)
+    # ASCII goes whatever its length: the page number, the URL, the romaji sfx.
+    assert not keep_line("DOKAAAN", min_chars=3, skip_en=True)
+    assert not keep_line("pixiv.net/en/users/1", min_chars=3, skip_en=True)
+    assert keep_line("DOKAAAN", min_chars=3, skip_en=False)
+    # Mixed is not English, and a script the filter was never written for stays.
+    assert keep_line("Hello 世界", min_chars=3, skip_en=True)
+    assert keep_line("안녕하세요", min_chars=3, skip_en=True)
+    # Both floors off is every line.
+    assert keep_line("a", min_chars=0, skip_en=False)
+
+
+def test_a_balloon_of_vertical_columns_joins_right_to_left():
+    """Japanese sets its columns right to left, so the rightmost box is the
+    start of the sentence."""
+    from anime_tools.ocr._text import join_cjk
+
+    joined = join_cjk([_col("げんきです", 170, y1=110), _col("こんにちは", 200)])
+    assert [ln.text for ln in joined] == ["こんにちはげんきです"]
+    # The record covers the whole balloon.
+    assert joined[0].box == (170, 20, 220, 120)
+
+
+def test_a_balloon_of_horizontal_rows_joins_top_to_bottom():
+    from anime_tools.ocr._text import join_cjk
+
+    joined = join_cjk([_row("あるところに", 36, x1=90), _row("むかしむかし", 10)])
+    assert [ln.text for ln in joined] == ["むかしむかしあるところに"]
+
+
+def test_two_balloons_stay_two_records():
+    """The gap between columns of one balloon is a fraction of a column; the gap
+    to the next balloon is not."""
+    from anime_tools.ocr._text import join_cjk
+
+    joined = join_cjk(
+        [_col("こんにちは", 200), _col("げんきです", 170), _col("さようなら", 100)]
+    )
+    assert sorted(ln.text for ln in joined) == ["こんにちはげんきです", "さようなら"]
+
+
+def test_a_sfx_glyph_does_not_swallow_the_dialogue_beside_it():
+    """Comparable thickness is part of being one block: a column three times as
+    wide is a different piece of text however close it lands."""
+    from anime_tools.ocr._text import join_cjk
+
+    sfx = line("ドン", box=(60, 20, 160, 120))
+    joined = join_cjk([sfx, _col("こんにちは", 170)])
+    assert sorted(ln.text for ln in joined) == ["こんにちは", "ドン"]
+
+
+def test_a_column_and_a_row_are_never_one_block():
+    """Mixed orientations are a sfx over dialogue, not its continuation."""
+    from anime_tools.ocr._text import join_cjk
+
+    joined = join_cjk(
+        [_col("こんにちは", 200), _row("むかしむかし", 20, x0=170, x1=270)]
+    )
+    assert len(joined) == 2
+
+
+def test_english_lines_never_join():
+    """English wraps for width, so two stacked boxes are two lines and stay two."""
+    from anime_tools.ocr._text import join_cjk
+
+    joined = join_cjk([_row("ONCE UPON", 10), _row("A TIME", 36, x1=90)])
+    assert [ln.text for ln in joined] == ["ONCE UPON", "A TIME"]
+
+
+def test_the_merged_score_is_the_per_character_mean_of_its_parts():
+    """A long confident column is not outvoted by the two glyphs beside it."""
+    from anime_tools.ocr._text import join_cjk
+
+    joined = join_cjk(
+        [_col("はい", 170, score=0.6), _col("こんにちは", 200, score=1.0)]
+    )
+    assert joined[0].score == pytest.approx((5 * 1.0 + 2 * 0.6) / 7)
+
+
+def _engine(**kw):
+    from anime_tools.ocr._onnx import OcrEngine
+
+    return OcrEngine(detector=None, recognizer=None, **kw)
+
+
+def _quad(box):
+    np = pytest.importorskip("numpy")
+
+    x0, y0, x1, y1 = box
+    return np.array([[x0, y0], [x1, y0], [x1, y1], [x0, y1]], dtype="float32")
+
+
+def _read(engine, *lines):
+    """What `_lines` makes of a set of recognized boxes."""
+    return engine._lines(
+        [_quad(ln.box) for ln in lines], [(ln.text, ln.score) for ln in lines]
+    )
+
+
+def test_the_join_runs_before_the_floors_so_a_short_column_is_not_lost_first():
+    """Order is the whole point: a two-glyph column is only short until the rest
+    of its balloon is on it."""
+    parts = (_col("はい", 200), _col("そうです", 170))
+
+    joined = _read(_engine(min_chars=3, skip_en=True, join_cjk=True), *parts)
+    assert [ln.text for ln in joined] == ["はいそうです"]
+    # Without the join each column faces the floor alone, and one of them loses.
+    apart = _read(_engine(min_chars=3, skip_en=True, join_cjk=False), *parts)
+    assert [ln.text for ln in apart] == ["そうです"]
+
+
+def test_a_scanned_page_keeps_its_dialogue_and_drops_its_furniture():
+    """The defaults over one page: two balloon columns become one line, the page
+    number and the watermark go, and what is left is numbered in reading order."""
+    got = _read(
+        _engine(min_score=0.6, min_chars=3, skip_en=True, join_cjk=True),
+        _row("むかしむかし", 10),
+        _row("あるところに", 36, x1=90),
+        line("12", box=(300, 400, 320, 420)),
+        line("pixiv.net/en/users/1", box=(10, 440, 200, 460)),
+        line("ぼやけた", box=(10, 300, 90, 320), score=0.2),
+    )
+    assert [(ln.seq, ln.text) for ln in got] == [(1, "むかしむかしあるところに")]
