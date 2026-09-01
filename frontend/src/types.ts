@@ -29,8 +29,8 @@ export interface Field {
       hidden here for the same reason. */
   setting: string | null;
   /** This stage's own path under the Settings `report_root` (`captions/autotag`,
-      `groups/groups.json`): bound server-side, so hidden here too. The audit's
-      curated apply *reads* its report through the same binding. */
+      `groups/groups.json`): bound server-side, so hidden here too. Export's
+      caption index *reads* a file under that root through the same binding. */
   report: string | null;
   /** This generator's own tail(s) under the Settings `mask_root` (`masks_sam`,
       `masks_mit`): bound and hidden the same way. A list on the merge, which

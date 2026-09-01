@@ -313,8 +313,9 @@ helper.
   `--from_report` replay read another's report: `report_subpath` splits each CLI default into
   `<dataset root>/<the stage's own tail>` and only the root is the setting, so the four reports move
   together and stay four directories. `REPORT_INPUTS` binds the other direction the same way —
-  `audit_apply`'s `--report` *reads* the multiview audit's, so it is not a `Stage.report` (that one
-  is what the run bar fetches back and Undo replays) but it still lives under `report_root`.
+  Export's `--index` *reads* a file under that root rather than writing one, so it is not a
+  `Stage.report` (that one is what the run bar fetches back and Undo replays) but it still lives
+  under `report_root`.
   A blank `report_root` means *beside the `dst` root* (`server.report_root`), which is what keeps
   reports with the tree they describe when the dataset moves off the literal `workspace/` every CLI
   defaults to. Both are one helper — `_root_beside` — with a different key and a different
@@ -411,7 +412,7 @@ helper.
   `resize` is the only one — `preprocess_for()` puts it in front of every stage bound to the `dst`
   root — which is every stage that opens an image (autotag/position/correct/audit **and**
   masks_sam/masks_mit/groups), scoped to the same images, so a per-image Run resizes just that
-  image. Only `audit_apply` (captions only, no pixels) and the two `NO_PREFLIGHT` names sit outside
+  image. Only `masks_merge` (mask trees only, no image) and the two `NO_PREFLIGHT` names sit outside
   it. A job is therefore a *sequence* of `Step`s sharing one slot, one log and one SSE stream
   (`jobs.py`); a failing step stops the chain. Its knobs have no form to live on, so they are the
   Settings dialog's **Preprocess** block, saved under `PREPROCESS_SETTINGS_KEY`.

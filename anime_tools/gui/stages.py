@@ -111,7 +111,6 @@ REPORT_INPUTS: dict[str, str] = {
     # :data:`REPORT_SETTING` exactly like the report a stage writes, but kept
     # out of :attr:`Stage.report`, which means "the report this run produces"
     # and is what the run bar fetches back and lets Undo replay.
-    "audit_apply": "report",
     "export": "index",
 }
 
@@ -220,7 +219,6 @@ ROOT_FIELDS: dict[str, dict[str, str]] = {
     "position": {"src": "src", "dst": "dst"},
     "correct": {"src": "src", "dst": "dst"},
     "audit": {"src": "src", "dst": "dst"},
-    "audit_apply": {"source": "src"},
     # Grouping and the two mask generators read the *resized* tree, like the
     # caption stages above: one decode substrate, one geometry. A mask cut from
     # master pixels is only sound while free-fit's crop stays sub-patch — for a
@@ -316,14 +314,6 @@ STAGES: tuple[Stage, ...] = (
         short="Audit",
     ),
     Stage(
-        "audit_apply",
-        "Apply curated audit list",
-        "anime_tools.stages.cli.audit_apply_curated",
-        "Curate",
-        "stages",
-        short="Audit apply",
-    ),
-    Stage(
         "groups",
         "Build groups",
         "anime_tools.grouping.cli.build_groups",
@@ -391,8 +381,9 @@ def preprocess_for(stage_id: str) -> str | None:
     """The stage that must run before ``stage_id``, or ``None``.
 
     A stage bound to the ``dst`` root reads the resized tree, so it needs
-    :data:`PREPROCESS_STAGE` in front of it. ``audit_apply`` opens no pixels,
-    and :data:`NO_PREFLIGHT` names the rest of the exceptions.
+    :data:`PREPROCESS_STAGE` in front of it. ``masks_merge`` opens no image at
+    all (it unions two mask trees), and :data:`NO_PREFLIGHT` names the stages
+    that are bound to ``dst`` and still take no preflight.
     """
     if stage_id in NO_PREFLIGHT:
         return None

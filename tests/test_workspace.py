@@ -126,9 +126,9 @@ def test_grouping_reads_the_resized_tree_by_default():
 def test_every_pixel_reading_stage_is_bound_to_the_resized_tree():
     """The GUI half of the same rule.
 
-    A stage that opens an image reads ``dst``; ``src`` is left to the two that
-    read *captions* out of the master (``autotag``'s fallback, ``audit_apply``)
-    and to Export, which publishes back over it. Pinned because the binding is
+    A stage that opens an image reads ``dst``; ``src`` is left to ``autotag``,
+    which falls back to the master for a caption, and to Export, which
+    publishes back over it. Pinned because the binding is
     also what earns each stage its resize preflight — drop one back to ``src``
     and it silently walks a tree nothing else agrees with.
     """
@@ -144,7 +144,6 @@ def test_every_pixel_reading_stage_is_bound_to_the_resized_tree():
     for stage_id in pixel_stages:
         bound = S.ROOT_FIELDS[stage_id]
         assert "dst" in bound.values(), f"{stage_id} does not read the resized tree"
-    assert "dst" not in S.ROOT_FIELDS["audit_apply"].values()
 
 
 # ---- migrate ------------------------------------------------------------
