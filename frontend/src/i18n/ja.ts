@@ -149,8 +149,7 @@ const ja: Dict = {
     use: "このフォルダを使う",
   },
   settings: {
-    title: "設定",
-    tabs: { general: "一般", advanced: "詳細", models: "モデル" },
+    paneTitle: { general: "設定", advanced: "詳細設定", models: "モデルとウェイト" },
     home: "ホーム",
     modelsDir: "モデルの場所",
     roots: "データセットのルート",
@@ -208,6 +207,10 @@ const ja: Dict = {
     options: "オプション",
     onePerLine: "1 行に 1 つ",
     reset: "既定値に戻す",
+    advanced: (n) => `▸ 詳細 (${n})`,
+    advancedHide: "▾ 詳細",
+    advancedHint: "実行のたびに変えることはまずない項目",
+    advancedDirty: (n) => `折りたたまれた項目のうち ${n} 個が既定値ではありません`,
   },
   runner: {
     nothingToUndo: "戻すものがありません",

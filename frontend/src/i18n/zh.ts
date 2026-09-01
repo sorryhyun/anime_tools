@@ -143,8 +143,7 @@ const zh: Dict = {
     use: "使用此文件夹",
   },
   settings: {
-    title: "设置",
-    tabs: { general: "常规", advanced: "高级", models: "模型" },
+    paneTitle: { general: "设置", advanced: "高级设置", models: "模型与权重" },
     home: "主目录",
     modelsDir: "模型目录",
     roots: "数据集根目录",
@@ -200,6 +199,10 @@ const zh: Dict = {
     options: "选项",
     onePerLine: "每行一个",
     reset: "恢复默认值",
+    advanced: (n) => `▸ 高级 (${n})`,
+    advancedHide: "▾ 高级",
+    advancedHint: "每次运行几乎不会改动的参数",
+    advancedDirty: (n) => `已折叠的 ${n} 项不是默认值`,
   },
   runner: {
     nothingToUndo: "没有可撤销的内容",

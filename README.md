@@ -80,14 +80,20 @@ The **stage runner is the bottom dock**: its button strip *is* the stage list
 second click on the open one folds the dock away. Fill the form (generated from
 the CLI's own `--help`) and **Run** it, on the selected image or over the whole
 batch — the dataset stays on screen throughout, and refreshes when the job
-finishes. A Run writes: what it replaced is a version badge on the caption, and
+finishes. A form opens on the knobs a run changes its mind about; each group's
+research parameters fold on its own bottom edge, behind an *advanced (n)* the
+group carries next to its title. A Run writes: what it replaced is a version badge on the caption,
+and
 **Undo** puts it back from the report the run wrote. The run's newest output
 line shows in the stage bar; the log / `report.json` / job-history panels are
 being reworked. Stages run as `python -m …` subprocesses, one at a time; the server
 never loads a model. `--host 0.0.0.0` exposes it on the LAN for a headless GPU
-box (no auth — use your own tunnel), `--home` overrides the curation home. ⚙
-Settings holds the three dataset roots, a one-time Hugging Face sign-in (the
-tagger backbone and SAM3 weights are gated), and a **Models** list: one row per
+box (no auth — use your own tunnel), `--home` overrides the curation home. The ☰ menu holds
+**three separate Settings dialogs** — one for the dataset roots, one for the
+advanced stage defaults, one for models — so each is opened on its own and OK
+saves only what it holds. Between them: the dataset roots, a one-time Hugging
+Face sign-in (the tagger backbone and SAM3 weights are gated), and a **Models**
+list: one row per
 checkpoint the stages need, saying whether it is here and where it goes, with a
 Download button that runs `python -m anime_tools.downloads` as an ordinary job
 (so it shares the one slot with the stages and streams into the same bar).

@@ -60,10 +60,17 @@ function SettingRow(props: {
   );
 }
 
-/** The Settings dialog's panels. One flat form was getting long enough that the
-    roots you edit once a year sat above the download buttons you press weekly. */
-export const SETTINGS_TABS = ["general", "advanced", "models"] as const;
-export type SettingsTab = (typeof SETTINGS_TABS)[number];
+/** The three Settings dialogs. Each entry point opens *one* of them and only
+    that one: the ☰ menu lists them separately, a missing-weights hint opens
+    `models`, and there is no strip of tabs to wander off along. They were one
+    tabbed dialog, which meant every route into Settings put the dataset roots
+    you edit once a year one click from the download buttons you press weekly —
+    and made every Save a save of all three blocks at once.
+
+    So a pane is also the unit of what OK writes: only the open one's inputs are
+    even mounted, and :type:`SettingsOut` carries `null` for the other two. */
+export const SETTINGS_PANES = ["general", "advanced", "models"] as const;
+export type SettingsPane = (typeof SETTINGS_PANES)[number];
 
 export interface SettingsOut {
   token: string | null;
@@ -76,9 +83,10 @@ export interface SettingsOut {
 
 export function SettingsDialog(props: {
   open: boolean;
-  /** Which panel to land on; the entry point picks it (the header's token
-      warning and an adopted download both mean Models). */
-  initialTab?: SettingsTab;
+  /** Which of the three dialogs this is — the entry point picks it (the
+      header's token warning and a missing-weights hint both mean Models), and
+      nothing in here can change it. */
+  pane: SettingsPane;
   info?: Info;
   roots?: DatasetRoots;
   /** One argparse Field per Settings-bound stage flag. */
@@ -101,13 +109,13 @@ export function SettingsDialog(props: {
   onCancelDownload: () => void;
   onClose: (out: SettingsOut | null) => void;
 }) {
-  let tokenEl!: HTMLInputElement;
+  /** Only mounted on the `models` pane, so it is genuinely optional now. */
+  let tokenEl: HTMLInputElement | undefined;
   const rootEls: Partial<Record<RootName, HTMLInputElement>> = {};
   const defEls: Record<string, HTMLInputElement> = {};
   /** The preflight form's edits, keyed by dest. Seeded from the saved values on
       open and diffed on OK, so an untouched block sends nothing. */
   const [pre, setPre] = createStore<Record<string, unknown>>({});
-  const [tab, setTab] = createSignal<SettingsTab>("general");
   /** Which root row's fallback browser is open -- only the hosts with no
       chooser of their own get here. A pick is written straight onto the
       (uncontrolled) input, the way typing would be. */
@@ -123,7 +131,6 @@ export function SettingsDialog(props: {
         // while the preprocess block was absent (the `?? {}` handed over a plain
         // literal), and a thrown open the moment anyone saved a knob in it.
         setPre(reconcile(structuredClone(unwrap(props.preprocessValues))));
-        setTab(props.initialTab ?? "general");
       },
     ),
   );
@@ -146,25 +153,37 @@ export function SettingsDialog(props: {
         class="settings"
         onClose={(v) => {
           // Not `t`: that is the message table, which this callback is inside.
-          const token = tokenEl.value.trim();
-          tokenEl.value = "";
+          // Each block is read only when its own pane is the one open: the
+          // other two are not mounted, so their refs are `undefined` and a
+          // blanket read would post every root as "" the first time anyone
+          // saved a token.
+          const token = tokenEl?.value.trim() ?? "";
+          if (tokenEl) tokenEl.value = "";
           if (v !== "ok") return props.onClose(null);
-          const picked = Object.fromEntries(
-            ROOT_NAMES.map((n) => [n, rootEls[n]?.value.trim() ?? ""]),
-          );
-          const changed = ROOT_NAMES.some((n) => picked[n] !== (current(n)?.path ?? ""));
-          const defKeys = [...props.fields.map((f) => f.setting!), REPORT_SETTING, MASK_SETTING];
-          const defaults = Object.fromEntries(
-            defKeys.map((k) => [k, defEls[k]?.value.trim() ?? ""]),
-          );
-          const defChanged = defKeys.some((k) => defaults[k] !== (props.defaults[k] ?? ""));
-          const preChanged = JSON.stringify(unwrap(pre)) !== JSON.stringify(props.preprocessValues);
-          props.onClose({
-            token: token || null,
-            roots: changed ? picked : null,
-            defaults: defChanged ? defaults : null,
-            preprocess: preChanged ? { ...unwrap(pre) } : null,
-          });
+          const out: SettingsOut = {
+            token: null,
+            roots: null,
+            defaults: null,
+            preprocess: null,
+          };
+          if (props.pane === "models") out.token = token || null;
+          if (props.pane === "general") {
+            const picked = Object.fromEntries(
+              ROOT_NAMES.map((n) => [n, rootEls[n]?.value.trim() ?? ""]),
+            );
+            if (ROOT_NAMES.some((n) => picked[n] !== (current(n)?.path ?? ""))) out.roots = picked;
+          }
+          if (props.pane === "advanced") {
+            const defKeys = [...props.fields.map((f) => f.setting!), REPORT_SETTING, MASK_SETTING];
+            const defaults = Object.fromEntries(
+              defKeys.map((k) => [k, defEls[k]?.value.trim() ?? ""]),
+            );
+            if (defKeys.some((k) => defaults[k] !== (props.defaults[k] ?? "")))
+              out.defaults = defaults;
+            if (JSON.stringify(unwrap(pre)) !== JSON.stringify(props.preprocessValues))
+              out.preprocess = { ...unwrap(pre) };
+          }
+          props.onClose(out);
         }}
       >
         {/* The (?) sits against the title, because it explains *this* dialog; the
@@ -173,7 +192,7 @@ export function SettingsDialog(props: {
           submits the <form method="dialog"> and closes it, which is exactly
           what the x wants, so it is a plain `value="cancel"` submitter. */}
         <h3 class="dlgh">
-          {t().settings.title}
+          {t().settings.paneTitle[props.pane]}
           <HelpToggle open={props.help} onToggle={props.onHelp} />
           <span class="sp" />
           <button
@@ -186,190 +205,181 @@ export function SettingsDialog(props: {
           </button>
         </h3>
 
-        {/* Every panel stays mounted -- the inputs are uncontrolled and read off
-          their refs on Save, so a hidden panel still has to be there to read. */}
-        <nav class="dlg-tabs">
-          <For each={SETTINGS_TABS}>
-            {(id) => (
-              <button type="button" classList={{ on: tab() === id }} onClick={() => setTab(id)}>
-                {t().settings.tabs[id]}
-                <Show when={id === "models" && missing().length}>
-                  <span class="badge miss">{missing().length}</span>
-                </Show>
-              </button>
-            )}
-          </For>
-        </nav>
+        <Show when={props.pane === "general"}>
+          <div class="spane">
+            <div class="kv">
+              <b>{t().settings.home}</b>
+              <span class="mono">{props.info?.home}</span>
+              <b>{t().settings.modelsDir}</b>
+              <span class="mono">{props.info?.models_dir}</span>
+            </div>
 
-        <div classList={{ spane: true, hide: tab() !== "general" }}>
-          <div class="kv">
-            <b>{t().settings.home}</b>
-            <span class="mono">{props.info?.home}</span>
-            <b>{t().settings.modelsDir}</b>
-            <span class="mono">{props.info?.models_dir}</span>
+            <h4>{t().settings.roots}</h4>
+            <Show when={props.help}>
+              <p class="dim" style="margin:0 0 8px">
+                {slots(t().settings.rootsHelp, () => (
+                  <code>out</code>
+                ))}
+              </p>
+            </Show>
+            <div class="kv">
+              <For each={ROOT_NAMES}>
+                {(n) => {
+                  const gone = () => !!current(n) && !current(n)!.exists;
+                  return (
+                    <SettingRow
+                      label={n}
+                      ref={(el) => (rootEls[n] = el)}
+                      value={current(n)?.path ?? props.roots?.defaults[n] ?? ""}
+                      placeholder={props.roots?.defaults[n]}
+                      err={gone()}
+                      hint={(gone() ? t().settings.rootMissing : "") + rootHelp(n)}
+                      onPick={() =>
+                        void browsePath(
+                          "dir",
+                          rootEls[n]?.value ?? "",
+                          (path) => rootEls[n] && (rootEls[n]!.value = path),
+                          () => setPicking(n),
+                        )
+                      }
+                    />
+                  );
+                }}
+              </For>
+            </div>
           </div>
+        </Show>
 
-          <h4>{t().settings.roots}</h4>
-          <Show when={props.help}>
-            <p class="dim" style="margin:0 0 8px">
-              {slots(t().settings.rootsHelp, () => (
-                <code>out</code>
-              ))}
-            </p>
-          </Show>
-          <div class="kv">
-            <For each={ROOT_NAMES}>
-              {(n) => {
-                const gone = () => !!current(n) && !current(n)!.exists;
-                return (
+        <Show when={props.pane === "advanced"}>
+          <div class="spane">
+            <h4>{t().settings.stageDefaults}</h4>
+            <Show when={props.help}>
+              <p class="dim" style="margin:0 0 8px">
+                {slots(t().settings.stageDefaultsHelp, (i) => (
+                  <code>
+                    {["--device", "report_root", "captions/autotag", "groups/groups.json"][i]}
+                  </code>
+                ))}
+              </p>
+            </Show>
+            <div class="kv">
+              <For each={props.fields}>
+                {(f) => (
                   <SettingRow
-                    label={n}
-                    ref={(el) => (rootEls[n] = el)}
-                    value={current(n)?.path ?? props.roots?.defaults[n] ?? ""}
-                    placeholder={props.roots?.defaults[n]}
-                    err={gone()}
-                    hint={(gone() ? t().settings.rootMissing : "") + rootHelp(n)}
-                    onPick={() =>
-                      void browsePath(
-                        "dir",
-                        rootEls[n]?.value ?? "",
-                        (path) => rootEls[n] && (rootEls[n]!.value = path),
-                        () => setPicking(n),
-                      )
-                    }
+                    label={f.setting!}
+                    ref={(el) => (defEls[f.setting!] = el)}
+                    value={props.defaults[f.setting!] ?? ""}
+                    placeholder={f.default == null ? "(none)" : String(f.default)}
+                    hint={f.help}
                   />
-                );
-              }}
-            </For>
-          </div>
-        </div>
-
-        <div classList={{ spane: true, hide: tab() !== "advanced" }}>
-          <h4>{t().settings.stageDefaults}</h4>
-          <Show when={props.help}>
-            <p class="dim" style="margin:0 0 8px">
-              {slots(t().settings.stageDefaultsHelp, (i) => (
-                <code>
-                  {["--device", "report_root", "captions/autotag", "groups/groups.json"][i]}
-                </code>
-              ))}
-            </p>
-          </Show>
-          <div class="kv">
-            <For each={props.fields}>
-              {(f) => (
-                <SettingRow
-                  label={f.setting!}
-                  ref={(el) => (defEls[f.setting!] = el)}
-                  value={props.defaults[f.setting!] ?? ""}
-                  placeholder={f.default == null ? "(none)" : String(f.default)}
-                  hint={f.help}
-                />
-              )}
-            </For>
-            <SettingRow
-              label={REPORT_SETTING}
-              ref={(el) => (defEls[REPORT_SETTING] = el)}
-              value={props.defaults[REPORT_SETTING] ?? ""}
-              placeholder={props.roots?.report_root}
-              hint={t().settings.reportRootHint}
-            />
-            <SettingRow
-              label={MASK_SETTING}
-              ref={(el) => (defEls[MASK_SETTING] = el)}
-              value={props.defaults[MASK_SETTING] ?? ""}
-              placeholder={props.roots?.mask_root}
-              hint={t().settings.maskRootHint}
-            />
-          </div>
-
-          <Show when={props.preprocess}>
-            {(pre_) => (
-              <>
-                <h4>{pre_().title}</h4>
-                <Show when={props.help}>
-                  <p class="dim" style="margin:0 0 8px">
-                    {pre_().notes}{" "}
-                    {slots(t().settings.preprocessHelp, () => (
-                      <code>target_res</code>
-                    ))}
-                  </p>
-                </Show>
-                <div class="twoup">
-                  <For each={preFields()}>
-                    {(f) => (
-                      <FieldRow
-                        field={f}
-                        value={pre[f.dest] ?? f.default}
-                        dirty={
-                          pre[f.dest] !== undefined && String(pre[f.dest]) !== String(f.default)
-                        }
-                        setValue={(v) => setPre(f.dest, v)}
-                      />
-                    )}
-                  </For>
-                </div>
-              </>
-            )}
-          </Show>
-        </div>
-
-        <div classList={{ spane: true, hide: tab() !== "models" }}>
-          <h4>{t().settings.hf}</h4>
-          <div class="kv">
-            <b>{t().settings.token}</b>
-            <span>
-              {props.info?.hf_token ? t().common.present : t().common.missing}
-              <input
-                ref={tokenEl}
-                type="password"
-                placeholder={t().settings.tokenPlaceholder}
-                style="margin-top:4px"
+                )}
+              </For>
+              <SettingRow
+                label={REPORT_SETTING}
+                ref={(el) => (defEls[REPORT_SETTING] = el)}
+                value={props.defaults[REPORT_SETTING] ?? ""}
+                placeholder={props.roots?.report_root}
+                hint={t().settings.reportRootHint}
               />
-              <Show when={props.help}>
-                <span class="dim">{t().settings.tokenHelp}</span>
-              </Show>
-            </span>
-          </div>
+              <SettingRow
+                label={MASK_SETTING}
+                ref={(el) => (defEls[MASK_SETTING] = el)}
+                value={props.defaults[MASK_SETTING] ?? ""}
+                placeholder={props.roots?.mask_root}
+                hint={t().settings.maskRootHint}
+              />
+            </div>
 
-          <h4>{t().settings.models}</h4>
-          <Show when={props.help}>
-            <p class="dim" style="margin:0 0 8px">
-              {t().settings.modelsHelp}
-            </p>
-          </Show>
-          <div class="models">
-            <For each={props.models?.models}>
-              {(m) => (
-                <ModelRow
-                  m={m}
-                  busy={props.busy}
-                  active={inFlight(m)}
-                  onDownload={props.onDownload}
-                />
+            <Show when={props.preprocess}>
+              {(pre_) => (
+                <>
+                  <h4>{pre_().title}</h4>
+                  <Show when={props.help}>
+                    <p class="dim" style="margin:0 0 8px">
+                      {pre_().notes}{" "}
+                      {slots(t().settings.preprocessHelp, () => (
+                        <code>target_res</code>
+                      ))}
+                    </p>
+                  </Show>
+                  <div class="twoup">
+                    <For each={preFields()}>
+                      {(f) => (
+                        <FieldRow
+                          field={f}
+                          value={pre[f.dest] ?? f.default}
+                          dirty={
+                            pre[f.dest] !== undefined && String(pre[f.dest]) !== String(f.default)
+                          }
+                          setValue={(v) => setPre(f.dest, v)}
+                        />
+                      )}
+                    </For>
+                  </div>
+                </>
               )}
-            </For>
+            </Show>
           </div>
-          <div class="dlbar">
-            <button
-              type="button"
-              disabled={props.busy || !missing().length}
-              onClick={() => props.onDownload([])}
-            >
-              {missing().length
-                ? t().settings.downloadAll(missing().length)
-                : t().settings.allInstalled}
-            </button>
-            <Show when={props.downloading}>
-              <button type="button" onClick={props.onCancelDownload}>
-                {t().common.cancel}
+        </Show>
+
+        <Show when={props.pane === "models"}>
+          <div class="spane">
+            <h4>{t().settings.hf}</h4>
+            <div class="kv">
+              <b>{t().settings.token}</b>
+              <span>
+                {props.info?.hf_token ? t().common.present : t().common.missing}
+                <input
+                  ref={tokenEl}
+                  type="password"
+                  placeholder={t().settings.tokenPlaceholder}
+                  style="margin-top:4px"
+                />
+                <Show when={props.help}>
+                  <span class="dim">{t().settings.tokenHelp}</span>
+                </Show>
+              </span>
+            </div>
+
+            <h4>{t().settings.models}</h4>
+            <Show when={props.help}>
+              <p class="dim" style="margin:0 0 8px">
+                {t().settings.modelsHelp}
+              </p>
+            </Show>
+            <div class="models">
+              <For each={props.models?.models}>
+                {(m) => (
+                  <ModelRow
+                    m={m}
+                    busy={props.busy}
+                    active={inFlight(m)}
+                    onDownload={props.onDownload}
+                  />
+                )}
+              </For>
+            </div>
+            <div class="dlbar">
+              <button
+                type="button"
+                disabled={props.busy || !missing().length}
+                onClick={() => props.onDownload([])}
+              >
+                {missing().length
+                  ? t().settings.downloadAll(missing().length)
+                  : t().settings.allInstalled}
               </button>
-            </Show>
-            <Show when={props.progress.text}>
-              <StatusLine status={props.progress} />
-            </Show>
+              <Show when={props.downloading}>
+                <button type="button" onClick={props.onCancelDownload}>
+                  {t().common.cancel}
+                </button>
+              </Show>
+              <Show when={props.progress.text}>
+                <StatusLine status={props.progress} />
+              </Show>
+            </div>
           </div>
-        </div>
+        </Show>
 
         <div class="dlg-actions">
           <button value="ok" class="primary">

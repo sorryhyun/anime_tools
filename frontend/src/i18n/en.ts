@@ -165,8 +165,12 @@ const en = {
     use: "Use this folder",
   },
   settings: {
-    title: "Settings",
-    tabs: { general: "General", advanced: "Advanced", models: "Models" },
+    /** One per dialog: the three are separate windows, not tabs of one. */
+    paneTitle: {
+      general: "Settings",
+      advanced: "Advanced settings",
+      models: "Models & weights",
+    },
     home: "Home",
     modelsDir: "Models dir",
     roots: "Dataset roots",
@@ -228,6 +232,10 @@ const en = {
     options: "options",
     onePerLine: "one per line",
     reset: "reset to defaults",
+    advanced: (n: number) => `▸ advanced (${n})`,
+    advancedHide: "▾ advanced",
+    advancedHint: "The knobs a run rarely changes its mind about",
+    advancedDirty: (n: number) => `${n} hidden field${n === 1 ? " is" : "s are"} off its default`,
   },
   runner: {
     nothingToUndo: "nothing to undo",

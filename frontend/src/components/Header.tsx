@@ -2,7 +2,7 @@ import { Show } from "solid-js";
 import { t } from "../i18n";
 import type { DatasetList, Info } from "../types";
 import { HeaderMenu } from "./HeaderMenu";
-import type { SettingsTab } from "./SettingsDialog";
+import type { SettingsPane } from "./SettingsDialog";
 
 /** The title bar: where the dataset is, how big it is, and the two things that
     can be wrong before anything is run (no HF token, a download in flight).
@@ -16,12 +16,17 @@ export function Header(props: {
   /** A weights pull is never shown in the dock, so this badge is the only sign
       of one while the dialog it belongs to is closed. */
   downloading: boolean;
-  onSettings: (tab?: SettingsTab) => void;
+  /** How many catalog models are not downloaded. The count used to be a badge
+      on the Models *tab*; with the three dialogs separate, the menu row that
+      opens that one is where it goes. */
+  missingModels: number;
+  onSettings: (pane?: SettingsPane) => void;
 }) {
   return (
     <header>
       <HeaderMenu
         hasToken={!!props.info?.hf_token}
+        missingModels={props.missingModels}
         help={props.help}
         onHelp={props.onHelp}
         onSettings={props.onSettings}

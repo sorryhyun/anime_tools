@@ -146,8 +146,7 @@ const ko: Dict = {
     use: "이 폴더 사용",
   },
   settings: {
-    title: "설정",
-    tabs: { general: "일반", advanced: "고급", models: "모델" },
+    paneTitle: { general: "설정", advanced: "고급 설정", models: "모델 & 가중치" },
     home: "홈",
     modelsDir: "모델 폴더",
     roots: "데이터셋 루트",
@@ -204,6 +203,10 @@ const ko: Dict = {
     options: "옵션",
     onePerLine: "한 줄에 하나씩",
     reset: "기본값으로 되돌리기",
+    advanced: (n) => `▸ 고급 (${n})`,
+    advancedHide: "▾ 고급",
+    advancedHint: "실행할 때마다 바꿀 일은 거의 없는 값들",
+    advancedDirty: (n) => `접혀 있는 값 ${n}개가 기본값이 아닙니다`,
   },
   runner: {
     nothingToUndo: "되돌릴 것이 없습니다",

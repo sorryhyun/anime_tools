@@ -244,6 +244,55 @@ def test_export_destinations_are_bound_and_on_the_panel():
     assert not any(f["overridable"] for f in fs if f["dest"] in ("src", "dst", "masks"))
 
 
+def test_every_basic_field_names_a_flag_the_stage_actually_has():
+    """A typo in :data:`BASIC_FIELDS` is a silently *advanced* field.
+
+    The row is a set of dests with nothing to check it against — a misspelled
+    one folds the knob it meant to keep away and says nothing, which is the one
+    way this table can be wrong without anyone noticing.
+    """
+    for sid, basic in S.BASIC_FIELDS.items():
+        _, fs = _stage(sid)
+        assert basic <= {f["dest"] for f in fs}, sid
+
+
+def test_advanced_folds_the_research_parameters_and_never_the_form_itself():
+    """What the Advanced toggle may hide, and what it may never.
+
+    A stage with no :data:`BASIC_FIELDS` row has no advanced fields at all
+    (``autotag``, whose two knobs are the form). A stage with one keeps the
+    handful a run changes its mind about — and keeps, whatever the row says, the
+    fields the form cannot do without: a drawer's own gate, which is what the
+    rest of its group hangs off, a required field, and anything already hidden
+    because Settings fills it.
+    """
+    _, fs = _stage("autotag")
+    assert not any(f["advanced"] for f in fs)
+
+    _, fs = _stage("position")
+    by = {f["dest"]: f for f in fs}
+    shown = [
+        f
+        for f in fs
+        if not any(f[k] for k in ("root", "setting", "report", "mask", "auto"))
+    ]
+    kept = {f["dest"] for f in shown if not f["advanced"]} - {"apply", S.REPLAY_FIELD}
+    assert kept == S.BASIC_FIELDS["position"]
+    assert by["prompt"]["advanced"] is False and by["iou_threshold"]["advanced"] is True
+    # Bound fields are hidden already: saying they were *also* advanced would be
+    # a second answer to a question with one.
+    assert not any(
+        f["advanced"] for f in fs if f["setting"] or f["root"] or f["report"]
+    )
+
+    # The text-mask stage's two detector switches are gates, so they stay on the
+    # form whatever the row says -- a folded gate is a drawer you cannot open.
+    _, fs = _stage("masks_mit")
+    for f in fs:
+        if f["gate"] == f["dest"] or f["required"]:
+            assert f["advanced"] is False, f["dest"]
+
+
 def test_an_overridable_field_opens_on_settings_and_yields_to_the_form():
     """Blank means "whatever Settings says"; a typed value wins for that run.
 

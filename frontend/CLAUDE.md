@@ -42,8 +42,10 @@ nothing fetched, no business rule lives there. The state is five composables at
 `src/`, each a plain function called once inside `App()`:
 
 - **`config.ts`** — what the server says about *itself*: `/api/info`, the dataset
-  roots, the weights catalog, the saved settings, and the Settings dialog that
-  edits them. `/api/settings` is read exactly **once** (`loaded`, a promise the
+  roots, the weights catalog, the saved settings, and the three Settings dialogs
+  that edit them (`settingsPane` says which one is open; they are separate
+  windows, not tabs, so each entry point opens one and OK saves only its block).
+  `/api/settings` is read exactly **once** (`loaded`, a promise the
   stage forms are seeded from), and the four resources are the single refetch
   points, so a finished download and a saved root land everywhere at once.
 - **`layout.ts`** — which panes are open and how tall the dock is. Preferences
@@ -57,7 +59,11 @@ nothing fetched, no business rule lives there. The state is five composables at
   how the dock's buttons bucket stages into panels. Every field comes from the
   stage CLI's own argparse (`gui/stages.py` dumps it in a child interpreter), so
   **nothing about a flag is ever re-typed here** — a label, a default or a choice
-  list in this directory is a bug.
+  list in this directory is a bug. Which fields are `advanced` is that same
+  rule: the server marks them, `StageForm`'s `FieldGroup` only folds them, one
+  fold per group and on that group's own bottom edge. That fold is local,
+  unsaved state — it is a look at one group of one stage, not a preference
+  about how you work, which is what `layout.ts`'s `help` is.
 - **`runner.ts`** — the Run → versions → Undo loop, and the one job the dock
   follows. A Run *writes* (`--apply`, always): there is no Apply button, because
   the caption ladder is what that gate was standing in for — the text a run

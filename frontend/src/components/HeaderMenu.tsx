@@ -1,17 +1,21 @@
 import { createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import { locale, localeName, LOCALES, setLocale, t } from "../i18n";
-import type { SettingsTab } from "./SettingsDialog";
+import type { SettingsPane } from "./SettingsDialog";
 
 /** The ☰ menu: everything that is about the app rather than about the dataset
-    — the three Settings panels, the Hub token they all need, and the one
-    global "show the prose" preference. The sidebar is deliberately not in
+    — the three Settings dialogs, the Hub token they all need, and the one
+    global "show the prose" preference. Those three rows are the only way to
+    each dialog: they are separate windows, not tabs of one, so this list is
+    where the choice between them is made. The sidebar is deliberately not in
     here: it folds and unfolds on the edge it moves (`⟨` in the tree's own bar,
     `⟩` on the rail it leaves behind), so the control is where the motion is. */
 export function HeaderMenu(props: {
   hasToken: boolean;
+  /** Catalog rows still to download — the badge the Models tab used to carry. */
+  missingModels: number;
   help: boolean;
   onHelp: () => void;
-  onSettings: (tab?: SettingsTab) => void;
+  onSettings: (pane?: SettingsPane) => void;
 }) {
   const [open, setOpen] = createSignal(false);
 
@@ -52,7 +56,12 @@ export function HeaderMenu(props: {
         <div class="hmenu-pop" role="menu">
           <button onClick={pick(() => props.onSettings("general"))}>{t().menu.settings}</button>
           <button onClick={pick(() => props.onSettings("advanced"))}>{t().menu.advanced}</button>
-          <button onClick={pick(() => props.onSettings("models"))}>{t().menu.models}</button>
+          <button onClick={pick(() => props.onSettings("models"))}>
+            <span>{t().menu.models}</span>
+            <Show when={props.missingModels}>
+              <span class="badge miss">{props.missingModels}</span>
+            </Show>
+          </button>
           <hr />
           <button onClick={pick(() => props.onSettings("models"))}>
             <span>{t().menu.hfToken}</span>

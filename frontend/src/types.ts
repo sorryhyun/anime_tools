@@ -43,6 +43,10 @@ export interface Field {
       Settings value the server resolved into `default` and what is typed over
       it wins for that run. Blank falls back to Settings. */
   overridable: boolean;
+  /** Not in the stage's `stages.BASIC_FIELDS` row: an ordinary field, folded
+      away until the form's Advanced toggle is on. Never set on a drawer's own
+      gate or on a required field — the form cannot do without either. */
+  advanced: boolean;
 }
 
 /** The argparse dest a replay-capable stage exposes. Like `--apply` it is

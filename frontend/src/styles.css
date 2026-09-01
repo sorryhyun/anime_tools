@@ -259,8 +259,15 @@ button.help.warn:hover { border-color:var(--accent) }
 .reuse { display:flex; gap:8px; align-items:flex-start; max-width:520px; margin:0 0 10px; font-size:12px; color:var(--dim) }
 .reuse input { margin-top:2px; flex:none }
 .reuse code { color:var(--fg) }
-fieldset { border:1px solid var(--line); border-radius:6px; margin:0 0 12px; padding:8px 12px }
+fieldset { position:relative; border:1px solid var(--line); border-radius:6px; margin:0 0 12px; padding:8px 12px }
 legend { color:var(--dim); font-size:12px; padding:0 4px }
+/* A group's advanced fields fold on its bottom edge, the way its title sits on
+   the top one -- so the knobs a run retunes stay in the fieldset that names
+   them and the sweep parameters are one click under them, rather than in a bin
+   at the foot of the form. Right, because the legend owns the left. */
+.advfold { position:absolute; right:10px; bottom:-9px; padding:0 6px; background:var(--bg); border:0; border-radius:0; color:var(--dim); font-size:11px; line-height:16px }
+.advfold:hover { color:var(--fg) }
+.advfold.warn { color:var(--warn) }
 /* A drawer's legend is its switch: the group title with the gate flag's own
    checkbox in front of it, so the knobs below are visibly folded away by it. */
 legend .gate { display:inline-flex; align-items:center; gap:6px; cursor:pointer }
@@ -271,6 +278,10 @@ legend:has(input:checked) { color:var(--fg) }
    preflight block, so a knob sits in the same widget wherever it is typed. */
 .twoup { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:0 16px }
 .twoup .row { grid-template-columns:150px minmax(0,1fr) }
+/* The form's foot: the advanced fold and the reset, both plain links, on the
+   line under the last fieldset rather than in the run bar -- neither runs
+   anything, and the bar is where the buttons that do live. */
+.formfoot { display:flex; gap:14px; align-items:center; margin:0 0 8px }
 .row label { font-family:var(--font-mono); font-size:12px; color:#c8cdd6; overflow:hidden; text-overflow:ellipsis; white-space:nowrap }
 .row label.req::after { content:" *"; color:var(--err) }
 input[type=text], input[type=number], input[type=password], select, textarea { width:100%; background:var(--input); color:var(--fg); border:1px solid var(--line); border-radius:4px; padding:5px 7px; font:13px var(--font-mono) }
@@ -324,16 +335,11 @@ dialog h4 { margin:16px 0 4px; color:var(--dim); font-size:11px; text-transform:
 dialog::backdrop { background:#0008 }
 dialog h3 { margin:0 0 10px }
 .dlg-actions { display:flex; gap:8px; justify-content:flex-end; margin-top:12px }
-/* The Settings dialog is tabbed: a strip of panel buttons over one .spane per
-   group. A pane is hidden, never unmounted -- its inputs are uncontrolled and
-   Save reads them off their refs, including a panel that was never opened. */
-.dlg-tabs { display:flex; gap:2px; border-bottom:1px solid var(--line); margin:0 0 12px }
-.dlg-tabs button { display:flex; align-items:center; gap:6px; background:none; border:0; border-bottom:2px solid transparent; border-radius:0; color:var(--dim); padding:6px 10px; margin-bottom:-1px }
-.dlg-tabs button:hover { color:var(--fg) }
-.dlg-tabs button.on { color:var(--fg); border-bottom-color:var(--accent) }
+/* The scroll box each Settings dialog's body sits in. There is exactly one per
+   dialog: the three are separate windows, so nothing is mounted-but-hidden and
+   Save can only ever read the refs of the block on screen. */
 .spane { max-height:62vh; overflow:auto }
 .spane > h4:first-child { margin-top:2px }
-.hide { display:none }
 .picker ul { list-style:none; padding:0; margin:8px 0; max-height:50vh; overflow:auto; font-family:var(--font-mono); font-size:13px }
 .picker li { padding:3px 6px; cursor:pointer; border-radius:3px } .picker li:hover { background:var(--sel) }
 /* Settings runs two label/value pairs per line -- the panes are lists of short

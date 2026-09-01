@@ -326,6 +326,16 @@ helper.
   returns a *list* for the merge, whose one flag names both generators' tails, so `MASK_FIELDS`
   binds the reading stage alongside the writing ones the way `REPORT_INPUTS` does. A blank
   `mask_root` means *beside the `masks` root*, the merged tree those intermediates feed.
+  `BASIC_FIELDS` is the last of the per-stage dest maps and the only one that is
+  purely about *reading* a form: it names the handful of knobs a run changes its
+  mind about, and every other field of that stage comes back `advanced` — an
+  ordinary field the browser folds onto its own group's bottom edge, behind an
+  `advanced (n)` that sits on the border the way the legend sits on the top one.
+  A stage with no row has no advanced fields at all, which is why `autotag` (two
+  knobs) is absent and `position` (35) is not. Three fields can never be folded,
+  whatever the row says, and the server settles that rather than the browser: a
+  drawer's own gate (the checkbox the rest of its group hangs off), a required
+  field, and one already hidden because Settings fills it.
   `AUTO_FIELDS` (`--device`) is neither shown nor sent — every stage CLI defaults it to
   `None` and resolves it in the child through `_device.resolve_device` (at the *model-load* site,
   so the torch-free `--from_report` replay path stays torch-free).
@@ -415,8 +425,18 @@ helper.
   the whole directory) and **`frontend/CLAUDE.md` is that
   half's own guide** — how the browser half is put together (the composables, the conventions,
   the build) is written there and only there, and this bullet is the server side of the same seam.
-  Settings also lists `downloads.catalog()` with a Download button per model (`/api/models`,
-  `/api/models/download`).
+  ⚙ Settings is **three dialogs, not one tabbed one** (`SETTINGS_PANES`): the
+  dataset roots, the advanced stage defaults + the preflight block, and the
+  models. Each entry point opens exactly one — the ☰ menu lists them, the
+  header's token warning and a stage bar's missing-weights hint both open
+  `models` — and there is no strip of tabs from one to another, so a route into
+  Settings cannot put the roots you edit once a year one click from the download
+  buttons you press weekly. A pane is therefore also the unit of what OK writes:
+  only the open one is mounted, its inputs are the only refs there are to read,
+  and `SettingsOut` carries `null` for the other two.
+  The models dialog lists `downloads.catalog()` with a Download button per model (`/api/models`,
+  `/api/models/download`); how many rows are still missing is the badge on the ☰ menu's own
+  Models row, which is where the count went when the tab it used to hang off stopped existing.
 - **`design/`** (not part of the installed package; no runtime role): the GUI's **design system**,
   as a published Claude Design canvas — six artboards built to read at a glance:
   a hero board (`Main`, *At a glance*) holding an annotated miniature of the whole GUI plus the

@@ -146,6 +146,66 @@ PREPROCESS_SETTINGS_KEY = "preprocess"
 """Where the resize form's values live in the settings file. It has no panel, so
 its knobs are set once in ⚙ Settings."""
 
+BASIC_FIELDS: dict[str, frozenset[str]] = {
+    # stage id → the dests that stay on the form when Advanced is off;
+    # everything else on that stage folds away behind the form's one toggle.
+    #
+    # A *policy* keyed by stage id, like :data:`ROOT_FIELDS` beside it — not a
+    # description of a flag, which is why it can live here without the browser
+    # re-typing anything argparse already said. A stage with no row has no
+    # advanced fields at all, which is why `autotag` (two knobs) and the three
+    # short stages are absent: the toggle is for the forms that grew a research
+    # parameter per gate, where the handful you actually retune sat under thirty
+    # you set once, if ever.
+    #
+    # The rule for a row is *what a run changes its mind about*: what to detect,
+    # how sure it has to be, how many there are, and what to write. Everything
+    # a threshold sweep produced stays behind the toggle.
+    "position": frozenset(
+        {
+            "crops",
+            "flatten",
+            "prompt",
+            "score_threshold",
+            "min_instances",
+            "max_instances",
+            "rewrite",
+        }
+    ),
+    "audit": frozenset(
+        {
+            "apply_verdicts",
+            "apply_confidence",
+            "crops",
+            "sheets",
+            "prompt",
+            "score_threshold",
+            "max_instances",
+        }
+    ),
+    "correct": frozenset(
+        {
+            "no_correct",
+            "caption_trigger_word",
+            "caption_insert_no_artist",
+            "caption_drop_groups",
+            "caption_shuffle_variants",
+        }
+    ),
+    "groups": frozenset({"sim_min", "min_size"}),
+    "masks_sam": frozenset(
+        {"prompts", "focus_prompts", "threshold", "dilate", "force"}
+    ),
+    # The two detector switches are gates, so they would stay whatever this
+    # said (see :attr:`Field.advanced`); they are named anyway, so the row reads
+    # as the whole basic form rather than as its remainder.
+    "masks_mit": frozenset(
+        {"use_sam", "sam_prompts", "use_mit", "ctd_gate", "dilate", "force"}
+    ),
+}
+"""Which of each stage's own knobs the form shows before Advanced is on."""
+
+
 AUTO_FIELDS: frozenset[str] = frozenset({"device"})
 """Dests the GUI neither shows nor sends. This process is torch-free, so it
 cannot see whether the *child* will find a GPU; the stage resolves ``--device``
@@ -410,6 +470,11 @@ class Field:
     the form sends wins for that run. Its :attr:`default` is the bound value
     once the schema has been through :func:`resolved_schema`, so the form opens
     on what a Run would use and "reset" comes back to Settings."""
+    advanced: bool = False
+    """Not in this stage's :data:`BASIC_FIELDS` row: still an ordinary form
+    field, but folded away until the form's Advanced toggle is on. Never set on
+    a field the form cannot do without — a required one, or a drawer's own gate,
+    whose checkbox is what the rest of that group hangs off."""
     gate: str | None = None
     """The dest of the boolean this field hangs off — a *drawer* (see
     :data:`GATE_ATTR`). The gate itself carries its own dest here, which is how
@@ -517,6 +582,7 @@ def schema(stage: Stage) -> dict[str, Any]:
         return {**base, "available": False, "error": str(e), "fields": [], "doc": ""}
     fs = fields_of(parser)
     bound = ROOT_FIELDS.get(stage.id, {})
+    basic = BASIC_FIELDS.get(stage.id)
     report_dests = {stage.report[0] if stage.report else None} | {
         REPORT_INPUTS.get(stage.id)
     }
@@ -529,6 +595,20 @@ def schema(stage: Stage) -> dict[str, Any]:
         if f.dest == MASK_FIELDS.get(stage.id) and f.default is not None:
             f.mask = mask_subpath(f.default)
         f.overridable = f.dest in PANEL_FIELDS.get(stage.id, frozenset())
+        # Only a field the form actually shows can be folded away: a bound or
+        # auto one is already hidden, and saying it was *also* advanced would be
+        # a second answer to a question with one.
+        f.advanced = bool(
+            basic is not None
+            and f.dest not in basic
+            and (
+                f.overridable
+                or not (f.root or f.setting or f.report or f.mask or f.auto)
+            )
+            and not f.required
+            and f.gate != f.dest
+            and f.dest not in ("apply", REPLAY_FIELD)
+        )
         if f.root or f.report or f.mask:
             # A bound field names a path by construction — a dataset root, or
             # the file/directory this stage keeps under a Settings root — so it

@@ -75,6 +75,7 @@ export default function App() {
         help={layout.help()}
         onHelp={layout.toggleHelp}
         downloading={downloads.busy()}
+        missingModels={(config.models()?.models ?? []).filter((m) => !m.installed).length}
         onSettings={config.openSettings}
       />
 
@@ -163,7 +164,7 @@ export default function App() {
 
       <SettingsDialog
         open={config.settingsOpen()}
-        initialTab={config.settingsTab()}
+        pane={config.settingsPane()}
         info={config.info()}
         roots={config.roots()}
         fields={stages.settingFields()}
