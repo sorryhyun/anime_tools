@@ -5,16 +5,17 @@ import type { Field, Stage, Values } from "../types";
 import { browsePath, PathPicker } from "./PathPicker";
 
 /** Group fields by argparse group, preserving order. Fields bound to a dataset
-    root, to a Settings stage default or to the Settings `report_root` are left
-    out: the server fills them from Settings, so no two forms can disagree about
-    them. So is `--device`, which the stage auto-detects. And so are the two the
-    run bar owns -- `--apply` and `--from_report`: a stale path left in a form
-    field would quietly turn the next Run into a replay of an old one. */
+    root, to a Settings stage default or to the Settings `report_root` /
+    `mask_root` are left out: the server fills them from Settings, so no two
+    forms can disagree about them. So is `--device`, which the stage
+    auto-detects. And so are the two the run bar owns -- `--apply` and
+    `--from_report`: a stale path left in a form field would quietly turn the
+    next Run into a replay of an old one. */
 export function grouped(fields: Field[]): [string, Field[]][] {
   const m = new Map<string, Field[]>();
   for (const f of fields) {
     if (f.dest === "apply" || f.dest === REPLAY_FIELD) continue;
-    if (f.root || f.setting || f.report || f.auto) continue;
+    if (f.root || f.setting || f.report || f.mask || f.auto) continue;
     const g = m.get(f.group) ?? [];
     g.push(f);
     m.set(f.group, g);

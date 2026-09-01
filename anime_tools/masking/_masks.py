@@ -38,9 +38,27 @@ def mask_name(stem: str) -> str:
 # ---- argparse blocks ---------------------------------------------------
 
 
-def add_mask_dir_args(p: argparse.ArgumentParser) -> None:
+def add_mask_dir_args(p: argparse.ArgumentParser, *, mask_default: str) -> None:
+    """``--image-dir`` / ``--mask-dir``, the two ends of a generator's walk.
+
+    ``mask_default`` is this generator's own tree
+    (:data:`anime_tools.workspace.MASKS_SAM` / ``MASKS_MIT``) and is required
+    of the caller, because the one thing a mask directory must not be is
+    *shared*: two generators writing ``{stem}_mask.png`` at the same relative
+    path would overwrite each other, and ``merge_masks`` — which unions them —
+    is what fills the ``masks`` root. Defaulted rather than bound to a dataset
+    root for the same reason, so the GUI form ships filled in and the operator
+    still owns the value.
+    """
     p.add_argument("--image-dir", type=str, required=True, help="Image directory")
-    p.add_argument("--mask-dir", type=str, required=True, help="Output mask directory")
+    p.add_argument(
+        "--mask-dir",
+        type=str,
+        default=mask_default,
+        help=f"Output mask directory for this generator alone (default: "
+        f"{mask_default}); `merge_masks` unions it with the other's into the "
+        f"masks root",
+    )
 
 
 def add_force_arg(p: argparse.ArgumentParser) -> None:

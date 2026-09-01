@@ -135,7 +135,7 @@ def test_settings_fill_the_bound_stage_defaults():
 def test_device_is_never_on_the_form_or_the_argv():
     """Auto-detected in the child (``_device.resolve_device``), because this
     process is torch-free and cannot see the child's hardware."""
-    required = {"config": "c.yaml", "mask_dir": "m", "out": "g.json"}
+    required = {"mask_dir": "m", "out": "g.json"}
     for stage_id in ("autotag", "position", "masks_sam", "masks_mit", "groups"):
         _, fs = _stage(stage_id)
         device = next(f for f in fs if f["dest"] == "device")
@@ -172,18 +172,37 @@ def test_required_field_is_enforced():
 def test_boolean_optional_action_and_positional_list():
     _, fs = _stage("masks_mit")
     # --image-dir is bound to `dst`: the mask is cut from the same pixels the
-    # trainer's loader will rescale it onto.
-    argv = S.build_argv(fs, {"mask_dir": "m", "ctd_gate": False}, roots={"dst": "d"})
-    assert argv == ["--image-dir", "d", "--mask-dir", "m", "--no-ctd-gate"]
+    # trainer's loader will rescale it onto. --mask-dir is bound to the
+    # Settings mask root plus this generator's own tail.
+    argv = S.build_argv(fs, {"ctd_gate": False}, roots={"dst": "d"}, mask_root="ws")
+    assert argv == ["--image-dir", "d", "--mask-dir", "ws/masks_mit", "--no-ctd-gate"]
+    # A positional list is bound the same way, one joined tail per input, and
+    # the merge's inputs are exactly the two trees the generators wrote.
     _, fs = _stage("masks_merge")
-    argv = S.build_argv(fs, {"mask_dirs": "a\nb\n"}, roots={"masks": "o"})
-    assert argv == ["--output-dir", "o", "a", "b"]
+    argv = S.build_argv(fs, {}, roots={"masks": "o"}, mask_root="ws")
+    assert argv == ["--output-dir", "o", "ws/masks_sam", "ws/masks_mit"]
+
+
+def test_a_stale_mask_dir_in_a_saved_form_never_wins():
+    """``mask_dir`` moved off the form into ⚙ Settings, so a value left in a
+    saved payload is as dead as a stale root: two generators sharing one
+    directory is the failure the split root exists to prevent."""
+    _, fs = _stage("masks_sam")
+    argv = S.build_argv(fs, {"mask_dir": "typo"}, roots={"dst": "d"}, mask_root="ws")
+    assert "typo" not in argv
+    assert argv == ["--image-dir", "d", "--mask-dir", "ws/masks_sam"]
+    # With no root to bind against, the flag falls away and the CLI's own
+    # default stands — which is the same path, spelled once in `workspace/`.
+    assert S.build_argv(fs, {"mask_dir": "typo"}, roots={"dst": "d"}) == [
+        "--image-dir",
+        "d",
+    ]
 
 
 def test_the_sam3_checkpoint_is_one_setting_for_three_stages():
     """position / audit / masks_sam build the same SAM3, so they load the same
     file — set once in Settings, never three times on three forms."""
-    required = {"config": "c.yaml", "mask_dir": "m"}
+    required = {"mask_dir": "m"}
     for stage_id in ("position", "audit", "masks_sam"):
         _, fs = _stage(stage_id)
         ckpt = next(f for f in fs if f["dest"] == "checkpoint")

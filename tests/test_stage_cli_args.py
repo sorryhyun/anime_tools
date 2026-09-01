@@ -21,6 +21,8 @@ import dataclasses
 import pytest
 
 from anime_tools.downloads import DEFAULT_SAM3_CHECKPOINT
+from anime_tools.masking._sam3 import SUBJECT_PROMPT
+from anime_tools.masking.cli import generate_masks
 from anime_tools.stages.cli import (
     audit_apply_curated,
     audit_multiview,
@@ -164,6 +166,45 @@ def test_the_audit_pins_the_flags_it_does_not_ask_for(parsers):
     for dest in OPTIONAL_FLAGS:
         assert dest not in parsers["audit"], f"the audit now declares {dest}"
         assert dest in parsers["position"], f"the position stage lost {dest}"
+
+
+def test_the_sam3_mask_stage_shares_the_two_catalog_flags():
+    """``masks_sam`` is the third SAM3 stage, and it is not in ``ALL_STAGES``
+    above because it belongs to the *masking* CLI family (which spells
+    ``--path-pattern`` its own way). The two flags it does share are the two
+    ⚙ Settings stage defaults, declared in ``masking/_sam3.py`` beside the
+    loaders they feed — a drift here is a Download button that writes where no
+    loader looks.
+    """
+    masks, position = (
+        actions(generate_masks.build_parser()),
+        actions(position_captions.build_parser()),
+    )
+    for dest in ("checkpoint", "prompt_embed"):
+        assert masks[dest].option_strings == position[dest].option_strings, dest
+        assert masks[dest].default == position[dest].default, dest
+
+
+def test_the_sam3_mask_stage_defaults_to_the_phrase_its_soft_prompt_encodes():
+    """``--prompt_embed`` stands in for :data:`SUBJECT_PROMPT` and nothing else,
+    so a default ``--focus-prompts`` naming some other phrase would leave the
+    shipped soft prompt loaded and unused."""
+    args = generate_masks.build_parser().parse_args(
+        ["--image-dir", "i", "--mask-dir", "m"]
+    )
+    assert generate_masks.prompt_list(args.focus_prompts) == (SUBJECT_PROMPT,)
+    assert args.prompt_embed == DEFAULT_SUBJECT_PROMPT_EMBED
+
+
+def test_a_prompt_flag_is_a_comma_separated_list():
+    assert generate_masks.prompt_list(" speech bubble , text ,") == (
+        "speech bubble",
+        "text",
+    )
+    assert generate_masks.prompt_list("") == ()
+    # The GUI drops a blank field back to the default, so "none of them" needs
+    # a word — the one --prompt_embed already takes.
+    assert generate_masks.prompt_list("none") == ()
 
 
 # ---- the flags and the options they build stay in step -----------------

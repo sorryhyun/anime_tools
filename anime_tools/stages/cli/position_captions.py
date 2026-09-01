@@ -39,7 +39,12 @@ from anime_tools._env import resolve_path
 from anime_tools._json import write_json
 
 # Importing _sam3 also installs the `np.bool` alias sam3 needs before it loads.
-from anime_tools.masking._sam3 import add_checkpoint_arg, load_sam3, make_processor
+from anime_tools.masking._sam3 import (
+    add_checkpoint_arg,
+    ground_with_soft_prompt,
+    load_sam3,
+    make_processor,
+)
 from anime_tools.stages.cli._args import (
     add_apply_args,
     add_dataset_args,
@@ -382,10 +387,9 @@ def build_detect_fn(args: argparse.Namespace, *, model=None, processor=None):
             if soft_prompt is not None and prompt == args.prompt:
                 # Learned prompt tensor stands in for the subject phrase: the
                 # text encode is skipped, the grounding pass reused as-is.
-                state = cache["state"]
-                state["backbone_out"].update(soft_prompt)
-                state.setdefault("geometric_prompt", model._get_dummy_prompt())
-                out = processor._forward_grounding(state)
+                out = ground_with_soft_prompt(
+                    processor, model, cache["state"], soft_prompt
+                )
             else:
                 out = processor.set_text_prompt(prompt=prompt, state=cache["state"])
         masks = out.get("masks")

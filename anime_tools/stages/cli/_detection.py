@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import argparse
 
-from anime_tools.stages.instance_detection import DEFAULT_SUBJECT_PROMPT_EMBED
+from anime_tools.masking._sam3 import SUBJECT_PROMPT, add_prompt_embed_arg
 
 # Flags a stage may leave out because it pins the value itself (the audit always
 # wants ``min_instances=2``). :func:`detection_options` reads them only when
@@ -37,14 +37,12 @@ def add_detection_args(
     own under clause composition.
     """
     g = p.add_argument_group("detection")
-    g.add_argument("--prompt", default="girl", help="SAM3 text prompt for a subject")
     g.add_argument(
-        "--prompt_embed",
-        default=DEFAULT_SUBJECT_PROMPT_EMBED,
-        help="learned soft prompt (.safetensors) used in place of --prompt for "
-        "the subject pass; part prompts stay textual. Default = the shipped "
-        f"{DEFAULT_SUBJECT_PROMPT_EMBED}; pass `none` for the plain text prompt",
+        "--prompt", default=SUBJECT_PROMPT, help="SAM3 text prompt for a subject"
     )
+    # Declared in masking/_sam3.py beside --checkpoint: the SAM3 subject-mask
+    # stage takes the same flag, and both are ⚙ Settings stage defaults.
+    add_prompt_embed_arg(g)
     g.add_argument(
         "--score_threshold", type=float, default=0.5, help=score_threshold_help
     )

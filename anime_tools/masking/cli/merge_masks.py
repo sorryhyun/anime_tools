@@ -12,17 +12,33 @@ import numpy as np
 from PIL import Image
 from tqdm import tqdm
 
+from anime_tools import workspace as WS
+from anime_tools._env import resolve_path
 from anime_tools.masking._masks import iter_masks
+
+DEFAULT_INPUTS = [WS.MASKS_SAM, WS.MASKS_MIT]
+"""The two generators' own ``--mask-dir`` defaults, in the order they run.
+
+A merge whose inputs are not the trees the generators wrote merges nothing, so
+the three paths are declared once in :mod:`anime_tools.workspace` and read back
+here. A missing input directory is skipped, not an error — running only one
+generator is a valid half of this.
+"""
 
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("mask_dirs", nargs="+", help="Input mask directories to merge")
+    parser.add_argument(
+        "mask_dirs",
+        nargs="*",
+        default=DEFAULT_INPUTS,
+        help=f"Input mask directories to merge (default: {' '.join(DEFAULT_INPUTS)})",
+    )
     parser.add_argument(
         "--output-dir",
         type=str,
-        required=True,
-        help="Output directory for merged masks",
+        default=WS.MASKS,
+        help=f"Output directory for merged masks (default: {WS.MASKS})",
     )
     return parser
 
@@ -30,8 +46,10 @@ def build_parser() -> argparse.ArgumentParser:
 def main() -> None:
     args = build_parser().parse_args()
 
-    mask_dirs = [Path(d) for d in args.mask_dirs]
-    output_dir = Path(args.output_dir)
+    # Home-anchored, so the defaults name the trees the generators wrote
+    # however the operator got here.
+    mask_dirs = [resolve_path(d) for d in args.mask_dirs]
+    output_dir = resolve_path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
     by_rel: dict[tuple[str, str], list[Path]] = {}

@@ -120,3 +120,27 @@ def test_iter_masks_keys_by_relative_dir(tree):
         ("artist_x", "two_mask.png"),
         ("artist_y", "one_mask.png"),
     ]
+
+
+def test_the_merge_reads_exactly_what_the_two_generators_write():
+    """One fact split across three CLIs.
+
+    Each generator writes its *own* tree — sharing one would have the second
+    run overwrite the first, since both name a mask ``{stem}_mask.png`` at the
+    same relative path — and ``merge_masks`` unions them into the ``masks``
+    root. So the merge's default inputs have to be the generators' default
+    outputs; they are all written in terms of :mod:`anime_tools.workspace`, and
+    this is the pairing that keeps them there.
+    """
+    from anime_tools import workspace as WS
+    from anime_tools.masking.cli import generate_masks, generate_masks_mit, merge_masks
+
+    def default(module, dest):
+        return next(a.default for a in module.build_parser()._actions if a.dest == dest)
+
+    sam = default(generate_masks, "mask_dir")
+    mit = default(generate_masks_mit, "mask_dir")
+    assert sam != mit, "the two generators would overwrite each other"
+    assert default(merge_masks, "mask_dirs") == [sam, mit]
+    assert default(merge_masks, "output_dir") == WS.MASKS
+    assert WS.MASKS not in (sam, mit), "a generator writes the merged root"

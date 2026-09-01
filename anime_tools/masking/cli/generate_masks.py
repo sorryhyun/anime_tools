@@ -1,4 +1,15 @@
-"""Generate text/speech-bubble masks for training images using SAM3."""
+"""SAM3 subject masks: mask a prompt OUT, or keep ONLY a prompt.
+
+Two polarities over the same detector. ``--prompts`` names what is masked out
+(ignored in the loss — speech bubbles, a watermark); ``--focus-prompts`` names
+what is kept, everything else being masked out, which is how the subject is
+isolated from a background. Give both and the focus region is what survives
+minus the ignore regions.
+
+The subject prompt is served by a learned soft prompt by default
+(``--prompt_embed``, the textual inversion of ``anime girl``): same recall,
+markedly less junk than the bare word. Pass ``none`` for the plain text prompt.
+"""
 
 import argparse
 from concurrent.futures import ThreadPoolExecutor
@@ -6,10 +17,10 @@ from pathlib import Path
 
 import cv2
 import numpy as np
-import yaml
 from PIL import Image
 from tqdm import tqdm
 
+from anime_tools import workspace as WS
 from anime_tools._device import resolve_device
 from anime_tools._env import resolve_path
 from anime_tools.masking._masks import (
@@ -24,79 +35,75 @@ from anime_tools.masking._masks import (
 )
 
 # Importing _sam3 also installs the `np.bool` alias sam3 needs before it loads.
-from anime_tools.masking._sam3 import add_checkpoint_arg, load_sam3
-from anime_tools.path_filter import filter_paths_by_glob
+from anime_tools.masking._sam3 import (
+    SUBJECT_PROMPT,
+    add_checkpoint_arg,
+    add_prompt_embed_arg,
+    ground_with_soft_prompt,
+    load_sam3,
+)
+
+# Torch-free at import (the safetensors read is deferred), and the same two
+# helpers the position stage resolves its --prompt_embed through, so `none`,
+# a missing shipped default and an explicit bad path mean one thing everywhere.
+from anime_tools.stages.instance_detection import load_soft_prompt, resolve_prompt_embed
 
 
 def load_image(path: Path) -> Image.Image:
     return Image.open(path).convert("RGB")
 
 
-def build_rules(config: dict) -> list[dict]:
-    """Normalize the config into an ordered list of mask rules.
+_NO_PROMPTS = {"none", "off"}
 
-    Each rule routes a subset of images (by ``path_pattern``) to its own
-    prompt set: ``prompts`` are masked OUT (ignored in the loss) and
-    ``focus_prompts`` keep ONLY that subject (the reversed polarity — e.g.
-    ``girl`` masks all background). ``threshold`` / ``dilate`` fall back to the
-    top-level defaults when a rule omits them.
 
-    Two schemas, both accepted:
+def prompt_list(spec: str) -> tuple[str, ...]:
+    """A comma-separated prompt flag as the tuple of prompts it names.
 
-    * **rules** — a top-level ``rules:`` list; every rule whose ``path_pattern``
-      matches an image *composes* (ignore- and focus-regions unioned across all
-      matches).
-    * **flat** — top-level ``prompts`` / ``focus_prompts`` with no ``rules:``
-      key, wrapped here as a single catch-all rule (the global walk filter
-      handles scoping).
+    ``none`` / ``off`` mean *no prompts*, the word ``--prompt_embed`` already
+    takes for the same job. Emptying the field is not enough to say it: the GUI
+    omits a flag whose value is blank, so a cleared ``--focus-prompts`` would
+    come back as its default rather than as "focus on nothing".
     """
-    default_threshold = config.get("threshold", 0.5)
-    default_dilate = config.get("dilate", 5)
-
-    raw_rules = config.get("rules")
-    if raw_rules is None:
-        raw_rules = [
-            {
-                "prompts": config.get("prompts") or [],
-                "focus_prompts": config.get("focus_prompts") or [],
-            }
-        ]
-
-    rules: list[dict] = []
-    for raw in raw_rules:
-        dilate = int(raw.get("dilate", default_dilate))
-        rules.append(
-            {
-                "prompts": raw.get("prompts") or [],
-                "focus_prompts": raw.get("focus_prompts") or [],
-                "threshold": float(raw.get("threshold", default_threshold)),
-                "path_pattern": raw.get("path_pattern"),
-                "kernel": (
-                    np.ones((dilate, dilate), dtype=np.uint8) if dilate > 0 else None
-                ),
-            }
-        )
-    return rules
-
-
-def rule_matches(rule: dict, image_path: Path, image_dir: Path) -> bool:
-    """True if ``image_path`` falls under this rule's path_pattern.
-
-    Reuses the training subset glob (fnmatch, ``|``-OR-combined, matched on the
-    path relative to ``image_dir``). An unset / ``"*"`` pattern matches all.
-    """
-    pattern = rule["path_pattern"]
-    if not pattern or pattern == "*":
-        return True
-    return filter_paths_by_glob([str(image_path)], str(image_dir), pattern)[0]
+    if spec.strip().lower() in _NO_PROMPTS:
+        return ()
+    return tuple(t.strip() for t in spec.split(",") if t.strip())
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument(
-        "--config", type=str, required=True, help="YAML config with prompts and params"
+    parser = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )
-    add_mask_dir_args(parser)
+    add_mask_dir_args(parser, mask_default=WS.MASKS_SAM)
+    parser.add_argument(
+        "--prompts",
+        type=str,
+        default="",
+        help="Comma-separated SAM3 text prompts to mask OUT — these regions are "
+        "ignored in the loss (e.g. `speech bubble,text`)",
+    )
+    parser.add_argument(
+        "--focus-prompts",
+        dest="focus_prompts",
+        type=str,
+        default=SUBJECT_PROMPT,
+        help="Comma-separated prompts to keep ONLY: everything outside them is "
+        f"masked out. Default `{SUBJECT_PROMPT}` (the subject), so a bare run "
+        "isolates the subject from her background; pass `none` to keep nothing "
+        "in and use --prompts alone",
+    )
+    add_prompt_embed_arg(parser)
+    parser.add_argument(
+        "--threshold",
+        type=float,
+        default=0.5,
+        help="SAM3 confidence floor for a detection (default: 0.5)",
+    )
+    parser.add_argument(
+        "--dilate",
+        type=int,
+        default=5,
+        help="Mask dilation in pixels, 0 = off (default: 5)",
+    )
     add_force_arg(parser)
     add_checkpoint_arg(parser)
     add_device_arg(parser)
@@ -107,45 +114,59 @@ def build_parser() -> argparse.ArgumentParser:
         default=1,
         help="Images to process in parallel (default: 1)",
     )
-    add_walk_args(
-        parser,
-        pattern_help=(
-            " Overrides the YAML's path_pattern when given; falls back to it otherwise."
-        ),
-    )
+    add_walk_args(parser)
     return parser
 
 
 def main() -> None:
-    args = build_parser().parse_args()
+    parser = build_parser()
+    args = parser.parse_args()
     args.device = resolve_device(args.device)
 
-    with open(args.config) as f:
-        config = yaml.safe_load(f)
-
-    rules = build_rules(config)
-    # Global walk filter scopes which images are masked at all; per-rule
-    # path_pattern routes *within* this set.
-    path_pattern = args.path_pattern or config.get("path_pattern")
+    ignore_prompts = prompt_list(args.prompts)
+    focus_prompts = prompt_list(args.focus_prompts)
+    if not ignore_prompts and not focus_prompts:
+        parser.error("nothing to mask: pass --prompts and/or --focus-prompts")
+    kernel = np.ones((args.dilate,) * 2, dtype=np.uint8) if args.dilate > 0 else None
 
     import torch
 
-    image_dir = Path(args.image_dir)
-    masks_dir = Path(args.mask_dir)
+    # Anchored, like every stage's roots: the defaults above are written
+    # home-relative, so a run from another directory has to mean the same
+    # tree the GUI and the merge do.
+    image_dir = resolve_path(args.image_dir)
+    masks_dir = resolve_path(args.mask_dir)
     masks_dir.mkdir(parents=True, exist_ok=True)
 
     print("Loading SAM3 model...")
-    # The processor owns the model; nothing here touches it directly.
-    _model, processor = load_sam3(
+    model, processor = load_sam3(
         resolve_path(args.checkpoint) if args.checkpoint else None, args.device
     )
 
-    def detect_union(inference_state, prompt_list, shape, threshold) -> np.ndarray:
+    # The soft prompt stands in for the subject phrase wherever it was asked
+    # for; a prompt it does not name still goes through the text encoder.
+    soft_prompt = None
+    embed_path = resolve_prompt_embed(args.prompt_embed)
+    if embed_path is not None:
+        if SUBJECT_PROMPT in ignore_prompts + focus_prompts:
+            soft_prompt = load_soft_prompt(embed_path, args.device)
+            print(f"soft prompt: {embed_path} (replaces {SUBJECT_PROMPT!r})")
+        else:
+            print(
+                f"NOTE: --prompt_embed is the {SUBJECT_PROMPT!r} prompt, which "
+                f"neither --prompts nor --focus-prompts asks for — every prompt "
+                f"here is textual"
+            )
+
+    def detect_union(state, prompts, shape, threshold) -> np.ndarray:
         """OR-combine SAM3 detections for every prompt into one binary mask."""
         h, w = shape
         out = np.zeros((h, w), dtype=np.uint8)
-        for prompt in prompt_list:
-            output = processor.set_text_prompt(state=inference_state, prompt=prompt)
+        for prompt in prompts:
+            if soft_prompt is not None and prompt == SUBJECT_PROMPT:
+                output = ground_with_soft_prompt(processor, model, state, soft_prompt)
+            else:
+                output = processor.set_text_prompt(state=state, prompt=prompt)
             for mask, score in zip(output["masks"], output["scores"]):
                 if score < threshold:
                     continue
@@ -161,7 +182,7 @@ def main() -> None:
         image_dir,
         masks_dir,
         recursive=args.recursive,
-        pattern=path_pattern,
+        pattern=args.path_pattern,
         force=args.force,
     )
 
@@ -202,36 +223,20 @@ def main() -> None:
                 w, h = image.size
                 pbar.update(1)
 
-                # Ignore-regions union together, focus-regions union together.
-                matched = [r for r in rules if rule_matches(r, image_path, image_dir)]
-                if not matched:
-                    pbar.set_postfix_str(f"{image_path.name}: no matching rule")
-                    continue
-
                 ignore_mask = np.zeros((h, w), dtype=np.uint8)
-                focus_mask = np.zeros((h, w), dtype=np.uint8)
-                has_focus = False
-                for rule in matched:
-                    if rule["prompts"]:
-                        ig = detect_union(
-                            inference_state, rule["prompts"], (h, w), rule["threshold"]
-                        )
-                        if rule["kernel"] is not None and ig.any():
-                            ig = cv2.dilate(ig, rule["kernel"], iterations=1)
-                        ignore_mask = np.maximum(ignore_mask, ig)
-                    if rule["focus_prompts"]:
-                        has_focus = True
-                        fc = detect_union(
-                            inference_state,
-                            rule["focus_prompts"],
-                            (h, w),
-                            rule["threshold"],
-                        )
-                        if rule["kernel"] is not None and fc.any():
-                            fc = cv2.dilate(fc, rule["kernel"], iterations=1)
-                        focus_mask = np.maximum(focus_mask, fc)
+                if ignore_prompts:
+                    ignore_mask = detect_union(
+                        inference_state, ignore_prompts, (h, w), args.threshold
+                    )
+                    if kernel is not None and ignore_mask.any():
+                        ignore_mask = cv2.dilate(ignore_mask, kernel, iterations=1)
 
-                if has_focus:
+                if focus_prompts:
+                    focus_mask = detect_union(
+                        inference_state, focus_prompts, (h, w), args.threshold
+                    )
+                    if kernel is not None and focus_mask.any():
+                        focus_mask = cv2.dilate(focus_mask, kernel, iterations=1)
                     if not focus_mask.any():
                         # Subject not found — leave unmasked (train fully) rather
                         # than zeroing out the whole loss.

@@ -125,6 +125,25 @@ def report_root(settings: Mapping[str, Any], roots: D.Roots) -> str:
     return D.WS.WORKSPACE if beside in (".", "", "/") else beside
 
 
+def mask_root(settings: Mapping[str, Any], roots: D.Roots) -> str:
+    """Where each generator's *own* mask tree lands, home-relative — the root
+    only; each generator appends its own tail (``S.Field.mask``), because two
+    generators sharing a ``--mask-dir`` would overwrite each other's
+    ``{stem}_mask.png`` and leave ``merge_masks`` one tree to union.
+
+    Blank means *beside the* ``masks`` *root*, so the intermediates sit next to
+    the merged tree they feed, and follow it when the dataset moves. The same
+    stop-at-the-home rule as :func:`report_root`, for the same reason: a
+    one-component ``masks`` root would otherwise strew ``masks_sam/`` and
+    ``masks_mit/`` across the project root.
+    """
+    got = str((settings.get(S.SETTINGS_KEY) or {}).get(S.MASK_SETTING) or "").strip()
+    if got:
+        return got
+    beside = PurePosixPath(D.rel_to_home(roots.masks)).parent.as_posix()
+    return D.WS.WORKSPACE if beside in (".", "", "/") else beside
+
+
 def root_paths(roots: D.Roots) -> dict[str, str]:
     """The dataset roots, home-relative, for the fields bound to them
     (``S.ROOT_FIELDS``)."""
@@ -176,6 +195,7 @@ def preprocess_steps(
         roots=root_paths(roots),
         settings=defaults,
         report_root=reports,
+        mask_root=mask_root(settings, roots),
     )
     make_output_dirs(pre, S.report_path(pre, sc["fields"], values, reports), roots)
     return [Step(pre.module, argv, pre.id)]
@@ -352,6 +372,7 @@ def create_app(
                 roots=root_paths(roots),
                 settings=defaults,
                 report_root=reports,
+                mask_root=mask_root(settings, roots),
             )
         except ValueError as e:
             raise HTTPException(400, str(e)) from e
@@ -495,8 +516,10 @@ def create_app(
         return {
             "roots": roots_for(settings).as_dict(),
             "defaults": D.DEFAULT_ROOTS,
-            # What a blank `report_root` resolves to, as Settings' placeholder.
+            # What a blank `report_root` / `mask_root` resolves to, as
+            # Settings' placeholders.
             "report_root": report_root({}, roots_for(settings)),
+            "mask_root": mask_root({}, roots_for(settings)),
         }
 
     @app.put("/api/dataset/roots")
@@ -518,6 +541,7 @@ def create_app(
             "roots": roots.as_dict(),
             "defaults": D.DEFAULT_ROOTS,
             "report_root": report_root({}, roots),
+            "mask_root": mask_root({}, roots),
             "created": created,
         }
 

@@ -194,6 +194,8 @@ const en = {
     stageDefaultsHelp:
       "Filled into every stage that takes them, so no stage form re-asks. Leave one blank for the CLI's own default. {0} is not here on purpose: each stage auto-detects it. {1} is the one knob with no flag of its own: each stage keeps its own directory under it ({2}, {3}), so moving the root moves them all without ever pointing two stages at one report — and the curated audit apply reads the audit's report back out of it.",
     reportRootHint: "where every stage's report.json lands — blank = beside the dst root",
+    maskRootHint:
+      "where each generator's own mask tree lands — blank = beside the masks root the merge fills",
     /** {0} is `target_res`. */
     preprocessHelp:
       "Runs over the same images the stage does, so a per-image Apply resizes just that image. Already-current images are skipped, so a re-run is near-free. Tiers must match the trainer's {0}.",

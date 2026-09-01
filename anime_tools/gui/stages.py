@@ -45,7 +45,6 @@ _PATH_HINTS = (
     "manifest",
     "qwen3",
     "source",
-    "onnx",
 )
 
 _DIR_HINTS = ("dir", "src", "dst", "root", "source", "tokenizer", "qwen3")
@@ -77,6 +76,29 @@ other's report: each keeps its own sub-path (:func:`report_subpath`) and only
 the *root* is the setting. Blank means "beside the ``dst`` root". The one report
 a stage *reads* (:data:`REPORT_INPUTS`) is bound the same way.
 """
+
+MASK_SETTING = "mask_root"
+"""The directory each mask generator's own tree lands under, in
+:data:`SETTINGS_KEY`.
+
+Not a :data:`SETTING_FIELDS` entry, and for the reason :data:`REPORT_SETTING` is
+not: both generators spell the flag ``--mask-dir``, so one shared value would
+have them write ``{stem}_mask.png`` over each other at the same relative path,
+and ``merge_masks`` — which unions the two trees into the ``masks`` root — would
+have one tree to merge instead of two. Each keeps its own tail
+(:func:`mask_subpath`) and only the root is the setting. Blank means *beside the*
+``masks`` *root*, so the intermediates follow the merged tree they feed.
+"""
+
+MASK_FIELDS: dict[str, str] = {
+    # stage id → the dest naming a mask tree under :data:`MASK_SETTING`.
+    "masks_sam": "mask_dir",
+    "masks_mit": "mask_dir",
+    # The merge *reads* both generators' trees, so it has to move with them —
+    # the :data:`REPORT_INPUTS` half of the same idea, and the one bound field
+    # whose tail is a list because the flag is.
+    "masks_merge": "mask_dirs",
+}
 
 REPORT_INPUTS: dict[str, str] = {
     # stage id → the dest naming a report this stage *reads*. Bound to
@@ -293,6 +315,12 @@ def preprocess_for(stage_id: str) -> str | None:
 BY_ID: dict[str, Stage] = {s.id: s for s in STAGES}
 
 
+def _tail(default: str) -> str:
+    """A CLI default minus its first path component."""
+    parts = PurePosixPath(default).parts
+    return PurePosixPath(*parts[1:]).as_posix() if len(parts) > 1 else default
+
+
 def report_subpath(default: str) -> str:
     """The part of a report default that is *not* a dataset root.
 
@@ -300,8 +328,18 @@ def report_subpath(default: str) -> str:
     own path>``; dropping the first component lets one :data:`REPORT_SETTING`
     move every report at once while each stage keeps a directory of its own.
     """
-    parts = PurePosixPath(default).parts
-    return PurePosixPath(*parts[1:]).as_posix() if len(parts) > 1 else default
+    return _tail(default)
+
+
+def mask_subpath(default: str | list[str]) -> str | list[str]:
+    """The same, for a mask tree under :data:`MASK_SETTING`.
+
+    A list in, a list out: the merge's inputs are one bound field naming both
+    generators' tails, so they move together or the merge reads nothing.
+    """
+    if isinstance(default, list):
+        return [_tail(d) for d in default]
+    return _tail(default)
 
 
 @dataclass
@@ -332,6 +370,10 @@ class Field:
     report: str | None = None
     """This stage's own path under the :data:`REPORT_SETTING` root: hidden from
     the form and filled by :func:`build_argv` as ``<root>/<report>``."""
+    mask: str | list[str] | None = None
+    """This stage's own tail(s) under the :data:`MASK_SETTING` root, bound and
+    hidden exactly like :attr:`report`. A list for the merge, which names both
+    generators' trees in one flag."""
     auto: bool = False
     """In :data:`AUTO_FIELDS`: never shown, never sent, always auto-detected."""
 
@@ -394,7 +436,11 @@ def fields_of(parser: argparse.ArgumentParser) -> list[Field]:
                 default=default,
                 choices=list(a.choices) if a.choices else None,
                 help=(a.help or "").replace("%(default)s", str(default)),
-                required=bool(a.required) or not flags,
+                # A positional is required unless argparse can do without it:
+                # ``nargs="*"`` plus a default is the one shape that can, and
+                # clearing such a field must fall back to that default rather
+                # than 400 the run.
+                required=bool(a.required) or (not flags and a.default is None),
                 path=any(h in name for h in _PATH_HINTS),
                 path_kind="dir" if any(h in name for h in _DIR_HINTS) else "file",
                 group=groups.get(id(a), ""),
@@ -435,6 +481,8 @@ def schema(stage: Stage) -> dict[str, Any]:
         f.auto = f.dest in AUTO_FIELDS
         if f.dest in report_dests and isinstance(f.default, str):
             f.report = report_subpath(f.default)
+        if f.dest == MASK_FIELDS.get(stage.id) and f.default is not None:
+            f.mask = mask_subpath(f.default)
     return {
         **base,
         "available": True,
@@ -448,6 +496,13 @@ def schema(stage: Stage) -> dict[str, Any]:
     }
 
 
+def _under(root: str, tail: str | list[str]) -> str | list[str]:
+    """Join one tail, or every tail of a list field, onto a Settings root."""
+    if isinstance(tail, list):
+        return [f"{root}/{t}" for t in tail]
+    return f"{root}/{tail}"
+
+
 def build_argv(
     fields: list[dict[str, Any]],
     values: dict[str, Any],
@@ -456,6 +511,7 @@ def build_argv(
     roots: dict[str, str] | None = None,
     settings: dict[str, str] | None = None,
     report_root: str | None = None,
+    mask_root: str | None = None,
 ) -> list[str]:
     """Turn a ``{dest: value}`` form payload into argv for ``python -m <module>``.
 
@@ -465,12 +521,12 @@ def build_argv(
     ``--apply`` flag regardless of what the form sent, so the Dry run / Apply
     buttons are the only route.
 
-    ``roots``, ``settings`` and ``report_root`` fill the bound fields
-    (:data:`ROOT_FIELDS`, :data:`SETTING_FIELDS`, :attr:`Field.report`),
-    overriding whatever the form sent — the report joined to the stage's own
-    tail so the stages keep separate directories under the one root. Narrowing
-    a run to one image is a ``path_pattern`` handed in through ``settings``.
-    :data:`AUTO_FIELDS` never reach the argv at all.
+    ``roots``, ``settings``, ``report_root`` and ``mask_root`` fill the bound
+    fields (:data:`ROOT_FIELDS`, :data:`SETTING_FIELDS`, :attr:`Field.report`,
+    :attr:`Field.mask`), overriding whatever the form sent — each root joined to
+    the stage's own tail so the stages keep separate directories under the one
+    root. Narrowing a run to one image is a ``path_pattern`` handed in through
+    ``settings``. :data:`AUTO_FIELDS` never reach the argv at all.
     """
     argv: list[str] = []
     positional: list[str] = []
@@ -482,7 +538,7 @@ def build_argv(
             if apply:
                 argv.append(f.flags[0])
             continue
-        if f.root or f.setting or f.report:
+        if f.root or f.setting or f.report or f.mask:
             # Bound fields come from Settings and *only* from Settings: a stale
             # value left in a saved form must never win over the roots or the
             # pattern the user set, so `values` is not consulted at all.
@@ -490,6 +546,7 @@ def build_argv(
                 (roots or {}).get(f.root or "")
                 or (settings or {}).get(f.setting or "")
                 or (f"{report_root}/{f.report}" if report_root and f.report else "")
+                or (_under(mask_root, f.mask) if mask_root and f.mask else "")
             )
         else:
             v = values.get(f.dest, f.default)

@@ -485,6 +485,45 @@ def test_a_one_component_dst_puts_the_reports_in_the_workspace(client):
     assert c.get("/api/dataset/groups").json()["path"] == "workspace/groups/groups.json"
 
 
+def test_the_mask_root_sits_beside_the_masks_root_by_default(client):
+    """Each generator's own tree is an intermediate the merge unions into the
+    ``masks`` root, so it belongs next to it — and moves with it. Blank is the
+    default; the same stop-at-the-home rule as ``report_root``."""
+    c, _ = client
+    assert c.get("/api/dataset/roots").json()["mask_root"] == "workspace"
+    # A one-component masks root has the home for a parent; the workspace is
+    # the answer rather than the project root.
+    c.put(
+        "/api/dataset/roots",
+        json={"src": "image_dataset", "dst": "workspace/resized", "masks": "masks"},
+    )
+    assert c.get("/api/dataset/roots").json()["mask_root"] == "workspace"
+
+
+def test_the_mask_root_setting_moves_both_generators_and_the_merge(client):
+    """One value, three CLIs: the two ``--mask-dir`` defaults and the merge's
+    two inputs all hang off it, each keeping its own tail."""
+    from anime_tools.gui import server as SV
+    from anime_tools.gui import stages as S
+
+    c, _ = client
+    c.put("/api/settings", json={"stage_defaults": {"mask_root": "elsewhere"}})
+    settings = c.get("/api/settings").json()
+    roots = SV.roots_for(settings)
+    assert SV.mask_root(settings, roots) == "elsewhere"
+
+    got = {}
+    for sid in ("masks_sam", "masks_mit", "masks_merge"):
+        fields = S.schema(S.BY_ID[sid])["fields"]
+        argv = S.build_argv(
+            fields, {}, roots=SV.root_paths(roots), mask_root="elsewhere"
+        )
+        got[sid] = [a for a in argv if a.startswith("elsewhere")]
+    assert got["masks_sam"] == ["elsewhere/masks_sam"]
+    assert got["masks_mit"] == ["elsewhere/masks_mit"]
+    assert got["masks_merge"] == ["elsewhere/masks_sam", "elsewhere/masks_mit"]
+
+
 def test_a_missing_manifest_is_not_an_error(client):
     """The Groups stage may simply never have run — the panel says so."""
     c, _ = client

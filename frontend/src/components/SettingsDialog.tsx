@@ -1,7 +1,7 @@
 import { createEffect, createMemo, createSignal, For, on, Show } from "solid-js";
 import { createStore, reconcile, unwrap } from "solid-js/store";
 import { slots, t } from "../i18n";
-import { REPORT_SETTING } from "../types";
+import { MASK_SETTING, REPORT_SETTING } from "../types";
 import type {
   DatasetRoots,
   Field,
@@ -148,7 +148,7 @@ export function SettingsDialog(props: {
             ROOT_NAMES.map((n) => [n, rootEls[n]?.value.trim() ?? ""]),
           );
           const changed = ROOT_NAMES.some((n) => picked[n] !== (current(n)?.path ?? ""));
-          const defKeys = [...props.fields.map((f) => f.setting!), REPORT_SETTING];
+          const defKeys = [...props.fields.map((f) => f.setting!), REPORT_SETTING, MASK_SETTING];
           const defaults = Object.fromEntries(
             defKeys.map((k) => [k, defEls[k]?.value.trim() ?? ""]),
           );
@@ -268,6 +268,13 @@ export function SettingsDialog(props: {
               value={props.defaults[REPORT_SETTING] ?? ""}
               placeholder={props.roots?.report_root}
               hint={t().settings.reportRootHint}
+            />
+            <SettingRow
+              label={MASK_SETTING}
+              ref={(el) => (defEls[MASK_SETTING] = el)}
+              value={props.defaults[MASK_SETTING] ?? ""}
+              placeholder={props.roots?.mask_root}
+              hint={t().settings.maskRootHint}
             />
           </div>
 

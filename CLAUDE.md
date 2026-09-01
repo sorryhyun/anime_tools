@@ -172,11 +172,31 @@ helper.
   `{stem}_mask.png` mirroring the source subdir. Two private cores under the CLIs:
   `_sam3.py` is the **only** place SAM3 is constructed (`load_sam3`/`make_processor`, adopted by
   `generate_masks`, `probe_sam_masks`, `stages/cli/position_captions.build_detect_fn` and
-  `bench/sam3_soft_prompt/common.py`) *and* the one declaration of its weights flag
-  (`add_checkpoint_arg`, so every SAM3 stage spells `--checkpoint` identically and the GUI can bind
-  it to one Settings value) *and* the only place the `np.bool` alias sam3 needs is installed —
-  as an import side effect, which is why its sam3 imports are deferred into the function and
-  importing it stays torch-free; `_masks.py` owns the mask layout — the flag blocks (small and
+  `bench/sam3_soft_prompt/common.py`) *and* the one declaration of the two flags that name a
+  catalog file — `add_checkpoint_arg` and `add_prompt_embed_arg`, so all three SAM3 stages spell
+  `--checkpoint` / `--prompt_embed` identically and the GUI can bind each to one Settings value
+  (`stages/cli/_detection.py` declares them by calling into here, and `SUBJECT_PROMPT` is the
+  `girl` those two flags hinge on: it is `--prompt`'s default and the phrase `--prompt_embed`
+  stands in for) — *and* the home of `ground_with_soft_prompt`, the drop-in for
+  `set_text_prompt` when the prompt is a learned tensor rather than text (a soft prompt *is* the
+  text encoder's output, so the encode is skipped; saying that reaches past `set_text_prompt`
+  into the grounding call, which is why it is written once) *and* the only place the `np.bool`
+  alias sam3 needs is installed — as an import side effect, which is why its sam3 imports are
+  deferred into the function and importing it stays torch-free.
+  The subject-mask CLI takes **prompts, not a config**: `--prompts` (masked out) /
+  `--focus-prompts` (keep only, default `girl`, `none` to keep nothing) / `--prompt_embed`, so a
+  bare run isolates the subject with the shipped soft prompt and the stage is runnable from the GUI
+  form — it used to require a `--config` YAML that this repo never shipped.
+  The three mask directories are **one ⚙ Settings value, not three form fields**: each generator's
+  `--mask-dir` is its own tree (`workspace/masks_sam` / `workspace/masks_mit`) and `merge_masks`
+  unions them into the `masks` root, all three hanging off `MASK_SETTING` (`mask_root`) — see the
+  `gui/` bullet. They cannot be one directory — both generators name a mask `{stem}_mask.png` at
+  the same relative path, so a shared one has the second run overwrite the first and leaves the
+  merge one tree to union — which is why `mask_dir` is bound to a root *plus a tail* rather than to
+  a dataset root, and why `add_mask_dir_args` makes `mask_default` a required argument of its
+  caller rather than picking one: the CLI defaults are what the tails are split out of.
+  `tests/test_masking_plan.py` pins that the merge's inputs are the two generators' outputs.
+  `_masks.py` owns the mask layout — the flag blocks (small and
   contiguous, because the two generators interleave their own flags and the GUI form follows
   declaration order), `plan_mask_jobs` (walk → mirror the source subdir → skip existing unless
   `--force` → mkdir), `write_mask`/`write_ignore_mask` (the one home for `detected=1 → alpha=0`),
@@ -227,7 +247,14 @@ helper.
   is what the run bar fetches back and Undo replays) but it still lives under `report_root`.
   A blank `report_root` means *beside the `dst` root* (`server.report_root`), which is what keeps
   reports with the tree they describe when the dataset moves off the literal `workspace/` every CLI
-  defaults to; `AUTO_FIELDS` (`--device`) is neither shown nor sent — every stage CLI defaults it to
+  defaults to. `MASK_SETTING` (`mask_root`) is the second root of exactly that shape and for
+  exactly that reason: the two mask generators spell `--mask-dir` identically, so one shared value
+  would have them write `{stem}_mask.png` over each other and leave `merge_masks` one tree to union
+  instead of two. `mask_subpath` splits each CLI default the same way `report_subpath` does — and
+  returns a *list* for the merge, whose one flag names both generators' tails, so `MASK_FIELDS`
+  binds the reading stage alongside the writing ones the way `REPORT_INPUTS` does. A blank
+  `mask_root` means *beside the `masks` root*, the merged tree those intermediates feed.
+  `AUTO_FIELDS` (`--device`) is neither shown nor sent — every stage CLI defaults it to
   `None` and resolves it in the child through `_device.resolve_device` (at the *model-load* site,
   so the torch-free `--from_report` replay path stays torch-free).
   A stage that takes a `--path_pattern` is `scoped`: `POST /api/jobs` with a `rel` narrows that
@@ -324,13 +351,15 @@ helper.
   `design/README.md` has the loop and the artifact URL. Edits made in the published editor do
   **not** flow back — port them into `boards/`.
 - **`downloads.py`** (torch-free): the model catalog — one `Asset` row per checkpoint the stages
-  need (tagger + gated dbv4 backbone, SAM3, PE-Spatial, MIT text net, SAM3 subject soft prompt,
-  Danbooru tag KB) with its repo, required files, destination (a path under the home, or the HF hub
-  cache) and an offline `installed` probe. Rows are HF-hub fetches except the soft prompt and the
-  tag KB, whose `url` (GitHub raw) sends them down `Asset._fetch_http` instead — the soft prompt is
-  a trained artifact of the trainer repo, not a re-hostable checkpoint
-  (`stages/instance_detection.py` imports `DEFAULT_SUBJECT_PROMPT_EMBED` from here), and the KB is a
-  CSV, not weights. Two rows are the **Danbooru tag KB**: `danbooru_tags` fetches
+  need (tagger + gated dbv4 backbone, SAM3, PE-Spatial, MIT text net, ComicTextDetector,
+  SAM3 subject soft prompt, Danbooru tag KB) with its repo, required files, destination (a path
+  under the home, or the HF hub cache) and an offline `installed` probe. Rows are HF-hub fetches
+  except the soft prompt, the CTD net and the tag KB, whose `url` (a GitHub raw path or release
+  asset) sends them down `Asset._fetch_http` instead — the soft prompt is a trained artifact of the
+  trainer repo, not a re-hostable checkpoint (`stages/instance_detection.py` imports
+  `DEFAULT_SUBJECT_PROMPT_EMBED` from here), `comictextdetector.pt.onnx` is published only as a
+  manga-image-translator release asset, and the KB is a CSV, not weights.
+  Two rows are the **Danbooru tag KB**: `danbooru_tags` fetches
   `danbooru_tags_classified.csv` (~114k tags with category, post count and a Korean wiki blurb —
   what `captions/correction.py` types every tag against, and what the GUI's click-a-tag panel reads)
   into `models_dir()`, and `danbooru_tags_en` *builds* `danbooru_tags_classified.en.csv` beside it
@@ -339,8 +368,12 @@ helper.
   its identity is the file it **writes**, so the probe asks for that and the 45 MB parquet it joins
   stays in the hub cache — a built row's downloads are inputs, only its product lands in `dest`.
   It is the **single source of truth for weight locations**: `vision/pe.py`,
-  `masking/cli/generate_masks_mit.py` and `masking/_sam3.add_checkpoint_arg` (the SAM3 CLIs'
-  `--checkpoint` default) import theirs from here, so a download and a load can't disagree.
+  `masking/cli/generate_masks_mit.py` and `masking/_sam3`'s `add_checkpoint_arg` /
+  `add_prompt_embed_arg` (the SAM3 CLIs' `--checkpoint` / `--prompt_embed` defaults) import theirs
+  from here, so a download and a load can't disagree. `default_ctd_onnx_path()` is that taken to
+  its end: the MIT stage's text-block gate has **no flag at all**, it reads the row's path, because
+  a `--ctd-onnx` you could point elsewhere is a Download button that writes where the loader does
+  not look.
   `python -m anime_tools.downloads [ID…]` fetches (no ID = everything missing); the GUI's ⚙ Settings
   → Models rows run exactly that through `JobManager`.
 - **`buckets.py`** (torch-free, numpy-free): the free-fit token-band geometry (`EDGE_TOKEN_BANDS` /

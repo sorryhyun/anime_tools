@@ -45,6 +45,7 @@ from PIL import Image
 
 from anime_tools._env import resolve_path as resolve_under_home
 from anime_tools._walk import walk_images
+from anime_tools.downloads import default_ctd_onnx_path
 from bench._common import start_heartbeat
 from bench.sam3_soft_prompt.common import MASK_RES
 
@@ -61,7 +62,10 @@ def parse_args() -> argparse.Namespace:
         "--out", default="post_image_dataset/captions/sam3_soft_prompt/text_targets"
     )
     p.add_argument("--mit_model", default="models/mit/model.pth")
-    p.add_argument("--ctd_onnx", default="models/mit/comictextdetector.pt.onnx")
+    # The stage has no such flag any more (the catalog owns the path); the bench
+    # keeps one so an ablation can point at a different net, defaulted from the
+    # same row so the two cannot drift.
+    p.add_argument("--ctd_onnx", default=str(default_ctd_onnx_path()))
     p.add_argument("--text_threshold", type=float, default=0.8)
     p.add_argument(
         "--close_frac",

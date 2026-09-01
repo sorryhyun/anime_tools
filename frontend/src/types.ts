@@ -27,6 +27,10 @@ export interface Field {
       `groups/groups.json`): bound server-side, so hidden here too. The audit's
       curated apply *reads* its report through the same binding. */
   report: string | null;
+  /** This generator's own tail(s) under the Settings `mask_root` (`masks_sam`,
+      `masks_mit`): bound and hidden the same way. A list on the merge, which
+      names both generators' trees in one flag and so moves with them. */
+  mask: string | string[] | null;
   /** Auto-detected by the stage (`--device`): never shown, never sent. */
   auto: boolean;
 }
@@ -35,9 +39,14 @@ export interface Field {
     GUI-managed, not typed into the form: the Apply dialog is its only route. */
 export const REPLAY_FIELD = "from_report";
 
-/** Mirrors `stages.REPORT_SETTING`: the one stage default with no argparse
-    field behind it, so the Settings dialog renders its row by hand. */
+/** Mirrors `stages.REPORT_SETTING` / `stages.MASK_SETTING`: the two stage
+    defaults with no argparse field behind them, so the Settings dialog renders
+    their rows by hand. Neither can be a plain stage default: several stages
+    spell `--report_dir` / `--mask-dir` identically, and one shared value would
+    have them write over each other, so only the *root* is the setting and each
+    stage keeps its own tail. */
 export const REPORT_SETTING = "report_root";
+export const MASK_SETTING = "mask_root";
 
 export interface Stage {
   id: string;
@@ -105,7 +114,7 @@ export interface Info {
 export interface Settings {
   values?: Record<string, Record<string, unknown>>;
   /** `path_pattern` / `tagger_dir` / `checkpoint` / `prompt_embed` /
-      `report_root`: set once here, not on every stage form. */
+      `report_root` / `mask_root`: set once here, not on every stage form. */
   stage_defaults?: Record<string, string>;
   /** The resize preflight's form values. It has no dock panel to carry a form,
       so its knobs are set here and apply to every stage it runs in front of. */
@@ -231,6 +240,9 @@ export interface DatasetRoots {
   /** What a blank `report_root` resolves to (the parent of `dst`, i.e. the
       workspace) — the Settings placeholder, derived server-side. */
   report_root: string;
+  /** The same for a blank `mask_root`: the parent of the `masks` root, so each
+      generator's own tree sits beside the merged one it feeds. */
+  mask_root: string;
 }
 
 export interface Clause {

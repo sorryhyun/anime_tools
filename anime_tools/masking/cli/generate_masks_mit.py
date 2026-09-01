@@ -15,7 +15,6 @@ from __future__ import annotations
 import argparse
 from concurrent.futures import ThreadPoolExecutor
 from functools import cache
-from pathlib import Path
 from typing import TYPE_CHECKING
 
 import cv2
@@ -26,12 +25,17 @@ from tqdm import tqdm
 if TYPE_CHECKING:
     from torch import nn
 
+from anime_tools import workspace as WS
 from anime_tools._device import resolve_device
+from anime_tools._env import resolve_path
 
-# In the download catalog so the GUI can pre-fetch this net; the loader below
-# reads it out of the hub cache either way.
+# Both nets are catalog rows so the GUI can pre-fetch them. The UNet++ is read
+# out of the hub cache either way; the CTD gate is a *path*, and it is the
+# catalog's, not a flag's — a stage that let you point --ctd-onnx elsewhere is a
+# stage whose Download button can disagree with its loader.
 from anime_tools.downloads import MIT_TEXT_FILENAME as _HF_FILENAME
 from anime_tools.downloads import MIT_TEXT_REPO as _HF_REPO
+from anime_tools.downloads import default_ctd_onnx_path
 from anime_tools.masking._masks import (
     add_device_arg,
     add_force_arg,
@@ -238,7 +242,7 @@ def _ctd_text_boxes(
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
-    add_mask_dir_args(parser)
+    add_mask_dir_args(parser, mask_default=WS.MASKS_MIT)
     parser.add_argument(
         "--model-path",
         type=str,
@@ -264,14 +268,10 @@ def build_parser() -> argparse.ArgumentParser:
         help=(
             "keep only mask components overlapping a comictextdetector text "
             "block — drops UNet++ false positives on halos/decorative line art "
-            "(--no-ctd-gate = raw UNet++ masks, restores pre-2026-07 behavior)"
+            "(--no-ctd-gate = raw UNet++ masks, restores pre-2026-07 behavior). "
+            "The net is the download catalog's `ctd_onnx` row; a missing one "
+            "warns and leaves the masks ungated"
         ),
-    )
-    parser.add_argument(
-        "--ctd-onnx",
-        type=str,
-        default="models/mit/comictextdetector.pt.onnx",
-        help="comictextdetector onnx for --ctd-gate (from make download-models)",
     )
     add_walk_args(parser)
     return parser
@@ -290,16 +290,19 @@ def main() -> None:
 
     ctd = None
     if args.ctd_gate:
-        if Path(args.ctd_onnx).exists():
-            ctd = _load_ctd(args.ctd_onnx, device=args.device)
+        ctd_onnx = default_ctd_onnx_path()
+        if ctd_onnx.exists():
+            ctd = _load_ctd(str(ctd_onnx), device=args.device)
         else:
             print(
-                f"WARNING: --ctd-gate on but {args.ctd_onnx} missing — gating "
-                f"disabled (run `make download-models` or pass --no-ctd-gate)"
+                f"WARNING: --ctd-gate on but {ctd_onnx} missing — gating "
+                f"disabled (get it with `python -m anime_tools.downloads "
+                f"ctd_onnx`, or pass --no-ctd-gate)"
             )
 
-    image_dir = Path(args.image_dir)
-    masks_dir = Path(args.mask_dir)
+    # Home-anchored like the SAM3 generator's — see its note.
+    image_dir = resolve_path(args.image_dir)
+    masks_dir = resolve_path(args.mask_dir)
     masks_dir.mkdir(parents=True, exist_ok=True)
 
     work_items = plan_mask_jobs(

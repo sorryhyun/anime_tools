@@ -8,7 +8,9 @@ side effect of the last ``--apply``::
       workspace/                      everything the tools produce
         master/<rel>.txt                revised master
         resized/<rel>.{png,txt,variants.txt}
-        masks/<rel>/{stem}_mask.png
+        masks_sam/<rel>/{stem}_mask.png  each generator's own tree
+        masks_mit/<rel>/{stem}_mask.png
+        masks/<rel>/{stem}_mask.png      the merge of them
         captions/<stage>/report.json    the diffs
         groups/groups.json
         export/report.json              the export ledger
@@ -82,12 +84,26 @@ RESIZED = DEFAULT_ROOTS["dst"]
 MASKS = DEFAULT_ROOTS["masks"]
 REPORTS = f"{WORKSPACE}/{REPORTS_SUBDIR}"
 GROUPS = f"{WORKSPACE}/groups"
-"""The three workspace paths the CLI defaults are written in terms of.
+"""The four workspace paths the CLI defaults are written in terms of.
 
 Every ``--dst`` / ``--report_dir`` / ``--out`` default is one of these plus the
 stage's own tail, so the CLI and GUI halves cannot disagree — and
 ``gui.stages.report_subpath``, which drops the first component of a report
 default to get that tail, keeps seeing exactly one component in front of it.
+"""
+
+MASKS_SAM = f"{WORKSPACE}/masks_sam"
+MASKS_MIT = f"{WORKSPACE}/masks_mit"
+"""Each mask generator's own output tree, and ``merge_masks``' two inputs.
+
+Not roots, and deliberately *not* :data:`MASKS`: both generators name a mask
+``{stem}_mask.png`` under the same relative path, so one shared directory means
+the second run overwrites the first, and the merge — a pixel-wise minimum over
+the two trees, i.e. the union of what they mask — has nothing left to combine.
+:data:`MASKS` is the merged answer, the root the sidebar joins and Export
+publishes. Written here rather than left to the operator because these three
+paths are one fact in three CLIs: ``merge_masks`` reads exactly what the two
+generators write, and ``tests/test_masking_plan.py`` pins that they agree.
 """
 
 LEGACY_ROOTS: dict[str, str] = {
