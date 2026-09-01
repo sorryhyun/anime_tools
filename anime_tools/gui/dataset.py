@@ -96,11 +96,11 @@ that caption used to be, oldest first, back to the cap in
 straight to disk -- the run bar has no Apply gate, so the text a run replaces
 survives as a badge rather than only as an Undo.
 
-Phase 2 of ``plan.md`` inserts the revised-master rung between ``master`` and
-``history`` and flips ``master`` to ``editable=False`` -- which is the whole GUI
-half of that phase, because the sidebar strip, the panel's badges and
-:func:`write_caption`'s guard all read this tuple. (That phase's sketch called
-that rung ``revised``; the name is taken -- see ``plan.md``.)
+A revised-master overlay, should one land, is one more rung between ``master``
+and ``history`` plus ``master`` flipped to ``editable=False``, and that is the
+whole GUI half of it: the sidebar strip, the panel's badges and
+:func:`write_caption`'s guard all read this tuple. It needs a name of its own --
+``revised`` is the ``dst`` rung.
 """
 
 CAPTION_KINDS = tuple(r.kind for r in CAPTION_LADDER if r.editable)

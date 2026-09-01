@@ -457,8 +457,8 @@ and absent when no floor applied. `resize.below_min_pixels` is the one spelling 
 shared by the stage and the panel.
 autotag/position/correction stages write the **revised** caption under `workspace/resized/`;
 the hand-written master under `image_dataset/` is only read as fallback
-(autotag `missing` is the exception that creates masters — until Phase 2 moves that to the
-`workspace/master/` overlay). Each such write pushes the text it replaces onto that caption's
+(autotag `missing` is the exception that creates masters — until a `workspace/master/` overlay
+takes that write). Each such write pushes the text it replaces onto that caption's
 `{stem}.history.txt` (`captions/history.py`, capped at `HISTORY_LIMIT`), which is what makes a run
 safe to write without an Apply gate in front of it: the previous version is a badge in the panel,
 and Undo replays the run's report backwards. `python -m anime_tools.workspace.migrate` moves a
@@ -469,8 +469,6 @@ dry-run by default, `--path_pattern`-scoped, in the dock — but `NO_PREFLIGHT` 
 preflight off it (it publishes the resized tree rather than consuming it, so an empty one is a
 refusal, not a hidden step) and its report is not a caption diff, so `gui/proposals.undo` branches
 to `revert_export` at the top rather than the route growing a second entry point.
-**`plan.md` is the live plan** for the remaining phases (the master overlay;
-Phase 5, the one-substrate move, is done) — read it before touching this seam.
 Any `--apply` that touches captions must be followed by the trainer's TE re-encode.
 
 ## Working on captions
