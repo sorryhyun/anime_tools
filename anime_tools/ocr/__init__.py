@@ -15,6 +15,7 @@ from anime_tools.ocr._onnx import (
     TextRecognizer,
     load_ocr,
     reading_order,
+    resolve_onnx_device,
 )
 
 __all__ = [
@@ -24,4 +25,5 @@ __all__ = [
     "TextRecognizer",
     "load_ocr",
     "reading_order",
+    "resolve_onnx_device",
 ]

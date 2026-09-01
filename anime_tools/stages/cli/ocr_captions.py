@@ -13,7 +13,7 @@ from __future__ import annotations
 import argparse
 
 from anime_tools import workspace as WS
-from anime_tools._device import add_device_arg, resolve_device
+from anime_tools._device import add_device_arg
 from anime_tools._env import resolve_path
 from anime_tools.stages.cli._args import (
     add_path_pattern_arg,
@@ -98,7 +98,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--det-limit-side",
         dest="det_limit_side",
         type=int,
-        default=960,
+        default=1440,
         help="Longest side the detector sees; larger finds smaller text and "
         "costs quadratically",
     )
@@ -137,9 +137,11 @@ def main() -> None:
 
     # Deferred: onnxruntime is the heaviest thing this CLI touches, and `--help`
     # should not pay for it.
-    from anime_tools.ocr import OcrWeightsMissing, load_ocr
+    from anime_tools.ocr import OcrWeightsMissing, load_ocr, resolve_onnx_device
 
-    device = resolve_device(args.device)
+    # Not `_device.resolve_device`: its torch probe would cost this run 1.8x for an
+    # answer onnxruntime already has (:func:`~anime_tools.ocr.resolve_onnx_device`).
+    device = resolve_onnx_device(args.device)
     print(f"Loading PP-OCRv6 ({device})...", flush=True)
     try:
         engine = load_ocr(

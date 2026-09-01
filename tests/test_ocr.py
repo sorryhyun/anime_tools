@@ -8,10 +8,12 @@ hand-built arrays.
 
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 
 import pytest
 
+import anime_tools
 from anime_tools.captions.ocr_sidecar import (
     OCR_SIDECAR_SUFFIX,
     OcrLine,
@@ -363,6 +365,52 @@ def test_a_cpu_batch_pads_to_its_own_need_not_the_rung():
     # 48x400 needs ceil(48 * 400/48) = 400, inside the 640 rung.
     rec.recognize([np.zeros((48, 400, 3), dtype="uint8")])
     assert widths == [400]
+
+
+def test_resolving_the_ocr_device_never_imports_torch():
+    """Asking torch whether there is a GPU costs the run 1.8x.
+
+    The probe initialises CUDA, and torch's context then time-shares the device
+    with ORT's for the life of the process — measured on PP-OCRv6 at 23 ms an
+    image against 40. This stage runs on onnxruntime, so onnxruntime is what it
+    asks. A subprocess, because another test may already have imported torch.
+    """
+    import subprocess
+
+    pytest.importorskip("onnxruntime")
+    code = (
+        "import sys;"
+        "from anime_tools.ocr import resolve_onnx_device;"
+        "d = resolve_onnx_device();"
+        "print(d, 'torch' in sys.modules)"
+    )
+    r = subprocess.run(
+        [sys.executable, "-c", code], capture_output=True, text=True, check=False
+    )
+    assert r.returncode == 0, r.stderr
+    device, torch_seen = r.stdout.split()
+    assert device in {"cuda", "cpu"}
+    assert torch_seen == "False"
+
+
+def test_an_explicit_device_is_taken_as_given():
+    """``--device`` set means no probe at all, on either resolver."""
+    from anime_tools.ocr import resolve_onnx_device
+
+    assert resolve_onnx_device("cpu") == "cpu"
+    assert resolve_onnx_device("cuda") == "cuda"
+
+
+def test_the_ocr_cli_asks_onnxruntime_not_torch_for_its_device():
+    """Pinned in the CLI too: the torch resolver is the one every *torch* stage
+    uses, and reaching for it here is the whole regression."""
+    src = (
+        Path(anime_tools.__file__).parent / "stages" / "cli" / "ocr_captions.py"
+    ).read_text(encoding="utf-8")
+    assert "device = resolve_onnx_device(args.device)" in src
+    # `add_device_arg` still comes from `_device` — the flag is declared once
+    # there — but the torch resolver beside it is not imported.
+    assert "from anime_tools._device import add_device_arg\n" in src
 
 
 # ---- one input shape per session ---------------------------------------
