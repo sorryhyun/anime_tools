@@ -298,6 +298,10 @@ button.link { background:none; border:none; color:var(--accent); padding:0; font
 pre.log { margin:0; font:12px/1.4 var(--font-mono); white-space:pre-wrap; word-break:break-all }
 .badge { font-size:11px; padding:1px 7px; border-radius:10px; background:#2a2f3a; color:var(--dim) }
 .badge.running { color:var(--warn) } .badge.done { color:var(--ok) } .badge.failed, .badge.cancelled { color:var(--err) }
+/* The pixel-count chip in the preview's size line. --warn is not "small" but
+   "the resize preflight skips this, so every stage sees nothing for it" -- the
+   one thing a size means downstream, said where the size already is. */
+.badge.px { color:var(--ok) } .badge.px.below { color:var(--warn) }
 table { border-collapse:collapse; font-size:12px; width:100% }
 td, th { border-bottom:1px solid var(--line); padding:4px 6px; text-align:left; vertical-align:top; max-width:360px; overflow:hidden; text-overflow:ellipsis }
 th { color:var(--dim); position:sticky; top:0; background:var(--bg) }

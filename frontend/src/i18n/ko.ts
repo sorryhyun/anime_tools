@@ -85,6 +85,11 @@ const ko: Dict = {
     noOverlay: "이 이미지에는 겹쳐 볼 것이 없습니다",
     noView: (view) => `이 이미지에는 ${view}이(가) 없습니다`,
     readOnly: "읽기 전용",
+    /** {0}은 하한값, 예: "0.50 MP". 픽셀 수 칩에 붙습니다. */
+    aboveFloor: (floor: string) => `리사이즈 하한 ${floor} 이상`,
+    /** {0}은 하한값. 이 이미지에 스테이지를 돌려도 아무 일이 없는 이유입니다. */
+    belowFloor: (floor: string) =>
+      `리사이즈 하한 ${floor} 미만 — 이 이미지는 리사이즈되지 않으므로, workspace/resized를 걷는 스테이지들에게는 아예 보이지 않습니다. ⚙ 설정 › Preprocess에서 하한을 낮추세요.`,
     zoomHint: "⌘/Ctrl+스크롤로 확대 · 드래그로 이동 · 더블클릭하면 원래 크기",
   },
   caption: {

@@ -33,6 +33,7 @@ from anime_tools.gui import stages as S
 from anime_tools.gui import tags as T
 from anime_tools.gui.jobs import JobManager, Step
 from anime_tools.gui.settings import load_settings, save_settings
+from anime_tools.stages.resize import DEFAULT_MIN_PIXELS
 
 STATIC = Path(__file__).parent / "static"
 
@@ -142,6 +143,23 @@ def mask_root(settings: Mapping[str, Any], roots: D.Roots) -> str:
         return got
     beside = PurePosixPath(D.rel_to_home(roots.masks)).parent.as_posix()
     return D.WS.WORKSPACE if beside in (".", "", "/") else beside
+
+
+def preprocess_min_pixels(settings: Mapping[str, Any]) -> int:
+    """The resize floor the preflight runs at, from the Settings *Preprocess*
+    block — the stage's own default when it is blank, 0 when it is turned off.
+
+    Read here rather than off the schema dump because it is wanted on the item
+    route, which must answer while the schemas are still loading; the value is
+    the stage's constant either way, imported so the two cannot drift.
+    """
+    got = (settings.get(S.PREPROCESS_SETTINGS_KEY) or {}).get("min_pixels")
+    if got is None or str(got).strip() == "":
+        return DEFAULT_MIN_PIXELS
+    try:
+        return max(0, int(got))
+    except (TypeError, ValueError):
+        return DEFAULT_MIN_PIXELS
 
 
 def root_paths(roots: D.Roots) -> dict[str, str]:
@@ -588,9 +606,10 @@ def create_app(
     def dataset_item(
         rel: str, src: str = "", dst: str = "", masks: str = ""
     ) -> dict[str, Any]:
-        roots = roots_for(load_settings(), src=src, dst=dst, masks=masks)
+        settings = load_settings()
+        roots = roots_for(settings, src=src, dst=dst, masks=masks)
         try:
-            return D.item_detail(roots, rel)
+            return D.item_detail(roots, rel, min_pixels=preprocess_min_pixels(settings))
         except D.DatasetError as e:
             # 404, not the app-wide 400: the roots resolved, this image is
             # simply not in the dataset.

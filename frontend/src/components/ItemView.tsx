@@ -23,8 +23,42 @@ type FileView = (typeof FILE_VIEWS)[number];
 type View = FileView | "overlay";
 const viewLabel = (v: View) => t().item.views[v];
 
-const dims = (i: ImageInfo | null) =>
-  i ? `${i.width ?? "?"}×${i.height ?? "?"} · ${(i.bytes / 1024).toFixed(0)} KB` : "";
+const mp = (px: number) => `${(px / 1e6).toFixed(2)} MP`;
+
+/** The size read-out under the preview, and the one thing a size means here.
+
+    An image below the resize floor is skipped by the preflight, so it never
+    lands in `workspace/resized` — the tree every stage walks. Run a stage on it
+    and you get zero rows, no diff and no writes, which reads as a broken stage
+    rather than as a filtered image. The chip is where that is said, next to the
+    pixel count you would already be looking at. `too_small` null means the
+    floor was never applied to this file (the mask, the resized copy, or a floor
+    turned off), and an unmeasured image gets no chip: a green one would claim
+    it passed a test nobody ran. */
+function Dims(props: { info: ImageInfo | null; floor: number }) {
+  return (
+    <Show when={props.info}>
+      {(i) => (
+        <>
+          {i().width ?? "?"}×{i().height ?? "?"} · {(i().bytes / 1024).toFixed(0)} KB
+          <Show when={i().pixels != null && i().too_small != null}>
+            {" "}
+            <span
+              classList={{ badge: true, px: true, below: !!i().too_small }}
+              title={
+                i().too_small
+                  ? t().item.belowFloor(mp(props.floor))
+                  : t().item.aboveFloor(mp(props.floor))
+              }
+            >
+              {mp(i().pixels!)}
+            </span>
+          </Show>
+        </>
+      )}
+    </Show>
+  );
+}
 
 /** The caption column's width, in px. Kept out of `persisted` for the reason
     the dock height is: it moves on every pointermove of a drag, so it is saved
@@ -228,7 +262,7 @@ export function ItemView(props: {
                         </div>
                       </div>
                       <div class="dim hint mono" title={`${it().mask!.path} · ${base()!.path}`}>
-                        {t().item.overlayHint} · {dims(base())}
+                        {t().item.overlayHint} · <Dims info={base()} floor={it().min_pixels} />
                         <Show when={zoom() > 1}> · {zoom().toFixed(1)}×</Show>
                       </div>
                     </Show>
@@ -255,7 +289,7 @@ export function ItemView(props: {
                           />
                         </div>
                         <div class="dim hint mono" title={img().path}>
-                          {dims(img())}
+                          <Dims info={img()} floor={it().min_pixels} />
                           <Show when={zoom() > 1}> · {zoom().toFixed(1)}×</Show>
                         </div>
                       </>

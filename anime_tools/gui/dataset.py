@@ -40,6 +40,7 @@ from anime_tools.grouping.groups import MANIFEST_VERSION
 from anime_tools.gui.settings import load_settings
 from anime_tools.masking._masks import mask_name
 from anime_tools.path_filter import filter_paths_by_glob
+from anime_tools.stages.resize import DEFAULT_MIN_PIXELS, below_min_pixels
 
 SETTINGS_KEY = "dataset"
 DEFAULT_ROOTS = WS.DEFAULT_ROOTS
@@ -501,7 +502,17 @@ def load_groups(report_root: str) -> dict[str, Any]:
     return out
 
 
-def _image_info(p: Path | None) -> dict[str, Any] | None:
+def _image_info(p: Path | None, *, min_pixels: int = 0) -> dict[str, Any] | None:
+    """One image file as the panel gets it: where it is, how big, how many pixels.
+
+    ``min_pixels`` is the resize floor this image is measured against, and only
+    the *source* image is measured at all -- the resized copy and the mask are
+    outputs of that decision, so asking it of them would answer a question
+    nobody posed. ``too_small`` is the whole reason the count is here: an image
+    under the floor never reaches ``workspace/resized/``, and every stage walks
+    that tree, so a run over it sees zero images and writes nothing. That reads
+    as a broken stage unless the panel says so where the size is shown.
+    """
     if p is None or not p.is_file():
         return None
     info: dict[str, Any] = {"path": rel_to_home(p), "bytes": p.stat().st_size}
@@ -514,6 +525,16 @@ def _image_info(p: Path | None) -> dict[str, Any] | None:
         # A corrupt file still belongs in the tree; the keys stay so the shape
         # never varies.
         info["width"] = info["height"] = None
+    size = (info["width"], info["height"])
+    info["pixels"] = size[0] * size[1] if None not in size else None
+    # ``None`` is not "fine", it is *unmeasured*: no floor was applied here, or
+    # the header would not read. The panel shows no chip for it, which is the
+    # honest answer -- a green one would claim an image passed a test nobody ran.
+    info["too_small"] = (
+        below_min_pixels(size, min_pixels)
+        if min_pixels > 0 and None not in size
+        else None
+    )
     return info
 
 
@@ -603,7 +624,16 @@ def caption_versions(roots: Roots, rel: Path) -> list[dict[str, Any]]:
     return out
 
 
-def item_detail(roots: Roots, rel_str: str) -> dict[str, Any]:
+def item_detail(
+    roots: Roots, rel_str: str, *, min_pixels: int = DEFAULT_MIN_PIXELS
+) -> dict[str, Any]:
+    """One image and everything hanging off it, for the item panel.
+
+    ``min_pixels`` is the resize preflight's floor (the Settings *Preprocess*
+    block), threaded in rather than read here because it is a setting and this
+    module is a reader of trees. It rides along as well as being applied, so the
+    panel can say *what* the floor was and not merely that one was missed.
+    """
     rel = _rel_key(rel_str)
     src_image = roots.src / rel
     if not src_image.is_file():
@@ -614,7 +644,8 @@ def item_detail(roots: Roots, rel_str: str) -> dict[str, Any]:
         "dir": "" if parent == "." else parent,
         "name": src_image.name,
         "stem": rel.stem,
-        "image": _image_info(src_image),
+        "min_pixels": int(min_pixels),
+        "image": _image_info(src_image, min_pixels=min_pixels),
         "resized": _image_info(_sibling_image(roots.dst / rel.parent, rel.stem)),
         "mask": _image_info(mask_path(roots, rel)),
         "versions": caption_versions(roots, rel),

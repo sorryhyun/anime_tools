@@ -428,8 +428,16 @@ and the mask lands off the subject. Two things follow and are pinned by tests: t
 cache needs its `(size, mtime_ns)` stamp, because `resize` rewrites the tree under a key that does
 not move; and `resize`'s `min_pixels` skip is no longer just "left out of training" but "invisible
 to the whole pipeline", so `ResizeStats.too_small` names each dropped file the way `failures` does
-instead of counting it.  autotag/position/correction stages write the **derived** caption under
-`workspace/resized/`; the hand-written master under `image_dataset/` is only read as fallback
+instead of counting it — and the GUI says it at the other end too, because from the panel a skipped
+image is a stage that ran over nothing and wrote nothing, which is indistinguishable from a bug:
+`/api/dataset/item` measures the **source** image (only it — the resized copy and the mask are
+outputs of that very decision) against `server.preprocess_min_pixels`, the floor the preflight will
+actually run at, and answers `pixels` plus a tri-state `too_small` whose `null` means *unmeasured*
+rather than fine, so the size line's pixel-count chip is `--warn` below the floor, plain above it,
+and absent when no floor applied. `resize.below_min_pixels` is the one spelling of the predicate,
+shared by the stage and the panel.
+autotag/position/correction stages write the **derived** caption under `workspace/resized/`;
+the hand-written master under `image_dataset/` is only read as fallback
 (autotag `missing` is the exception that creates masters — until Phase 2 moves that to the
 `workspace/master/` overlay). `python -m anime_tools.workspace.migrate` moves a pre-workspace tree
 over; it warns about, and never rewrites, a root explicitly pinned to the old path in ⚙ Settings.

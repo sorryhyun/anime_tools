@@ -117,7 +117,12 @@ export function SettingsDialog(props: {
       () => props.open,
       (open) => {
         if (!open) return;
-        setPre(reconcile(structuredClone(props.preprocessValues)));
+        // `unwrap` first: this arrives as a slice of `config.settings`, which is
+        // a store, and a store is a Proxy -- `structuredClone` refuses one with
+        // a DataCloneError and takes the whole dialog down with it. Invisible
+        // while the preprocess block was absent (the `?? {}` handed over a plain
+        // literal), and a thrown open the moment anyone saved a knob in it.
+        setPre(reconcile(structuredClone(unwrap(props.preprocessValues))));
         setTab(props.initialTab ?? "general");
       },
     ),

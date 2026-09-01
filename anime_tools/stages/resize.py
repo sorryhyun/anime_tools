@@ -37,6 +37,19 @@ CAPTION_EXTENSIONS = (".txt", ".caption")
 DEFAULT_MIN_PIXELS = 500_000
 """0.5MP. Below this an image cannot fill a 1024 tier without visible upscale."""
 
+
+def below_min_pixels(size: tuple[int, int], min_pixels: int) -> bool:
+    """Would this image be skipped for being too small? ``min_pixels`` 0 = never.
+
+    The floor is on the *source* pixels, and a skip here is not "left out of
+    training" but invisible to the whole pipeline: nothing lands in the resized
+    tree, which every other stage walks. That is why the GUI asks the same
+    question of an image it is showing, and why the answer is written once here
+    rather than spelled a second time over there.
+    """
+    return min_pixels > 0 and size[0] * size[1] < min_pixels
+
+
 DEFAULT_CROP_ANCHOR = "center"
 CROP_ANCHORS: dict[str, tuple[float, float]] = {
     "top_left": (0.0, 0.0),
@@ -452,7 +465,7 @@ def run_resize_images(
             stats.failed += 1
             stats.failures.append(f"{image_path}: {error}")
             continue
-        if min_pixels > 0 and raw[0] * raw[1] < min_pixels:
+        if below_min_pixels(raw, min_pixels):
             stats.skipped_small += 1
             stats.too_small.append(f"{image_path}: {raw[0]}x{raw[1]}")
             continue

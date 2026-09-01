@@ -185,6 +185,52 @@ def test_item_detail_matches_a_re_encoded_resized_image(client):
     assert v0["parsed"]["flat_tags"] == ["1boy", "solo", "night"]
 
 
+def test_item_detail_flags_an_image_under_the_resize_floor(client):
+    """The panel says why a stage over this image would do nothing at all.
+
+    Below ``min_pixels`` the resize preflight skips the image, so it never lands
+    in ``workspace/resized`` -- the tree every stage walks. A run then reports
+    zero images and writes nothing, which reads as a broken stage unless the
+    size line says the size is the reason.
+    """
+    from anime_tools.stages.resize import DEFAULT_MIN_PIXELS
+
+    c, _ = client
+    it = c.get("/api/dataset/item", params={"rel": "a.png"}).json()
+    assert it["min_pixels"] == DEFAULT_MIN_PIXELS
+    assert it["image"]["pixels"] == 64 and it["image"]["too_small"] is True
+    # Only the source is measured against the floor: the mask and the resized
+    # copy are *outputs* of that decision, so a verdict on them answers nothing.
+    assert it["mask"]["too_small"] is None
+
+
+def test_no_resize_floor_means_no_verdict(client, home):
+    """``min_pixels`` 0 turns the floor off, and then there is nothing to say --
+    ``None``, not ``False``: the panel must not claim an image passed a test
+    nobody ran."""
+    from anime_tools.gui import dataset as D
+    from anime_tools.gui.server import roots_for
+
+    it = D.item_detail(roots_for({}), "a.png", min_pixels=0)
+    assert it["image"]["pixels"] == 64 and it["image"]["too_small"] is None
+
+
+def test_the_resize_floor_comes_from_the_preprocess_settings():
+    """The floor the item route measures against is the one the preflight runs
+    at -- the Settings *Preprocess* block, falling back to the stage's own
+    constant rather than to a second copy of the number."""
+    from anime_tools.gui.server import preprocess_min_pixels
+    from anime_tools.gui.stages import PREPROCESS_SETTINGS_KEY
+    from anime_tools.stages.resize import DEFAULT_MIN_PIXELS
+
+    key = PREPROCESS_SETTINGS_KEY
+    assert preprocess_min_pixels({}) == DEFAULT_MIN_PIXELS
+    # An emptied field means "the CLI's own default", as everywhere else.
+    assert preprocess_min_pixels({key: {"min_pixels": ""}}) == DEFAULT_MIN_PIXELS
+    assert preprocess_min_pixels({key: {"min_pixels": "4096"}}) == 4096
+    assert preprocess_min_pixels({key: {"min_pixels": 0}}) == 0
+
+
 def test_item_detail_rejects_unknown_and_escaping_paths(client):
     c, _ = client
     assert c.get("/api/dataset/item", params={"rel": "ghost.png"}).status_code == 404

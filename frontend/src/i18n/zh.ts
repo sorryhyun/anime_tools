@@ -85,6 +85,11 @@ const zh: Dict = {
     noOverlay: "这张图没有可叠加的内容",
     noView: (view) => `这张图没有${view}`,
     readOnly: "只读",
+    /** {0} 是下限值，例如 "0.50 MP"。显示在像素数标签上。 */
+    aboveFloor: (floor: string) => `高于 ${floor} 的缩放下限`,
+    /** {0} 是下限值。这是在该图片上跑阶段却毫无动静的原因。 */
+    belowFloor: (floor: string) =>
+      `低于 ${floor} 的缩放下限 — 该图片不会被缩放，因此遍历 workspace/resized 的各个阶段根本看不到它。请在 ⚙ 设置 › Preprocess 中调低下限。`,
     zoomHint: "⌘/Ctrl+滚轮放大 · 拖动平移 · 双击恢复",
   },
   caption: {
