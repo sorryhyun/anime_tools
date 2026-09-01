@@ -10,12 +10,17 @@ import { browsePath, PathPicker } from "./PathPicker";
     forms can disagree about them. So is `--device`, which the stage
     auto-detects. And so are the two the run bar owns -- `--apply` and
     `--from_report`: a stale path left in a form field would quietly turn the
-    next Run into a replay of an old one. */
+    next Run into a replay of an old one.
+
+    An `overridable` field is the one bound kind that stays: Export publishes
+    outside the workspace and where it publishes is a per-run choice, so its
+    `default` arrives already resolved from Settings and typing over it wins for
+    that run. */
 export function grouped(fields: Field[]): [string, Field[]][] {
   const m = new Map<string, Field[]>();
   for (const f of fields) {
     if (f.dest === "apply" || f.dest === REPLAY_FIELD) continue;
-    if (f.root || f.setting || f.report || f.mask || f.auto) continue;
+    if ((f.root || f.setting || f.report || f.mask || f.auto) && !f.overridable) continue;
     const g = m.get(f.group) ?? [];
     g.push(f);
     m.set(f.group, g);

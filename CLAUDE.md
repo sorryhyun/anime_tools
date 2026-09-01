@@ -241,6 +241,15 @@ helper.
   (`--path_pattern`, `--tagger_dir`, `--checkpoint`, `--prompt_embed`) to the Settings *stage
   defaults* — both are hidden from the form and filled by `build_argv(roots=…, settings=…,
   report_root=…)`, which ignores the form's own copy entirely, so they are set once in Settings.
+  `PANEL_FIELDS` is the one exception, and only Export is in it: it is the one stage that writes
+  outside the workspace, so *where* it publishes (`--out`) and *which* caption index it publishes
+  (`--index`) are a per-run choice rather than a fact about the dataset. Those two stay bound and
+  stay **on the form**: `/api/stages` is the only settings-dependent thing about the cached schema
+  dump, because `resolved_schema` writes the Settings value into an overridable field's `default`
+  (so the panel opens on what a Run would use, and Reset comes back to Settings) and `build_argv`
+  lets a typed value win for that run — a blank one falls back, and it is the one bound dest
+  `form_values` keeps. That is also why a bound field declares `path`/`path_kind` from its binding
+  rather than from its flag's name: hidden, it never had to.
   The `…` beside a path field that *is* shown opens the **host's own chooser** (`nativepick.py`:
   zenity/kdialog, `osascript` or a PowerShell dialog, run as a subprocess by `POST /api/pick` so a
   dialog left open holds no more than one thread) — the panel and the dataset are on one machine,

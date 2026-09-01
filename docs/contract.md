@@ -24,8 +24,9 @@ nothing in the trainer reads it, and its layout
 (`anime_tools/workspace/__init__.py`) is not part of this contract.
 
 Export is `python -m anime_tools.stages.cli.export_workspace` (dry-run by
-default, `--apply` to publish, `--undo <report>` to take it back) and the GUI's
-**Export** stage. It always copies, skipping anything already identical at the
+default, `--apply` to publish; taking one back is `revert_export` over that
+run's report, which is what the GUI's **Undo** calls) and the GUI's **Export**
+stage. It always copies, skipping anything already identical at the
 destination, so re-exporting an unchanged dataset is a walk and a stat apiece.
 `python -m anime_tools.workspace.migrate` moves a pre-workspace tree into
 `workspace/` in the first place.

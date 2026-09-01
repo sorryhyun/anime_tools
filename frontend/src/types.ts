@@ -38,6 +38,11 @@ export interface Field {
   mask: string | string[] | null;
   /** Auto-detected by the stage (`--device`): never shown, never sent. */
   auto: boolean;
+  /** Bound like the four above, but shown anyway (`stages.PANEL_FIELDS`):
+      Export's destinations are a per-run choice, so the field opens on the
+      Settings value the server resolved into `default` and what is typed over
+      it wins for that run. Blank falls back to Settings. */
+  overridable: boolean;
 }
 
 /** The argparse dest a replay-capable stage exposes. Like `--apply` it is

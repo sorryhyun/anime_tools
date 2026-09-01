@@ -318,8 +318,27 @@ def create_app(
 
     @app.get("/api/stages")
     def list_stages() -> list[dict[str, Any]]:
+        """Every stage's form schema, in registry order.
+
+        The dump is collected once and cached on the source tree, so the only
+        thing settings-dependent about it is the default of a field the *panel*
+        may override (``S.PANEL_FIELDS``): those open on what Settings says a
+        Run would use, which is why the settings are read here at all.
+        """
         schemas = store.get()
-        return [schemas[s.id] for s in S.STAGES if s.id in schemas]
+        settings = load_settings()
+        roots = roots_for(settings)
+        return [
+            S.resolved_schema(
+                schemas[s.id],
+                roots=root_paths(roots),
+                settings=stage_defaults(settings),
+                report_root=report_root(settings, roots),
+                mask_root=mask_root(settings, roots),
+            )
+            for s in S.STAGES
+            if s.id in schemas
+        ]
 
     @app.get("/api/settings")
     def get_settings() -> dict[str, Any]:

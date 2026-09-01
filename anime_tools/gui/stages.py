@@ -115,6 +115,24 @@ REPORT_INPUTS: dict[str, str] = {
     "export": "index",
 }
 
+PANEL_FIELDS: dict[str, frozenset[str]] = {
+    # stage id → bound dests this stage's own *panel* may override.
+    #
+    # A bound field is normally hidden and filled from ⚙ Settings, because a
+    # root means the same thing to every stage that names it. Export is the one
+    # stage those two sentences pull apart: it is the only thing that writes
+    # outside the workspace, so *where* it publishes (``out``) and *which*
+    # caption index it publishes (``index`` — one file under the report root,
+    # not a tree the sidebar joins) are per-run choices — a scratch export, a
+    # second trainer tree, the index an older run left — rather than facts about
+    # the dataset. So those two stay bound, and stay on the form: each opens on the
+    # Settings-derived value (:func:`resolved_schema`, so the panel shows what a
+    # Run would actually use, not the CLI default), and typing over it wins for
+    # that run only. Everything Export *reads* stays hidden and bound like any
+    # other stage's roots — one workspace, named once.
+    "export": frozenset({"out", "index"}),
+}
+
 SCOPE_FIELD = "path_pattern"
 """The :data:`SETTING_FIELDS` key the GUI narrows to run a stage on one image."""
 
@@ -387,6 +405,11 @@ class Field:
     generators' trees in one flag."""
     auto: bool = False
     """In :data:`AUTO_FIELDS`: never shown, never sent, always auto-detected."""
+    overridable: bool = False
+    """In :data:`PANEL_FIELDS`: bound like any other, but *shown*, and a value
+    the form sends wins for that run. Its :attr:`default` is the bound value
+    once the schema has been through :func:`resolved_schema`, so the form opens
+    on what a Run would use and "reset" comes back to Settings."""
     gate: str | None = None
     """The dest of the boolean this field hangs off — a *drawer* (see
     :data:`GATE_ATTR`). The gate itself carries its own dest here, which is how
@@ -505,6 +528,20 @@ def schema(stage: Stage) -> dict[str, Any]:
             f.report = report_subpath(f.default)
         if f.dest == MASK_FIELDS.get(stage.id) and f.default is not None:
             f.mask = mask_subpath(f.default)
+        f.overridable = f.dest in PANEL_FIELDS.get(stage.id, frozenset())
+        if f.root or f.report or f.mask:
+            # A bound field names a path by construction — a dataset root, or
+            # the file/directory this stage keeps under a Settings root — so it
+            # says so rather than waiting for its flag's name to hint at it.
+            # That only shows while it is on a form, which is
+            # :data:`PANEL_FIELDS`, and it is what puts the ``…`` chooser (and
+            # the right one) beside Export's destinations.
+            f.path = True
+            f.path_kind = (
+                "file"
+                if not f.root and PurePosixPath(str(f.default or "")).suffix
+                else "dir"
+            )
     return {
         **base,
         "available": True,
@@ -523,6 +560,68 @@ def _under(root: str, tail: str | list[str]) -> str | list[str]:
     if isinstance(tail, list):
         return [f"{root}/{t}" for t in tail]
     return f"{root}/{tail}"
+
+
+def bound_value(
+    f: Field,
+    *,
+    roots: dict[str, str] | None = None,
+    settings: dict[str, str] | None = None,
+    report_root: str | None = None,
+    mask_root: str | None = None,
+) -> str | list[str] | None:
+    """What Settings says this field is, or ``None`` if it is not bound.
+
+    The one place the four bindings are read, so :func:`build_argv` (which puts
+    the value on the argv) and :func:`resolved_schema` (which shows it on the
+    form) cannot answer differently.
+    """
+    if f.root:
+        return (roots or {}).get(f.root) or None
+    if f.setting:
+        return (settings or {}).get(f.setting) or None
+    if f.report:
+        return f"{report_root}/{f.report}" if report_root else None
+    if f.mask:
+        return _under(mask_root, f.mask) if mask_root else None
+    return None
+
+
+def resolved_schema(
+    sc: dict[str, Any],
+    *,
+    roots: dict[str, str] | None = None,
+    settings: dict[str, str] | None = None,
+    report_root: str | None = None,
+    mask_root: str | None = None,
+) -> dict[str, Any]:
+    """``sc`` with every :attr:`Field.overridable` default replaced by what
+    Settings currently says (:func:`bound_value`).
+
+    The schema dump itself knows nothing about a settings file — it is collected
+    once, in a child interpreter, and cached on the source tree — so the one
+    kind of field whose bound value the *form* has to show is filled in here,
+    per request. Every other bound field is hidden, so its default is never
+    read; a copy is returned, leaving the cached dump alone.
+    """
+    fields = sc.get("fields") or []
+    if not any(f.get("overridable") for f in fields):
+        return sc
+    out = []
+    for fd in fields:
+        v = (
+            bound_value(
+                Field(**fd),
+                roots=roots,
+                settings=settings,
+                report_root=report_root,
+                mask_root=mask_root,
+            )
+            if fd.get("overridable")
+            else None
+        )
+        out.append({**fd, "default": v} if v is not None else fd)
+    return {**sc, "fields": out}
 
 
 def build_argv(
@@ -560,6 +659,7 @@ def build_argv(
         f.dest: bool(values.get(f.dest, f.default)) for f in fs if f.gate == f.dest
     }
     for f in fs:
+        bound = bool(f.root or f.setting or f.report or f.mask)
         if f.auto or f.dest in AUTO_FIELDS:
             continue
         if f.gate and f.gate != f.dest and not gate_on.get(f.gate, True):
@@ -568,16 +668,26 @@ def build_argv(
             if apply:
                 argv.append(f.flags[0])
             continue
-        if f.root or f.setting or f.report or f.mask:
+        if bound:
             # Bound fields come from Settings and *only* from Settings: a stale
             # value left in a saved form must never win over the roots or the
-            # pattern the user set, so `values` is not consulted at all.
+            # pattern the user set, so `values` is not consulted at all --
+            # unless the field is one the stage's own panel owns
+            # (:data:`PANEL_FIELDS`), where typing over the Settings value is
+            # the whole point and a blank means "whatever Settings says".
             v = (
-                (roots or {}).get(f.root or "")
-                or (settings or {}).get(f.setting or "")
-                or (f"{report_root}/{f.report}" if report_root and f.report else "")
-                or (_under(mask_root, f.mask) if mask_root and f.mask else "")
+                bound_value(
+                    f,
+                    roots=roots,
+                    settings=settings,
+                    report_root=report_root,
+                    mask_root=mask_root,
+                )
+                or ""
             )
+            if f.overridable:
+                typed = values.get(f.dest)
+                v = typed if str(typed or "").strip() else v
         else:
             v = values.get(f.dest, f.default)
         if f.kind == "bool":
@@ -609,7 +719,17 @@ def build_argv(
             v = int(v)
         elif f.kind == "float":
             v = float(v)
-        if f.default is not None and v == f.default and not f.required:
+        # An overridable field is spelled out even when it equals the default,
+        # because :func:`resolved_schema` may have *made* the Settings value
+        # that default: dropping it as "same as the default" would hand the run
+        # back to the CLI's own, which is a different path. Every other bound
+        # field still drops out at its default, keeping the logged argv short.
+        if (
+            not f.overridable
+            and f.default is not None
+            and v == f.default
+            and not f.required
+        ):
             continue
         if f.flags:
             argv += [f.flags[0], str(v)]
@@ -623,16 +743,21 @@ def form_values(fields: list[dict[str, Any]], values: dict[str, Any]) -> dict[st
 
     The GUI persists the last form per stage; bound and auto-detected dests are
     not the form's to remember. :func:`build_argv` already ignores them — this
-    keeps them from being written down in the first place.
+    keeps them from being written down in the first place. A
+    :data:`PANEL_FIELDS` dest is the exception: it is bound *and* the form's,
+    so it is kept.
     """
     drop = {
         f["dest"]
         for f in fields
-        if f.get("root")
-        or f.get("setting")
-        or f.get("report")
-        or f.get("auto")
-        or f["dest"] in AUTO_FIELDS
+        if not f.get("overridable")
+        and (
+            f.get("root")
+            or f.get("setting")
+            or f.get("report")
+            or f.get("auto")
+            or f["dest"] in AUTO_FIELDS
+        )
     }
     return {k: v for k, v in values.items() if k not in drop}
 

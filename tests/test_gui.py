@@ -224,6 +224,69 @@ def test_a_shut_drawer_sends_none_of_its_knobs():
     assert argv == [*bound, "--use-sam", "--no-use-mit"]
 
 
+def test_export_destinations_are_bound_and_on_the_panel():
+    """Export is the one stage whose bound fields stay on its form.
+
+    Where it publishes is a per-run choice, so ``--out`` / ``--index`` are
+    ``overridable``: still filled from Settings, but shown — and shown as paths
+    with the right chooser, which a bound field never had to say while every one
+    of them was hidden."""
+    _, fs = _stage("export")
+    over = {f["dest"] for f in fs if f["overridable"]}
+    assert over == S.PANEL_FIELDS["export"] == {"out", "index"}
+    by = {f["dest"]: f for f in fs}
+    # Bound as before: the destination to a root, the index to the report root.
+    assert by["out"]["root"] == "out"
+    assert by["index"]["report"] == "captions/caption_index.json"
+    assert (by["out"]["path"], by["out"]["path_kind"]) == (True, "dir")
+    assert (by["index"]["path"], by["index"]["path_kind"]) == (True, "file")
+    # Everything Export *reads* stays bound and hidden, like any other stage.
+    assert not any(f["overridable"] for f in fs if f["dest"] in ("src", "dst", "masks"))
+
+
+def test_an_overridable_field_opens_on_settings_and_yields_to_the_form():
+    """Blank means "whatever Settings says"; a typed value wins for that run.
+
+    The schema dump knows nothing about a settings file, so the Settings value
+    reaches the form as the field's *default*, through ``resolved_schema``.
+    """
+    sc = S.schema(S.BY_ID["export"])
+    roots, reports = {"out": "/data/export"}, "ws/captions"
+    got = S.resolved_schema(sc, roots=roots, report_root=reports)
+    by = {f["dest"]: f for f in got["fields"]}
+    assert by["out"]["default"] == "/data/export"
+    assert by["index"]["default"] == "ws/captions/captions/caption_index.json"
+    # Untouched for every other stage, and the cached dump is left alone.
+    assert S.resolved_schema(S.schema(S.BY_ID["autotag"]), roots=roots) == S.schema(
+        S.BY_ID["autotag"]
+    )
+    raw = {f["dest"]: f["default"] for f in sc["fields"]}
+    assert raw["out"] == "post_image_dataset"
+
+    def _out(fields, values):
+        argv = S.build_argv(fields, values, roots=roots, report_root=reports)
+        return argv[argv.index("--out") + 1]
+
+    # The resolved schema and the raw one put the same argv together: a value
+    # that *is* the resolved default is still spelled out, or the run would fall
+    # back to the CLI's own `post_image_dataset`.
+    assert _out(got["fields"], {}) == _out(sc["fields"], {}) == "/data/export"
+    assert _out(got["fields"], {"out": "/tmp/scratch"}) == "/tmp/scratch"
+    assert _out(got["fields"], {"out": "  "}) == "/data/export"
+    # ...and unlike every other bound dest, it is the form's to remember.
+    assert S.form_values(sc["fields"], {"out": "/tmp/scratch", "src": "stale"}) == {
+        "out": "/tmp/scratch"
+    }
+
+
+def test_export_has_no_undo_flag():
+    """Taking an export back is the GUI's Undo over the run's report
+    (``gui.proposals``), not an argv assembled by hand — it is a second write
+    outside the workspace, and it belongs beside the run it is undoing."""
+    _, fs = _stage("export")
+    assert "undo" not in {f["dest"] for f in fs}
+
+
 def test_a_stale_mask_dir_in_a_saved_form_never_wins():
     """``mask_dir`` moved off the form into ⚙ Settings, so a value left in a
     saved payload is as dead as a stale root: two generators sharing one
@@ -569,6 +632,21 @@ def test_job_runs_streams_and_persists_values(client):
     assert rep["report"] == {"apply": True, "rows": [{"k": 1}]}
     assert c.get("/api/settings").json()["values"]["stub"] == {"n": 3}
     assert c.post("/api/jobs", json={"stage": "nope"}).status_code == 404
+
+
+def test_stage_schemas_carry_the_settings_value_for_a_panel_field(client):
+    """``/api/stages`` is the only settings-dependent thing about the dump: the
+    Export panel's destinations open on what a Run would actually use."""
+    c, _home = client
+    c.put("/api/settings", json={"dataset": {"out": "elsewhere/export"}})
+    export = next(s for s in c.get("/api/stages").json() if s["id"] == "export")
+    by = {f["dest"]: f for f in export["fields"]}
+    assert by["out"]["default"] == "elsewhere/export"
+    assert by["out"]["overridable"] is True
+    # Every other stage's schema is the dump verbatim.
+    autotag = next(s for s in c.get("/api/stages").json() if s["id"] == "autotag")
+    assert autotag == S.schema(S.BY_ID["autotag"])
+    c.put("/api/settings", json={"dataset": {}})
 
 
 def test_job_start_creates_the_report_directory(client):

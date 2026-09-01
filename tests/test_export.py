@@ -233,8 +233,9 @@ def test_revert_of_a_dry_run_has_nothing_to_undo(ws):
 
 
 def test_rows_survive_the_round_trip_through_a_report(ws):
-    """The CLI's `--undo` reads rows back out of JSON, so they have to be the
-    same rows — `before` included, or a restore would write an empty caption."""
+    """The GUI's Undo reads rows back out of the report's JSON, so they have to
+    be the same rows — `before` included, or a restore would write an empty
+    caption."""
     rows, _ = run_export(ws, apply=True)
     report = {"rows": [r.to_dict() for r in rows]}
     again = rows_from_report(json.loads(json.dumps(report)))

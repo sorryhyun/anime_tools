@@ -70,6 +70,19 @@ export function createStages(config: Config) {
         setCurId(shown().find((s) => s.available)?.id ?? "");
     }),
   );
+  // A panel field's default is the Settings value the server resolved into it
+  // (`stages.PANEL_FIELDS`), so a saved root or stage default makes the schemas
+  // stale -- Export's destinations would keep showing the old ones. Deferred:
+  // the first read of each is the resource's own first fetch.
+  createEffect(
+    on(
+      [config.roots, config.stageDefaults],
+      () => {
+        if (!all.error) void refetch();
+      },
+      { defer: true },
+    ),
+  );
   // Cold start: /api/stages answers 503 while the server's background schema
   // dump is still running, and a resource error is otherwise permanent. Poll
   // info until `schemas_ready` flips, then refetch stages out of its error.
