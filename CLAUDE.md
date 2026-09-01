@@ -1,560 +1,296 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this
-repository.
+Guidance for Claude Code when working in this repository.
 
 ## What this is
 
-`anime_tools` is the dataset-curation half split out of the `anima_lora` trainer:
-caption grammar + correction, the Anima Tagger (dbv4), position clauses, multiview audit, PE-Spatial
-grouping, SAM3/MIT masking, PP-OCRv6 text recognition. It is consumed as a git dependency (no PyPI).
-**Dependency direction is one-way: the trainer imports this package; this package never imports the
-trainer** (`library.*`, `networks`, `train`, `gui`, `scripts`, `bench`) — `tests/test_boundary.py`
-greps every module for that, and also asserts `anime_tools.captions.*` + `tagger.dbv4_meta` import
-without pulling `torch`.
+`anime_tools` is the dataset-curation half split out of the `anima_lora` trainer: caption grammar +
+correction, the Anima Tagger (dbv4), position clauses, multiview audit, PE-Spatial grouping,
+SAM3/MIT masking, PP-OCRv6 text recognition, and a web GUI over all of it. It is consumed as a git
+dependency (no PyPI).
 
-`docs/contract.md` is the frozen `anime_tools` ↔ `anima_lora` contract (file formats, grammar,
-seams). Changing any row there is a two-repo change by design — don't edit formats casually.
+**The dependency direction is one-way: the trainer imports this package, never the reverse.**
+No module here may import `library.*`, `networks`, `train`, `gui`, `scripts`, `bench` —
+`tests/test_boundary.py` greps for it. That test also pins that `anime_tools.captions.*`,
+`tagger.dbv4_meta` and `gui.create_app()` work without `torch` in `sys.modules`.
+
+`docs/contract.md` describes the `anime_tools` ↔ `anima_lora` seam (file formats, grammar, shared
+code). Changing a format there means changing both repos, so check before editing one.
 
 ## Commands
 
 ```bash
-uv sync                       # torch/sam3 are plain dependencies (no extras since 0.3); GPU torch comes from PyPI on Linux, use --index https://download.pytorch.org/whl/cpu for CPU
-make install                  # scripts/ensure_bun.sh (bun for the frontend build) + uv sync
-make gui                      # anime-tools-gui dev server, opens the browser (GUI_HOST / GUI_PORT / GUI_ARGS)
-make hooks                    # core.hooksPath -> scripts/hooks (`make install` does this too). pre-commit formats only the
-                              # STAGED files: `ruff check --fix --exit-zero` + `ruff format` on .py, prettier on frontend/,
-                              # `scripts/wrap_md.py` on .md.
-                              # It rewrites and re-stages them in place and NEVER blocks the commit, because all three
-                              # formatters are safe to apply unasked: `ruff format`, prettier and wrap_md are
-                              # semantics-preserving reprints -- layout only, never behaviour -- and idempotent, so
-                              # there is nothing to review and nothing to confirm.
-                              # (`ruff check --fix` does edit code, e.g. dropping unused imports,
-                              # but only ever applies ruff's *safe* fix set; --unsafe-fixes is never passed, and the
-                              # findings it cannot fix are printed, not enforced -- same advisory stance as CI.)
-                              # Its one surprise: re-staging a file that also had unstaged edits puts those in the commit
-                              # too, so the hook names them on the way past. Bypass with `git commit --no-verify`.
-                              # What prettier skips and why is frontend/CLAUDE.md's; CI runs format:check.
-python3 scripts/wrap_md.py **/*.md    # semantic-wrap markdown prose at 100 columns, in place (`--check` to only report).
-                              # Markdown folds a single newline into a space, so a wrap changes nothing a reader or an
-                              # agent sees -- and it is the difference between a diff that says which sentence moved and
-                              # one that says `1 insertion, 1 deletion` over a 9916-character bullet, which is what
-                              # every commit touching this file used to look like. Breaks land on sentence and clause
-                              # boundaries, not at column 100: a greedy fill re-wraps every following line when you edit
-                              # one sentence, and the cascade is back. It only ever SPLITS a line over the cap, never
-                              # joins two, so prose hand-wrapped shorter is left alone and a re-run is a no-op; fenced
-                              # code, tables, headings, quotes and link definitions are skipped entirely (the aligned
-                              # trailing comments in this very block are a fence, which is why they survive), as is a
-                              # line whose overflow is one unbreakable token such as a long URL. Prettier is deliberately
-                              # NOT the tool here -- `proseWrap: always` is that greedy fill, and it renames emphasis
-                              # markers for no gain, which is why frontend/.prettierignore lists `*.md`.
-                              # `tests/test_doc_width.py` is the guard, and it asserts the FIXPOINT (`wrap_text(t) == t`)
-                              # rather than a width, so the exemptions are stated once, in the wrapper.
-uv run pytest -q              # tests/ ; CPU-only unless ANIMA_TEST_GPU=1 (conftest blanks CUDA_VISIBLE_DEVICES)
-uv run pytest -q tests/test_position_captions.py -k "layout"   # single file / test
-uv run pytest -q -n auto      # pytest-xdist is in the dev group, but it is a NET LOSS here (~7s vs ~5s):
-                              # the suite is only ~5s of work and every worker re-pays `import torch`.
-                              # `make test` is serial; override with `make test PYTEST_ARGS=-n4`
-uv run ruff check . && uv run ruff format --check .   # no ruff config in pyproject; rules come from the user-level config.
-                              # CLEAN as of 2026-08-31 -- keep it that way. Four sites carry a `# noqa` with the reason
-                              # written above it and should stay: `_walk.py`'s two optional Pillow-plugin imports (blind
-                              # by design -- a broken native plugin must not take the walker down), `tag_groups.py`'s
-                              # ValueError-not-TypeError (one exception class per config validation, pinned by the tests)
-                              # and the vendored `vision/pe.py` signature (kept diffable against upstream). Everything
-                              # else was fixed rather than silenced; the CLI shebangs are gone, since every CLI is a
-                              # `python -m` module and none was executable anyway.
+uv sync                       # torch/sam3 are plain dependencies (no extras); on CPU add
+                              #   --index https://download.pytorch.org/whl/cpu
+make install                  # bun (frontend bundler) + uv sync + git hooks
+make gui                      # anime-tools-gui dev server (GUI_HOST / GUI_PORT / GUI_ARGS)
+make frontend                 # rebuild the committed anime_tools/gui/static/ bundle; CI fails on drift
+uv run pytest -q              # CPU-only unless ANIMA_TEST_GPU=1
+uv run ruff check . && uv run ruff format --check .   # keep clean; config is user-level, not in pyproject
+python3 scripts/wrap_md.py **/*.md                    # semantic-wrap markdown at 100 cols (--check to report)
 ```
 
-Python >= 3.13. No extras — everything (torch, sam3, timm, fastapi, pyarrow) is a plain dependency.
-`[tool.uv] override-dependencies = ["numpy>=2.0"]` deliberately overrides sam3's stale `numpy<2`
-pin. `onnxruntime` is intentionally not pinned (gpu/cpu wheels conflict; the CTD text-mask gate
-falls back to `cv2.dnn`).
+Python >= 3.13. `[tool.uv] override-dependencies = ["numpy>=2.0"]` overrides sam3's stale `numpy<2`
+pin. `onnxruntime` is intentionally unpinned (gpu/cpu wheels conflict; the CTD text-mask gate falls
+back to `cv2.dnn`).
 
-CLIs are `python -m` modules, e.g. `python -m anime_tools.tagger.cli --mode …`,
-`python -m anime_tools.stages.cli.position_captions`,
-`python -m anime_tools.grouping.cli.build_groups --source-dir …`,
-`python -m anime_tools.masking.cli.generate_masks`.
-The `make caption-autotag` / `make caption-position` / `make preprocess-*` targets mentioned in the
-docs and the `captions` skill live in the **trainer repo**, which wraps these CLIs;
-the Makefile here only has the dev targets (`install` / `gui` / `test` / `frontend*`), which run on
-Windows too — it pins PowerShell as its shell there and calls the `.ps1` twin of each `scripts/`
-helper.
+`make hooks` points `core.hooksPath` at `scripts/hooks`. Pre-commit formats staged files only
+(`ruff check --fix --exit-zero` + `ruff format`, prettier on `frontend/`, `scripts/wrap_md.py` on
+`.md`) and never blocks the commit. It re-stages in place, so a file with unstaged edits gets those
+in the commit too — the hook names them on the way past. Bypass with `--no-verify`.
+
+`scripts/wrap_md.py` only ever *splits* a line over 100 columns, never joins two, and breaks on
+sentence/clause boundaries rather than at the column — a greedy fill re-wraps everything below an
+edited sentence, which is the churn it exists to stop. Fenced code, tables, headings, quotes, link
+definitions and unbreakable tokens (long URLs) are skipped. `tests/test_doc_width.py` asserts the
+fixpoint (`wrap_text(t) == t`), not a width.
+
+CLIs are `python -m` modules: `anime_tools.tagger.cli`, `anime_tools.stages.cli.*`,
+`anime_tools.grouping.cli.*`, `anime_tools.masking.cli.*`, `anime_tools.downloads`. The
+`make caption-*` / `make preprocess-*` targets in the docs live in the **trainer** repo, which wraps
+these CLIs; the Makefile here only has dev targets.
+
+## Where things get written
+
+The tools write `workspace/`; **Export** publishes from there to the trainer's paths.
+`anime_tools/workspace/__init__.py` is the layout (`DEFAULT_ROOTS`, `RESIZED`, `MASKS`, `REPORTS`,
+`GROUPS`, `OUTPUT_ROOTS`, `EXPORT_ROOTS`) and every CLI default is written in terms of it, so the
+CLI and GUI halves can't drift.
+
+`resize` populates `workspace/resized/`, and **every stage that opens an image reads that tree** —
+masking and grouping included, so there is one geometry in the pipeline. An image only in the master
+tree is invisible to the rest, which is why the GUI runs resize as an automatic preflight. Two
+consequences are pinned by tests: the near-twin feature cache needs its `(size, mtime_ns)` stamp
+because resize rewrites files under a key that doesn't move, and `resize`'s `min_pixels` skip means
+"invisible to the pipeline", so it names each dropped file rather than counting it.
+
+Caption stages write the **revised** caption under `workspace/resized/`; the hand-written master
+under `image_dataset/` is a read-only fallback (autotag `missing` is the exception that creates
+masters). Each write pushes the replaced text onto `{stem}.history.txt`, which is what makes a run
+safe without an Apply gate: the old version is a badge in the panel and Undo replays the report
+backwards.
+
+`python -m anime_tools.workspace.migrate` moves a pre-workspace tree over. Any `--apply` that
+touches captions must be followed by the trainer's TE re-encode.
 
 ## Architecture
 
-- **`captions/`** (torch-free): the single caption grammar. A caption is `<flat tag bag>.
-  On the left, …. In the …, ….` — periods delimit clauses, commas delimit tags inside one.
-  **Never `split(",")` a caption**; go through `position_clauses.parse_caption` / `compose_caption`.
-  `shuffle.py` owns the `@no-artist` sentinel and Anima-prefix shuffle;
-  `correction.py` + `taxonomy.py`/`tag_rules.py`/`tag_groups.py` do Danbooru-KB correction and
-  bucket ordering. **`taxonomy.py` is the one tag-*shape* vocabulary** (pure stdlib, no vocab,
-  no model): `normalize_tag` (trim / `_`→` ` / lower / collapse — the key every "does the caption
-  already say this?" comparison uses, including `position_clauses.tag_keys` and
-  `clause_rewrite._cmp_key`, so the two danbooru spellings of a tag can never read as two tags —
-  and `tests/test_tag_taxonomy.py` greps every module under `stages/` for the bare `.lower()` that
-  should be this call, the exemptions stated once in the guard; the two it was written for were
-  live bugs, `autotag`'s `merge` appending a second copy of every underscored tag and the caption
-  mirror's clause re-attach re-asserting the tag it had just moved out),
-  `is_count_tag`/`count_of`/`exact_count` (the one count regex — there is a test asserting the
-  pattern appears nowhere else in the package),
-  `SINGLE_COUNT_NAMES`/`is_solo_names`/`solo_multi_indices` (the `softmax_when_solo` predicate,
-  name-side and index-side), plus the artist-`@` and rating literals.
-  `caption_layout.py` reads counts off the bag through it. **`vocab_io.py` is the one reader of a
-  checkpoint's `vocab.json`** — `load_vocab` / `names_by_category` / `resolved_groups`,
-  used by `index.py`'s copyright heuristic, `clause_vocabulary.py`, `tagger/tagger.py` and
-  `group_router.from_vocab` (which now only moves the revived `ResolvedGroup`s onto a device);
-  `tag_groups.resolved_from_dict` is the inverse of `resolved_to_dict` that makes that revival
-  possible, and `tag_rules.load_rules` is `from_dict` over the parsed YAML rather than its twin.
-  **`_sidecar.py` is the one tab-delimited sidecar format** — `sidecar_header` / `sidecar_path` /
-  `read_rows` / `write_rows` — so the multi-dot-stem rule (`with_name`, not `with_suffix`, or
-  `a.b.png` loses its `.b`) and the hand-edit tolerance (blank, `#` and wrong-arity lines skipped,
-  never raised) are stated once; what is left in the three modules above it is what a record *means*.
-  The one contract they do not all share is the missing file: history and ocr answer `[]`, variants
-  raises, because every caller of the latter has already established the file is there.
-  `variants.py` writes the tab-delimited `.variants.txt` sidecar (`v0` = pristine);
-  `history.py` writes the `.history.txt` one in the same shape — every version a write superseded,
-  `seq ⇥ when ⇥ by ⇥ text`, oldest first and capped at `HISTORY_LIMIT`, which is what a run bar
-  with no Apply gate stands on and what the GUI's `revised@N` badges are read from; a sequence is
-  never renumbered by the trim, so a badge cannot change meaning while you look at it.
-  `ocr_sidecar.py` writes the third, `.ocr.txt` — `seq ⇥ box ⇥ lang ⇥ score ⇥ text`, in reading
-  order — and is the one that is **not a caption**: variants and history both name texts that could
-  be written back into the file above them, which is what a ladder rung's badge offers, while a
-  record here names words that are *in the picture*. That is why it is not a `Rung`, why nothing
-  downstream encodes it, and why it is absent from `docs/contract.md` — curation-private in the
-  same sense as the near-twin feature cache. Empty deletes the file, like history: an image with no
-  text in it has no OCR, and a re-run over re-cropped pixels drops the old claim rather than
-  leaving it standing.
-  `index.py` builds `caption_index.json`; `tag_drop_groups.py` implements `--caption_drop_groups`.
-  Gate/group sets for position clauses are **data** in `captions/data/clause_vocabulary.yaml`
-  (loaded by `clause_vocabulary.py`) — retune there, not in Python.
-- **`tagger/`**: `AnimaTagger` = vocab/thresholds/optional sidecar head over the external
-  `animetimm/*.dbv4-full` caformer (`dbv4_backend.py`). Checkpoint dir = `config.json`,
-  `vocab.json`, `rules.yaml`, `groups.json`, `thresholds.safetensors`,
-  optional `sidecar.safetensors`; GPL backbone weights are fetched at load via `_hf.py` under the
-  user's HF token, never vendored. `tagger/cli/autotag.py` is single-image/stdout only —
-  batch tagging is `stages/autotag.py`. **`data.py::TaggerCheckpoint.from_dir(path, require=…,
-  backend=…)` is the one read of a checkpoint dir** (the three JSON files, the shared "run `--mode
-  build_vocab` first" exit naming every missing one, the dbv4-backend assertion, `idx_to_name`);
-  present-but-unrequired files come back anyway, so a caller that merely *prefers* the manifest just
-  tests for `None`. `feature_cache.py` owns the dbv4 hidden-state cache — `dbv4_cache_path` /
-  `dbv4_cache_stems` / `load_dbv4_cache` (the stem list rides in the safetensors metadata,
-  and a cache built for another manifest is misaligned row-for-row, so every reader checks it) +
-  `multi_hot_from_manifest`; `calibrate.DEFAULT_SWEEP` is the one threshold sweep.
-  **`derive_groups.derive_from_args` + `write_merged_groups` are the one groups-derivation
-  orchestration**, shared by `--mode derive_groups --apply` and `build_vocab --derive_groups`,
-  which used to spell the ten-argument `derive_rows` call and the backup-then-write twice.
-  `derive_from_args` reads the five knobs off the one `main.py` namespace, so they can be renamed
-  in a single place. What stays with each caller is where `solo_sets` comes from (the manifest, or
-  a caption scan) and where the KB comes from (`--tag_cache`, or `find_tag_csv()` with a
-  warn-and-skip that must never raise).
-- **`stages/`**: caption-master stages and their thin CLIs — `resize.py` (mirrors `image_dataset/` →
-  `workspace/resized/` at free-fit bucket geometry; every other stage walks the *resized* tree,
-  so an image that is only in the master is invisible to them — which is why the GUI runs this as an
-  automatic preflight rather than a panel), `autotag.py` (modes `missing`/`merge`/`overwrite`;
-  only `missing` is non-destructive), `position_captions.py` (SAM3 instances → reading order →
-  mask-blanked crops → tagger → v2 rewrite that *moves* bound tags out of the bag;
-  five move rules + four gates, see `docs/position_captions.md`), `captions.py` (mirror master →
-  `workspace/resized/` with correction + variants, re-attaching clauses), `multiview_audit.py`,
-  `ocr.py` (PP-OCRv6 → `{stem}.ocr.txt` + at most a *script tag* in the caption — see the `ocr/`
-  bullet for why the recognized string never enters the caption),
-  and `export_workspace.py` — **the only thing that writes outside the workspace**:
-  six artifact kinds (`image`/`caption`/`variants`/`mask`/`master`/`index`) each decided on their
-  own against the destination (`identical` by byte compare for text, by `(size, mtime_ns)` for
-  pixels — which `shutil.copy2` restores, so a re-export is a walk and a stat apiece),
-  `master` being the one row that publishes back over the *input* tree because that is where the
-  contract says the caption master lives. It always copies (independent bytes),
-  takes no `--from_report` (it loads no model, so there is nothing a replay would save re-deciding),
-  and `revert_export` deletes what an apply created and restores the text
-  it overwrote — a pixel it overwrote reports `not-undoable`, since re-exporting is the way back.
-  Stages are dry-run by default from the **CLI** and write `report.json`; `--apply` writes for real.
-  The GUI always passes it (see the `gui/` bullet's run bar).
-  The thin CLIs share their scaffolding rather than retyping it — `cli/_args.py` (dataset roots,
-  apply/replay, model flags, the progress closure), `cli/_detection.py` (the SAM3 detection group
-  **and** the `detection_options` that reads it back, declared together so they cannot disagree),
-  `cli/_models.py`, `cli/_report.py`, and `replay.run_replay_cli` for the `--from_report` half.
-  Below the CLIs, three modules own what every stage does to a caption *file*:
-  `_caption_io.py` (`read_caption`/`write_caption` — the trailing-newline invariant, which only
-  `audit_multiview` sets, the `{stem}.variants.txt` drop, which every write into the *revised*
-  tree needs, and `history_by`, which pushes the text being replaced onto `{stem}.history.txt`
-  before overwriting it, are arguments here rather than comments in four files), `_walk_captions.py`
-  (`resolve_caption`/`iter_captions` — revised caption first, master as the read-only fallback;
-  the clause rewrite, its flatten twin and the multiview audit share it, while `autotag` and
-  `ab_position_captions` deliberately read the master only and so stay out), and `replay.apply_one`,
-  **the one drift-guarded write**: `no-proposal` → `missing-caption` → `already-applied` → `drifted`
-  → `would-write`/`written`, looped over by `replay_rows` and by the audit's
-  `apply_findings`/`apply_curated`/`revert_curated` (a revert is an apply with the two texts
-  swapped). The shared CLI scaffolding matters because `gui/stages.py` introspects `build_parser()`:
-  a dropped `dest=` or a drifted default silently changes the GUI form,
-  so `tests/test_stage_cli_args.py` pins one spelling per shared flag and that every option field
-  still moves when its flag does.
-- **`grouping/`**: `features.Embedder` protocol (`cls[B,D]` f32 L2-normed + `grid16[B,16,16,D]`
-  f16); default embedder is PE-Spatial-B16-512 from the vendored tower in **`vision/pe.py`**
-  (`load_pe_spatial()`, Hub fetch). Feature cache lives at `$NEAR_TWIN_CACHE` (default
-  `~/.cache/near_twin/`) and is curation-private — per image, keyed by parent-dir hash + stem and
-  stamped with the source's `(size, mtime_ns)` + `FEATURE_CACHE_VER`.
-  The key addresses a *location*, so it does not move when the pixels under it are rewritten:
-  the stamp is what turns a regenerated `workspace/resized/` into a miss instead of a stale hit,
-  and it is the prerequisite that let grouping move onto that tree at all (`_load_feature` —
-  anything wrong with the entry means recompute, never an error). `cli/match_decensored.py`'s is the
-  other shape (one whole-directory `.npz` stamped `(newest mtime, count, version)`) and they are
-  deliberately not unified. `features.IMAGE_EXTS` is `_walk.IMAGE_EXTENSIONS` lowercased,
-  so grouping enumerates the same pool the stages process and the GUI browses.
-  **`features.read_tags` is the one caption read on the grouping side** — through `parse_caption`
-  and keyed by `normalize_tag`, so a clause header is never read as a tag and the underscore
-  spelling of one matches. `match_decensored.has_censor_tag` was the last hand-`split(",")` in the
-  package and now goes through it, which is what makes the captions bullet's rule true repo-wide
-  rather than only of `captions/` and `stages/`.
-  `build_groups --source-dir` defaults to `workspace/resized/`, not the master: grouping embeds the
-  pixels every other stage reads. Output `groups.json` is `MANIFEST_VERSION = 2`.
-- **`masking/`**: SAM3 subject masks, SAM3/UNet++/ComicTextDetector text masks, merge → 8-bit L
-  `{stem}_mask.png` mirroring the source subdir. Two private cores under the CLIs:
-  `_sam3.py` is the **only** place SAM3 is constructed (`load_sam3`/`make_processor`, adopted by
-  `generate_masks`, `generate_masks_mit`, `probe_sam_masks`,
-  `stages/cli/position_captions.build_detect_fn` and
-  `bench/sam3_soft_prompt/common.py`) *and* the one declaration of the two flags that name a
-  catalog file — `add_checkpoint_arg` and `add_prompt_embed_arg`, so every SAM3 stage spells
-  `--checkpoint` / `--prompt_embed` identically and the GUI can bind each to one Settings value
-  (`stages/cli/_detection.py` declares them by calling into here, and `SUBJECT_PROMPT` is the
-  `girl` those two flags hinge on: it is `--prompt`'s default and the phrase `--prompt_embed`
-  stands in for) — *and* the home of `ground_with_soft_prompt`, the drop-in for
-  `set_text_prompt` when the prompt is a learned tensor rather than text (a soft prompt *is* the
-  text encoder's output, so the encode is skipped; saying that reaches past `set_text_prompt`
-  into the grounding call, which is why it is written once) *and* the home of `prompt_list`
-  (`none`/`off` = *no prompts*, the word a blank GUI field cannot say because a blank one comes
-  back as its default) and `detect_union`, the one prompts→binary-mask pass — where the rule that a
-  soft prompt stands in for `SUBJECT_PROMPT` **and no other prompt** is stated, so a stage whose
-  prompts are all textual just passes `None` *and* the only place the `np.bool`
-  alias sam3 needs is installed — as an import side effect, which is why its sam3 imports are
-  deferred into the function and importing it stays torch-free.
-  The subject-mask CLI takes **prompts, not a config**: `--prompts` (masked out) /
-  `--focus-prompts` (keep only, default `girl`, `none` to keep nothing) / `--prompt_embed`, so a
-  bare run isolates the subject with the shipped soft prompt and the stage is runnable from the GUI
-  form — it used to require a `--config` YAML that this repo never shipped.
-  The **text**-mask CLI is two detectors over one walk, each behind its own switch and unioned
-  before the single dilation: `--use-sam` grounds SAM3 on `--sam-prompts` (default
-  `speech bubble`) and `--use-mit` runs the UNet++ segmenter with its `--ctd-gate`. They answer
-  different questions — a balloon is a *shape* SAM3 reads whole (tail and white interior included),
-  a letter is a *stroke* only the segmenter cuts around — so neither subsumes the other and both
-  can be off, which is the one argv the stage refuses (`detectors()`, before a weight is read).
-  `use_mit` defaults on (the stage's historical behaviour); `use_sam` is opt-in, being a second set
-  of weights to load. Each switch is a `gated_group` — an argparse group carrying the dest that
-  turns it on, which is the GUI's **drawer**: the checkbox rides in the fieldset's legend and the
-  knobs under it are folded away while it is off, and `build_argv` drops a shut drawer's values
-  rather than passing flags the stage would ignore. The attribute is spelled in `_masks.GATE_ATTR`
-  and again in `gui/stages.GATE_ATTR` (that module stays free of every stage's dependencies, as it
-  does for `REPLAY_REPORT_NAME`); `tests/test_masking_plan.py` pins the two together.
-  The three mask directories are **one ⚙ Settings value, not three form fields**: each generator's
-  `--mask-dir` is its own tree (`workspace/masks_sam` / `workspace/masks_mit`) and `merge_masks`
-  unions them into the `masks` root, all three hanging off `MASK_SETTING` (`mask_root`) — see the
-  `gui/` bullet. They cannot be one directory — both generators name a mask `{stem}_mask.png` at
-  the same relative path, so a shared one has the second run overwrite the first and leaves the
-  merge one tree to union — which is why `mask_dir` is bound to a root *plus a tail* rather than to
-  a dataset root, and why `add_mask_dir_args` makes `mask_default` a required argument of its
-  caller rather than picking one: the CLI defaults are what the tails are split out of.
-  `tests/test_masking_plan.py` pins that the merge's inputs are the two generators' outputs.
-  `_masks.py` owns the mask layout — the flag blocks (small and
-  contiguous, because the two generators interleave their own flags and the GUI form follows
-  declaration order), `plan_mask_jobs` (walk → mirror the source subdir → skip existing unless
-  `--force` → mkdir), `write_mask`/`write_ignore_mask` (the one home for `detected=1 → alpha=0`),
-  and `mask_name`/`mask_path_for`/`iter_masks` on the read side, which `merge_masks` and
-  `gui/dataset.mask_path` look masks up through — **and `mask_run`, the scaffolding both generators
-  wrap their inner loop in**, which is where the flags declared above are read *back*: the two roots
-  home-anchored, the plan drawn from the walk flags, the I/O pool and the progress bar opened and
-  closed together, and the closing line. An empty plan is a loop that runs zero times saying
-  `No images to process.`, rather than an early return retyped in each stage. `coverage_pct` is the
-  shared half of the progress line — the arithmetic only, denominated in the mask's own size so no
-  caller can transpose a `(w, h)`; each stage keeps its own wording. `_masks.py` deliberately does
-  **not** import `_sam3`, so `autocast` stays a line in each `main`: `gui/dataset.py` imports
-  `mask_name` from here, and the import would drag `_sam3`'s `np.bool` side effect into the GUI.
-- **`comfyui/anima_tagger/`** (not part of the installed package — `packages.find` only includes
-  `anime_tools*`): the Anima Tagger ComfyUI node (`AnimaTaggerLoader` + `AnimaTaggerCaption`,
-  `ANIMA_TAGGER` socket). Imports `anime_tools.tagger.AnimaTagger` from the installed package,
-  vendors nothing; users link/copy the directory into `custom_nodes/`. What it imports is
-  `AnimaTagger` **plus the checkpoint machinery**: `ensure_tagger_checkpoint` and the `dbv4_meta`
-  constants. That preflight is the point — for a dbv4 checkpoint it ends by fetching the gated
-  GPL-3.0 caformer backbone, so the terms/token failure and the multi-GB download happen while the
-  loader node is running rather than mid-predict. The node used to carry a verbatim fork of all of
-  it, which had already drifted into skipping exactly that. What stays local is the ComfyUI shell:
-  the dropdown, the IMAGE→PIL conversion, and a `HOME` that ends at `folder_paths.base_path` where
-  `_env.curation_home()` would end at the CWD.
-  Its `pyproject.toml` is the Comfy-registry manifest (`comfy node publish` runs from that
-  directory). Moved here from the standalone `ComfyUI-Anima-Tagger` repo 2026-08-30.
-- **`gui/`** (torch-free — `test_boundary` runs `create_app()` and asserts no `torch` in
-  `sys.modules`): the `anime-tools-gui` web panel. `stages.py` turns each stage CLI's argparse into
-  a form schema (collected in a *child* interpreter, so a stage's imports can never leak into the
-  server; every stage CLI defers torch/smp/albumentations into its functions, so the dump is ~0.2s
-  and torch-free) and back into an argv — fields listed in `ROOT_FIELDS`
-  (`--src`/`--dst`/`--image-dir`/…) are bound to the dataset roots and those in `SETTING_FIELDS`
-  (`--path_pattern`, `--tagger_dir`, `--checkpoint`, `--prompt_embed`) to the Settings *stage
-  defaults* — both are hidden from the form and filled by `build_argv(roots=…, settings=…,
-  report_root=…)`, which ignores the form's own copy entirely, so they are set once in Settings.
-  `PANEL_FIELDS` is the one exception, and only Export is in it: it is the one stage that writes
-  outside the workspace, so *where* it publishes (`--out`) and *which* caption index it publishes
-  (`--index`) are a per-run choice rather than a fact about the dataset. Those two stay bound and
-  stay **on the form**: `/api/stages` is the only settings-dependent thing about the cached schema
-  dump, because `resolved_schema` writes the Settings value into an overridable field's `default`
-  (so the panel opens on what a Run would use, and Reset comes back to Settings) and `build_argv`
-  lets a typed value win for that run — a blank one falls back, and it is the one bound dest
-  `form_values` keeps. That is also why a bound field declares `path`/`path_kind` from its binding
-  rather than from its flag's name: hidden, it never had to.
-  The `…` beside a path field that *is* shown opens the **host's own chooser** (`nativepick.py`:
-  zenity/kdialog, `osascript` or a PowerShell dialog, run as a subprocess by `POST /api/pick` so a
-  dialog left open holds no more than one thread) — the panel and the dataset are on one machine,
-  and the desktop's chooser already knows where things are. `Field.path_kind` (derived beside `path`
-  from the flag's name, so the browser still re-types nothing) says which of the two opens;
-  the answer comes back relative to the curation home when it is under it, absolute when it is not.
-  The in-page `/api/ls` browser stays as the **fallback** for the two hosts that can have no dialog
-  — headless, or a browser on another machine, which the route refuses because the window would open
-  where nobody can see it — and that is all `available: false` means: a cancel leaves the field
-  alone. It walks up by the `parent` the server names (the client joins names onto a path but never
-  takes one apart) and, for a browser on *this* machine, walks anywhere that machine's file manager
-  could — from anywhere else it stays inside the dataset like every other read.
-  **What the panel may read is `dataset.dataset_bases()`: the curation home plus any root the
-  *saved* settings pin outside it** — `anime_tools/` beside `anima_lora/` makes
-  `../anima_lora/image_dataset` the ordinary `src`, and no home holds both.
-  `reachable()` (was `under_home`) is that check, lexical so a symlinked root keeps the name you
-  gave it; only the Settings **save** resolves `trusted=True`, because it is what *defines* those
-  bases — a query param naming a root is checked like anything else.
-  What it may **create** is narrower and unchanged: `owned()`, under the home only, so a root
-  outside it is a tree you point at, and a typo in one is a missing root the row says is missing
-  rather than a new empty directory out in the filesystem. The report field each stage declares
-  (`--report_dir`, groups' `--out`) is bound the same way but to `REPORT_SETTING` (`report_root`)
-  rather than to a `SETTING_FIELDS` key, because one shared value would have one stage's
-  `--from_report` replay read another's report: `report_subpath` splits each CLI default into
-  `<dataset root>/<the stage's own tail>` and only the root is the setting, so the four reports move
-  together and stay four directories. `REPORT_INPUTS` binds the other direction the same way —
-  Export's `--index` *reads* a file under that root rather than writing one, so it is not a
-  `Stage.report` (that one is what the run bar fetches back and Undo replays) but it still lives
-  under `report_root`.
-  A blank `report_root` means *beside the `dst` root* (`server.report_root`), which is what keeps
-  reports with the tree they describe when the dataset moves off the literal `workspace/` every CLI
-  defaults to. Both are one helper — `_root_beside` — with a different key and a different
-  sibling, so a third root of this kind is one more wrapper and the stop-at-the-home rule is stated
-  once. `MASK_SETTING` (`mask_root`) is the second root of exactly that shape and for
-  exactly that reason: the two mask generators spell `--mask-dir` identically, so one shared value
-  would have them write `{stem}_mask.png` over each other and leave `merge_masks` one tree to union
-  instead of two. `mask_subpath` splits each CLI default the same way `report_subpath` does — and
-  returns a *list* for the merge, whose one flag names both generators' tails, so `MASK_FIELDS`
-  binds the reading stage alongside the writing ones the way `REPORT_INPUTS` does. A blank
-  `mask_root` means *beside the `masks` root*, the merged tree those intermediates feed.
-  `BASIC_FIELDS` is the last of the per-stage dest maps and the only one that is
-  purely about *reading* a form: it names the handful of knobs a run changes its
-  mind about, and every other field of that stage comes back `advanced` — an
-  ordinary field the browser folds onto its own group's bottom edge, behind an
-  `advanced (n)` that sits on the border the way the legend sits on the top one.
-  A stage with no row has no advanced fields at all, which is why `autotag` (two
-  knobs) is absent and `position` (35) is not. Three fields can never be folded,
-  whatever the row says, and the server settles that rather than the browser: a
-  drawer's own gate (the checkbox the rest of its group hangs off), a required
-  field, and one already hidden because Settings fills it.
-  `AUTO_FIELDS` (`--device`) is neither shown nor sent — every stage CLI defaults it to
-  `None` and resolves it in the child through `_device.resolve_device` (at the *model-load* site,
-  so the torch-free `--from_report` replay path stays torch-free).
-  A stage that takes a `--path_pattern` is `scoped`: `POST /api/jobs` with a `rel` narrows that
-  pattern to the one image (`dataset.item_pattern` → `<dir>/<stem>.*`), which is what the run bar's
-  **Run** sends, while **Run batch** sends none and gets the Settings pattern. **A Run writes** —
-  it always passes `--apply`, and there is no Apply button in front of it, because the caption
-  ladder is what that gate was standing in for: the text a run replaces becomes a version badge
-  beside the caption (`revised@2`), so *what did that do to my caption?* is answered after the write
-  and on the caption, rather than in a dialog you had to agree to first. The report the run leaves
-  is still read back, as the record of what it **did**: `proposals.py` keys its before/after rows by
-  *dataset rel* (`/api/jobs/{id}/proposals` for the index the sidebar dots, `/proposal?rel=` for the
-  one caption on screen, both parsed server-side) so the caption panel shows the diff under the
-  editor. **Undo** reads that same report's before-text back (`POST /api/jobs/{id}/undo`, skipping
-  any caption edited since, deleting one the run created) and is the same button as **Cancel**,
-  which it becomes while a job is running; being a write, it leaves its own version behind, so an
-  undo you did not mean is one badge away too. `proposals.py` is `stages/replay.py` seen from the
-  server:
-  `load_report` / `report_rows` / `apply_one` are imported (replay is torch-free by construction),
-  and an Undo is `apply_one` with the two texts swapped. Only the three `ReplaySpec` **instances**
-  in `proposals.SHAPES` are hand-copied — importing a stage CLI would pull torch in —
-  pinned against the originals by object equality in `tests/test_gui_proposals.py`.
-  `server.py`'s settings-derived helpers (`roots_for` / `stage_defaults` / `report_root` /
-  `root_paths` / `make_output_dirs` / `preprocess_steps`) are module-level functions **of** the
-  settings mapping, so one request reads the settings file once and everything it derives agrees;
-  `DatasetError` and `ProposalError` are app-wide 400 handlers, and only the routes that owe a 404
-  say so themselves. `jobs.py` runs one `python -m` subprocess at a time and streams it over SSE;
-  `dataset.py` joins the trees (`src`/`dst`/`masks`, keyed by the same relative path —
-  plus the additive `master` and `out` roots the workspace phase declared) into the sidebar's
-  image→caption tree, reads/writes single captions, and renders thumbnails.
-  **Only `master` and `revised` are writable** — `.variants.txt` and `.history.txt` are generated.
-  The sidebar draws that one listing in **two orderings**: `tree` (the folders) and `groups` (the
-  near-twin components the Groups stage found). `load_groups` reads `<report_root>/<GROUPS_SUBPATH>`
-  — the same `report_subpath` tail `build_groups`' own `--out` gets, pinned to it by
-  `tests/test_gui_dataset.py`, so the view reads the file that stage writes wherever Settings points
-  it — and answers **rels only**: the client joins them onto the rows `/api/dataset` already sent,
-  so a filter, a truncation and the run's pending dots mean the same thing in both modes,
-  and whatever no component claims falls into an `ungrouped` bucket rather than off the tree.
-  A missing manifest is not an error (the Groups stage may never have run); an unparseable one is
-  a 400. An image's captions are a **ladder**, not a set of unrelated files —
-  `dataset.CAPTION_LADDER`, a `Rung` per caption (the hand-written `master`, the `history` of what
-  the revised caption used to say, the `revised` one the stages write, the generated `variants`
-  sidecar), declared once and travelling to the browser
-  **twice**: as the `captions` flag map on each `/api/dataset` row (the strip of dots, filled on
-  disk, hollow not, each the button that opens that version) and as `caption_versions`' ordered
-  `versions` on `/api/dataset/item`, where a sidecar rung is *expanded* into one entry per caption
-  it holds (`v0`, `v1`, `r1`… and `revised@1`, `revised@2`…) because those are versions of the
-  caption in the same sense the rungs above them are — each carrying the `rung` it came out of, so
-  a badge's colour and label are read off the ladder rather than guessed from the shape of its id.
-  So the panel is **one editor with a badge per version**, not a card per
-  tree: it opens on what the last run rewrote, else the newest writable caption on disk, and which
-  tree a version lives in is an answer it gives rather than a question it asks before you can type.
-  `CAPTION_KINDS` (what `write_caption` accepts) is the ladder's `editable` rungs, `HISTORY_OF` is
-  the same tuple read for which rungs keep versions (only `revised`: `image_dataset/` is the input
-  tree and nothing of ours lands in it until Phase 2 moves that write into the workspace), and the
-  listing ships the rungs themselves as `ladder`, so `DatasetTree` retypes no names — adding
-  Phase 2's master overlay is one `Rung` plus its label and dot colour.
-  **The browser never splits a caption**:
-  clause structure comes from `parse_caption` via `/api/dataset/item` and `/api/dataset/parse`,
-  which also answer `spans` — every tag's `[start, end)` in the very text they parsed,
-  from `position_clauses.tag_spans` (the one walk of the string; `parse_caption` is written on top
-  of it, so a span and the parse cannot disagree). Those offsets are what let the caption editor
-  stay a real `<textarea>` with a **box around each tag** instead of a strip of chips:
-  the boxes are painted on a backdrop *behind* the field (`BoxedCaption.tsx`), so a caption is still
-  selected, retyped and pasted as the one string it is. A tag is asked about where it sits —
-  double-click one in the field, click a chip in a diff — and `/api/tags/describe` (`gui/tags.py`)
-  answers with that tag's Danbooru KB row, which the frontend's `TagLens` floats under it.
-  `tags.py` is the merge of the two KB files: the base CSV is the taxonomy (kind, category path,
-  post count) and the optional `.en.csv` only replaces the *description*, since the wiki mirror
-  covers about half the table; the parsed copy is cached on both files' mtimes, so a download of
-  either lands without a restart, and a missing KB answers `installed: false` (the panel then points
-  at Settings › Models) rather than erroring. A stage marked `hidden` gets no dock button:
-  `resize` is the only one — `preprocess_for()` puts it in front of every stage bound to the `dst`
-  root — which is every stage that opens an image (autotag/position/correct/audit **and**
-  masks_sam/masks_mit/groups), scoped to the same images, so a per-image Run resizes just that
-  image. Only `masks_merge` (mask trees only, no image) and the two `NO_PREFLIGHT` names sit outside
-  it. A job is therefore a *sequence* of `Step`s sharing one slot, one log and one SSE stream
-  (`jobs.py`); a failing step stops the chain. Its knobs have no form to live on, so they are the
-  Settings dialog's **Preprocess** block, saved under `PREPROCESS_SETTINGS_KEY`.
-  The panel's own chrome is translated (`frontend/src/i18n/`, switched from the ☰ menu),
-  but everything the server owns (stage titles, argparse labels and help, the model catalog) stays
-  as it arrives, which is the same rule that keeps flags from being re-typed in the browser.
-  Frontend source is `frontend/` (Solid + TS, bundled by `bun` into the committed
-  `gui/static/` — `index.html` with script and CSS inlined, and the 1.7 MB woff2 *beside* it rather
-  than base64'd into it, served by the one `/assets/{name}` route; inlined it was 92% of the file
-  and git re-stored all of it for every one-line CSS edit; `make frontend`, CI fails on drift over
-  the whole directory) and **`frontend/CLAUDE.md` is that
-  half's own guide** — how the browser half is put together (the composables, the conventions,
-  the build) is written there and only there, and this bullet is the server side of the same seam.
-  ⚙ Settings is **three dialogs, not one tabbed one** (`SETTINGS_PANES`): the
-  dataset roots, the advanced stage defaults + the preflight block, and the
-  models. Each entry point opens exactly one — the ☰ menu lists them, the
-  header's token warning and a stage bar's missing-weights hint both open
-  `models` — and there is no strip of tabs from one to another, so a route into
-  Settings cannot put the roots you edit once a year one click from the download
-  buttons you press weekly. A pane is therefore also the unit of what OK writes:
-  only the open one is mounted, its inputs are the only refs there are to read,
-  and `SettingsOut` carries `null` for the other two.
-  The models dialog lists `downloads.catalog()` with a Download button per model (`/api/models`,
-  `/api/models/download`); how many rows are still missing is the badge on the ☰ menu's own
-  Models row, which is where the count went when the tab it used to hang off stopped existing.
-- **`design/`** (not part of the installed package; no runtime role): the GUI's **design system**,
-  as a published Claude Design canvas — six artboards built to read at a glance:
-  a hero board (`Main`, *At a glance*) holding an annotated miniature of the whole GUI plus the
-  colour-as-disk-state legend, then Foundations (depth ladder / text ramp / meaning hues, type,
-  geometry), Controls, the dataset-tree rows, the caption card and its diff, and the
-  Run → versions → Undo loop. **Every value on the boards is lifted from `frontend/src/styles.css`
-  and the
-  components beside it — a number that drifts from the source is a bug, not a design choice**,
-  so a change to the GUI's CSS is a change to the board that documents it.
-  `boards/<Name>.html` holds one artboard's body (inline `style=` attributes, because that is what
-  the canvas editor's properties panel binds to); `canvas.json` is the source of truth for which
-  boards exist and where they sit; `python3 design/build.py` wraps each into a Design Component with
-  `helmet.html` and the inlined Pretendard Latin subset (the artboard iframe has no network egress,
-  so the face rides inside the file — which is why the *canvas* still base64s a font the shipped GUI
-  no longer does: there is no server beside an artboard to fetch it from).
-  Seeding and publishing need the `/design` skill's payload, which lives outside the repo:
-  `design/README.md` has the loop and the artifact URL. Edits made in the published editor do
-  **not** flow back — port them into `boards/`.
-- **`downloads.py`** (torch-free): the model catalog — one `Asset` row per checkpoint the stages
-  need (tagger + gated dbv4 backbone, SAM3, PE-Spatial, MIT text net, ComicTextDetector,
-  SAM3 subject soft prompt, Danbooru tag KB) with its repo, required files, destination (a path
-  under the home, or the HF hub cache) and an offline `installed` probe. Rows are HF-hub fetches
-  except the soft prompt, the CTD net and the tag KB, whose `url` (a GitHub raw path or release
-  asset) sends them down `Asset._fetch_http` instead — the soft prompt is a trained artifact of the
-  trainer repo, not a re-hostable checkpoint (`stages/instance_detection.py` imports
-  `DEFAULT_SUBJECT_PROMPT_EMBED` from here), `comictextdetector.pt.onnx` is published only as a
-  manga-image-translator release asset, and the KB is a CSV, not weights.
-  Two rows are the **Danbooru tag KB**: `danbooru_tags` fetches
-  `danbooru_tags_classified.csv` (~114k tags with category, post count and a Korean wiki blurb —
-  what `captions/correction.py` types every tag against, and what the GUI's click-a-tag panel reads)
-  into `models_dir()`, and `danbooru_tags_en` *builds* `danbooru_tags_classified.en.csv` beside it
-  from the Danbooru wiki mirror (`isek-ai/danbooru-wiki-2024`, one parquet read with pyarrow by
-  `tagger/cli/build_english_tag_csv.py`). That second row is the only one with `derived` + `build`:
-  its identity is the file it **writes**, so the probe asks for that and the 45 MB parquet it joins
-  stays in the hub cache — a built row's downloads are inputs, only its product lands in `dest`.
-  It is the **single source of truth for weight locations**: `vision/pe.py`,
-  `masking/cli/generate_masks_mit.py` and `masking/_sam3`'s `add_checkpoint_arg` /
-  `add_prompt_embed_arg` (the SAM3 CLIs' `--checkpoint` / `--prompt_embed` defaults) import theirs
-  from here, so a download and a load can't disagree. `default_ctd_onnx_path()` is that taken to
-  its end: the MIT stage's text-block gate has **no flag at all**, it reads the row's path, because
-  a `--ctd-onnx` you could point elsewhere is a Download button that writes where the loader does
-  not look.
-  `python -m anime_tools.downloads [ID…]` fetches (no ID = everything missing); the GUI's ⚙ Settings
-  → Models rows run exactly that through `JobManager`.
-- **`buckets.py`** (torch-free, numpy-free): the free-fit token-band geometry (`EDGE_TOKEN_BANDS` /
-  `choose_edge` / `freefit_band_for_edge` / `freefit_bucket`), a tiny copy of the free-fit half of
-  the trainer's `library/datasets/buckets.py`. `stages/resize.py` must land an image on the *same*
-  `(W, H)` as the trainer's `make preprocess-resize` — otherwise each side re-encodes the other's
-  PNGs instead of skipping them — so `tests/test_resize_images.py` pins the numbers and the
-  `anima_resize_*` PNG text keys that the trainer's skip check reads.
-- **Shared infra** (tiny copies, not trainer imports): `_env.py` (`curation_home()` =
-  `ANIME_TOOLS_HOME` → `ANIMA_HOME` → CWD; `models_dir()` = `ANIME_TOOLS_MODELS` → `<home>/models`;
-  `workspace_dir()` = `ANIME_TOOLS_WORKSPACE` → `<home>/workspace`; `resolve_path` anchors bare
-  relatives), `_walk.py` (**the one image walk** — `IMAGE_EXTENSIONS` / `glob_images_pathlib` /
-  `walk_images`; grouping and the tagger's caption-sibling lookup derive their extension lists from
-  it rather than retyping them), `_json.py` (`read_json` / `write_json` — UTF-8 both ways,
-  `ensure_ascii=False`, `indent=2`, parent dir created, no trailing newline; a bare `open(path)`
-  reads in the platform codepage, which is not UTF-8 on Windows),
-  `_device.py::add_device_arg`/`resolve_device`
-  (the `--device` flag and the one `cuda if available` probe that answers it, with the
-  broken-driver fallback — beside each other because they are one fact: `device` is an
-  `AUTO_FIELDS` dest the GUI neither shows nor sends, which only holds while every CLI defaults it
-  to `None`. Eleven parsers used to spell the flag by hand, in four help texts and two with none;
-  `tests/test_stage_cli_args.py` now pins that exactly one declaration exists. `bench/` is out of
-  scope and defaults to `cuda` on purpose), `_hf.py` (tests patch this path),
-  `path_filter.py::filter_paths_by_glob` (the one `path_pattern` implementation).
+### `captions/` (torch-free)
 
-Where things are written matters, and since 2026-08-31 there is **one answer**:
-the tools write `workspace/`, and Export publishes to the trainer's paths.
-`anime_tools/workspace/__init__.py` is the layout — `DEFAULT_ROOTS` (the five roots, imported by
-`gui/dataset.py` rather than restated), `RESIZED`/`MASKS`/`REPORTS`/`GROUPS` (what every CLI's
-`--dst` / `--report_dir` / `--out` default is written in terms of, so the CLI half and the GUI half
-cannot drift), `OUTPUT_ROOTS` (what a stage run may create) and its mirror `EXPORT_ROOTS` (`out`,
-which only Export creates — an export tree that exists should mean an export happened).
-Inside that: `resize` populates `workspace/resized/` and **everything downstream reads it —
-it is the one decode substrate** (the GUI runs it for you; from the CLI it is a step you run
-yourself). Every stage that opens an image walks it, masking and grouping included, so there is one
-geometry in the pipeline rather than two: a mask cut from master pixels is NEAREST-rescaled onto the
-resized latent by the trainer's loader (`docs/contract.md` §mask), which is only sound while
-free-fit's crop stays sub-patch — for a ratio-clamped image (`max_ratio` 4.0) it is not,
-and the mask lands off the subject. Two things follow and are pinned by tests: the near-twin feature
-cache needs its `(size, mtime_ns)` stamp, because `resize` rewrites the tree under a key that does
-not move; and `resize`'s `min_pixels` skip is no longer just "left out of training" but "invisible
-to the whole pipeline", so `ResizeStats.too_small` names each dropped file the way `failures` does
-instead of counting it — and the GUI says it at the other end too, because from the panel a skipped
-image is a stage that ran over nothing and wrote nothing, which is indistinguishable from a bug:
-`/api/dataset/item` measures the **source** image (only it — the resized copy and the mask are
-outputs of that very decision) against `server.preprocess_min_pixels`, the floor the preflight will
-actually run at, and answers `pixels` plus a tri-state `too_small` whose `null` means *unmeasured*
-rather than fine, so the size line's pixel-count chip is `--warn` below the floor, plain above it,
-and absent when no floor applied. `resize.below_min_pixels` is the one spelling of the predicate,
-shared by the stage and the panel.
-autotag/position/correction stages write the **revised** caption under `workspace/resized/`;
-the hand-written master under `image_dataset/` is only read as fallback
-(autotag `missing` is the exception that creates masters — until a `workspace/master/` overlay
-takes that write). Each such write pushes the text it replaces onto that caption's
-`{stem}.history.txt` (`captions/history.py`, capped at `HISTORY_LIMIT`), which is what makes a run
-safe to write without an Apply gate in front of it: the previous version is a badge in the panel,
-and Undo replays the run's report backwards. `python -m anime_tools.workspace.migrate` moves a
-pre-workspace tree
-over; it warns about, and never rewrites, a root explicitly pinned to the old path in ⚙ Settings.
-**Export** (`stages/export_workspace.py`) is the one way out: it is a normal stage —
-dry-run by default, `--path_pattern`-scoped, in the dock — but `NO_PREFLIGHT` keeps the resize
-preflight off it (it publishes the resized tree rather than consuming it, so an empty one is a
-refusal, not a hidden step) and its report is not a caption diff, so `gui/proposals.undo` branches
-to `revert_export` at the top rather than the route growing a second entry point.
-Any `--apply` that touches captions must be followed by the trainer's TE re-encode.
+The single caption grammar: `<flat tag bag>. On the left, …. In the …, ….` — periods delimit
+clauses, commas delimit tags inside one. **Never `split(",")` a caption**; go through
+`position_clauses.parse_caption` / `compose_caption`.
+
+- `taxonomy.py` is the one tag-*shape* vocabulary (pure stdlib): `normalize_tag` is the key every
+  "does the caption already say this?" comparison uses, so two danbooru spellings of a tag can never
+  read as two tags. `tests/test_tag_taxonomy.py` greps `stages/` for the bare `.lower()` that should
+  be this call. Also `is_count_tag`/`count_of`/`exact_count` (the one count regex) and
+  `SINGLE_COUNT_NAMES`/`is_solo_names`/`solo_multi_indices` (the `softmax_when_solo` predicate).
+- `vocab_io.py` is the one reader of a checkpoint's `vocab.json`.
+- `_sidecar.py` is the one tab-delimited sidecar format (`sidecar_header` / `sidecar_path` /
+  `read_rows` / `write_rows`) — the multi-dot-stem rule (`with_name`, not `with_suffix`) and
+  hand-edit tolerance (blank, `#`, wrong-arity lines skipped) live there. Three sidecars sit on it:
+  `variants.py` (`.variants.txt`, `v0` = pristine), `history.py` (`.history.txt`, capped at
+  `HISTORY_LIMIT`, sequences never renumbered), `ocr_sidecar.py` (`.ocr.txt`). OCR is not a caption
+  — it names words *in the picture*, so nothing downstream encodes it and it's absent from the
+  contract.
+- `correction.py` + `taxonomy.py` / `tag_rules.py` / `tag_groups.py` do Danbooru-KB correction and
+  bucket ordering; `index.py` builds `caption_index.json`; `shuffle.py` owns the `@no-artist`
+  sentinel and Anima-prefix shuffle.
+- Gate/group sets for position clauses are **data** in `captions/data/clause_vocabulary.yaml` —
+  retune there, not in Python.
+
+### `tagger/`
+
+`AnimaTagger` = vocab/thresholds/optional sidecar head over the external `animetimm/*.dbv4-full`
+caformer. Checkpoint dir = `config.json`, `vocab.json`, `rules.yaml`, `groups.json`,
+`thresholds.safetensors`, optional `sidecar.safetensors`; GPL backbone weights are fetched at load
+via `_hf.py` under the user's HF token, never vendored.
+
+`data.py::TaggerCheckpoint.from_dir` is the one read of a checkpoint dir. `feature_cache.py` owns
+the dbv4 hidden-state cache (a cache built for another manifest is misaligned row-for-row, so every
+reader checks the stem list in the safetensors metadata). `derive_groups.derive_from_args` +
+`write_merged_groups` are the one groups-derivation path, shared by `--mode derive_groups --apply`
+and `build_vocab --derive_groups`. `tagger/cli/autotag.py` is single-image/stdout only — batch
+tagging is `stages/autotag.py`.
+
+### `stages/`
+
+Caption-master stages and their thin CLIs: `resize.py`, `autotag.py` (modes
+`missing`/`merge`/`overwrite`; only `missing` is non-destructive), `position_captions.py` (SAM3
+instances → reading order → mask-blanked crops → tagger → clause rewrite; see
+`docs/position_captions.md`), `captions.py`, `multiview_audit.py`, `ocr.py`,
+`export_workspace.py`.
+
+**Export is the only thing that writes outside the workspace.** Six artifact kinds
+(`image`/`caption`/`variants`/`mask`/`master`/`index`), each decided against the destination
+(`identical` by byte compare for text, `(size, mtime_ns)` for pixels). It always copies, takes no
+`--from_report`, and `revert_export` restores text it overwrote — an overwritten pixel reports
+`not-undoable`.
+
+Stages are dry-run by default **from the CLI** and write `report.json`; `--apply` writes for real.
+The GUI always passes it.
+
+Shared scaffolding, because `gui/stages.py` introspects `build_parser()` — a dropped `dest=` or a
+drifted default silently changes the GUI form, and `tests/test_stage_cli_args.py` pins one spelling
+per shared flag:
+
+- `cli/_args.py` (dataset roots, apply/replay, model flags, progress), `cli/_detection.py` (the SAM3
+  detection group *and* the reader that consumes it, declared together), `cli/_models.py`,
+  `cli/_report.py`, `replay.run_replay_cli`.
+- `_caption_io.py` — `read_caption`/`write_caption`, the trailing-newline invariant, the
+  `.variants.txt` drop, and `history_by`.
+- `_walk_captions.py` — `resolve_caption`/`iter_captions`: revised caption first, master as
+  read-only fallback. `autotag` and `ab_position_captions` deliberately read the master only.
+- `replay.apply_one` — the one drift-guarded write: `no-proposal` → `missing-caption` →
+  `already-applied` → `drifted` → `would-write`/`written`.
+
+### `grouping/`
+
+`features.Embedder` protocol (`cls[B,D]` f32 L2-normed + `grid16[B,16,16,D]` f16); default embedder
+is PE-Spatial-B16-512 from the vendored tower in `vision/pe.py`. Feature cache at
+`$NEAR_TWIN_CACHE` (default `~/.cache/near_twin/`) is curation-private, keyed by parent-dir hash +
+stem and stamped with `(size, mtime_ns)` + `FEATURE_CACHE_VER`; anything wrong with an entry means
+recompute, never an error. `cli/match_decensored.py` has a different cache shape and they are
+deliberately not unified.
+
+`features.read_tags` is the one caption read on this side (through `parse_caption`, keyed by
+`normalize_tag`). `build_groups --source-dir` defaults to `workspace/resized/`. Output
+`groups.json` is `MANIFEST_VERSION = 2`.
+
+### `masking/`
+
+SAM3 subject masks, SAM3/UNet++/ComicTextDetector text masks, merged into 8-bit L
+`{stem}_mask.png` mirroring the source subdir. Two private cores:
+
+- `_sam3.py` is the **only** place SAM3 is constructed, the one declaration of `--checkpoint` /
+  `--prompt_embed`, and the home of `ground_with_soft_prompt` (a soft prompt *is* the text encoder's
+  output, so the encode is skipped), `prompt_list` (`none`/`off` = no prompts) and `detect_union`.
+  It installs the `np.bool` alias sam3 needs as an import side effect, with sam3 imports deferred
+  into functions so importing it stays torch-free.
+- `_masks.py` owns the mask layout — flag blocks (small and contiguous; the GUI form follows
+  declaration order), `plan_mask_jobs`, `write_mask`/`write_ignore_mask` (`detected=1 → alpha=0`),
+  the read side (`mask_name`/`mask_path_for`/`iter_masks`), and `mask_run`, the scaffolding both
+  generators wrap their inner loop in. It deliberately does **not** import `_sam3`, because
+  `gui/dataset.py` imports `mask_name` and would otherwise drag in that side effect.
+
+The subject-mask CLI takes prompts, not a config: `--prompts` (masked out) / `--focus-prompts` (keep
+only, default `girl`) / `--prompt_embed`. The text-mask CLI is two detectors over one walk, each
+behind its own switch, unioned before the single dilation: `--use-sam` grounds SAM3 on
+`--sam-prompts`, `--use-mit` runs the UNet++ segmenter. They answer different questions (a balloon
+is a shape, a letter is a stroke), neither subsumes the other, and both being off is the one argv
+the stage refuses.
+
+Each switch is a `gated_group` — an argparse group carrying the dest that turns it on, which the GUI
+renders as a **drawer**. The attribute is spelled in `_masks.GATE_ATTR` and again in
+`gui/stages.GATE_ATTR` (that module stays free of stage dependencies); `tests/test_masking_plan.py`
+pins them together.
+
+The three mask directories are **one ⚙ Settings value, not three form fields**: both generators name
+a mask `{stem}_mask.png` at the same relative path, so a shared directory would have the second run
+overwrite the first and leave the merge one tree to union. Each `--mask-dir` is its own tree, all
+three hanging off `MASK_SETTING` (`mask_root`).
+
+### `gui/` (torch-free)
+
+The `anime-tools-gui` web panel. `frontend/CLAUDE.md` owns the browser half; this section is the
+server side of the same seam.
+
+**`stages.py` turns each stage CLI's argparse into a form schema and back into an argv.** The dump
+runs in a *child* interpreter, so a stage's imports never leak into the server. Field binding:
+
+| Map | Bound to | Shown? |
+|---|---|---|
+| `ROOT_FIELDS` (`--src`, `--dst`, `--image-dir`, …) | dataset roots | hidden |
+| `SETTING_FIELDS` (`--path_pattern`, `--tagger_dir`, `--checkpoint`, `--prompt_embed`) | Settings stage defaults | hidden |
+| `REPORT_SETTING` / `REPORT_INPUTS` (`--report_dir`, groups' `--out`, Export's `--index`) | `report_root` + the stage's own tail | hidden |
+| `MASK_FIELDS` | `mask_root` + tail | hidden |
+| `PANEL_FIELDS` (Export's `--out`, `--index`) | as above, but a per-run choice | **shown** |
+| `AUTO_FIELDS` (`--device`) | resolved in the child by `_device.resolve_device` | neither shown nor sent |
+| `BASIC_FIELDS` | — | shown; everything else in that stage folds under `advanced (n)` |
+
+Report and mask roots are split per-stage (`report_subpath` / `mask_subpath`) so one stage's
+`--from_report` can't read another's report, and so the two generators don't overwrite each other. A
+blank root means *beside* the relevant dataset root (`_root_beside`). A drawer's gate, a required
+field and an already-hidden field are never folded — the server settles that, not the browser.
+
+Other server pieces:
+
+- `dataset.py` joins the trees (`src`/`dst`/`masks`/`master`/`out`) into the sidebar's image→caption
+  tree by relative path, reads/writes single captions, renders thumbnails. Only `master` and
+  `revised` are writable. An image's captions are a **ladder** (`CAPTION_LADDER`, one `Rung` per
+  caption kind), shipped to the browser as per-row dot flags and as `caption_versions`' ordered
+  list,
+  where a sidecar rung expands into one entry per caption it holds (`v0`, `v1`, `revised@2`…). The
+  sidebar draws one listing in two orderings, `tree` and `groups`; `load_groups` reads
+  `<report_root>/<GROUPS_SUBPATH>` and answers **rels only**, so filters and pending dots mean the
+  same thing in both modes. A missing groups manifest is not an error; an unparseable one is a 400.
+- **The browser never splits a caption**: clause structure and every tag's `[start, end)` come from
+  `/api/dataset/item` and `/api/dataset/parse` via `position_clauses.tag_spans`, which is what lets
+  the editor stay a real `<textarea>` with boxes painted behind it.
+- `proposals.py` is `stages/replay.py` seen from the server: `load_report` / `report_rows` /
+  `apply_one` are imported; an Undo is `apply_one` with the two texts swapped, and Export branches
+  to
+  `revert_export` at the top. Only the three `ReplaySpec` instances in `proposals.SHAPES` are
+  hand-copied (importing a stage CLI would pull torch in), pinned by object equality in
+  `tests/test_gui_proposals.py`.
+- `jobs.py` runs one `python -m` subprocess at a time over SSE. A job is a *sequence* of `Step`s
+  sharing one slot, log and stream, because `preprocess_for()` puts `resize` in front of every stage
+  bound to the `dst` root; a failing step stops the chain. `masks_merge` and the `NO_PREFLIGHT`
+  names
+  sit outside it.
+- `tags.py` merges the two Danbooru KB files (base CSV = taxonomy; optional `.en.csv` replaces only
+  the description) for `/api/tags/describe`, cached on both mtimes; a missing KB answers
+  `installed: false` rather than erroring.
+- `nativepick.py` opens the *host's* file chooser (zenity/kdialog/osascript/PowerShell) as a
+  subprocess for `POST /api/pick`. `/api/ls` is the fallback for headless or remote browsers.
+- What the panel may **read** is `dataset.dataset_bases()`: the curation home plus any root the
+  *saved* settings pin outside it (`reachable()`, lexical). What it may **create** is narrower —
+  `owned()`, under the home only — so a typo in an external root is a missing root, not a new empty
+  directory.
+- ⚙ Settings is **three dialogs, not one tabbed one** (`SETTINGS_PANES`): roots, stage defaults +
+  preflight, models. Only the open pane is mounted, so `SettingsOut` carries `null` for the other
+  two.
+- The panel's own chrome is translated (`frontend/src/i18n/`); everything the server owns (stage
+  titles, argparse labels and help, the model catalog) ships as it arrives.
+
+### `downloads.py` (torch-free)
+
+The model catalog — one `Asset` per checkpoint (tagger + gated dbv4 backbone, SAM3, PE-Spatial, MIT
+text net, ComicTextDetector, SAM3 subject soft prompt, Danbooru tag KB) with repo, files,
+destination and an offline `installed` probe. It is the **single source of truth for weight
+locations**: `vision/pe.py`, `masking/cli/generate_masks_mit.py` and `_sam3`'s flag defaults import
+theirs from here, and `default_ctd_onnx_path()` has no flag at all — a path you could point
+elsewhere is a Download button that writes where the loader doesn't look.
+
+Most rows are HF-hub fetches; the soft prompt, the CTD net and the tag KB go through
+`Asset._fetch_http`. `danbooru_tags_en` is the one `derived` row: it *builds* its CSV from the
+Danbooru wiki mirror, so its probe asks for the file it writes and the 45 MB parquet stays in the
+hub
+cache. `python -m anime_tools.downloads [ID…]` fetches; the GUI's Models pane runs exactly that.
+
+### Smaller pieces
+
+- **`buckets.py`** (torch-free, numpy-free): the free-fit token-band geometry, a copy of the
+  trainer's. `stages/resize.py` must land an image on the *same* `(W, H)` as the trainer's
+  `make preprocess-resize` or each side re-encodes the other's PNGs; `tests/test_resize_images.py`
+  pins the numbers and the `anima_resize_*` PNG text keys.
+- **Shared infra** (tiny copies, not trainer imports): `_env.py` (`curation_home()` =
+  `ANIME_TOOLS_HOME` → `ANIMA_HOME` → CWD; `models_dir()`; `workspace_dir()`; `resolve_path`),
+  `_walk.py` (the one image walk — `IMAGE_EXTENSIONS` / `glob_images_pathlib` / `walk_images`),
+  `_json.py` (UTF-8 both ways, `ensure_ascii=False`, `indent=2` — a bare `open()` reads in the
+  platform codepage, which isn't UTF-8 on Windows), `_device.py` (`add_device_arg` + the one
+  `cuda if available` probe; exactly one declaration exists, pinned by
+  `tests/test_stage_cli_args.py`),
+  `_hf.py` (tests patch this path), `path_filter.py` (the one `path_pattern` implementation).
+- **`comfyui/anima_tagger/`** (not installed — `packages.find` only includes `anime_tools*`): the
+  ComfyUI node. Imports `AnimaTagger` plus `ensure_tagger_checkpoint` and the `dbv4_meta` constants
+  from the installed package and vendors nothing, so the gated-backbone fetch happens in the loader
+  node rather than mid-predict. What stays local is the ComfyUI shell.
+- **`design/`** (not installed, no runtime role): the GUI's design system as a published Claude
+  Design canvas. Every value on the boards is lifted from `frontend/src/styles.css` — a number that
+  drifts from the source is a bug. `boards/<Name>.html` + `canvas.json`, built by `design/build.py`;
+  see `design/README.md`. Edits made in the published editor do **not** flow back.
 
 ## Working on captions
 
