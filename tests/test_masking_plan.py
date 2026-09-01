@@ -144,3 +144,98 @@ def test_the_merge_reads_exactly_what_the_two_generators_write():
     assert default(merge_masks, "mask_dirs") == [sam, mit]
     assert default(merge_masks, "output_dir") == WS.MASKS
     assert WS.MASKS not in (sam, mit), "a generator writes the merged root"
+
+
+# ---- the drawer seam ---------------------------------------------------
+
+
+def test_a_gated_group_names_its_switch_where_the_gui_reads_it():
+    """``gated_group`` and ``gui.stages.fields_of`` are one fact in two files.
+
+    The GUI draws a *drawer* — a group folded away behind one checkbox — off an
+    attribute stamped on the argparse group, and ``gui/stages.py`` spells that
+    attribute rather than importing it, so it stays free of every stage's
+    dependencies. Two spellings would mean a group that renders as a flat
+    fieldset with a stray boolean in it, which is not an error anywhere.
+    """
+    import argparse
+
+    from anime_tools.gui import stages as S
+    from anime_tools.masking._masks import GATE_ATTR, gated_group
+
+    assert S.GATE_ATTR == GATE_ATTR
+
+    parser = argparse.ArgumentParser()
+    group = gated_group(parser, "T", gate="use_thing", default=False, help="h")
+    assert getattr(group, GATE_ATTR) == "use_thing"
+    group.add_argument("--knob", type=int, default=1)
+
+    fields = {f.dest: f for f in S.fields_of(parser)}
+    # The gate names itself, which is how the form tells the switch from what it
+    # switches; everything else in the group names the gate.
+    assert fields["use_thing"].gate == "use_thing"
+    assert fields["knob"].gate == "use_thing"
+    assert fields["use_thing"].negate == "--no-use-thing"
+
+
+def test_the_text_stage_runs_two_detectors_behind_two_switches():
+    """The panel's shape *is* the CLI's: one drawer per detector, and the knobs
+    that only mean something while it runs live inside it. A flag that drifted
+    out of its group would show up on the form whether or not its detector was
+    on."""
+    from anime_tools.masking.cli import generate_masks_mit as mit
+
+    parser = mit.build_parser()
+    gated = {
+        a.dest
+        for g in parser._action_groups
+        for a in g._group_actions
+        if getattr(g, "gui_gate", None)
+    }
+    by_gate: dict[str, set[str]] = {}
+    for g in parser._action_groups:
+        gate = getattr(g, "gui_gate", None)
+        if gate:
+            by_gate[gate] = {a.dest for a in g._group_actions}
+
+    assert by_gate["use_sam"] == {
+        "use_sam",
+        "sam_prompts",
+        "sam_threshold",
+        "checkpoint",
+    }
+    assert by_gate["use_mit"] == {"use_mit", "model_path", "text_threshold", "ctd_gate"}
+    # The walk, the dilation and the output tree belong to neither detector.
+    assert not gated & {"image_dir", "mask_dir", "dilate", "recursive", "path_pattern"}
+
+    args = parser.parse_args(["--image-dir", "i"])
+    # The segmenter is the stage's historical behaviour and stays on; SAM3 is a
+    # second set of weights, so it is opt-in — with the one prompt it is for
+    # already typed into the drawer.
+    assert (args.use_mit, args.ctd_gate) == (True, True)
+    assert args.use_sam is False
+    assert mit.prompt_list(args.sam_prompts) == ("speech bubble",)
+
+
+def test_the_text_stage_refuses_a_run_with_no_detector():
+    """Both drawers shut is a run that loads nothing, walks the tree and writes
+    nothing — the one shape of this form that means "do not run me"."""
+    from anime_tools.masking.cli import generate_masks_mit as mit
+
+    parser = mit.build_parser()
+
+    def check(argv):
+        return mit.detectors(parser, parser.parse_args(["--image-dir", "i", *argv]))
+
+    assert check([]) == (True, ())
+    assert check(["--use-sam"]) == (True, ("speech bubble",))
+    assert check(["--no-use-mit", "--use-sam", "--sam-prompts", "text,sign"]) == (
+        False,
+        ("text", "sign"),
+    )
+    with pytest.raises(SystemExit):
+        check(["--no-use-mit"])
+    # `none` is how a prompt field says "none of them" — the GUI would send a
+    # blank one back as its default.
+    with pytest.raises(SystemExit):
+        check(["--use-sam", "--sam-prompts", "none"])

@@ -26,8 +26,14 @@ REPLAY_REPORT_NAME = "apply_report.json"
 """What a replay writes, mirroring ``anime_tools.stages.replay``. Duplicated
 rather than imported to keep this module torch-free."""
 
+GATE_ATTR = "gui_gate"
+"""The attribute an argument group carries when it is a *drawer*: the dest of
+the boolean that switches the whole group on. Set by
+``anime_tools.masking._masks.gated_group``, and spelled here rather than
+imported for the reason :data:`REPLAY_REPORT_NAME` is."""
+
 CACHE_ENV = "ANIME_TOOLS_CACHE"
-CACHE_VERSION = 1
+CACHE_VERSION = 2
 """Bumped when the on-disk schema cache format changes, so old files miss."""
 
 _PATH_HINTS = (
@@ -257,11 +263,16 @@ STAGES: tuple[Stage, ...] = (
     ),
     Stage(
         "masks_mit",
-        "MIT text masks",
+        "Text masks",
         "anime_tools.masking.cli.generate_masks_mit",
         "Masks",
         "masking",
         short="Text",
+        notes=(
+            "Two detectors, each behind its own switch: SAM3 on a prompt "
+            "(balloons) and the UNet++ segmenter (lettering). Their masks are "
+            "unioned."
+        ),
     ),
     Stage(
         "masks_merge",
@@ -376,6 +387,12 @@ class Field:
     generators' trees in one flag."""
     auto: bool = False
     """In :data:`AUTO_FIELDS`: never shown, never sent, always auto-detected."""
+    gate: str | None = None
+    """The dest of the boolean this field hangs off — a *drawer* (see
+    :data:`GATE_ATTR`). The gate itself carries its own dest here, which is how
+    the form tells the checkbox from what it folds away. A shut drawer's fields
+    never reach the argv: the stage would ignore them, and an argv that names a
+    detector the run is not using reads like a bug in the log."""
 
 
 def load_parser(stage: Stage) -> argparse.ArgumentParser:
@@ -403,10 +420,14 @@ def _kind(a: argparse.Action) -> str:
 
 def fields_of(parser: argparse.ArgumentParser) -> list[Field]:
     groups: dict[int, str] = {}
+    gates: dict[int, str] = {}
     for g in parser._action_groups:
         if g.title not in ("positional arguments", "options", "optional arguments"):
+            gate = getattr(g, GATE_ATTR, None)
             for a in g._group_actions:
                 groups[id(a)] = g.title or ""
+                if gate:
+                    gates[id(a)] = gate
     out: list[Field] = []
     for a in parser._actions:
         if isinstance(a, argparse._HelpAction):
@@ -446,6 +467,7 @@ def fields_of(parser: argparse.ArgumentParser) -> list[Field]:
                 group=groups.get(id(a), ""),
                 negate=negate,
                 label=label,
+                gate=gates.get(id(a)),
             )
         )
     return out
@@ -530,9 +552,17 @@ def build_argv(
     """
     argv: list[str] = []
     positional: list[str] = []
-    for fd in fields:
-        f = Field(**fd) if isinstance(fd, dict) else fd
+    fs = [Field(**fd) if isinstance(fd, dict) else fd for fd in fields]
+    # A drawer's own checkbox decides whether the rest of it is even a value:
+    # the stage ignores the knobs of a detector it is not running, so sending
+    # them would put flags on the log that did nothing.
+    gate_on = {
+        f.dest: bool(values.get(f.dest, f.default)) for f in fs if f.gate == f.dest
+    }
+    for f in fs:
         if f.auto or f.dest in AUTO_FIELDS:
+            continue
+        if f.gate and f.gate != f.dest and not gate_on.get(f.gate, True):
             continue
         if f.dest == "apply":
             if apply:

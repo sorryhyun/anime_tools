@@ -61,6 +61,47 @@ def add_mask_dir_args(p: argparse.ArgumentParser, *, mask_default: str) -> None:
     )
 
 
+GATE_ATTR = "gui_gate"
+"""The attribute :func:`gated_group` stamps a group with, naming the dest that
+switches it on. Read back by ``anime_tools.gui.stages.fields_of``, which spells
+the string rather than importing it: that module stays free of every stage's
+dependencies, exactly as it duplicates ``REPLAY_REPORT_NAME``. The pairing is
+pinned by ``tests/test_masking_plan.py``."""
+
+
+def gated_group(
+    p: argparse.ArgumentParser,
+    title: str,
+    *,
+    gate: str,
+    default: bool,
+    help: str,
+) -> argparse._ArgumentGroup:
+    """An argument group behind an on/off flag — a *drawer* in the GUI form.
+
+    Returns the group, with the gate declared as its first argument, so the
+    flags that only matter while it is on are written inside it and the browser
+    can fold them away when it is off. Two detectors in one stage is what this
+    is for: the knobs of the one you are not running are noise on the form, and
+    :func:`anime_tools.gui.stages.build_argv` drops a shut drawer's values from
+    the argv rather than passing flags the stage would ignore.
+
+    ``gate`` is the dest (``use_sam`` → ``--use-sam`` / ``--no-use-sam``), and
+    it is what the drawer's checkbox is: it stays a plain flag, so the CLI is
+    the same shape with or without a browser in front of it.
+    """
+    g = p.add_argument_group(title)
+    g.add_argument(
+        f"--{gate.replace('_', '-')}",
+        dest=gate,
+        action=argparse.BooleanOptionalAction,
+        default=default,
+        help=help,
+    )
+    setattr(g, GATE_ATTR, gate)
+    return g
+
+
 def add_force_arg(p: argparse.ArgumentParser) -> None:
     p.add_argument("--force", action="store_true", help="Regenerate existing masks")
 

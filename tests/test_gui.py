@@ -183,6 +183,46 @@ def test_boolean_optional_action_and_positional_list():
     assert argv == ["--output-dir", "o", "ws/masks_sam", "ws/masks_mit"]
 
 
+def test_a_shut_drawer_sends_none_of_its_knobs():
+    """The text stage is two detectors behind two checkboxes, and the argv says
+    which ran. A knob left in a saved form under a switch that is now off would
+    otherwise ride along as a flag the stage ignores — legible in the log as a
+    detector that was configured and then did nothing."""
+    _, fs = _stage("masks_mit")
+    roots, settings = {"dst": "d"}, {"checkpoint": "sam3.pt"}
+    bound = ["--image-dir", "d", "--mask-dir", "ws/masks_mit"]
+
+    # SAM3 is opt-in, so its prompt and its checkpoint stay off the argv...
+    argv = S.build_argv(
+        fs, {"sam_prompts": "text"}, roots=roots, settings=settings, mask_root="ws"
+    )
+    assert argv == bound
+    # ...and both arrive the moment the drawer opens.
+    argv = S.build_argv(
+        fs,
+        {"use_sam": True, "sam_prompts": "text"},
+        roots=roots,
+        settings=settings,
+        mask_root="ws",
+    )
+    assert argv == [
+        *bound,
+        "--use-sam",
+        "--sam-prompts",
+        "text",
+        "--checkpoint",
+        "sam3.pt",
+    ]
+    # The other switch folds away the gate its own drawer holds.
+    argv = S.build_argv(
+        fs,
+        {"use_mit": False, "ctd_gate": False, "use_sam": True},
+        roots=roots,
+        mask_root="ws",
+    )
+    assert argv == [*bound, "--use-sam", "--no-use-mit"]
+
+
 def test_a_stale_mask_dir_in_a_saved_form_never_wins():
     """``mask_dir`` moved off the form into ⚙ Settings, so a value left in a
     saved payload is as dead as a stale root: two generators sharing one

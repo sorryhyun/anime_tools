@@ -168,25 +168,43 @@ helper.
   so grouping enumerates the same pool the stages process and the GUI browses.
   `build_groups --source-dir` defaults to `workspace/resized/`, not the master: grouping embeds the
   pixels every other stage reads. Output `groups.json` is `MANIFEST_VERSION = 2`.
-- **`masking/`**: SAM3 subject masks, MIT/ComicTextDetector text masks, merge → 8-bit L
+- **`masking/`**: SAM3 subject masks, SAM3/UNet++/ComicTextDetector text masks, merge → 8-bit L
   `{stem}_mask.png` mirroring the source subdir. Two private cores under the CLIs:
   `_sam3.py` is the **only** place SAM3 is constructed (`load_sam3`/`make_processor`, adopted by
-  `generate_masks`, `probe_sam_masks`, `stages/cli/position_captions.build_detect_fn` and
+  `generate_masks`, `generate_masks_mit`, `probe_sam_masks`,
+  `stages/cli/position_captions.build_detect_fn` and
   `bench/sam3_soft_prompt/common.py`) *and* the one declaration of the two flags that name a
-  catalog file — `add_checkpoint_arg` and `add_prompt_embed_arg`, so all three SAM3 stages spell
+  catalog file — `add_checkpoint_arg` and `add_prompt_embed_arg`, so every SAM3 stage spells
   `--checkpoint` / `--prompt_embed` identically and the GUI can bind each to one Settings value
   (`stages/cli/_detection.py` declares them by calling into here, and `SUBJECT_PROMPT` is the
   `girl` those two flags hinge on: it is `--prompt`'s default and the phrase `--prompt_embed`
   stands in for) — *and* the home of `ground_with_soft_prompt`, the drop-in for
   `set_text_prompt` when the prompt is a learned tensor rather than text (a soft prompt *is* the
   text encoder's output, so the encode is skipped; saying that reaches past `set_text_prompt`
-  into the grounding call, which is why it is written once) *and* the only place the `np.bool`
+  into the grounding call, which is why it is written once) *and* the home of `prompt_list`
+  (`none`/`off` = *no prompts*, the word a blank GUI field cannot say because a blank one comes
+  back as its default) and `detect_union`, the one prompts→binary-mask pass — where the rule that a
+  soft prompt stands in for `SUBJECT_PROMPT` **and no other prompt** is stated, so a stage whose
+  prompts are all textual just passes `None` *and* the only place the `np.bool`
   alias sam3 needs is installed — as an import side effect, which is why its sam3 imports are
   deferred into the function and importing it stays torch-free.
   The subject-mask CLI takes **prompts, not a config**: `--prompts` (masked out) /
   `--focus-prompts` (keep only, default `girl`, `none` to keep nothing) / `--prompt_embed`, so a
   bare run isolates the subject with the shipped soft prompt and the stage is runnable from the GUI
   form — it used to require a `--config` YAML that this repo never shipped.
+  The **text**-mask CLI is two detectors over one walk, each behind its own switch and unioned
+  before the single dilation: `--use-sam` grounds SAM3 on `--sam-prompts` (default
+  `speech bubble`) and `--use-mit` runs the UNet++ segmenter with its `--ctd-gate`. They answer
+  different questions — a balloon is a *shape* SAM3 reads whole (tail and white interior included),
+  a letter is a *stroke* only the segmenter cuts around — so neither subsumes the other and both
+  can be off, which is the one argv the stage refuses (`detectors()`, before a weight is read).
+  `use_mit` defaults on (the stage's historical behaviour); `use_sam` is opt-in, being a second set
+  of weights to load. Each switch is a `gated_group` — an argparse group carrying the dest that
+  turns it on, which is the GUI's **drawer**: the checkbox rides in the fieldset's legend and the
+  knobs under it are folded away while it is off, and `build_argv` drops a shut drawer's values
+  rather than passing flags the stage would ignore. The attribute is spelled in `_masks.GATE_ATTR`
+  and again in `gui/stages.GATE_ATTR` (that module stays free of every stage's dependencies, as it
+  does for `REPLAY_REPORT_NAME`); `tests/test_masking_plan.py` pins the two together.
   The three mask directories are **one ⚙ Settings value, not three form fields**: each generator's
   `--mask-dir` is its own tree (`workspace/masks_sam` / `workspace/masks_mit`) and `merge_masks`
   unions them into the `masks` root, all three hanging off `MASK_SETTING` (`mask_root`) — see the

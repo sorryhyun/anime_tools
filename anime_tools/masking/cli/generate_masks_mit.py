@@ -1,9 +1,16 @@
-"""Generate text segmentation masks for training images.
+"""Text masks: SAM3 prompts, a per-stroke UNet++, or both.
 
-Model: https://huggingface.co/a-b-c-x-y-z/Manga-Text-Segmentation-2025
+Two detectors over one walk, each behind its own switch, unioned before the
+dilation and the write — they answer different questions about the same thing.
+``--use-sam`` grounds SAM3 on ``--sam-prompts`` (`speech bubble` by default),
+which is a *shape*: the balloon, its tail and the white inside it, all of it
+off the loss. ``--use-mit`` runs the UNet++ text segmenter
+(https://huggingface.co/a-b-c-x-y-z/Manga-Text-Segmentation-2025), which is a
+*stroke*: the lettering itself, wherever it sits, sfx and bare captions
+included.
 
-By default each mask is gated by comictextdetector's text-BLOCK head (--ctd-gate):
-only UNet++ mask components overlapping a detected text block survive. The UNet++
+The UNet++ half is gated by comictextdetector's text-BLOCK head (--ctd-gate):
+only mask components overlapping a detected text block survive. The UNet++
 alone systematically false-positives on decorative line art — exactly the elements
 a style LoRA should train on — while its real-text recall is solid, so the blk head
 supplies the precision and the UNet++ the stroke-accurate mask. Trade-off: sfx text
@@ -42,11 +49,26 @@ from anime_tools.masking._masks import (
     add_mask_dir_args,
     add_walk_args,
     add_workers_arg,
+    gated_group,
     plan_mask_jobs,
     write_ignore_mask,
 )
 
+# Importing _sam3 also installs the `np.bool` alias sam3 needs before it loads.
+from anime_tools.masking._sam3 import (
+    add_checkpoint_arg,
+    autocast,
+    detect_union,
+    load_sam3,
+    prompt_list,
+)
+
 _ENCODER = "tu-efficientnetv2_rw_m"
+
+DEFAULT_SAM_PROMPTS = "speech bubble"
+"""What ``--use-sam`` means by *text* until told otherwise. A balloon is the one
+text region SAM3 reads better than a stroke segmenter does — it is a closed
+shape, and its interior is as untrainable as the lettering in it."""
 
 
 def _convert_batchnorm_to_groupnorm(module: nn.Module) -> None:
@@ -240,28 +262,77 @@ def _ctd_text_boxes(
     return boxes
 
 
+def _keep_text_blocks(ctd_forward, img: np.ndarray, mask: np.ndarray) -> np.ndarray:
+    """``mask`` minus every component no comictextdetector text block overlaps.
+
+    Component-wise rather than box-wise on purpose: the blk head decides *which*
+    strokes are text, the UNet++ still decides where each of them ends, so a
+    kept letter keeps its own outline instead of the rectangle around it.
+    """
+    boxmask = np.zeros(mask.shape, bool)
+    for x0, y0, x1, y1 in _ctd_text_boxes(ctd_forward, img):
+        boxmask[y0:y1, x0:x1] = True
+    _, lab = cv2.connectedComponents(mask)
+    keep_ids = np.unique(lab[boxmask])
+    return np.isin(lab, keep_ids[keep_ids != 0]).astype(np.uint8)
+
+
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description=__doc__)
+    parser = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
     add_mask_dir_args(parser, mask_default=WS.MASKS_MIT)
-    parser.add_argument(
+
+    sam = gated_group(
+        parser,
+        "SAM3 prompts",
+        gate="use_sam",
+        default=False,
+        help="Ground SAM3 on --sam-prompts and mask what it finds. Off by "
+        "default: it is a second set of weights to load, and it answers a "
+        "different question than the segmenter below — turn it on for "
+        "balloons, which are a shape rather than a stroke",
+    )
+    sam.add_argument(
+        "--sam-prompts",
+        dest="sam_prompts",
+        type=str,
+        default=DEFAULT_SAM_PROMPTS,
+        help=f"Comma-separated SAM3 text prompts for the regions to mask OUT "
+        f"(default `{DEFAULT_SAM_PROMPTS}`; e.g. `speech bubble,sign,"
+        f"watermark`). Same polarity as `generate_masks --prompts`: everything "
+        f"named here is ignored in the loss",
+    )
+    sam.add_argument(
+        "--sam-threshold",
+        dest="sam_threshold",
+        type=float,
+        default=0.5,
+        help="SAM3 confidence floor for a detection (default: 0.5)",
+    )
+    add_checkpoint_arg(sam)
+
+    mit = gated_group(
+        parser,
+        "MIT text segmentation",
+        gate="use_mit",
+        default=True,
+        help="Run the UNet++ text segmenter — the stroke-accurate half, and "
+        "the only one that finds lettering outside a balloon",
+    )
+    mit.add_argument(
         "--model-path",
         type=str,
         default=None,
         help="Path to model.pth (downloads from HuggingFace if not specified)",
     )
-    add_force_arg(parser)
-    add_device_arg(parser)
-    parser.add_argument(
+    mit.add_argument(
         "--text-threshold",
         type=float,
         default=0.8,
-        help="Text segmentation threshold (default: 0.7)",
+        help="Text segmentation threshold (default: %(default)s)",
     )
-    parser.add_argument(
-        "--dilate", type=int, default=3, help="Mask dilation in pixels (default: 5)"
-    )
-    add_workers_arg(parser)
-    parser.add_argument(
+    mit.add_argument(
         "--ctd-gate",
         action=argparse.BooleanOptionalAction,
         default=True,
@@ -273,32 +344,69 @@ def build_parser() -> argparse.ArgumentParser:
             "warns and leaves the masks ungated"
         ),
     )
+
+    add_force_arg(parser)
+    add_device_arg(parser)
+    parser.add_argument(
+        "--dilate",
+        type=int,
+        default=3,
+        help="Mask dilation in pixels, applied once to the union (default: %(default)s)",
+    )
+    add_workers_arg(parser)
     add_walk_args(parser)
     return parser
 
 
+def detectors(parser: argparse.ArgumentParser, args) -> tuple[bool, tuple[str, ...]]:
+    """``(run the segmenter, the SAM3 prompts)`` — or exit saying why not.
+
+    A shut drawer contributes nothing, so both shut is a run that would load no
+    model, walk the whole tree and write nothing. Said here, before the first
+    weight is read, rather than discovered from an empty mask directory.
+    """
+    sam_prompts = prompt_list(args.sam_prompts) if args.use_sam else ()
+    if args.use_sam and not sam_prompts:
+        parser.error("--use-sam with no --sam-prompts: nothing for SAM3 to ground on")
+    if not args.use_mit and not sam_prompts:
+        parser.error("nothing to detect: pass --use-mit and/or --use-sam")
+    return bool(args.use_mit), sam_prompts
+
+
 def main() -> None:
-    args = build_parser().parse_args()
+    parser = build_parser()
+    args = parser.parse_args()
+    use_mit, sam_prompts = detectors(parser, args)
     args.device = resolve_device(args.device)
 
     dilate_kernel = (
         np.ones((args.dilate, args.dilate), dtype=np.uint8) if args.dilate > 0 else None
     )
 
-    print("Loading text segmentation model...")
-    model = _load_model(args.model_path, device=args.device)
-
+    model = None
     ctd = None
-    if args.ctd_gate:
-        ctd_onnx = default_ctd_onnx_path()
-        if ctd_onnx.exists():
-            ctd = _load_ctd(str(ctd_onnx), device=args.device)
-        else:
-            print(
-                f"WARNING: --ctd-gate on but {ctd_onnx} missing — gating "
-                f"disabled (get it with `python -m anime_tools.downloads "
-                f"ctd_onnx`, or pass --no-ctd-gate)"
-            )
+    if use_mit:
+        print("Loading text segmentation model...")
+        model = _load_model(args.model_path, device=args.device)
+        if args.ctd_gate:
+            ctd_onnx = default_ctd_onnx_path()
+            if ctd_onnx.exists():
+                ctd = _load_ctd(str(ctd_onnx), device=args.device)
+            else:
+                print(
+                    f"WARNING: --ctd-gate on but {ctd_onnx} missing — gating "
+                    f"disabled (get it with `python -m anime_tools.downloads "
+                    f"ctd_onnx`, or pass --no-ctd-gate)"
+                )
+
+    sam_model = None
+    processor = None
+    if sam_prompts:
+        print("Loading SAM3 model...")
+        sam_model, processor = load_sam3(
+            resolve_path(args.checkpoint) if args.checkpoint else None, args.device
+        )
+        print(f"SAM3 prompts: {', '.join(sam_prompts)}")
 
     # Home-anchored like the SAM3 generator's — see its note.
     image_dir = resolve_path(args.image_dir)
@@ -319,45 +427,62 @@ def main() -> None:
         return
 
     pool = ThreadPoolExecutor(max_workers=args.workers)
+    amp = autocast(args.device)
 
     pbar = tqdm(total=total, desc="Generating masks")
     for image_path, mask_path in work_items:
         pil_image = Image.open(image_path).convert("RGB")
         img_np = np.array(pil_image)
-
-        mask = _detect_mask(
-            model,
-            img_np,
-            device=args.device,
-            text_threshold=args.text_threshold,
-        )
+        h, w = img_np.shape[:2]
 
         pbar.update(1)
 
-        if mask is None or not mask.any():
-            pbar.set_postfix_str(f"{image_path.name}: skipped")
+        text_mask = np.zeros((h, w), dtype=np.uint8)
+        # Worth distinguishing in the progress line: nothing masked because the
+        # page has no text reads the same as nothing masked because the gate
+        # threw all of it away, and only the second is a knob to reconsider.
+        gated_away = False
+
+        if model is not None:
+            unet = _detect_mask(
+                model,
+                img_np,
+                device=args.device,
+                text_threshold=args.text_threshold,
+            )
+            text_mask = (unet > 127).astype(np.uint8)
+            if ctd is not None and text_mask.any():
+                text_mask = _keep_text_blocks(ctd, img_np, text_mask)
+                gated_away = not text_mask.any()
+
+        if processor is not None:
+            with amp:
+                state = processor.set_image(pil_image)
+                text_mask = np.maximum(
+                    text_mask,
+                    detect_union(
+                        processor,
+                        sam_model,
+                        state,
+                        sam_prompts,
+                        (h, w),
+                        args.sam_threshold,
+                    ),
+                )
+
+        if not text_mask.any():
+            why = " (ctd-gated)" if gated_away else ""
+            pbar.set_postfix_str(f"{image_path.name}: skipped{why}")
             continue
 
-        combined_mask = (mask > 127).astype(np.uint8)
-
-        if ctd is not None and combined_mask.any():
-            boxmask = np.zeros(combined_mask.shape, bool)
-            for x0, y0, x1, y1 in _ctd_text_boxes(ctd, img_np):
-                boxmask[y0:y1, x0:x1] = True
-            _, lab = cv2.connectedComponents(combined_mask)
-            keep_ids = np.unique(lab[boxmask])
-            combined_mask = np.isin(lab, keep_ids[keep_ids != 0]).astype(np.uint8)
-            if not combined_mask.any():  # everything was decorative-line FP
-                pbar.set_postfix_str(f"{image_path.name}: skipped (ctd-gated)")
-                continue
-
+        # One dilation over the union, not one per detector: the two overlap on
+        # a lettered balloon, and dilating twice would grow that seam twice.
         if dilate_kernel is not None:
-            combined_mask = cv2.dilate(combined_mask, dilate_kernel, iterations=1)
+            text_mask = cv2.dilate(text_mask, dilate_kernel, iterations=1)
 
-        write_ignore_mask(mask_path, combined_mask, pool=pool)
+        write_ignore_mask(mask_path, text_mask, pool=pool)
 
-        h, w = img_np.shape[:2]
-        masked_pct = 100 * np.count_nonzero(combined_mask) / (w * h)
+        masked_pct = 100 * np.count_nonzero(text_mask) / (w * h)
         pbar.set_postfix_str(f"{image_path.name}: {masked_pct:.1f}%")
 
     pbar.close()

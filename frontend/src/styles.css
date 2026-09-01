@@ -255,6 +255,11 @@ button.help.warn:hover { border-color:var(--accent) }
 .reuse code { color:var(--fg) }
 fieldset { border:1px solid var(--line); border-radius:6px; margin:0 0 12px; padding:8px 12px }
 legend { color:var(--dim); font-size:12px; padding:0 4px }
+/* A drawer's legend is its switch: the group title with the gate flag's own
+   checkbox in front of it, so the knobs below are visibly folded away by it. */
+legend .gate { display:inline-flex; align-items:center; gap:6px; cursor:pointer }
+legend .gate input { margin:0 }
+legend:has(input:checked) { color:var(--fg) }
 .row { display:grid; grid-template-columns:180px 1fr; gap:8px; align-items:center; padding:3px 0 }
 /* The two-up wrapper for .row groups -- every stage fieldset and the Settings
    preflight block, so a knob sits in the same widget wherever it is typed. */

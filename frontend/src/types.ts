@@ -17,6 +17,11 @@ export interface Field {
   group: string;
   negate: string | null;
   label: string;
+  /** The dest of the boolean this field hangs off, making its group a *drawer*
+      (`use_sam` on the text-mask stage). The gate carries its own dest here, so
+      the form knows which field is the checkbox and which are what it folds
+      away; the server drops a shut drawer's values from the argv. */
+  gate: string | null;
   /** Bound to a dataset root — filled server-side from Settings, hidden here. */
   root: RootName | null;
   /** Bound to a Settings *stage default* (`path_pattern` / `tagger_dir` /

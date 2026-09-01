@@ -146,34 +146,58 @@ export function StageForm(props: {
         </Show>
       </Show>
       <For each={groups()}>
-        {([g, fs]) => (
-          <fieldset>
-            <legend>{g || t().form.options}</legend>
-            {/* Two-up: the dock is wide and short, so a single column of knobs
-                scrolled far more than it had to. Same wrapper the Settings
-                preflight block uses. */}
-            <div class="twoup">
-              <For each={fs}>
-                {(f) => (
-                  <FieldRow
-                    field={f}
-                    value={value(f)}
-                    dirty={dirty(f)}
-                    setValue={(v) => props.setValue(f.dest, v)}
-                    onPick={() =>
-                      void browsePath(
-                        f.path_kind,
-                        str(value(f)),
-                        (path) => props.setValue(f.dest, path),
-                        () => setPicking(f.dest),
-                      )
-                    }
-                  />
-                )}
-              </For>
-            </div>
-          </fieldset>
-        )}
+        {([g, fs]) => {
+          /* A gated group is a drawer: its checkbox moves up into the legend
+             and the knobs it governs are folded away while it is off. The gate
+             is the field naming itself, which is how the server says "this one
+             is the switch" without the browser knowing any flag by name. */
+          const gate = fs.find((f) => f.gate === f.dest);
+          const body = gate ? fs.filter((f) => f !== gate) : fs;
+          const open = () => !gate || !!value(gate);
+          return (
+            <fieldset>
+              <legend>
+                <Show when={gate} fallback={g || t().form.options}>
+                  {(gf) => (
+                    <label class="gate" title={gf().help}>
+                      <input
+                        type="checkbox"
+                        checked={!!value(gf())}
+                        onChange={(e) => props.setValue(gf().dest, e.currentTarget.checked)}
+                      />
+                      {g || gf().label}
+                    </label>
+                  )}
+                </Show>
+              </legend>
+              {/* Two-up: the dock is wide and short, so a single column of knobs
+                  scrolled far more than it had to. Same wrapper the Settings
+                  preflight block uses. */}
+              <Show when={open()}>
+                <div class="twoup">
+                  <For each={body}>
+                    {(f) => (
+                      <FieldRow
+                        field={f}
+                        value={value(f)}
+                        dirty={dirty(f)}
+                        setValue={(v) => props.setValue(f.dest, v)}
+                        onPick={() =>
+                          void browsePath(
+                            f.path_kind,
+                            str(value(f)),
+                            (path) => props.setValue(f.dest, path),
+                            () => setPicking(f.dest),
+                          )
+                        }
+                      />
+                    )}
+                  </For>
+                </div>
+              </Show>
+            </fieldset>
+          );
+        }}
       </For>
       <div style="margin-bottom:8px">
         <button class="link" type="button" onClick={props.reset}>

@@ -39,8 +39,10 @@ from anime_tools.masking._sam3 import (
     SUBJECT_PROMPT,
     add_checkpoint_arg,
     add_prompt_embed_arg,
-    ground_with_soft_prompt,
+    autocast,
+    detect_union,
     load_sam3,
+    prompt_list,
 )
 
 # Torch-free at import (the safetensors read is deferred), and the same two
@@ -51,22 +53,6 @@ from anime_tools.stages.instance_detection import load_soft_prompt, resolve_prom
 
 def load_image(path: Path) -> Image.Image:
     return Image.open(path).convert("RGB")
-
-
-_NO_PROMPTS = {"none", "off"}
-
-
-def prompt_list(spec: str) -> tuple[str, ...]:
-    """A comma-separated prompt flag as the tuple of prompts it names.
-
-    ``none`` / ``off`` mean *no prompts*, the word ``--prompt_embed`` already
-    takes for the same job. Emptying the field is not enough to say it: the GUI
-    omits a flag whose value is blank, so a cleared ``--focus-prompts`` would
-    come back as its default rather than as "focus on nothing".
-    """
-    if spec.strip().lower() in _NO_PROMPTS:
-        return ()
-    return tuple(t.strip() for t in spec.split(",") if t.strip())
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -129,8 +115,6 @@ def main() -> None:
         parser.error("nothing to mask: pass --prompts and/or --focus-prompts")
     kernel = np.ones((args.dilate,) * 2, dtype=np.uint8) if args.dilate > 0 else None
 
-    import torch
-
     # Anchored, like every stage's roots: the defaults above are written
     # home-relative, so a run from another directory has to mean the same
     # tree the GUI and the merge do.
@@ -158,25 +142,17 @@ def main() -> None:
                 f"here is textual"
             )
 
-    def detect_union(state, prompts, shape, threshold) -> np.ndarray:
-        """OR-combine SAM3 detections for every prompt into one binary mask."""
-        h, w = shape
-        out = np.zeros((h, w), dtype=np.uint8)
-        for prompt in prompts:
-            if soft_prompt is not None and prompt == SUBJECT_PROMPT:
-                output = ground_with_soft_prompt(processor, model, state, soft_prompt)
-            else:
-                output = processor.set_text_prompt(state=state, prompt=prompt)
-            for mask, score in zip(output["masks"], output["scores"]):
-                if score < threshold:
-                    continue
-                mask_np = (
-                    mask.cpu().numpy() if torch.is_tensor(mask) else np.asarray(mask)
-                )
-                if mask_np.ndim == 3:
-                    mask_np = mask_np[0]
-                out = np.maximum(out, (mask_np > 0.5).astype(np.uint8))
-        return out
+    def detect(state, prompts, shape) -> np.ndarray:
+        """This run's SAM3 pass: the shared union, with the soft prompt bound."""
+        return detect_union(
+            processor,
+            model,
+            state,
+            prompts,
+            shape,
+            args.threshold,
+            soft_prompt=soft_prompt,
+        )
 
     work_items = plan_mask_jobs(
         image_dir,
@@ -192,7 +168,7 @@ def main() -> None:
         return
 
     batch_size = args.batch_size
-    autocast = torch.autocast(device_type="cuda", dtype=torch.bfloat16)
+    amp = autocast(args.device)
     pool = ThreadPoolExecutor(max_workers=args.workers)
 
     # Prefetch images ahead of GPU to keep it saturated.
@@ -212,7 +188,7 @@ def main() -> None:
                 )
             batch.append((work_items[i], image))
 
-        with autocast:
+        with amp:
             states = []
             for (image_path, mask_path), image in batch:
                 states.append(
@@ -225,16 +201,12 @@ def main() -> None:
 
                 ignore_mask = np.zeros((h, w), dtype=np.uint8)
                 if ignore_prompts:
-                    ignore_mask = detect_union(
-                        inference_state, ignore_prompts, (h, w), args.threshold
-                    )
+                    ignore_mask = detect(inference_state, ignore_prompts, (h, w))
                     if kernel is not None and ignore_mask.any():
                         ignore_mask = cv2.dilate(ignore_mask, kernel, iterations=1)
 
                 if focus_prompts:
-                    focus_mask = detect_union(
-                        inference_state, focus_prompts, (h, w), args.threshold
-                    )
+                    focus_mask = detect(inference_state, focus_prompts, (h, w))
                     if kernel is not None and focus_mask.any():
                         focus_mask = cv2.dilate(focus_mask, kernel, iterations=1)
                     if not focus_mask.any():

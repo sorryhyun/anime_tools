@@ -11,6 +11,7 @@ GUI schema dump costs nothing).
 from __future__ import annotations
 
 import argparse
+import contextlib
 from pathlib import Path
 
 import numpy as np
@@ -28,14 +29,16 @@ hinge between two flags: it is ``--prompt``'s default, and it is what
 ``--prompt_embed`` stands in for."""
 
 
-def add_checkpoint_arg(p: argparse.ArgumentParser) -> None:
+def add_checkpoint_arg(p: argparse._ActionsContainer) -> None:
     """``--checkpoint`` — SAM3 weights, defaulted from the download catalog.
 
     Beside :func:`load_sam3` because the flag and the load are the same fact: a
     stage must name the file the ⚙ Settings → Models row *writes*, or the
     download button and the loader disagree. It is also a
     :data:`anime_tools.gui.stages.SETTING_FIELDS` dest, filled once from
-    Settings — which only works while all three SAM3 CLIs spell it identically.
+    Settings — which only works while every SAM3 CLI spells it identically.
+    Takes a group as readily as a parser, like :func:`add_prompt_embed_arg`:
+    the text-mask stage declares it inside its ``use_sam`` drawer.
     """
     p.add_argument("--checkpoint", default=DEFAULT_SAM3_CHECKPOINT, help="SAM3 weights")
 
@@ -58,6 +61,37 @@ def add_prompt_embed_arg(p: argparse._ActionsContainer) -> None:
         f"prompt stays textual. Default = the shipped "
         f"{DEFAULT_SUBJECT_PROMPT_EMBED}; pass `none` for the plain text prompt",
     )
+
+
+_NO_PROMPTS = {"none", "off"}
+
+
+def prompt_list(spec: str) -> tuple[str, ...]:
+    """A comma-separated prompt flag as the tuple of prompts it names.
+
+    ``none`` / ``off`` mean *no prompts*, the word ``--prompt_embed`` already
+    takes for the same job. Emptying the field is not enough to say it: the GUI
+    omits a flag whose value is blank, so a cleared prompt field would come back
+    as its default rather than as "prompt for nothing".
+    """
+    if spec.strip().lower() in _NO_PROMPTS:
+        return ()
+    return tuple(t.strip() for t in spec.split(",") if t.strip())
+
+
+def autocast(device: str):
+    """The half-precision context a SAM3 pass runs under, or nothing on CPU.
+
+    ``torch.autocast(device_type="cuda")`` on a machine without one only warns
+    and disables itself, so this is not a correctness fix — but every SAM3 stage
+    wants the same answer, and a CPU run should not have to read a warning to
+    learn that it got it.
+    """
+    import torch
+
+    if str(device).startswith("cuda"):
+        return torch.autocast(device_type="cuda", dtype=torch.bfloat16)
+    return contextlib.nullcontext()
 
 
 def load_sam3(
@@ -117,6 +151,43 @@ def ground_with_soft_prompt(processor, model, state: dict, soft_prompt: dict) ->
     state["backbone_out"].update(soft_prompt)
     state.setdefault("geometric_prompt", model._get_dummy_prompt())
     return processor._forward_grounding(state)
+
+
+def detect_union(
+    processor,
+    model,
+    state: dict,
+    prompts,
+    shape: tuple[int, int],
+    threshold: float,
+    *,
+    soft_prompt: dict | None = None,
+) -> np.ndarray:
+    """OR-combine SAM3's detections for every prompt into one binary mask.
+
+    The whole of what a mask stage does with SAM3 between ``set_image`` and the
+    mask it writes: prompt, drop anything under ``threshold``, union. Here
+    rather than in a stage because the soft-prompt substitution rule lives here
+    too — a ``soft_prompt`` stands in for :data:`SUBJECT_PROMPT` and for no
+    other prompt, and a caller whose prompts are all textual passes ``None``.
+    """
+    import torch
+
+    h, w = shape
+    out = np.zeros((h, w), dtype=np.uint8)
+    for prompt in prompts:
+        if soft_prompt is not None and prompt == SUBJECT_PROMPT:
+            output = ground_with_soft_prompt(processor, model, state, soft_prompt)
+        else:
+            output = processor.set_text_prompt(state=state, prompt=prompt)
+        for mask, score in zip(output["masks"], output["scores"]):
+            if score < threshold:
+                continue
+            mask_np = mask.cpu().numpy() if torch.is_tensor(mask) else np.asarray(mask)
+            if mask_np.ndim == 3:
+                mask_np = mask_np[0]
+            out = np.maximum(out, (mask_np > 0.5).astype(np.uint8))
+    return out
 
 
 def make_processor(model, confidence_threshold: float | None = None):

@@ -22,7 +22,7 @@ import pytest
 
 from anime_tools.downloads import DEFAULT_SAM3_CHECKPOINT
 from anime_tools.masking._sam3 import SUBJECT_PROMPT
-from anime_tools.masking.cli import generate_masks
+from anime_tools.masking.cli import generate_masks, generate_masks_mit
 from anime_tools.stages.cli import (
     audit_apply_curated,
     audit_multiview,
@@ -168,21 +168,26 @@ def test_the_audit_pins_the_flags_it_does_not_ask_for(parsers):
         assert dest in parsers["position"], f"the position stage lost {dest}"
 
 
-def test_the_sam3_mask_stage_shares_the_two_catalog_flags():
-    """``masks_sam`` is the third SAM3 stage, and it is not in ``ALL_STAGES``
-    above because it belongs to the *masking* CLI family (which spells
-    ``--path-pattern`` its own way). The two flags it does share are the two
-    ⚙ Settings stage defaults, declared in ``masking/_sam3.py`` beside the
-    loaders they feed — a drift here is a Download button that writes where no
-    loader looks.
+def test_the_sam3_mask_stages_share_the_catalog_flags():
+    """The two masking CLIs are not in ``ALL_STAGES`` above because they belong
+    to the *masking* family (which spells ``--path-pattern`` its own way). What
+    they do share is the ⚙ Settings stage defaults, declared in
+    ``masking/_sam3.py`` beside the loaders they feed — a drift here is a
+    Download button that writes where no loader looks. The text stage takes
+    ``--checkpoint`` alone: its prompts are all textual, and ``--prompt_embed``
+    stands in for the *subject* phrase and nothing else.
     """
-    masks, position = (
+    masks, position, text = (
         actions(generate_masks.build_parser()),
         actions(position_captions.build_parser()),
+        actions(generate_masks_mit.build_parser()),
     )
     for dest in ("checkpoint", "prompt_embed"):
         assert masks[dest].option_strings == position[dest].option_strings, dest
         assert masks[dest].default == position[dest].default, dest
+    assert text["checkpoint"].option_strings == position["checkpoint"].option_strings
+    assert text["checkpoint"].default == position["checkpoint"].default
+    assert "prompt_embed" not in text
 
 
 def test_the_sam3_mask_stage_defaults_to_the_phrase_its_soft_prompt_encodes():
