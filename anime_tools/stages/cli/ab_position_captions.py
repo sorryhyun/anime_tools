@@ -15,6 +15,7 @@ import argparse
 import html
 import json
 import textwrap
+from dataclasses import replace
 from pathlib import Path
 
 from PIL import Image, ImageDraw
@@ -25,7 +26,7 @@ from anime_tools._env import resolve_path
 from anime_tools._json import write_json
 from anime_tools._walk import walk_images
 from anime_tools.captions.position_clauses import parse_caption
-from anime_tools.stages.cli._models import load_tagger
+from anime_tools.stages._models import load_tagger
 from anime_tools.stages.cli.position_captions import options_from_flag_string
 
 # Geometry and ink are shared with the review sheet, so a background that
@@ -205,27 +206,28 @@ def main() -> None:
         args.b_label or args.b_flags or "shipped",
     )
 
-    a_options, detect_args = options_from_flag_string(args.a_flags)
-    b_options, b_detect_args = options_from_flag_string(args.b_flags)
+    a_options, a_req = options_from_flag_string(args.a_flags)
+    b_options, b_req = options_from_flag_string(args.b_flags)
+    a_req = replace(a_req, device=args.device)
 
-    from anime_tools.stages.cli.position_captions import build_detect_fn
+    from anime_tools.stages.detector import build_detect_fn
 
-    detect_args.device = args.device
-    detect_fn, part_detect_fn, _model, _proc = build_detect_fn(detect_args)
+    detect_fn, part_detect_fn, _model, _proc = build_detect_fn(
+        a_req.detection, device=a_req.device
+    )
     # A B side with a different subject prompt gets its own detector on the same
     # loaded SAM3.
     b_detect_fn, b_part_detect_fn = detect_fn, part_detect_fn
-    if (b_detect_args.prompt, b_detect_args.prompt_embed) != (
-        detect_args.prompt,
-        detect_args.prompt_embed,
+    if (b_req.detection.prompt, b_req.detection.prompt_embed) != (
+        a_req.detection.prompt,
+        a_req.detection.prompt_embed,
     ):
-        b_detect_args.device = args.device
         b_detect_fn, b_part_detect_fn, _, _ = build_detect_fn(
-            b_detect_args, model=_model, processor=_proc
+            b_req.detection, device=a_req.device, model=_model, processor=_proc
         )
         print("detector A/B: B side runs its own detection pass", flush=True)
 
-    tagger, vocabulary, _ckpt = load_tagger(detect_args, quiet=True)
+    tagger, vocabulary, _ckpt = load_tagger(a_req, quiet=True)
 
     images = walk_images(dst, recursive=True, pattern=args.path_pattern)
     if args.limit:

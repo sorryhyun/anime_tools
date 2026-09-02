@@ -1,9 +1,23 @@
-"""The one SAM3 entry point: model + processor construction, and the numpy shim.
+"""The one SAM3 entry point: model + processor construction, and the two shims
+``import sam3`` needs.
 
 **The numpy shim is an import side effect of this module**: ``sam3`` still spells
 ``np.bool``, which numpy 2 removed, so the alias has to exist *before* ``import sam3``.
 The sam3 imports are deferred into the functions, which also keeps importing this module
 torch-free.
+
+**The triton shim runs at the sam3 import**: ``sam3.model.edt`` does ``import triton``
+at module scope, and triton has no macOS build (Windows takes the ``triton-windows``
+wheel, see ``pyproject.toml``). The kernel belongs to the video tracker, which already
+falls back to skimage on CPU, so the image model never calls it; :func:`stub_edt_kernel`
+pre-seeds that one module with a stand-in that refuses to run. It stubs the *sam3*
+module, never ``triton`` itself: torch guards its own ``import triton`` and would take a
+fake one for the real thing.
+
+**The CPU shim runs at the model build**: the image model's builder takes
+``device="cpu"``, but two of its constant caches are built on a literal ``"cuda"`` and
+its processor defaults to one. :func:`shim_sam3_for_cpu` redirects those to CPU when
+torch has no CUDA and is inert otherwise, so a Mac runs the same model, slowly.
 """
 
 from __future__ import annotations
@@ -19,6 +33,108 @@ from anime_tools.downloads import DEFAULT_SAM3_CHECKPOINT, DEFAULT_SUBJECT_PROMP
 # A module-level side effect on purpose — see the docstring.
 if not hasattr(np, "bool"):
     np.bool = np.bool_
+
+EDT_MODULE = "sam3.model.edt"
+"""The one sam3 module that imports triton at module scope."""
+
+TRITON_MISSING = (
+    "sam3's triton kernel (edt_triton) was called, but triton is not installed on "
+    "this platform — this is the video-tracker path, which the image model does not take"
+)
+
+
+def stub_edt_kernel() -> bool:
+    """Pre-seed :data:`EDT_MODULE` on ``sys.modules`` with a stand-in when triton
+    cannot be imported, so ``import sam3`` no longer trips over it. Returns whether the
+    stand-in was installed (``False`` when triton exists or sam3's own module is
+    already loaded)."""
+    import importlib.util
+    import sys
+    import types
+
+    if EDT_MODULE in sys.modules or importlib.util.find_spec("triton") is not None:
+        return False
+
+    def edt_triton(data):
+        raise RuntimeError(TRITON_MISSING)
+
+    module = types.ModuleType(EDT_MODULE)
+    module.edt_triton = edt_triton  # type: ignore[attr-defined]
+    module.__anime_tools_stub__ = True  # type: ignore[attr-defined]
+    sys.modules[EDT_MODULE] = module
+    return True
+
+
+def shim_sam3_for_cpu() -> bool:
+    """Make ``build_sam3_image_model(device="cpu")`` true to its word: the
+    position-encoding precompute and the decoder's coordinate cache are built on a
+    literal ``"cuda"`` (``position_encoding.py`` / ``decoder.py``), which a torch without
+    CUDA cannot allocate. The precompute exists to keep ``torch.compile`` from tracing
+    symbolic shapes, so on CPU the cache fills lazily instead; the coordinate cache is
+    simply built on CPU. The ViT's fused ``addmm_act`` (``perflib/fused.py``) casts its
+    operands to bf16 unconditionally, which an fp32 CPU graph cannot take, so off CUDA it
+    is the plain ``activation(linear(x))``. ``Tensor.pin_memory`` becomes a no-op: the
+    geometry encoder pins a vector bound for the model's device, and pinning serves
+    host→CUDA copies only (on a Mac it pins to MPS and the copy to CPU is refused).
+    Every wrapper checks at call time, so a process with CUDA is untouched. Returns
+    whether the shim was installed."""
+    import torch
+
+    if torch.cuda.is_available():
+        return False
+    from sam3.model.decoder import TransformerDecoder
+    from sam3.model.position_encoding import PositionEmbeddingSine
+
+    if getattr(PositionEmbeddingSine, "__anime_tools_shim__", False):
+        return False
+
+    sine_init = PositionEmbeddingSine.__init__
+
+    def __init__(self, *args, **kwargs):
+        if not torch.cuda.is_available():
+            args = args[:4]  # (num_pos_feats, temperature, normalize, scale)
+            kwargs.pop("precompute_resolution", None)
+        sine_init(self, *args, **kwargs)
+
+    get_coords = TransformerDecoder._get_coords
+
+    def _get_coords(H, W, device):
+        if str(device).startswith("cuda") and not torch.cuda.is_available():
+            device = "cpu"
+        return get_coords(H, W, device)
+
+    from sam3.model import vitdet
+
+    fused = vitdet.addmm_act
+
+    def addmm_act(activation, linear, mat1):
+        # The fused op casts to bf16 unconditionally — written for a CUDA autocast
+        # graph that is bf16 anyway. Off CUDA the plain fp32 path is the same math.
+        if mat1.device.type == "cuda":
+            return fused(activation, linear, mat1)
+        return (
+            activation()(linear(mat1))
+            if isinstance(activation, type)
+            else activation(linear(mat1))
+        )
+
+    pin_memory = torch.Tensor.pin_memory
+
+    def _pin_memory(self, *args, **kwargs):
+        # Pinned memory serves host→CUDA copies. The geometry encoder pins a scale
+        # vector on its way to the model's device; on a Mac that pins to MPS, and the
+        # copy back to CPU is then refused.
+        if not torch.cuda.is_available():
+            return self
+        return pin_memory(self, *args, **kwargs)
+
+    vitdet.addmm_act = addmm_act
+    torch.Tensor.pin_memory = _pin_memory  # type: ignore[method-assign]
+    PositionEmbeddingSine.__init__ = __init__  # type: ignore[method-assign]
+    PositionEmbeddingSine.__anime_tools_shim__ = True  # type: ignore[attr-defined]
+    TransformerDecoder._get_coords = staticmethod(_get_coords)  # type: ignore[method-assign]
+    return True
+
 
 SUBJECT_PROMPT = "girl"
 """The text prompt every SAM3 stage means by *the subject*, and the phrase the shipped
@@ -118,7 +234,10 @@ def load_sam3(
     if loaded is not None:
         return loaded
 
+    stub_edt_kernel()
     from sam3.model_builder import build_sam3_image_model
+
+    shim_sam3_for_cpu()
 
     build_kwargs: dict = {"device": device, "eval_mode": True}
     if checkpoint is not None:
@@ -197,8 +316,11 @@ def make_processor(model, confidence_threshold: float | None = None):
     Split out so a caller holding a model can rebuild the processor at a lower threshold
     without paying for the weights again.
     """
+    stub_edt_kernel()
     from sam3.model.sam3_image_processor import Sam3Processor
 
-    if confidence_threshold is None:
-        return Sam3Processor(model)
-    return Sam3Processor(model, confidence_threshold=confidence_threshold)
+    # The processor's own default is a literal "cuda"; follow the weights instead.
+    kwargs = {"device": next(model.parameters()).device}
+    if confidence_threshold is not None:
+        kwargs["confidence_threshold"] = confidence_threshold
+    return Sam3Processor(model, **kwargs)

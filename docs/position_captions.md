@@ -577,7 +577,10 @@ idempotent and reversible from the CLI (`--flatten --apply`), yet a dry run with
 | `anime_tools/captions/caption_layout.py` | Text-only prefilter — subject/boy counts, `Nkoma` ceiling, layout tags, `is_candidate` |
 | `anime_tools/stages/instance_detection.py` | `Detection`, box geometry, NMS + part merge, mask-blanked `crop_instance`, soft-prompt resolution (`resolve_prompt_embed` / `prompt_embed_sha256`) |
 | `anime_tools/stages/position_captions.py` | Pipeline orchestration (`propose_for_image`, `flatten_captions`); models injected as `detect_fn` / `tag_fn` |
-| `anime_tools/stages/cli/position_captions.py` | CLI shell — argparse + SAM3/tagger loading (`build_options_from_args` is shared with the A/B tool) |
+| `anime_tools/stages/requests.py` | `PositionRequest` + the nested `DetectionRequest` (torch-free) — the stage's surface; `.options()` builds `PositionCaptionOptions` |
+| `anime_tools/stages/run.py` | `run_position(req)` — preflight, SAM3/tagger load, the pipeline call, `report.json`, epilogue |
+| `anime_tools/stages/detector.py` / `_models.py` | `build_detect_fn` over a `DetectionRequest`; the per-process tagger cache |
+| `anime_tools/stages/cli/position_captions.py` | CLI shell — argparse only (`options_from_flag_string` is shared with the A/B and review tools) |
 | `anime_tools/stages/cli/ab_position_captions.py` | A/B two flag sets off **one** detect+tag pass. Pass sides as `--a_flags=--foo` — the `=` is required, argparse reads a `-`-leading value as the next option |
 | `anime_tools/stages/cli/review_position_captions.py` | Contact sheet for an **applied** run — overlay, crops, master vs revised caption, moved / novel / duplicated marks, `drift` flag |
 | `anime_tools/downloads.py` | `DEFAULT_SUBJECT_PROMPT_EMBED` and the `soft_prompt` asset row that fetches it |

@@ -14,6 +14,7 @@ from __future__ import annotations
 import argparse
 import html
 import json
+from dataclasses import replace
 from pathlib import Path
 
 from PIL import Image, ImageDraw
@@ -25,7 +26,7 @@ from anime_tools._json import write_json
 from anime_tools._walk import walk_images
 from anime_tools.captions.position_clauses import parse_caption
 from anime_tools.captions.taxonomy import normalize_tag
-from anime_tools.stages.cli._models import load_tagger
+from anime_tools.stages._models import load_tagger
 from anime_tools.stages.cli.position_captions import options_from_flag_string
 from anime_tools.stages.multiview_sheet import BOX_COLORS, _fit, _font
 from anime_tools.stages.position_captions import is_candidate, propose_for_image
@@ -250,14 +251,16 @@ def main() -> None:
     (out_dir / "crops").mkdir(parents=True, exist_ok=True)
     (out_dir / "overlays").mkdir(parents=True, exist_ok=True)
 
-    options, detect_args = options_from_flag_string(args.flags)
-    detect_args.device = args.device
+    options, req = options_from_flag_string(args.flags)
+    req = replace(req, device=args.device)
 
-    from anime_tools.stages.cli.position_captions import build_detect_fn
+    from anime_tools.stages.detector import build_detect_fn
 
-    detect_fn, part_detect_fn, _model, _proc = build_detect_fn(detect_args)
+    detect_fn, part_detect_fn, _model, _proc = build_detect_fn(
+        req.detection, device=req.device
+    )
 
-    tagger, vocabulary, _ckpt = load_tagger(detect_args, quiet=True)
+    tagger, vocabulary, _ckpt = load_tagger(req, quiet=True)
 
     images = walk_images(dst, recursive=True, pattern=args.path_pattern)
     if args.limit:

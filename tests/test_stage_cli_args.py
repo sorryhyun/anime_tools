@@ -25,9 +25,10 @@ from anime_tools.stages.cli import (
     position_captions,
     resize_images,
 )
-from anime_tools.stages.cli._detection import OPTIONAL_FLAGS, detection_options
+from anime_tools.stages.cli._detection import POSITION_ONLY_FLAGS
 from anime_tools.stages.instance_detection import DEFAULT_SUBJECT_PROMPT_EMBED
 from anime_tools.stages.position_captions import PositionCaptionOptions
+from anime_tools.stages.requests import AuditRequest, DetectionRequest
 
 SAM3_STAGES = {
     "position": position_captions,
@@ -44,9 +45,9 @@ ALL_STAGES = {
 }
 
 
-# Declared in the detection group but read off the namespace by ``build_detect_fn``
-# rather than through the options object.
-DETECTOR_ONLY = frozenset({"prompt_embed"})
+# The audit's detection group carries ``name_confidence``, which the position
+# stage declares under clause composition: a dest, not a detector knob.
+AUDIT_GROUP_EXTRAS = frozenset({"name_confidence"})
 
 
 def actions(parser: argparse.ArgumentParser) -> dict[str, argparse.Action]:
@@ -128,13 +129,13 @@ def test_the_curated_apply_reads_the_report_the_audit_writes():
 
 
 def test_the_two_sam3_stages_declare_identical_detection_flags(parsers):
-    """The audit hands its own namespace to the position CLI's ``build_detect_fn``,
-    so only :data:`OPTIONAL_FLAGS` and help text may differ.
+    """Both read their detection group into one ``DetectionRequest``, so only
+    :data:`POSITION_ONLY_FLAGS` and help text may differ.
     """
     position, audit = parsers["position"], parsers["audit"]
     shared = detection_dests(position_captions) & detection_dests(audit_multiview)
     assert shared, "the detection group vanished from one of them"
-    for dest in sorted(shared - set(OPTIONAL_FLAGS)):
+    for dest in sorted(shared - set(POSITION_ONLY_FLAGS)):
         a, b = position[dest], audit[dest]
         assert a.option_strings == b.option_strings, f"{dest}: spelling drifted"
         assert a.default == b.default, f"{dest}: default drifted"
@@ -142,9 +143,9 @@ def test_the_two_sam3_stages_declare_identical_detection_flags(parsers):
 
 
 def test_the_audit_pins_the_flags_it_does_not_ask_for(parsers):
-    """The audit declares none of :data:`OPTIONAL_FLAGS` and takes the dataclass
-    defaults; the position stage declares all of them."""
-    for dest in OPTIONAL_FLAGS:
+    """The audit declares none of :data:`POSITION_ONLY_FLAGS` and takes the
+    dataclass defaults; the position stage declares all of them."""
+    for dest in POSITION_ONLY_FLAGS:
         assert dest not in parsers["audit"], f"the audit now declares {dest}"
         assert dest in parsers["position"], f"the position stage lost {dest}"
 
@@ -186,66 +187,47 @@ def test_a_prompt_flag_is_a_comma_separated_list():
     assert generate_masks.prompt_list("none") == ()
 
 
-# ---- the flags and the options they build stay in step -----------------
+# ---- the flags and the request that reads them stay in step -------------
 
 
-def test_detection_options_reads_every_detection_flag_the_parser_declares():
-    """Every detection-group dest reaches the options object; one that does not
-    would parse fine and do nothing.
-    """
-    parser = position_captions.build_parser()
-    declared = detection_dests(position_captions) - DETECTOR_ONLY
-    built = set(detection_options(parser.parse_args([])))
-    assert declared - built == set(), f"declared but never read: {declared - built}"
+def test_the_detection_group_is_exactly_the_detection_request():
+    """Every detection-group dest is a ``DetectionRequest`` field and the
+    reverse, so a flag declared without a field parses fine and does nothing,
+    and a field without a flag never reaches the CLI. ``--checkpoint`` is the
+    one field declared outside the group (``add_checkpoint_arg``)."""
+    request_fields = {f.name for f in dataclasses.fields(DetectionRequest)}
+    assert detection_dests(position_captions) - set(POSITION_ONLY_FLAGS) == (
+        request_fields - {"checkpoint"}
+    )
+    assert detection_dests(audit_multiview) - AUDIT_GROUP_EXTRAS == (
+        request_fields - {"checkpoint"}
+    )
 
 
-def _twist(value):
-    """A value that is definitely not the one passed in."""
-    if isinstance(value, bool):
-        return not value
-    if isinstance(value, (int, float)):
-        return value + 1
-    if isinstance(value, str):
-        return (value + " hips").strip()
-    raise AssertionError(f"no twist for {value!r}")
-
-
-def test_every_option_field_is_wired_to_the_flag_that_names_it():
-    """Field by field: twist the namespace value, rebuild, and require the option
-    to move — a field that does not is one ``build_options_from_args`` drops.
-    """
-    parser = position_captions.build_parser()
-    dests = {a.dest for a in parser._actions}
-    fields = dataclasses.fields(PositionCaptionOptions)
-    assert {f.name for f in fields} <= dests, "an option field has no flag naming it"
-
-    for f in fields:
-        args = parser.parse_args([])
-        before = position_captions.build_options_from_args(args)
-        setattr(args, f.name, _twist(getattr(args, f.name)))
-        after = position_captions.build_options_from_args(args)
-        assert getattr(after, f.name) != getattr(before, f.name), (
-            f"--{f.name} never reaches PositionCaptionOptions.{f.name}"
-        )
+def test_every_option_field_has_a_flag_naming_it():
+    """A ``PositionCaptionOptions`` field is a position-stage dest (its wiring
+    is pinned request-side in ``test_stage_requests``)."""
+    dests = {a.dest for a in position_captions.build_parser()._actions}
+    assert {f.name for f in dataclasses.fields(PositionCaptionOptions)} <= dests
 
 
 def test_the_audit_builds_its_options_off_the_shared_detection_half():
-    """The audit's options come from ``detection_options(args, min_instances=2)``:
-    the shared values arrive and the pinned ones win.
-    """
-    audit_args = audit_multiview.build_parser().parse_args([])
-    position_args = position_captions.build_parser().parse_args([])
-    shared = detection_options(audit_args, min_instances=2)
-    options = PositionCaptionOptions(**shared)
-
+    """The audit's options are the position stage's detector verbatim with
+    ``min_instances`` pinned, whichever parser the flags came through."""
+    audit_req = AuditRequest.from_namespace(
+        audit_multiview.build_parser().parse_args([])
+    )
+    position_req = position_captions.PositionRequest.from_namespace(
+        position_captions.build_parser().parse_args([])
+    )
+    options = audit_req.options()
     assert options.min_instances == 2
     assert options.mask_containment_threshold == 0.8
-    # Every non-pinned detection value matches the position stage's, since both
-    # namespaces come from the same declaration.
-    for name, value in detection_options(position_args).items():
-        if name in OPTIONAL_FLAGS:
+    assert audit_req.detection == position_req.detection
+    for name in (f.name for f in dataclasses.fields(DetectionRequest)):
+        if name in ("checkpoint", "prompt_embed"):
             continue
-        assert shared[name] == value, f"{name} differs between the two stages"
+        assert getattr(options, name) == getattr(position_req.options(), name), name
 
 
 def test_the_device_flag_has_no_copies_left():

@@ -100,15 +100,21 @@ nothing today; each gains a lazy PEP 562 `__getattr__` like `tagger/__init__.py`
   rewrites the GUI schema off the dataclass, with the round-trip tests
   (`tests/test_masking_requests.py`, the P6 shape) keeping the two in step.
   Flags unchanged, no aliases yet.
-- [ ] **P2. Caption stages.** Request classes over the existing `run_*`
-  functions for autotag, position, correct, OCR, resize, export, audit. The
-  detection block (`stages/cli/_detection.py`) becomes a nested dataclass
-  shared by position and audit, which is what
-  `test_the_two_sam3_stages_declare_identical_detection_flags` pins today.
-  `stages/cli/_models.py::load_tagger` takes the request instead of a
-  namespace and caches by checkpoint dir, so autotag followed by position in
-  one process loads the tagger once.
-- [ ] **P3. Grouping.** `GroupRequest` over `build_groups`.
+- [x] **P2. Caption stages.** `stages/requests.py` (torch-free) declares
+  `ResizeRequest`, `AutotagRequest`, `PositionRequest`, `CorrectRequest`,
+  `OcrRequest`, `AuditRequest` and `ExportRequest` on the shared base, with
+  underscore flag spelling and `off` metadata for `store_false` switches;
+  `stages/run.py::run_<stage>(req)` is each CLI main minus the parsing, and
+  the CLIs are shells (`Request.from_argv(build_parser())`). The detection
+  block is a nested `DetectionRequest` shared by position and audit —
+  `.options()` builds `PositionCaptionOptions` field by field, and
+  `cli/_detection.py::detection_options` is gone. `stages/_models.py::
+  load_anima_tagger` caches the tagger per `(checkpoint dir, device)`, so
+  autotag followed by position in one process loads it once;
+  `stages/detector.py::build_detect_fn` takes the `DetectionRequest`.
+  `tests/test_stage_requests.py` is the P6 shape for every stage.
+- [x] **P3. Grouping.** `grouping/requests.py::GroupRequest` over
+  `groups.run_groups`, which resolves `--embedder` and calls `build_groups`.
 - [ ] **P4. Registry and GUI.** Move `STAGES` out of `gui/stages.py` into
   `stages/registry.py` (torch-free: it only names request classes and
   modules). `gui/stages.py::schema()` is derived from the dataclass; drop the

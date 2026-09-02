@@ -38,7 +38,9 @@ dependencies = [
     # (2) sam3.model.edt `import triton`s at module scope, and the CUDA nms /
     # connected-components paths really do run triton kernels. PyPI triton is linux-only and
     # torch's win32 wheel doesn't pull one, so on Windows take the triton-windows build --
-    # kept in step with the triton that torch 2.13 pairs with on linux (3.7.x).
+    # kept in step with the triton that torch 2.13 pairs with on linux (3.7.x). macOS has
+    # no triton at all: masking/_sam3.py pre-seeds sam3.model.edt with a stand-in before the
+    # sam3 import, since the image model never launches that kernel.
     "triton-windows>=3.7,<3.8; sys_platform == 'win32'",
     # (3) model_builder reaches into sam3.train.data and sam3.model.sam3_video_predictor,
     # which import pycocotools / psutil -- upstream declares pycocotools only under its `dev`

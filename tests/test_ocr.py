@@ -401,16 +401,23 @@ def test_an_explicit_device_is_taken_as_given():
     assert resolve_onnx_device("cuda") == "cuda"
 
 
-def test_the_ocr_cli_asks_onnxruntime_not_torch_for_its_device():
-    """Pinned in the CLI too: the torch resolver is the one every *torch* stage
-    uses, and reaching for it here is the whole regression."""
-    src = (
+def test_the_ocr_stage_asks_onnxruntime_not_torch_for_its_device():
+    """Pinned in the runner too: the torch resolver is the one every *torch*
+    stage uses, and reaching for it here is the whole regression."""
+    import inspect
+
+    from anime_tools.stages import run
+
+    src = inspect.getsource(run.run_ocr)
+    assert "device = resolve_onnx_device(req.device)" in src
+    assert "resolve_device(" not in src
+    # The CLI declares the flag through `add_device_arg` — declared once, in
+    # `_device` — but the torch resolver beside it is not imported.
+    cli = (
         Path(anime_tools.__file__).parent / "stages" / "cli" / "ocr_captions.py"
     ).read_text(encoding="utf-8")
-    assert "device = resolve_onnx_device(args.device)" in src
-    # `add_device_arg` still comes from `_device` — the flag is declared once
-    # there — but the torch resolver beside it is not imported.
-    assert "from anime_tools._device import add_device_arg\n" in src
+    assert "from anime_tools._device import add_device_arg\n" in cli
+    assert "resolve_device" not in cli
 
 
 # ---- one input shape per session ---------------------------------------

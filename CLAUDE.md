@@ -125,6 +125,26 @@ instances → reading order → mask-blanked crops → tagger → clause rewrite
 `docs/position_captions.md`), `captions.py`, `multiview_audit.py`, `ocr.py`,
 `export_workspace.py`.
 
+**The surface is a request object per stage** (`stages/requests.py`, torch-free): `ResizeRequest`,
+`AutotagRequest`, `PositionRequest`, `CorrectRequest`, `OcrRequest`, `AuditRequest`,
+`ExportRequest`,
+run by `stages/run.py::run_<stage>(req)`, which is the old CLI main minus the parsing (preflight,
+model load, the library call, `report.json`, the printed epilogue). Same base as masking's
+(`anime_tools/_request.py`), with two differences: flags are spelled with underscores
+(`FLAG_SEP = "_"`), and a `store_false` switch names its one flag in `off` metadata
+(`skip_en` is `--keep_en`). The SAM3 detection flags are one nested `DetectionRequest` shared by
+`PositionRequest` and `AuditRequest`; `.options()` on either builds the `PositionCaptionOptions`
+field by field, so an option field with no request field is an error, not a silent default. The
+audit pins `min_instances=2` there rather than exposing it. Validation lives in `__post_init__`
+(autotag mode, `--flatten` vs `--from_report`, the randomize tokenizers, resize tiers); a missing
+input tree is a `FileNotFoundError` the shell turns into `SystemExit`. `stages/__init__.py` exposes
+all fifteen names lazily; `tests/test_stage_requests.py` round-trips every request through its
+parser and imports the request half torch-poisoned.
+
+`stages/_models.py::load_anima_tagger` caches the tagger per `(checkpoint dir, device)`, so
+autotag followed by position in one process loads it once; `stages/detector.py::build_detect_fn`
+builds the SAM3 detector from a `DetectionRequest` (the A/B, review and probe CLIs share it).
+
 **Export is the only thing that writes outside the workspace.** Six artifact kinds
 (`image`/`caption`/`variants`/`mask`/`master`/`index`), each decided against the destination
 (`identical` by byte compare for text, `(size, mtime_ns)` for pixels). It always copies, takes no
@@ -139,8 +159,9 @@ drifted default silently changes the GUI form, and `tests/test_stage_cli_args.py
 per shared flag:
 
 - `cli/_args.py` (dataset roots, apply/replay, model flags, progress), `cli/_detection.py` (the SAM3
-  detection group *and* the reader that consumes it, declared together), `cli/_models.py`,
-  `cli/_report.py`, `replay.run_replay_cli`.
+  detection group; its reader is `DetectionRequest`, and `test_stage_cli_args` pins the two as
+  equal sets), `cli/_report.py`, `replay.run_replay_cli` (reads `from_report` / `path_pattern` /
+  `apply` off the request).
 - `_caption_io.py` — `read_caption`/`write_caption`, the trailing-newline invariant, the
   `.variants.txt` drop, and `history_by`.
 - `_walk_captions.py` — `resolve_caption`/`iter_captions`: revised caption first, master as
@@ -159,8 +180,10 @@ recompute, never an error. `cli/match_decensored.py` has a different cache shape
 deliberately not unified.
 
 `features.read_tags` is the one caption read on this side (through `parse_caption`, keyed by
-`normalize_tag`). `build_groups --source-dir` defaults to `workspace/resized/`. Output
-`groups.json` is `MANIFEST_VERSION = 2`.
+`normalize_tag`). The surface is `GroupRequest` (`grouping/requests.py`, torch-free, hyphenated
+flags) run by `groups.run_groups`, which resolves `--embedder`'s `module:callable` and calls
+`build_groups`; `--source-dir` defaults to `workspace/resized/`. Output `groups.json` is
+`MANIFEST_VERSION = 2`.
 
 ### `masking/`
 
@@ -182,7 +205,11 @@ per process on its arguments, so a text-mask pass after a subject-mask pass reus
   `--prompt_embed`, and the home of `ground_with_soft_prompt` (a soft prompt *is* the text encoder's
   output, so the encode is skipped), `prompt_list` (`none`/`off` = no prompts) and `detect_union`.
   It installs the `np.bool` alias sam3 needs as an import side effect, with sam3 imports deferred
-  into functions so importing it stays torch-free.
+  into functions so importing it stays torch-free. Two more shims run inside those functions:
+  `stub_edt_kernel` pre-seeds `sam3.model.edt` (the one module that imports triton, which has no
+  macOS build) with a stand-in that refuses to run, and `shim_sam3_for_cpu` redirects the image
+  model's two build-time `"cuda"` literals to CPU when torch has none. Neither fakes `triton`
+  itself: torch guards its own import of it and would take a fake one for real.
 - `_masks.py` owns the mask layout — flag blocks (small and contiguous; the GUI form follows
   declaration order), `plan_mask_jobs`, `write_mask`/`write_ignore_mask` (`detected=1 → alpha=0`),
   the read side (`mask_name`/`mask_path_for`/`iter_masks`), and `mask_run`, the scaffolding both

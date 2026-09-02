@@ -22,7 +22,7 @@ from anime_tools._env import resolve_path
 from anime_tools._json import write_json
 from anime_tools._walk import walk_images
 from anime_tools.masking._sam3 import add_checkpoint_arg
-from anime_tools.stages.cli.position_captions import build_detect_fn
+from anime_tools.stages.detector import build_detect_fn
 from anime_tools.stages.instance_detection import (
     DEFAULT_SUBJECT_PROMPT_EMBED,
     mask_box_fill,
@@ -32,6 +32,7 @@ from anime_tools.stages.position_captions import (
     box_iou,
     drop_small_boxes,
 )
+from anime_tools.stages.requests import DetectionRequest
 
 PREFETCH_DEPTH = 4
 
@@ -81,8 +82,17 @@ def replay_nms(dets: list, iou_threshold: float) -> list[tuple]:
 def main() -> None:
     args = parse_args()
     # SAM3 sees the lowest floor once; each floor's population is a re-filter.
-    args.score_threshold = min(args.floors)
-    detect_fn, _part, model, processor = build_detect_fn(args)
+    detection = DetectionRequest(
+        prompt=args.prompt,
+        prompt_embed=args.prompt_embed,
+        checkpoint=args.checkpoint,
+        score_threshold=min(args.floors),
+        retry_score_threshold=args.retry_score_threshold,
+        part_score_threshold=args.part_score_threshold,
+        iou_threshold=args.iou_threshold,
+        min_area_frac=args.min_area_frac,
+    )
+    detect_fn, _part, model, processor = build_detect_fn(detection, device=args.device)
     dst = resolve_path(args.dst)
     images = walk_images(dst, recursive=True, pattern=args.path_pattern)
     print(f"{len(images)} images, floors {args.floors}", flush=True)

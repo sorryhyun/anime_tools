@@ -8,32 +8,17 @@ retuning the thresholds is cheap.
 """
 
 import argparse
-import importlib
 
 from anime_tools import workspace as WS
 from anime_tools._device import add_device_arg
-from anime_tools._env import resolve_path
 from anime_tools.grouping.groups import (
     DEFAULT_CELL_MATCH_MIN,
     DEFAULT_GRID,
     DEFAULT_MATCH_FRAC_MIN,
     DEFAULT_RATIO,
     DEFAULT_SIM_MIN,
-    build_groups,
 )
-
-# By string so the CLI stays importable without torch.
-DEFAULT_EMBEDDER = "anime_tools.grouping.embedder:pe_spatial_embedder"
-
-
-def load_embedder(spec: str | None, *, device: str | None):
-    """Resolve ``module:callable`` (default PE-Spatial) and call it with ``device=``."""
-    spec = spec or DEFAULT_EMBEDDER
-    mod_name, _, attr = spec.partition(":")
-    if not attr:
-        raise SystemExit(f"--embedder must be `module:callable`, got {spec!r}")
-    factory = getattr(importlib.import_module(mod_name), attr)
-    return factory(device=device)
+from anime_tools.grouping.requests import DEFAULT_EMBEDDER, GroupRequest
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -100,32 +85,10 @@ def build_parser() -> argparse.ArgumentParser:
     return p
 
 
-def main() -> None:
-    args = build_parser().parse_args()
+def main(argv: list[str] | None = None) -> None:
+    from anime_tools.grouping.groups import run_groups
 
-    # Anchor bare relatives under the curation home, not the shell's cwd.
-    source_dir, out = resolve_path(args.source_dir), resolve_path(args.out)
-
-    embedder = load_embedder(args.embedder, device=args.device)
-    m = build_groups(
-        source_dir,
-        out,
-        cell_match_min=args.cell_match_min,
-        match_frac_min=args.match_frac_min,
-        sim_min=args.sim_min,
-        grid=args.grid,
-        ratio=args.ratio,
-        min_size=args.min_size,
-        embedder=embedder,
-        batch_size=args.batch_size,
-        num_workers=args.num_workers,
-    )
-    print(
-        f"{m['n_groups']} group(s) over {m['n_images']} image(s) "
-        f"({m['n_grouped']} grouped, {m['n_singletons']} ungrouped) "
-        f"@ cell_match_min {args.cell_match_min} / match_frac_min "
-        f"{args.match_frac_min} → {out}"
-    )
+    run_groups(GroupRequest.from_argv(build_parser(), argv))
 
 
 if __name__ == "__main__":

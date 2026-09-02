@@ -13,21 +13,14 @@ from __future__ import annotations
 import argparse
 
 from anime_tools import workspace as WS
-from anime_tools._env import resolve_path
 from anime_tools.stages.cli._args import (
     add_dataset_args,
     add_report_dir_arg,
-    make_progress,
 )
-from anime_tools.stages.cli._report import (
-    print_dry_run_footer,
-    stage_report_header,
-    write_stage_report,
-)
-from anime_tools.stages.export_workspace import ExportPaths, run_export
+from anime_tools.stages.requests import DEFAULT_EXPORT_INDEX, ExportRequest
 
-DEFAULT_REPORT_DIR = f"{WS.REPORTS}/export"
-DEFAULT_INDEX = f"{WS.REPORTS}/caption_index.json"
+DEFAULT_REPORT_DIR = ExportRequest.report_dir
+DEFAULT_INDEX = DEFAULT_EXPORT_INDEX
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -71,45 +64,13 @@ def build_parser() -> argparse.ArgumentParser:
     return p
 
 
-def main() -> None:
-    args = build_parser().parse_args()
-    apply = bool(args.apply)
-    report_dir = resolve_path(args.report_dir)
+def main(argv: list[str] | None = None) -> None:
+    from anime_tools.stages.run import run_export
 
-    paths = ExportPaths(
-        resized=resolve_path(args.dst),
-        masks=resolve_path(args.masks),
-        master=resolve_path(args.master),
-        index=resolve_path(args.index),
-        src=resolve_path(args.src),
-        out=resolve_path(args.out),
-    )
-    pattern = str(args.path_pattern or "*")
-
-    if not paths.resized.is_dir():
-        raise SystemExit(
-            f"nothing to export: {paths.resized} does not exist. "
-            "Run the Resize stage first."
-        )
-    rows, stats = run_export(
-        paths,
-        path_pattern=pattern,
-        apply=apply,
-        progress=make_progress(50),
-    )
-    note = f"published: {stats.created} created, {stats.overwrote} overwritten"
-
-    report = {
-        **stage_report_header(
-            src=paths.src, dst=paths.resized, path_pattern=pattern, apply=apply
-        ),
-        "out": str(paths.out),
-        "stats": stats.to_dict(),
-        "rows": [r.to_dict() for r in rows],
-    }
-    path = write_stage_report(report_dir, report)
-    print(f"\nreport → {path}")
-    print_dry_run_footer(apply, note)
+    try:
+        run_export(ExportRequest.from_argv(build_parser(), argv))
+    except FileNotFoundError as e:
+        raise SystemExit(str(e)) from e
 
 
 if __name__ == "__main__":

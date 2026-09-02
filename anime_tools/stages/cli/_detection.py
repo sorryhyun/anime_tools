@@ -1,9 +1,10 @@
-"""The SAM3 detection flag block, and the options it builds.
+"""The SAM3 detection flag block.
 
 ``position_captions`` and ``audit_multiview`` run the *same* detector:
-:func:`add_detection_args` declares the flags, :func:`detection_options` reads
-the namespace back into the detection half of ``PositionCaptionOptions``.
-Declaring one without the other is what lets them disagree.
+:func:`add_detection_args` declares the flags, and
+:class:`anime_tools.stages.requests.DetectionRequest` is the one reader of them —
+``tests/test_stage_requests.py`` round-trips the two, so a flag declared here
+without a field there (or the reverse) fails.
 """
 
 from __future__ import annotations
@@ -12,10 +13,9 @@ import argparse
 
 from anime_tools.masking._sam3 import SUBJECT_PROMPT, add_prompt_embed_arg
 
-# Flags a stage may leave out because it pins the value itself (the audit pins
-# ``min_instances=2``). Read only when declared, so an omitted flag falls
-# through to the dataclass default.
-OPTIONAL_FLAGS = ("blank_crops", "min_instances", "strict_count")
+# Flags only the position stage declares: the audit pins ``min_instances`` and
+# takes the ``PositionCaptionOptions`` default for the other two.
+POSITION_ONLY_FLAGS = ("blank_crops", "min_instances", "strict_count")
 
 
 def add_detection_args(
@@ -148,36 +148,3 @@ def add_detection_args(
         )
     if name_confidence:
         g.add_argument("--name_confidence", type=float, default=0.5)
-
-
-def detection_options(args: argparse.Namespace, **overrides) -> dict[str, object]:
-    """The detection half of ``PositionCaptionOptions``, as keyword arguments.
-
-    Extras go through ``**overrides`` (``detection_options(args,
-    min_instances=2)``). Flags in :data:`OPTIONAL_FLAGS` are read only when the
-    parser declared them.
-    """
-    opts: dict[str, object] = {
-        "prompt": args.prompt,
-        "score_threshold": args.score_threshold,
-        "retry_score_threshold": args.retry_score_threshold,
-        # Comma string on the CLI, tuple in options.
-        "part_prompts": tuple(
-            t.strip() for t in args.part_prompts.split(",") if t.strip()
-        ),
-        "part_score_threshold": args.part_score_threshold,
-        "part_containment_threshold": args.part_containment_threshold,
-        "iou_threshold": args.iou_threshold,
-        "containment_threshold": args.containment_threshold,
-        "mask_containment_threshold": args.mask_containment_threshold,
-        "dedupe_fill_ratio": args.dedupe_fill_ratio,
-        "min_area_frac": args.min_area_frac,
-        "pad": args.pad,
-        "row_tol": args.row_tol,
-        "max_instances": args.max_instances,
-    }
-    for name in OPTIONAL_FLAGS:
-        if hasattr(args, name):
-            opts[name] = getattr(args, name)
-    opts.update(overrides)
-    return opts

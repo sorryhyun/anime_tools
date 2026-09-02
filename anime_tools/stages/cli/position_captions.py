@@ -12,64 +12,32 @@ sidecars, so follow it with a TE re-encode.
 from __future__ import annotations
 
 import argparse
-import json
-import sys
-from dataclasses import asdict
-from pathlib import Path
 
-import numpy as np
-
-from anime_tools import workspace as WS
-from anime_tools._device import resolve_device
-from anime_tools._env import resolve_path
-from anime_tools._json import write_json
 from anime_tools.contract import REPLAY_SHAPES
 
 # Importing _sam3 also installs the `np.bool` alias sam3 needs before it loads.
 from anime_tools.masking._sam3 import (
     add_checkpoint_arg,
-    ground_with_soft_prompt,
-    load_sam3,
-    make_processor,
 )
 from anime_tools.stages.cli._args import (
     add_apply_args,
     add_dataset_args,
     add_model_args,
     add_report_dir_arg,
-    make_progress,
 )
 from anime_tools.stages.cli._detection import (
     add_detection_args,
-    detection_options,
 )
-from anime_tools.stages.cli._models import load_tagger
-from anime_tools.stages.cli._report import (
-    print_dry_run_footer,
-    stage_report_header,
-    write_stage_report,
-)
-from anime_tools.stages.instance_detection import (
-    load_soft_prompt,
-    prompt_embed_sha256,
-    resolve_prompt_embed,
-)
-from anime_tools.stages.position_captions import (
-    Detection,
-    PositionCaptionOptions,
-    flatten_captions,
-    run_position_captions,
-)
-from anime_tools.stages.replay import run_replay_cli
+from anime_tools.stages.position_captions import PositionCaptionOptions
+from anime_tools.stages.requests import DEFAULT_MAX_TOKENS, PositionRequest
 
-DEFAULT_REPORT_DIR = f"{WS.REPORTS}/position"
-TE_NOTE = (
-    "\nWritten to the resized captions (the master is untouched). Run "
-    "`make preprocess-te` now to regenerate the variant sidecars and "
-    "re-encode."
-)
-# Both tokenizers pad to this; a caption past it truncates silently.
-DEFAULT_MAX_TOKENS = 512
+# ``drop_variants`` mirrors the stage's own write: a stale
+# ``{stem}.variants.txt`` outranks ``{stem}.txt`` at encode time.
+REPLAY_SPEC = REPLAY_SHAPES["position"]
+"""The shape ``stages.run`` replays this stage's report through — the same
+object ``gui/proposals.py`` reads from ``contract.REPLAY_SHAPES``."""
+
+DEFAULT_REPORT_DIR = PositionRequest.report_dir
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -274,289 +242,23 @@ def build_parser() -> argparse.ArgumentParser:
     return p
 
 
-def parse_args() -> argparse.Namespace:
-    return build_parser().parse_args()
-
-
-def build_options_from_args(args: argparse.Namespace) -> PositionCaptionOptions:
-    """Parsed CLI -> the options one pass runs under (shared with the A/B CLI)."""
-    return PositionCaptionOptions(
-        **detection_options(args),
-        max_clause_tags=args.max_clause_tags,
-        max_novel_tags=args.max_novel_tags,
-        name_confidence=args.name_confidence,
-        allow_unlisted_names=args.allow_unlisted_names,
-        discriminative_only=args.discriminative_only,
-        bag_gated_identity=args.bag_gated_identity,
-        multi_view_gate=args.multi_view_gate,
-        bind_framing=args.bind_framing,
-        bind_view_anatomy=args.bind_view_anatomy,
-        rewrite=args.rewrite,
-        attribution_margin=args.attribution_margin,
-        bag_relax=args.bag_relax,
-        bag_relax_min_score=args.bag_relax_min_score,
-        bag_word_relax=args.bag_word_relax,
-    )
-
-
 def options_from_flag_string(
     flags: str,
-) -> tuple[PositionCaptionOptions, argparse.Namespace]:
-    """Parse a flag *string* through this CLI's own parser.
+) -> tuple[PositionCaptionOptions, PositionRequest]:
+    """Parse a flag *string* through this CLI's own parser (the A/B and review
+    CLIs take one per arm). Returns ``(options, request)`` — the request too,
+    since the detector and tagger are built from it."""
+    req = PositionRequest.from_argv(build_parser(), flags.split())
+    return req.options(), req
 
-    Goes through :func:`parse_args` rather than a second parser, hence the
-    ``sys.argv`` swap. Returns ``(options, args)`` — the namespace too, since the
-    detector is built from it.
-    """
-    argv = sys.argv
-    sys.argv = [argv[0], *flags.split()]
+
+def main(argv: list[str] | None = None) -> None:
+    from anime_tools.stages.run import run_position
+
     try:
-        args = parse_args()
-    finally:
-        sys.argv = argv
-    return build_options_from_args(args), args
-
-
-def build_detect_fn(args: argparse.Namespace, *, model=None, processor=None):
-    """SAM3 text-prompt detector returning per-instance boxes + masks.
-
-    Pass ``model``/``processor`` from a previous call to build a second detector
-    (different prompt) on the same loaded SAM3.
-
-    GOTCHA 1: ``Sam3Processor`` applies its own ``confidence_threshold`` before
-    the caller sees the boxes, so it must be built at the *lowest* threshold any
-    retry might ask for; the score gate is applied on top in ``detect``.
-
-    GOTCHA 2: ``detect_subjects`` calls back per retry and per part prompt on the
-    same image, so encoding and raw detections are memoised per image/prompt.
-
-    Returns ``(detect, part_detect, model, processor)``.
-    """
-    import torch
-
-    floor = min(
-        args.score_threshold, args.retry_score_threshold, args.part_score_threshold
-    )
-    device = resolve_device(args.device)
-    if model is None:
-        print("Loading SAM3...", flush=True)
-        model, fresh = load_sam3(
-            resolve_path(args.checkpoint), device, confidence_threshold=floor
-        )
-        if processor is None:
-            processor = fresh
-    if processor is None or processor.confidence_threshold > floor:
-        processor = make_processor(model, floor)
-    soft_prompt = None
-    embed_path = resolve_prompt_embed(getattr(args, "prompt_embed", None))
-    if embed_path is not None:
-        soft_prompt = load_soft_prompt(embed_path, device)
-        print(f"soft prompt: {embed_path} (replaces {args.prompt!r})", flush=True)
-    cache: dict[str, object] = {"key": None, "state": None, "dets": {}}
-
-    def _ground(image, prompt: str) -> list[Detection]:
-        """Raw detections for one prompt, reusing this image's encoded state."""
-        if cache["key"] is not image:
-            with torch.autocast(device_type="cuda", dtype=torch.bfloat16):
-                cache["state"] = processor.set_image(image)
-            cache["key"] = image
-            cache["dets"] = {}
-        memo: dict = cache["dets"]  # type: ignore[assignment]
-        if prompt in memo:
-            return memo[prompt]
-        with torch.autocast(device_type="cuda", dtype=torch.bfloat16):
-            if soft_prompt is not None and prompt == args.prompt:
-                # Learned prompt tensor stands in for the subject phrase, so the
-                # text encode is skipped.
-                out = ground_with_soft_prompt(
-                    processor, model, cache["state"], soft_prompt
-                )
-            else:
-                out = processor.set_text_prompt(prompt=prompt, state=cache["state"])
-        masks = out.get("masks")
-        source = "subject" if prompt == args.prompt else prompt
-        dets: list[Detection] = []
-        for i, (box, score) in enumerate(zip(out["boxes"], out["scores"])):
-            coords = box.tolist() if torch.is_tensor(box) else list(box)
-            mask = None
-            if masks is not None and i < len(masks):
-                m = masks[i]
-                mask = m.cpu().numpy() if torch.is_tensor(m) else np.asarray(m)
-            dets.append(
-                Detection(
-                    box=tuple(float(v) for v in coords),
-                    score=float(score),
-                    mask=mask,
-                    source=source,
-                )
-            )
-        memo[prompt] = dets
-        return dets
-
-    def detect(image, score_threshold: float) -> list[Detection]:
-        return [d for d in _ground(image, args.prompt) if d.score >= score_threshold]
-
-    def part_detect(image, prompt: str, score_threshold: float) -> list[Detection]:
-        return [d for d in _ground(image, prompt) if d.score >= score_threshold]
-
-    return detect, part_detect, model, processor
-
-
-def _run_flatten(args, src: Path, dst: Path, report_dir: Path) -> None:
-    """The inverse pass — text only, so it short-circuits before any model load."""
-    rows, stats = flatten_captions(
-        resized_dir=dst,
-        source_dir=src,
-        path_pattern=args.path_pattern,
-        apply=args.apply,
-    )
-    summary = {
-        "mode": "flatten",
-        "applied": bool(args.apply),
-        "seen": stats.seen,
-        "with_clauses": stats.candidates,
-        "flattened": stats.proposed,
-        "written": stats.written,
-        "skipped": dict(sorted(stats.skipped.items(), key=lambda kv: -kv[1])),
-    }
-    # Its own name, not ``report.json``: replaying a flatten would write the
-    # clauses back.
-    write_json(report_dir / "flatten_report.json", {"summary": summary, "images": rows})
-    print(json.dumps(summary, indent=2, ensure_ascii=False))
-    print(f"\nreport: {report_dir / 'flatten_report.json'}")
-    print_dry_run_footer(args.apply, TE_NOTE)
-
-
-# ``drop_variants`` mirrors the stage's own write: a stale
-# ``{stem}.variants.txt`` outranks ``{stem}.txt`` at encode time.
-REPLAY_SPEC = REPLAY_SHAPES["position"]
-
-
-def _run_replay(args, src: Path, dst: Path, report_dir: Path) -> None:
-    """Write a previous dry run's clauses — no SAM3, no tagger, no pixels."""
-    run_replay_cli(
-        args,
-        spec=REPLAY_SPEC,
-        src=src,
-        dst=dst,
-        report_dir=report_dir,
-        after_write_note=TE_NOTE,
-    )
-
-
-def main() -> None:
-    args = parse_args()
-    src = resolve_path(args.src)
-    dst = resolve_path(args.dst)
-    report_dir = resolve_path(args.report_dir)
-
-    if args.flatten:
-        if args.from_report:
-            raise SystemExit(
-                "--flatten and --from_report are mutually exclusive: the "
-                "flatten pass is already text-only, so there is no model pass "
-                "to skip."
-            )
-        _run_flatten(args, src, dst, report_dir)
-        return
-
-    if args.from_report:
-        _run_replay(args, src, dst, report_dir)
-        return
-
-    # Both stay resident: the pipeline is per-image (detect -> crop -> tag), not
-    # two dataset-wide passes.
-    detect_fn, part_detect_fn, sam_model, sam_processor = build_detect_fn(args)
-    # Not in parse_args(): the --from_report replay returns above and must stay
-    # torch-free.
-    tagger, vocabulary, _ckpt_dir = load_tagger(args)
-
-    token_count_fn = None
-    if args.qwen3:
-        from anime_tools.captions.tokenizers import load_qwen3_tokenizer_from_dir
-
-        tokenizer = load_qwen3_tokenizer_from_dir(args.qwen3)
-
-        def token_count_fn(text: str) -> int:
-            return len(tokenizer(text, add_special_tokens=True)["input_ids"])
-
-    options = build_options_from_args(args)
-
-    rows, stats = run_position_captions(
-        resized_dir=dst,
-        source_dir=src,
-        detect_fn=detect_fn,
-        part_detect_fn=part_detect_fn,
-        tag_fn=tagger.predict,
-        vocabulary=vocabulary,
-        options=options,
-        path_pattern=args.path_pattern,
-        apply=args.apply,
-        crops_dir=(report_dir / "crops") if args.crops else None,
-        token_count_fn=token_count_fn,
-        progress=make_progress(200),
-    )
-    del sam_processor, sam_model
-
-    over_budget = [
-        r for r in rows if r.tokens is not None and r.tokens > args.max_tokens
-    ]
-    embed_path = resolve_prompt_embed(args.prompt_embed)
-    summary = {
-        **stage_report_header(
-            src=src, dst=dst, path_pattern=args.path_pattern, apply=args.apply
-        ),
-        "rewrite": bool(args.rewrite),
-        # A soft prompt is a file: two runs only compare when the sha matches.
-        "prompt": args.prompt,
-        "prompt_embed": str(embed_path) if embed_path else None,
-        "prompt_embed_sha256": prompt_embed_sha256(embed_path),
-        "attribution_margin": args.attribution_margin,
-        "seen": stats.seen,
-        "candidates": stats.candidates,
-        "proposed": stats.proposed,
-        "written": stats.written,
-        # How much of the flat bag the clauses took. Zero under --no_rewrite.
-        "rewritten": stats.rewritten,
-        "moved_tags": stats.moved_tags,
-        "max_novel_tags": args.max_novel_tags,
-        "clause_tags": stats.clause_tags,
-        "novel_tags": stats.novel_tags,
-        "reuse_ratio": (
-            round(1.0 - stats.novel_tags / stats.clause_tags, 3)
-            if stats.clause_tags
-            else None
-        ),
-        "pinned_tags": dict(sorted(stats.pinned_tags.items(), key=lambda kv: -kv[1])),
-        "skipped": dict(sorted(stats.skipped.items(), key=lambda kv: -kv[1])),
-        "part_prompts": list(options.part_prompts),
-        # Images with at least one bound instance from a part prompt.
-        "part_recovered": sum(
-            1 for r in rows if any(i.source != "subject" for i in r.instances)
-        ),
-        "max_tokens": max(
-            (r.tokens for r in rows if r.tokens is not None), default=None
-        ),
-        "over_token_budget": [r.image for r in over_budget],
-    }
-    report_path = write_stage_report(
-        report_dir, {"summary": summary, "images": [asdict(r) for r in rows]}
-    )
-
-    print(json.dumps(summary, indent=2, ensure_ascii=False))
-    print(f"\nreport: {report_path}")
-    if over_budget:
-        print(
-            f"WARNING: {len(over_budget)} caption(s) exceed {args.max_tokens} tokens — "
-            "the tail truncates silently at TE-cache time."
-        )
-    print_dry_run_footer(args.apply, TE_NOTE)
-    if args.apply and args.rewrite and stats.moved_tags:
-        print(
-            f"{stats.moved_tags} tag(s) moved out of the flat bag across "
-            f"{stats.rewritten} caption(s). To back that out: "
-            '`make caption-position ARGS="--flatten --apply"`.'
-        )
+        run_position(PositionRequest.from_argv(build_parser(), argv))
+    except FileNotFoundError as e:
+        raise SystemExit(str(e)) from e
 
 
 if __name__ == "__main__":

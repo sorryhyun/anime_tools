@@ -14,24 +14,19 @@ from __future__ import annotations
 
 import argparse
 
-from anime_tools import workspace as WS
-from anime_tools._env import resolve_path
 from anime_tools.buckets import ALLOWED_TARGET_RES
 from anime_tools.stages.cli._args import (
     add_dataset_args,
     add_report_dir_arg,
-    make_progress,
 )
-from anime_tools.stages.cli._report import write_stage_report
+from anime_tools.stages.requests import ResizeRequest
 from anime_tools.stages.resize import (
     CROP_ANCHORS,
     DEFAULT_CROP_ANCHOR,
     DEFAULT_MIN_PIXELS,
-    ResizeOptions,
-    run_resize_images,
 )
 
-DEFAULT_REPORT_DIR = f"{WS.REPORTS}/resize"
+DEFAULT_REPORT_DIR = ResizeRequest.report_dir
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -128,83 +123,13 @@ def build_parser() -> argparse.ArgumentParser:
     return p
 
 
-def main() -> None:
-    args = build_parser().parse_args()
+def main(argv: list[str] | None = None) -> None:
+    from anime_tools.stages.run import run_resize
 
-    if args.target_res:
-        bad = [e for e in args.target_res if e not in ALLOWED_TARGET_RES]
-        if bad:
-            raise SystemExit(
-                f"--target_res {bad} not in allowed tiers {list(ALLOWED_TARGET_RES)}"
-            )
-
-    src = resolve_path(args.src)
-    dst = resolve_path(args.dst)
-    if not src.is_dir():
-        raise SystemExit(f"source dir not found: {src}")
-
-    options = ResizeOptions.build(
-        target_res=args.target_res,
-        crop_anchor=args.resize_crop_anchor,
-        crop_margins=args.resize_crop_margins,
-        max_ratio=args.freefit_max_ratio,
-    )
-
-    stats = run_resize_images(
-        src=src,
-        dst=dst,
-        options=options,
-        path_pattern=str(args.path_pattern or "*"),
-        recursive=bool(args.recursive),
-        min_pixels=int(args.min_pixels),
-        copy_captions=bool(args.copy_captions),
-        overwrite=bool(args.overwrite),
-        workers=int(args.workers),
-        # Every line: there is no other per-image output.
-        progress=make_progress(1),
-    )
-
-    report_dir = resolve_path(args.report_dir)
-    report = {
-        "src": str(src),
-        "dst": str(dst),
-        "path_pattern": str(args.path_pattern or "*"),
-        "target_res": list(options.target_res),
-        "crop_anchor": options.crop_anchor,
-        "crop_margins": list(options.crop_margins),
-        "max_ratio": options.max_ratio,
-        "min_pixels": int(args.min_pixels),
-        "overwrite": bool(args.overwrite),
-        "stats": {
-            "seen": stats.seen,
-            "written": stats.written,
-            "skipped_current": stats.skipped_current,
-            "skipped_small": stats.skipped_small,
-            "failed": stats.failed,
-        },
-        "buckets": dict(sorted(stats.buckets.items())),
-        "failures": stats.failures,
-        "too_small": stats.too_small,
-    }
-    write_stage_report(report_dir, report)
-
-    print(
-        f"Resized: {stats.written} written, "
-        f"{stats.skipped_current} already current, "
-        f"{stats.skipped_small} below {args.min_pixels:,} px, "
-        f"{stats.failed} failed ({stats.seen} images seen)"
-    )
-    for line in stats.failures:
-        print(f"  fail: {line}")
-    # A skip here means invisible to every later stage, so name each file rather
-    # than counting them.
-    for line in stats.too_small:
-        print(f"  too small: {line}")
-    if stats.buckets:
-        print("Bucket distribution:")
-        for reso, count in sorted(stats.buckets.items()):
-            w, h = (int(v) for v in reso.split("x"))
-            print(f"  {reso:>10}: {count:>3d} images  ({(w // 16) * (h // 16)} tokens)")
+    try:
+        run_resize(ResizeRequest.from_argv(build_parser(), argv))
+    except FileNotFoundError as e:
+        raise SystemExit(str(e)) from e
 
 
 if __name__ == "__main__":

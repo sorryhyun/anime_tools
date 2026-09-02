@@ -226,26 +226,23 @@ def run_autotag_captions(
 
 def build_tag_fn(
     ckpt_dir: str | Path | None = None,
-    device: str = "cuda",
+    device: str | None = None,
     min_confidence: float = 0.0,
 ) -> tuple[Callable[[Image.Image], str], Mapping[str, object]]:
     """Load the Anima Tagger and return ``(tag_fn, info)``.
 
     Torch imports live inside this function so ``run_autotag_captions`` stays
-    torch-free. The checkpoint is auto-fetched when absent.
+    torch-free. The checkpoint is auto-fetched when absent, ``device=None``
+    resolves to the GPU when there is one, and the tagger is the per-process
+    one (:func:`~anime_tools.stages._models.load_anima_tagger`), so a position
+    pass in the same interpreter reuses it.
     """
-    from anime_tools._env import resolve_path
-    from anime_tools.tagger.tagger import (
-        DEFAULT_TAGGER_DIR,
-        AnimaTagger,
-        ensure_tagger_checkpoint,
-    )
+    from anime_tools.stages._models import load_anima_tagger
 
-    resolved = resolve_path(str(ckpt_dir or DEFAULT_TAGGER_DIR))
-    ensure_tagger_checkpoint(resolved)
-    tagger = AnimaTagger(ckpt_dir=resolved, device=device)
+    tagger, resolved = load_anima_tagger(ckpt_dir, device)
 
     def tag_fn(image: Image.Image) -> str:
         return tagger.predict_caption(image, min_confidence=float(min_confidence))
 
-    return tag_fn, {"tagger_dir": str(resolved), "device": device}
+    # ``tagger.device`` is a ``torch.device``; the report is JSON.
+    return tag_fn, {"tagger_dir": str(resolved), "device": str(tagger.device)}

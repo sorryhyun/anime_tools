@@ -3,17 +3,10 @@
 from __future__ import annotations
 
 import argparse
-from pathlib import Path
 
-from anime_tools._env import curation_home
-from anime_tools.captions.correction import (
-    CaptionCorrectionOptions,
-    find_tag_csv,
-    load_tag_knowledge_base,
-)
-from anime_tools.captions.tag_drop_groups import drop_group_names, parse_drop_groups
-from anime_tools.stages.captions import write_corrected_preprocess_captions
+from anime_tools.captions.tag_drop_groups import drop_group_names
 from anime_tools.stages.cli._args import add_path_pattern_arg
+from anime_tools.stages.requests import CorrectRequest
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -123,64 +116,13 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def main() -> None:
-    args = build_parser().parse_args()
+def main(argv: list[str] | None = None) -> None:
+    from anime_tools.stages.run import run_correct
 
-    csv_path = Path(args.tag_csv) if args.tag_csv else find_tag_csv(curation_home())
-    if csv_path is None or not csv_path.exists():
-        raise SystemExit(
-            "danbooru_tags_classified.csv not found. Run "
-            "`python -m anime_tools.downloads danbooru_tags` first "
-            "(or the GUI's Settings > Models > Danbooru tag KB)."
-        )
-
-    num_variants = int(args.caption_shuffle_variants or 0)
-    randomize_rate = float(args.caption_tag_randomize_rate or 0.0)
-    # The erasure pool (identity-randomize only) needs both tokenizers, loaded
-    # tokenizer-only — no encoder weights.
-    qwen3_tokenizer = None
-    t5_tokenizer = None
-    if randomize_rate > 0.0 and num_variants >= 2:
-        from anime_tools.captions.tokenizers import (
-            load_qwen3_tokenizer_from_dir,
-            load_t5_tokenizer_from_dir,
-        )
-
-        if not args.qwen3 or not args.t5_tokenizer_path:
-            raise SystemExit(
-                "--caption_tag_randomize_rate > 0 requires --qwen3 and "
-                "--t5_tokenizer_path (tokenizer directories; `make` resolves them)."
-            )
-        qwen3_tokenizer = load_qwen3_tokenizer_from_dir(args.qwen3)
-        t5_tokenizer = load_t5_tokenizer_from_dir(args.t5_tokenizer_path)
-
-    stats = write_corrected_preprocess_captions(
-        Path(args.src),
-        Path(args.dst),
-        load_tag_knowledge_base(csv_path),
-        options=CaptionCorrectionOptions(
-            insert_no_artist=bool(args.caption_insert_no_artist),
-            trigger_word=str(args.caption_trigger_word or ""),
-            trigger_at_front=bool(args.caption_trigger_at_front),
-            drop_groups=parse_drop_groups(args.caption_drop_groups),
-        ),
-        recursive=bool(args.recursive),
-        path_pattern=str(args.path_pattern or "*"),
-        correct=not bool(args.no_correct),
-        num_variants=num_variants,
-        tag_dropout_rate=float(args.caption_tag_dropout_rate or 0.0),
-        tag_randomize_rate=randomize_rate,
-        qwen3_tokenizer=qwen3_tokenizer,
-        t5_tokenizer=t5_tokenizer,
-    )
-    print(
-        "Corrected preprocess captions: "
-        f"{stats.written} written, {stats.unchanged} unchanged, "
-        f"{stats.missing_source} missing source, {stats.removed_stale} stale removed, "
-        f"{stats.variants_written} variant sidecars, "
-        f"{stats.clauses_preserved} position clauses kept "
-        f"({stats.seen} resized images)"
-    )
+    try:
+        run_correct(CorrectRequest.from_argv(build_parser(), argv))
+    except FileNotFoundError as e:
+        raise SystemExit(str(e)) from e
 
 
 if __name__ == "__main__":

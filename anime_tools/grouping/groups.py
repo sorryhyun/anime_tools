@@ -248,3 +248,46 @@ def build_groups(
 
 def _write_manifest(out_path: Path, manifest: dict) -> None:
     write_json(out_path, manifest)
+
+
+def load_embedder(spec: str | None, *, device: str | None):
+    """Resolve ``module:callable`` (``None`` = the PE-Spatial default) and call
+    it with ``device=``. Imports the embedder's module, so torch arrives here."""
+    import importlib
+
+    from anime_tools.grouping.requests import DEFAULT_EMBEDDER
+
+    mod_name, _, attr = (spec or DEFAULT_EMBEDDER).partition(":")
+    if not attr:
+        raise ValueError(f"--embedder must be `module:callable`, got {spec!r}")
+    return getattr(importlib.import_module(mod_name), attr)(device=device)
+
+
+def run_groups(req) -> dict:
+    """:func:`build_groups` over a
+    :class:`~anime_tools.grouping.requests.GroupRequest`: load its embedder,
+    group, print the tally. Returns the manifest."""
+    from anime_tools._env import resolve_path
+
+    # Anchor bare relatives under the curation home, not the shell's cwd.
+    source_dir, out = resolve_path(req.source_dir), resolve_path(req.out)
+    manifest = build_groups(
+        source_dir,
+        out,
+        cell_match_min=req.cell_match_min,
+        match_frac_min=req.match_frac_min,
+        sim_min=req.sim_min,
+        grid=req.grid,
+        ratio=req.ratio,
+        min_size=req.min_size,
+        embedder=load_embedder(req.embedder, device=req.device),
+        batch_size=req.batch_size,
+        num_workers=req.num_workers,
+    )
+    print(
+        f"{manifest['n_groups']} group(s) over {manifest['n_images']} image(s) "
+        f"({manifest['n_grouped']} grouped, {manifest['n_singletons']} ungrouped) "
+        f"@ cell_match_min {req.cell_match_min} / match_frac_min "
+        f"{req.match_frac_min} → {out}"
+    )
+    return manifest
