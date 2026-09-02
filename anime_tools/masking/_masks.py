@@ -17,6 +17,7 @@ import numpy as np
 from PIL import Image
 from tqdm import tqdm
 
+from anime_tools import _progress
 from anime_tools._env import resolve_path
 from anime_tools._walk import walk_images
 
@@ -137,8 +138,10 @@ class MaskRun:
 
     def note(self, image_path: Path, what: str) -> None:
         """``name: what`` beside the bar. ``what`` is the stage's own wording
-        (``train 41.2%``, ``skipped (ctd-gated)``, ``focus not found``)."""
+        (``train 41.2%``, ``skipped (ctd-gated)``, ``focus not found``). Under
+        the daemon the same line is a ``step`` in the job's ``progress.jsonl``."""
         self._bar.set_postfix_str(f"{image_path.name}: {what}")
+        _progress.step(self._bar.n, self.total, f"{image_path.name}: {what}")
 
 
 @contextmanager

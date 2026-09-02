@@ -81,6 +81,6 @@ latents `{stem}_{WxH}_anima.npz`, TE `{stem}_anima_te.safetensors`, PE
 | **`path_pattern` glob** | One implementation, `anime_tools/path_filter.py::filter_paths_by_glob`; training subsets and every curation stage share it. |
 | **HF fetch** | `anime_tools/_hf.py`; tests patch the canonical path. |
 | **Shared constants** | `anime_tools/contract.py`, stdlib-only: the autotag worker's stdout sentinels, autotag `--mode` values, the tagger checkpoint file sets, the replay report name and shapes, the GUI drawer attribute, and `CONTRACT_VERSION`. The trainer reads these from here instead of spelling them; the surface is append-only within one version. |
-| **Process boundary** | Curation stages are plain CLIs; the trainer's daemon wraps them (`make … --queue`). No daemon client in `anime_tools`. |
+| **Process boundary** | Curation stages are plain CLIs; the trainer's daemon wraps them (`make … --queue`). No daemon client in `anime_tools`. A stage run with `ANIMA_DAEMON_JOB_DIR` set appends to `<job_dir>/progress.jsonl` in the daemon's own line shape (`anime_tools/_progress.py`: `{"ev": "step", "global_step", "total_steps", "detail"}` per image, `phase` / `heartbeat` lines around a model load); without it, nothing. |
 
 

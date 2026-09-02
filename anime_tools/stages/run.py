@@ -1,5 +1,5 @@
 """One ``run_<stage>(req)`` per caption stage — the in-process surface the CLIs
-in ``cli/`` are shells over (``docs/api_first_plan.md``).
+in ``cli/`` are shells over.
 
 Each takes its request from :mod:`anime_tools.stages.requests`, runs the stage's
 library function, writes ``report.json`` and prints the epilogue the CLI
@@ -18,6 +18,7 @@ from pathlib import Path
 
 from anime_tools._env import curation_home, resolve_path
 from anime_tools._json import write_json
+from anime_tools._progress import phase
 from anime_tools.contract import REPLAY_SHAPES
 from anime_tools.stages.cli._args import make_progress
 from anime_tools.stages.cli._report import (
@@ -505,17 +506,18 @@ def run_ocr(req: OcrRequest):
     # answer onnxruntime already has.
     device = resolve_onnx_device(req.device)
     print(f"Loading PP-OCRv6 ({device})...", flush=True)
-    engine = load_ocr(
-        device=device,
-        min_score=req.min_score,
-        min_chars=req.min_chars,
-        skip_en=req.skip_en,
-        join_cjk=req.join_cjk,
-        min_box_px=req.min_box_px,
-        max_boxes=req.max_boxes,
-        limit_side=req.det_limit_side,
-        batch_size=req.batch_size,
-    )
+    with phase("load ocr"):
+        engine = load_ocr(
+            device=device,
+            min_score=req.min_score,
+            min_chars=req.min_chars,
+            skip_en=req.skip_en,
+            join_cjk=req.join_cjk,
+            min_box_px=req.min_box_px,
+            max_boxes=req.max_boxes,
+            limit_side=req.det_limit_side,
+            batch_size=req.batch_size,
+        )
 
     rows, stats = read_tree(
         resized_dir=resized_dir,

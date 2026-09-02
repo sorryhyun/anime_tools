@@ -1,28 +1,26 @@
-"""The caption and grouping stages' request objects are the CLIs' flags, both
-ways — the P2/P3 shape of ``docs/api_first_plan.md``."""
+"""What the caption and grouping stages' request objects pin beyond the
+registry-wide round trip (``test_registry_requests.py``): the argv a default
+spells, the workspace defaults, the detection block's wiring, validation, and
+the per-process tagger cache."""
 
 from __future__ import annotations
 
 import dataclasses
-import subprocess
-import sys
 
 import pytest
 
 from anime_tools import workspace as WS
-from anime_tools.grouping.cli import build_groups
+from anime_tools._request import args_of
 from anime_tools.grouping.requests import GroupRequest
 from anime_tools.stages.cli import (
+    audit_apply_curated,
     audit_multiview,
     autotag_captions,
-    correct_captions,
-    export_workspace,
-    ocr_captions,
-    position_captions,
-    resize_images,
 )
 from anime_tools.stages.position_captions import PositionCaptionOptions
 from anime_tools.stages.requests import (
+    DETECTION,
+    POSITION_ONLY_FLAGS,
     AuditRequest,
     AutotagRequest,
     CorrectRequest,
@@ -33,203 +31,14 @@ from anime_tools.stages.requests import (
     ResizeRequest,
 )
 
-DETECTION = DetectionRequest(
-    prompt="woman",
-    prompt_embed="none",
-    checkpoint="sam.pt",
-    score_threshold=0.6,
-    retry_score_threshold=0.3,
-    part_prompts=("hips", "thighs"),
-    part_score_threshold=0.4,
-    part_containment_threshold=0.6,
-    iou_threshold=0.5,
-    containment_threshold=0.9,
-    mask_containment_threshold=1.5,
-    dedupe_fill_ratio=0.0,
-    min_area_frac=0.01,
-    pad=0.1,
-    row_tol=0.3,
-    max_instances=4,
-)
-
-CASES = [
-    (
-        autotag_captions,
-        AutotagRequest(
-            src="s",
-            dst="d",
-            path_pattern="a/*",
-            mode="merge",
-            min_confidence=0.4,
-            apply=True,
-            from_report="r.json",
-            report_dir="rep",
-            tagger_dir="ckpt",
-            device="cpu",
-        ),
-    ),
-    (
-        position_captions,
-        PositionRequest(
-            src="s",
-            apply=True,
-            report_dir="rep",
-            crops=True,
-            tagger_dir="ckpt",
-            device="cpu",
-            detection=DETECTION,
-            blank_crops=False,
-            min_instances=3,
-            strict_count=False,
-            max_clause_tags=6,
-            max_novel_tags=0,
-            name_confidence=0.7,
-            allow_unlisted_names=True,
-            discriminative_only=False,
-            bag_gated_identity=False,
-            multi_view_gate=False,
-            bind_view_anatomy=False,
-            bind_framing=False,
-            rewrite=False,
-            bag_relax=1.0,
-            bag_word_relax=1.0,
-            bag_relax_min_score=0.0,
-            attribution_margin=0.0,
-            qwen3="q",
-            max_tokens=256,
-        ),
-    ),
-    (position_captions, PositionRequest(flatten=True, apply=True)),
-    (
-        audit_multiview,
-        AuditRequest(
-            dst="d",
-            apply=True,
-            apply_verdicts=("multiple views", "extra-character"),
-            apply_confidence=("strong", "weak"),
-            crops=True,
-            sheets=False,
-            detection=DETECTION,
-            name_confidence=0.6,
-            multiview_threshold=0.4,
-            identity_confidence=0.8,
-            suggest_counts=True,
-        ),
-    ),
-    (
-        correct_captions,
-        CorrectRequest(
-            src="s",
-            dst="d",
-            tag_csv="t.csv",
-            path_pattern="a/*",
-            recursive=True,
-            caption_insert_no_artist=True,
-            caption_trigger_word="trig",
-            caption_trigger_at_front=True,
-            caption_drop_groups="artist,lighting",
-            no_correct=True,
-            caption_shuffle_variants=3,
-            caption_tag_dropout_rate=0.1,
-            caption_tag_randomize_rate=0.2,
-            qwen3="q",
-            t5_tokenizer_path="t5",
-        ),
-    ),
-    (
-        ocr_captions,
-        OcrRequest(
-            dst="d",
-            ocr_dir="o",
-            path_pattern="a/*",
-            min_score=0.5,
-            min_chars=1,
-            skip_en=False,
-            join_cjk=False,
-            min_box_px=8,
-            max_boxes=16,
-            det_limit_side=960,
-            batch_size=4,
-            apply=True,
-            report_dir="rep",
-            device="cpu",
-        ),
-    ),
-    (
-        resize_images,
-        ResizeRequest(
-            src="s",
-            dst="d",
-            path_pattern="a/*",
-            target_res=(1024, 768),
-            min_pixels=0,
-            recursive=False,
-            copy_captions=True,
-            overwrite=True,
-            workers=1,
-            resize_crop_anchor="top",
-            resize_crop_margins=(1.0, 2.0, 3.0, 4.0),
-            freefit_max_ratio=2.0,
-            report_dir="rep",
-        ),
-    ),
-    (
-        export_workspace,
-        ExportRequest(
-            src="s",
-            dst="d",
-            path_pattern="a/*",
-            masks="m",
-            master="mm",
-            index="i.json",
-            out="o",
-            apply=True,
-            report_dir="rep",
-        ),
-    ),
-    (
-        build_groups,
-        GroupRequest(
-            source_dir="s",
-            out="g.json",
-            cell_match_min=0.9,
-            match_frac_min=0.3,
-            sim_min=0.4,
-            grid=5,
-            ratio=0.7,
-            min_size=1,
-            embedder="mod:factory",
-            batch_size=8,
-            num_workers=0,
-            device="cpu",
-        ),
-    ),
-]
-REQUIRED = {CorrectRequest: ["--src", "s", "--dst", "d"]}
-"""The one stage that requires its roots rather than defaulting them."""
+# The audit's detection group carries ``name_confidence``, which the position
+# stage declares under clause composition: a dest, not a detector knob.
+AUDIT_GROUP_EXTRAS = frozenset({"name_confidence"})
 
 
-def _id(case):
-    return getattr(case, "__name__", type(case).__name__)
-
-
-@pytest.mark.parametrize("module, req", CASES, ids=_id)
-def test_a_request_round_trips_through_its_parser(module, req):
-    argv = req.to_argv()
-    assert type(req).from_namespace(module.build_parser().parse_args(argv)) == req
-
-
-@pytest.mark.parametrize("module, req", CASES, ids=_id)
-def test_the_parser_defaults_are_the_request_defaults(module, req):
-    """A default-only argv reads back as a default request, so a field's
-    default and its flag's default cannot drift."""
-    cls = type(req)
-    required = REQUIRED.get(cls, [])
-    parsed = cls.from_namespace(module.build_parser().parse_args(required))
-    assert parsed == cls(
-        **{k.lstrip("-"): v for k, v in zip(required[::2], required[1::2])}
-    )
-    assert parsed.to_argv() == required
+def detection_dests(cls) -> set[str]:
+    """The dests a stage request puts in its ``detection`` group."""
+    return {a.name for a in args_of(cls) if a.group == DETECTION}
 
 
 def test_a_default_argv_names_only_what_changed():
@@ -268,7 +77,32 @@ def test_the_stage_defaults_are_the_workspace_layout():
     assert len(reports) == 4, "two stages report into one directory"
 
 
+def test_the_curated_apply_reads_the_report_the_audit_writes():
+    """``audit_apply_curated``'s ``--report`` default is the audit's
+    ``--report_dir`` default plus the file written there."""
+    parser = audit_apply_curated.build_parser()
+    report = next(a for a in parser._actions if a.dest == "report")
+    assert report.default == f"{audit_multiview.DEFAULT_REPORT_DIR}/report.json"
+
+
 # ---- the detection block --------------------------------------------------
+
+
+def test_the_detection_group_is_exactly_the_detection_request():
+    """The ``detection`` group of either SAM3 stage is the nested
+    ``DetectionRequest`` block, plus the stage's own detection knobs
+    (:data:`POSITION_ONLY_FLAGS`, the audit's ``name_confidence``). The audit
+    declares none of the position-only flags and takes their defaults."""
+    request_fields = {f.name for f in dataclasses.fields(DetectionRequest)}
+    assert detection_dests(PositionRequest) - set(POSITION_ONLY_FLAGS) == request_fields
+    assert detection_dests(AuditRequest) - AUDIT_GROUP_EXTRAS == request_fields
+    audit_dests = {a.name for a in args_of(AuditRequest)}
+    position_dests = {a.name for a in args_of(PositionRequest)}
+    assert not set(POSITION_ONLY_FLAGS) & audit_dests
+    assert set(POSITION_ONLY_FLAGS) <= position_dests
+    assert {
+        f.name for f in dataclasses.fields(PositionCaptionOptions)
+    } <= position_dests
 
 
 def _twist(value):
@@ -307,13 +141,19 @@ def test_every_option_field_is_wired_to_the_request_field_that_names_it():
 
 
 def test_the_audit_pins_two_subjects_and_takes_the_rest_from_its_detector():
-    req = AuditRequest(detection=DETECTION, name_confidence=0.6)
+    """The audit's options are the position stage's detector verbatim with
+    ``min_instances`` pinned; the two default to the same detection block."""
+    detection = DetectionRequest(part_prompts=("hips", "thighs"), score_threshold=0.6)
+    req = AuditRequest(detection=detection, name_confidence=0.6)
     options = req.options()
     assert options.min_instances == AuditRequest.MIN_INSTANCES == 2
+    assert options.mask_containment_threshold == 0.8
     assert options.name_confidence == 0.6
     assert options.part_prompts == ("hips", "thighs")
+    assert options.score_threshold == 0.6
     assert options.blank_crops is PositionCaptionOptions().blank_crops
     assert options.strict_count is PositionCaptionOptions().strict_count
+    assert AuditRequest().detection == PositionRequest().detection
 
 
 def test_the_processor_floor_is_the_lowest_threshold_any_pass_asks_for():
@@ -350,35 +190,6 @@ def test_the_cli_reports_a_bad_request_the_way_argparse_does(capsys):
         autotag_captions.main(["--mode", "replace"])
     assert exc.value.code == 2
     assert "--mode" in capsys.readouterr().err
-
-
-# ---- torch stays out of the request half ----------------------------------
-
-
-@pytest.mark.parametrize(
-    "code",
-    [
-        "import anime_tools.stages.requests, anime_tools.stages.run",
-        "from anime_tools.stages import AutotagRequest, PositionRequest, run_autotag",
-        "import anime_tools.grouping.requests; from anime_tools.grouping import GroupRequest",
-        (
-            "from anime_tools.stages.cli import position_captions, audit_multiview, "
-            "autotag_captions, correct_captions, ocr_captions, resize_images, "
-            "export_workspace"
-        ),
-        "from anime_tools.grouping.cli import build_groups",
-    ],
-)
-def test_the_requests_import_without_a_model_library(code):
-    probe = (
-        f"import sys; {code}; "
-        "heavy = {'torch', 'cv2', 'sam3', 'onnxruntime', 'timm'} & set(sys.modules); "
-        "assert not heavy, heavy"
-    )
-    r = subprocess.run(
-        [sys.executable, "-c", probe], capture_output=True, text=True, check=False
-    )
-    assert r.returncode == 0, r.stderr
 
 
 def test_the_tagger_loads_once_per_process(monkeypatch, tmp_path):

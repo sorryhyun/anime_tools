@@ -26,6 +26,7 @@ import numpy as np
 import torch
 from PIL import Image
 
+from anime_tools import _progress
 from anime_tools._walk import IMAGE_EXTENSIONS, glob_images_pathlib
 from anime_tools.captions.position_clauses import parse_caption
 from anime_tools.captions.taxonomy import normalize_tag
@@ -310,5 +311,6 @@ def embed_members(
                 feats[_key(todo[i])] = f
                 saver.submit(_save_feature, _cache_path(todo[i]), f, stamps[i])
             pbar.update(len(idxs))
+            _progress.step(pbar.n, len(todo), todo[idxs[-1]].image_path.name)
     pbar.close()
     return feats

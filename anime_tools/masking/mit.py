@@ -19,6 +19,7 @@ if TYPE_CHECKING:
 
 from anime_tools._device import resolve_device
 from anime_tools._env import resolve_path
+from anime_tools._progress import phase
 
 # Both nets are catalog rows so the GUI can pre-fetch them. The UNet++ is read out of the
 # hub cache; the CTD gate is a path, and it is the catalog's rather than a flag's.
@@ -259,11 +260,13 @@ def run_mit_masks(req: MitMaskRequest) -> MaskRun:
     ctd = None
     if req.use_mit:
         print("Loading text segmentation model...")
-        model = _load_model(req.model_path, device=device)
+        with phase("load text segmenter"):
+            model = _load_model(req.model_path, device=device)
         if req.ctd_gate:
             ctd_onnx = default_ctd_onnx_path()
             if ctd_onnx.exists():
-                ctd = _load_ctd(str(ctd_onnx), device=device)
+                with phase("load ctd"):
+                    ctd = _load_ctd(str(ctd_onnx), device=device)
             else:
                 print(
                     f"WARNING: --ctd-gate on but {ctd_onnx} missing — gating "

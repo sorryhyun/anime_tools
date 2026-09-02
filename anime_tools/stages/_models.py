@@ -16,6 +16,7 @@ from pathlib import Path
 
 from anime_tools._device import resolve_device
 from anime_tools._env import resolve_path
+from anime_tools._progress import phase
 from anime_tools.tagger.dbv4_meta import DEFAULT_TAGGER_DIR
 
 _LOADED: dict[tuple[str, str], tuple] = {}
@@ -28,16 +29,19 @@ def load_anima_tagger(
     default, fetched when absent) on ``device`` (``None`` = auto)."""
     from anime_tools.tagger.tagger import AnimaTagger, ensure_tagger_checkpoint
 
-    ckpt_dir: Path = ensure_tagger_checkpoint(
-        resolve_path(str(tagger_dir or DEFAULT_TAGGER_DIR))
-    )
-    dev = resolve_device(device)
-    key = (str(ckpt_dir), dev)
-    loaded = _LOADED.get(key)
-    if loaded is None:
-        if not quiet:
-            print(f"Loading Anima Tagger from {ckpt_dir} ({dev})...", flush=True)
-        loaded = _LOADED[key] = (AnimaTagger(ckpt_dir, device=dev), ckpt_dir)
+    # One phase over the fetch and the build: the first run's backbone download
+    # is the quiet stretch a daemon stall watchdog would otherwise read as a wedge.
+    with phase("load tagger"):
+        ckpt_dir: Path = ensure_tagger_checkpoint(
+            resolve_path(str(tagger_dir or DEFAULT_TAGGER_DIR))
+        )
+        dev = resolve_device(device)
+        key = (str(ckpt_dir), dev)
+        loaded = _LOADED.get(key)
+        if loaded is None:
+            if not quiet:
+                print(f"Loading Anima Tagger from {ckpt_dir} ({dev})...", flush=True)
+            loaded = _LOADED[key] = (AnimaTagger(ckpt_dir, device=dev), ckpt_dir)
     return loaded
 
 

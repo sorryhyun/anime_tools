@@ -143,8 +143,10 @@ field by field, so an option field with no request field is an error, not a sile
 audit pins `min_instances=2` there rather than exposing it. Validation lives in `__post_init__`
 (autotag mode, `--flatten` vs `--from_report`, the randomize tokenizers, resize tiers); a missing
 input tree is a `FileNotFoundError` the shell turns into `SystemExit`. `stages/__init__.py` exposes
-all fifteen names lazily; `tests/test_stage_requests.py` round-trips every request through its
-parser and imports the request half torch-poisoned.
+all fifteen names lazily; `tests/test_registry_requests.py` round-trips every registered stage's
+request through its
+parser and imports the request half torch-poisoned; `tests/test_stage_requests.py` keeps the
+stage-specific pins.
 
 **`stages/registry.py`** is the stage list — `Stage(id, title, request="module:Class", module,
 panel, …)` for all eleven stages, masking and grouping included — resolved lazily
@@ -164,11 +166,13 @@ builds the SAM3 detector from a `DetectionRequest` (the A/B, review and probe CL
 Stages are dry-run by default **from the CLI** and write `report.json`; `--apply` writes for real.
 The GUI always passes it.
 
-Shared scaffolding (`tests/test_stage_cli_args.py` pins one spelling per shared flag, since the
+Shared scaffolding (`tests/test_registry_requests.py` pins one spelling per shared flag, since the
 GUI fills `--path_pattern` / `--tagger_dir` / `--checkpoint` / `--prompt_embed` from one Settings
 value each):
 
-- `cli/_args.py::make_progress` (the `  [done/total] detail` line the GUI's progress bar parses),
+- `cli/_args.py::make_progress` (the `  [done/total] detail` line the GUI's progress bar parses;
+  under the trainer's daemon the same callback also streams every call to the job's
+  `progress.jsonl` through `_progress.py`),
   `cli/_report.py`, `replay.run_replay_cli` (reads `from_report` / `path_pattern` / `apply` off the
   request).
 - `_caption_io.py` — `read_caption`/`write_caption`, the trailing-newline invariant, the
@@ -205,7 +209,7 @@ SAM3 subject masks, SAM3/UNet++/ComicTextDetector text masks, merged into 8-bit 
 generated from the class (`Request.parser()`, hyphenated: `FLAG_SEP = "-"`, with the underscore
 spelling as an alias);
 `to_argv()` / `from_namespace()` come from `anime_tools/_request.py` and are inverses over it
-(`tests/test_masking_requests.py` round-trips every one, and a default argv must read back as a
+(`tests/test_registry_requests.py` round-trips every one, and a default argv must read back as a
 default request). Validation lives in `__post_init__`; the CLIs in `cli/` are shells that parse,
 build the request, and turn its `ValueError` into `parser.error`. `load_sam3` caches
 per process on its arguments, so a text-mask pass after a subject-mask pass reuses the model.
@@ -351,8 +355,13 @@ cache. `python -m anime_tools.downloads [ID…]` fetches; the GUI's Models pane 
   `_json.py` (UTF-8 both ways, `ensure_ascii=False`, `indent=2` — a bare `open()` reads in the
   platform codepage, which isn't UTF-8 on Windows), `_device.py` (`DEVICE_HELP` for the request
   fields, `add_device_arg` for the hand-written CLIs, and the one `cuda if available` probe; the
-  flag literal exists once, pinned by `tests/test_stage_cli_args.py`),
-  `_hf.py` (tests patch this path), `path_filter.py` (the one `path_pattern` implementation).
+  flag literal exists once, pinned by `tests/test_registry_requests.py`),
+  `_hf.py` (tests patch this path), `path_filter.py` (the one `path_pattern` implementation),
+  `_progress.py` (stdlib: with `ANIMA_DAEMON_JOB_DIR` set, `step()` appends the daemon's own
+  `{"ev": "step", "global_step", "total_steps", "detail"}` line to `<job_dir>/progress.jsonl` and
+  `phase(name)` brackets a model load with a 30 s heartbeat so the daemon's stall watchdog does
+  not kill a quiet SAM3/tagger/OCR/embedder load; every loader and progress callback goes through
+  it, and without the variable it is a no-op).
 - **`comfyui/anima_tagger/`** (not installed — `packages.find` only includes `anime_tools*`): the
   ComfyUI node. Imports `AnimaTagger` plus `ensure_tagger_checkpoint` and the `dbv4_meta` constants
   from the installed package and vendors nothing, so the gated-backbone fetch happens in the loader

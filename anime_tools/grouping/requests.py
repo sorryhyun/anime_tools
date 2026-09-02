@@ -1,4 +1,4 @@
-"""The grouping stage as a request object (``docs/api_first_plan.md``).
+"""The grouping stage as a request object.
 
 Torch-free: run one through :func:`anime_tools.grouping.run_groups`, which
 loads the embedder, or hand ``to_argv()`` to a subprocess. Every field is a

@@ -28,6 +28,7 @@ from pathlib import Path
 
 import numpy as np
 
+from anime_tools._progress import phase
 from anime_tools.downloads import DEFAULT_SAM3_CHECKPOINT, DEFAULT_SUBJECT_PROMPT_EMBED
 
 # A module-level side effect on purpose — see the docstring.
@@ -243,7 +244,10 @@ def load_sam3(
     if checkpoint is not None:
         build_kwargs["checkpoint_path"] = str(checkpoint)
         build_kwargs["load_from_HF"] = False
-    model = build_sam3_image_model(**build_kwargs)
+    # The one quiet stretch of every SAM3 stage; under the daemon a heartbeat
+    # keeps it from reading as a stall (``_progress``).
+    with phase("load sam3"):
+        model = build_sam3_image_model(**build_kwargs)
 
     if disable_act_ckpt:
         n = 0

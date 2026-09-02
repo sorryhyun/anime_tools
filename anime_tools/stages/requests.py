@@ -1,5 +1,5 @@
 """The caption stages as request objects — the surface the CLIs, the GUI and the
-trainer share (``docs/api_first_plan.md``).
+trainer share.
 
 Torch-free: run one through :mod:`anime_tools.stages.run` (``run_autotag(req)``
 and friends, which import the models), or hand ``to_argv()`` to a subprocess.

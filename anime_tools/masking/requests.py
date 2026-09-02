@@ -1,5 +1,5 @@
 """The three mask stages as request objects — the surface the CLIs, the GUI and
-the trainer share (``docs/api_first_plan.md``).
+the trainer share.
 
 Torch-free: run one through :func:`anime_tools.masking.run_sam_masks` /
 :func:`run_mit_masks` / :func:`run_merge_masks`, which import the models, or

@@ -7,8 +7,8 @@ argv (:meth:`Request.to_argv`), and the web GUI draws its form off the same
 field list (:func:`args_of`). The parser itself is *generated* from the
 fields (:func:`build_parser` / :meth:`Request.parser`), so a flag's spelling,
 default, help and grouping are written once, in the field's metadata —
-``tests/test_masking_requests.py`` and ``tests/test_stage_requests.py``
-round-trip each request through its parser.
+``tests/test_registry_requests.py`` round-trips every registered stage's
+request through its parser.
 
 Field metadata, all optional and all written through :func:`arg`:
 

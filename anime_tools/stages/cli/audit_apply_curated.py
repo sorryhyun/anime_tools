@@ -30,7 +30,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument(
         "--report",
         # `audit_multiview`'s --report_dir plus the file it writes there; the
-        # two defaults are pinned together in test_stage_cli_args.
+        # two defaults are pinned together in test_stage_requests.
         default=f"{WS.REPORTS}/multiview_audit/report.json",
         help="Audit report.json the accept list refers to",
     )

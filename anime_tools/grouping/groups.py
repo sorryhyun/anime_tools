@@ -268,9 +268,12 @@ def run_groups(req) -> dict:
     :class:`~anime_tools.grouping.requests.GroupRequest`: load its embedder,
     group, print the tally. Returns the manifest."""
     from anime_tools._env import resolve_path
+    from anime_tools._progress import phase
 
     # Anchor bare relatives under the curation home, not the shell's cwd.
     source_dir, out = resolve_path(req.source_dir), resolve_path(req.out)
+    with phase("load embedder"):
+        embedder = load_embedder(req.embedder, device=req.device)
     manifest = build_groups(
         source_dir,
         out,
@@ -280,7 +283,7 @@ def run_groups(req) -> dict:
         grid=req.grid,
         ratio=req.ratio,
         min_size=req.min_size,
-        embedder=load_embedder(req.embedder, device=req.device),
+        embedder=embedder,
         batch_size=req.batch_size,
         num_workers=req.num_workers,
     )
