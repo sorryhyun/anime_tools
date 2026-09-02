@@ -84,19 +84,12 @@ default-groups = ["dev"]
 # sam3.model_builder / sam3.model.sam3_image_processor under numpy 2.4.
 override-dependencies = ["numpy>=2.0"]
 
-# Windows has no CUDA wheels on PyPI -- `pip install torch` there is the +cpu build, so a
-# plain `uv sync` leaves --device cuda raising "Torch not compiled with CUDA enabled".
-# (Linux PyPI torch already ships CUDA, hence the marker.) cu130 is the only index that
-# carries cp313 win_amd64 wheels for the versions we resolve to, and Blackwell (sm_120)
-# needs CUDA >= 12.8 anyway.
-[[tool.uv.index]]
-name = "pytorch-cu130"
-url = "https://download.pytorch.org/whl/cu130"
-explicit = true
-
-[tool.uv.sources]
-torch = [{ index = "pytorch-cu130", marker = "sys_platform == 'win32'" }]
-torchvision = [{ index = "pytorch-cu130", marker = "sys_platform == 'win32'" }]
+# No torch index is pinned here on purpose. Windows has no CUDA wheels on PyPI, but a
+# `[tool.uv.sources]` torch index in this file leaks into every consumer that installs the
+# package by path (the trainer's `anime-tools-dev` group) and collides with the consumer's
+# own Windows backend selection (anima_lora resolves torch from cu132 or ROCm per group).
+# The trainer owns the Windows backend; a standalone Windows install passes the index at
+# sync time: `uv sync --index https://download.pytorch.org/whl/cu132`.
 
 [build-system]
 requires = ["setuptools>=68.0"]
