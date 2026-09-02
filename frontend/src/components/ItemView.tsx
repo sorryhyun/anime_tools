@@ -75,8 +75,9 @@ export function ItemView(props: {
       the editor when the version it rewrote is the one on screen. */
   proposal?: Proposal;
   proposalStage?: string;
-  /** The one global "show explanations" preference. */
+  /** The caption panel's own explanations, and the (?) in its header. */
   help: boolean;
+  onHelp: () => void;
   onSaved: (saved: SavedCaption) => void;
 }) {
   const [view, setView] = createSignal<View>("image");
@@ -288,6 +289,7 @@ export function ItemView(props: {
               <div class="captions">
                 <CaptionCard
                   help={props.help}
+                  onHelp={props.onHelp}
                   rel={it().rel}
                   versions={it().versions}
                   kind={props.kind}

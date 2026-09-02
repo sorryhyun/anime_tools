@@ -3,13 +3,16 @@ import { locale, localeName, LOCALES, setLocale, t } from "../i18n";
 import type { SettingsPane } from "./SettingsDialog";
 
 /** The ☰ menu: the three Settings dialogs, the Hub token they all need, and the
-    global "show the prose" preference. The three rows are the only way to each
-    dialog, since they are separate windows rather than tabs. The sidebar fold is
-    not here — it lives on the edge it moves. */
+    row that opens every explanation at once — each (?) on the page speaks for
+    its own spot, so this is the only thing that reaches all of them. The three
+    Settings rows are the only way to each dialog, since they are separate
+    windows rather than tabs. The sidebar fold is not here — it lives on the edge
+    it moves. */
 export function HeaderMenu(props: {
   hasToken: boolean;
   /** Catalog rows still to download — the badge the Models tab used to carry. */
   missingModels: number;
+  /** Every help area is open — what the row's on/off reports. */
   help: boolean;
   onHelp: () => void;
   onSettings: (pane?: SettingsPane) => void;

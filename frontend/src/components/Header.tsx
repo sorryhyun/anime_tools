@@ -10,6 +10,7 @@ import type { SettingsPane } from "./SettingsDialog";
 export function Header(props: {
   info?: Info;
   list?: DatasetList;
+  /** Every help area is open; the ☰ row toggles all of them. */
   help: boolean;
   onHelp: () => void;
   /** A weights pull is never shown in the dock, so this badge is the only sign

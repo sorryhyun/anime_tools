@@ -196,7 +196,6 @@ export function StageForm(props: {
   setValue: (dest: string, v: unknown) => void;
   reset: () => void;
   help: boolean;
-  onHelp: () => void;
 }) {
   /** Which field's fallback browser is open. Only a host with no chooser of its
       own gets here -- see `browsePath`. */

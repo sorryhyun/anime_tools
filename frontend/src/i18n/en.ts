@@ -1,9 +1,12 @@
 /** The GUI's own chrome in English, and the schema every other locale is
  * checked against.
  *
- * Stage titles, argparse labels and help, and the model catalog's rows are
- * Python-side text and stay as they arrive; captions, paths and tags are data
- * and are never translated.
+ * The dock's panels and the stage names under them are translated here, keyed
+ * by the id the registry sends (`stage.panels` / `stage.titles` / `stage.shorts`)
+ * — they are a closed, rarely-changing list and they are the app's own
+ * navigation. Everything else the server writes is not: a stage's doc and notes,
+ * every argparse label and help string, and the model catalog's rows arrive as
+ * they were written, and captions, paths and tags are data.
  *
  * `en` is the schema: every other locale is declared `: Dict` (`ko.ts`, `ja.ts`,
  * `zh.ts`), so a missing or misspelled key is a type error rather than a blank
@@ -38,7 +41,7 @@ const en = {
     models: "Models & weights",
     hfToken: "HF token",
     notSet: "⚠ not set",
-    showHelp: "Show explanations",
+    showHelp: "Show every explanation",
     language: "Language",
   },
   help: {
@@ -221,6 +224,44 @@ const en = {
     gatedLink: "accept the terms",
   },
   stage: {
+    /** The dock's buttons, keyed by the panel name the registry sends
+        (`gui/stages.py`). A panel with no entry here shows the name as it
+        arrived — a stage added server-side is never a blank button. */
+    panels: {
+      Resize: "Resize",
+      Autotag: "Autotag",
+      Curate: "Curate",
+      OCR: "OCR",
+      Groups: "Groups",
+      Masks: "Masks",
+      Export: "Export",
+    },
+    /** Stage titles, keyed by stage id; same fallback as `panels`. The doc,
+        the notes and every field label under them are argparse text and stay
+        as the server wrote them. */
+    titles: {
+      resize: "Resize to buckets",
+      autotag: "Autotag captions",
+      position: "Position captions",
+      correct: "Correct + mirror captions",
+      audit: "Multiview audit",
+      ocr: "OCR text",
+      groups: "Build groups",
+      masks_sam: "SAM3 subject masks",
+      masks_mit: "Text masks",
+      masks_merge: "Merge masks",
+      export: "Export workspace",
+    },
+    /** The in-panel picker's label, for the two panels that hold more than one
+        stage. Falls back to the title. */
+    shorts: {
+      position: "Position",
+      correct: "Correct",
+      audit: "Audit",
+      masks_sam: "Subject",
+      masks_mit: "Text",
+      masks_merge: "Merge",
+    },
     run: "Run",
     runBatch: "Run batch",
     undo: "Undo",

@@ -3,6 +3,7 @@ import { api } from "../api";
 import { t } from "../i18n";
 import { BoxedCaption } from "./BoxedCaption";
 import { CaptionDiff } from "./CaptionDiff";
+import { HelpToggle } from "./HelpToggle";
 import type {
   CaptionEntry,
   CaptionKind,
@@ -67,8 +68,11 @@ export function CaptionCard(props: {
       the editor until another Run replaces it. */
   proposal?: Proposal;
   proposalStage?: string;
-  /** The global "show explanations" preference. */
+  /** This panel's own explanations — where the version on screen lives and what
+      a double-click on a tag does. The (?) in the header is the only thing that
+      opens them; the stage form's speaks for the dock alone. */
   help: boolean;
+  onHelp: () => void;
   onSaved: (saved: SavedCaption) => void;
 }) {
   let card!: HTMLDivElement;
@@ -229,6 +233,7 @@ export function CaptionCard(props: {
               <Show when={!e().editable}>
                 <span class="badge">{t().item.readOnly}</span>
               </Show>
+              <HelpToggle open={props.help} onToggle={props.onHelp} />
               <span class="sp" />
               <Show when={e().editable}>
                 <button disabled={!dirty() || busy()} onClick={() => clearDraft(e().kind)}>

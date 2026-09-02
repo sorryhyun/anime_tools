@@ -70,8 +70,8 @@ export default function App() {
       <Header
         info={config.info()}
         list={dataset.list()}
-        help={layout.help()}
-        onHelp={layout.toggleHelp}
+        help={layout.allHelp()}
+        onHelp={layout.toggleAllHelp}
         downloading={downloads.busy()}
         missingModels={(config.models()?.models ?? []).filter((m) => !m.installed).length}
         onSettings={config.openSettings}
@@ -115,8 +115,9 @@ export default function App() {
         kind={dataset.sel()?.kind ?? "image"}
         onSelectCaption={(kind) => dataset.setSel({ rel: dataset.sel()?.rel ?? "", kind })}
         proposal={runner.shownProposal()}
-        proposalStage={stages.cur()?.title}
-        help={layout.help()}
+        proposalStage={stages.curTitle()}
+        help={layout.helpOpen("caption")}
+        onHelp={() => layout.toggleHelp("caption")}
         onSaved={dataset.onSaved}
       />
 
@@ -150,8 +151,8 @@ export default function App() {
           onCancel={runner.cancel}
           missingModels={stages.missingModels().map((m) => m.title)}
           onSettings={() => config.openSettings("models")}
-          help={layout.help()}
-          onHelp={layout.toggleHelp}
+          help={layout.helpOpen("stage")}
+          onHelp={() => layout.toggleHelp("stage")}
         />
       </Dock>
 
@@ -196,7 +197,7 @@ export default function App() {
         downloading={downloads.busy()}
         downloadIds={downloads.ids()}
         progress={downloads.status()}
-        help={layout.help()}
+        helpOpen={layout.helpOpen}
         onHelp={layout.toggleHelp}
         onDownload={downloads.start}
         onCancelDownload={downloads.cancel}

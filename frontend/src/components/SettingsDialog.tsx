@@ -1,6 +1,7 @@
 import { createEffect, createMemo, createSignal, For, on, Show } from "solid-js";
 import { createStore, reconcile, unwrap } from "solid-js/store";
 import { slots, t } from "../i18n";
+import type { HelpArea } from "../layout";
 import { MASK_SETTING, REPORT_SETTING } from "../types";
 import type {
   DatasetRoots,
@@ -12,6 +13,7 @@ import type {
   RootName,
   Stage,
 } from "../types";
+import { stageTitle } from "../stages";
 import { Dialog } from "./Dialog";
 import { FieldRow, grouped } from "./StageForm";
 import { browsePath, PathPicker } from "./PathPicker";
@@ -96,8 +98,11 @@ export function SettingsDialog(props: {
   /** What that job asked for; `[]` = every missing model. */
   downloadIds: string[];
   progress: JobStatus;
-  help: boolean;
-  onHelp: () => void;
+  /** A dialog shows several blocks at once, so each `<h4>` carries its own (?)
+      and asks about its own area — one for the whole pane would answer four
+      questions nobody asked. */
+  helpOpen: (area: HelpArea) => boolean;
+  onHelp: (area: HelpArea) => void;
   onDownload: (ids: string[]) => void;
   onCancelDownload: () => void;
   onClose: (out: SettingsOut | null) => void;
@@ -176,12 +181,11 @@ export function SettingsDialog(props: {
           props.onClose(out);
         }}
       >
-        {/* HelpToggle is `type=button`, like the model rows -- every other
-          button in here submits the <form method="dialog"> and closes it, which
-          is what the x wants, so it is a plain `value="cancel"` submitter. */}
+        {/* The x is a plain `value="cancel"` submitter of the
+          <form method="dialog">, which is exactly what it wants; the (?) beside
+          each block below is `type=button` so it is not. */}
         <h3 class="dlgh">
           {t().settings.paneTitle[props.pane]}
-          <HelpToggle open={props.help} onToggle={props.onHelp} />
           <span class="sp" />
           <button
             value="cancel"
@@ -202,8 +206,11 @@ export function SettingsDialog(props: {
               <span class="mono">{props.info?.models_dir}</span>
             </div>
 
-            <h4>{t().settings.roots}</h4>
-            <Show when={props.help}>
+            <h4>
+              {t().settings.roots}
+              <HelpToggle open={props.helpOpen("roots")} onToggle={() => props.onHelp("roots")} />
+            </h4>
+            <Show when={props.helpOpen("roots")}>
               <p class="dim" style="margin:0 0 8px">
                 {slots(t().settings.rootsHelp, () => (
                   <code>out</code>
@@ -240,8 +247,14 @@ export function SettingsDialog(props: {
 
         <Show when={props.pane === "advanced"}>
           <div class="spane">
-            <h4>{t().settings.stageDefaults}</h4>
-            <Show when={props.help}>
+            <h4>
+              {t().settings.stageDefaults}
+              <HelpToggle
+                open={props.helpOpen("defaults")}
+                onToggle={() => props.onHelp("defaults")}
+              />
+            </h4>
+            <Show when={props.helpOpen("defaults")}>
               <p class="dim" style="margin:0 0 8px">
                 {slots(t().settings.stageDefaultsHelp, (i) => (
                   <code>
@@ -281,8 +294,14 @@ export function SettingsDialog(props: {
             <Show when={props.preprocess}>
               {(pre_) => (
                 <>
-                  <h4>{pre_().title}</h4>
-                  <Show when={props.help}>
+                  <h4>
+                    {stageTitle(pre_())}
+                    <HelpToggle
+                      open={props.helpOpen("preprocess")}
+                      onToggle={() => props.onHelp("preprocess")}
+                    />
+                  </h4>
+                  <Show when={props.helpOpen("preprocess")}>
                     <p class="dim" style="margin:0 0 8px">
                       {pre_().notes}{" "}
                       {slots(t().settings.preprocessHelp, () => (
@@ -312,7 +331,10 @@ export function SettingsDialog(props: {
 
         <Show when={props.pane === "models"}>
           <div class="spane">
-            <h4>{t().settings.hf}</h4>
+            <h4>
+              {t().settings.hf}
+              <HelpToggle open={props.helpOpen("token")} onToggle={() => props.onHelp("token")} />
+            </h4>
             <div class="kv">
               <b>{t().settings.token}</b>
               <span>
@@ -323,14 +345,17 @@ export function SettingsDialog(props: {
                   placeholder={t().settings.tokenPlaceholder}
                   style="margin-top:4px"
                 />
-                <Show when={props.help}>
+                <Show when={props.helpOpen("token")}>
                   <span class="dim">{t().settings.tokenHelp}</span>
                 </Show>
               </span>
             </div>
 
-            <h4>{t().settings.models}</h4>
-            <Show when={props.help}>
+            <h4>
+              {t().settings.models}
+              <HelpToggle open={props.helpOpen("models")} onToggle={() => props.onHelp("models")} />
+            </h4>
+            <Show when={props.helpOpen("models")}>
               <p class="dim" style="margin:0 0 8px">
                 {t().settings.modelsHelp}
               </p>

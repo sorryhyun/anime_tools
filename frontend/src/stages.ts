@@ -1,9 +1,30 @@
 import { createEffect, createMemo, createResource, on } from "solid-js";
 import { createStore, reconcile } from "solid-js/store";
 import { api } from "./api";
+import { t } from "./i18n";
 import { persisted } from "./state";
 import { type Field, type Stage, type Values } from "./types";
 import type { Config } from "./config";
+
+/** One translated label out of an `i18n` table, or nothing when the server
+    sent an id no locale spells. */
+const label = (table: Record<string, string>, key: string): string | undefined => table[key];
+
+/** The dock's own navigation, translated: the panel buttons and the stage names
+ * under them. They are a closed list (`gui/stages.py`'s registry) and they are
+ * how the app is walked, which is why these three are the exception to
+ * server-owned text shipping as it arrives — a stage's doc, its notes and every
+ * field label under it still do. The key is the id the server sent and an
+ * unknown one falls back to the string it came with, so a stage added
+ * server-side is a readable button before it is a translated one.
+ */
+export const panelLabel = (panel: string) => label(t().stage.panels, panel) ?? panel;
+export const stageTitle = (s: Stage) => label(t().stage.titles, s.id) ?? s.title;
+/** The in-panel picker's label. `short` defaults to `title` server-side, so a
+    stage with no short of its own follows the translated title rather than
+    falling back to an English one. */
+export const stageShort = (s: Stage) =>
+  label(t().stage.shorts, s.id) ?? (s.short === s.title ? stageTitle(s) : s.short);
 
 /** The stage registry and the forms over it: which stage is open, what its form
  * says, and how the dock's buttons bucket the stages.
@@ -95,6 +116,11 @@ export function createStages(config: Config) {
     curId,
     setCurId,
     cur,
+    /** The open stage's name, translated — what the caption diff says wrote it. */
+    curTitle: () => {
+      const c = cur();
+      return c ? stageTitle(c) : undefined;
+    },
     byId: (id: string) => all()?.find((s) => s.id === id),
     values,
     setValue,

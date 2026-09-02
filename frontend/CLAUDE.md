@@ -49,7 +49,11 @@ nothing fetched, no business rule lives there. The state is five composables at
   stage forms are seeded from), and the four resources are the single refetch
   points, so a finished download and a saved root land everywhere at once.
 - **`layout.ts`** — which panes are open and how tall the dock is. Preferences
-  that survive a reload but mean nothing to the server.
+  that survive a reload but mean nothing to the server. The prose behind the (?)
+  buttons is one of them, and it is a **set of areas** (`HELP_AREAS`), not a
+  flag: a (?) speaks for the spot it sits on, since the caption panel and the
+  stage form are on screen together and a Settings pane stacks several blocks at
+  once. The ☰ menu's row is the only thing that opens all of them.
 - **`dataset.ts`** — the image listing, the selection and the selected row's
   detail. The selection *is* the page's address: it is mirrored into the location
   hash both ways (`#rel|kind`), so a link into the GUI opens on an image.
@@ -63,7 +67,10 @@ nothing fetched, no business rule lives there. The state is five composables at
   rule: the server marks them, `StageForm`'s `FieldGroup` only folds them, one
   fold per group and on that group's own bottom edge. That fold is local,
   unsaved state — it is a look at one group of one stage, not a preference
-  about how you work, which is what `layout.ts`'s `help` is.
+  about how you work, which is what `layout.ts`'s help areas are.
+  `panelLabel` / `stageTitle` / `stageShort` live here too: the dock's own
+  navigation is translated, keyed by the id the server sent and falling back to
+  the string that came with it.
 - **`runner.ts`** — the Run → versions → Undo loop, and the one job the dock
   follows. A Run *writes* (`--apply`, always): there is no Apply button, because
   the caption ladder is what that gate was standing in for — the text a run
@@ -107,10 +114,14 @@ dicts and says which module writes each one.
 ## Conventions
 
 - **Every user-facing string comes from `i18n/`.** A literal in a component
-  ships as English to four languages. Server-owned text is the exception and is
-  *not* re-typed here either: stage titles, field labels, argparse help and the
-  model catalog's rows are rendered as they arrive, and captions, tags and paths
-  are data.
+  ships as English to four languages. Server-owned text is *not* re-typed here
+  either: a stage's doc and notes, field labels, argparse help and the model
+  catalog's rows are rendered as they arrive, and captions, tags and paths are
+  data. The **dock's navigation** is the one exception — the panel buttons and
+  the stage names on them are a closed list and they are how the app is walked,
+  so `stage.panels` / `stage.titles` / `stage.shorts` translate them, keyed by
+  the registry's own ids, and an id no locale spells falls back to the English
+  the server sent.
 - **Never split a caption in the browser.** Clause structure comes from the
   server (`/api/dataset/item`, `/api/dataset/parse`) — the grammar has one
   implementation, in `anime_tools/captions/`. No `split(",")`, ever. The boxed

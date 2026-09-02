@@ -1,5 +1,6 @@
 import { createMemo, For, Show } from "solid-js";
 import { t } from "../i18n";
+import { stageShort, stageTitle } from "../stages";
 import { StageForm } from "./StageForm";
 import { HelpToggle } from "./HelpToggle";
 import type { Stage, Values } from "../types";
@@ -46,6 +47,10 @@ export function StagePanel(props: {
   onHelp: () => void;
 }) {
   const cur = () => props.cur;
+  const curTitle = () => {
+    const c = cur();
+    return c ? stageTitle(c) : "";
+  };
   /** Per-image Run needs a stage that takes a pattern and an image to aim at. */
   const scoped = createMemo(() => !!cur()?.scoped);
   const noImage = createMemo(() => !props.rel);
@@ -56,16 +61,16 @@ export function StagePanel(props: {
     <div class="stagepanel">
       <Show when={!props.error} fallback={<div class="err pad">{String(props.error)}</div>}>
         <div class="stagebar">
-          <Show when={(props.siblings?.length ?? 0) > 1} fallback={<b>{cur()?.title}</b>}>
+          <Show when={(props.siblings?.length ?? 0) > 1} fallback={<b>{curTitle()}</b>}>
             <span class="tabs stagepick">
               <For each={props.siblings}>
                 {(s) => (
                   <a
                     classList={{ sel: s.id === props.cur?.id, na: !s.available }}
-                    title={s.available ? s.title : s.error}
+                    title={s.available ? stageTitle(s) : s.error}
                     onClick={() => props.onPick(s.id)}
                   >
-                    {s.short}
+                    {stageShort(s)}
                   </a>
                 )}
               </For>
@@ -127,7 +132,7 @@ export function StagePanel(props: {
                 when={s().available}
                 fallback={
                   <div class="doc">
-                    {t().stage.unavailable(s().title, s().error ?? "")}
+                    {t().stage.unavailable(stageTitle(s()), s().error ?? "")}
                     {`\n\n${t().stage.reinstall}  uv tool install --force "anime-tools @ git+https://github.com/sorryhyun/anime_tools"`}
                   </div>
                 }
@@ -138,7 +143,6 @@ export function StagePanel(props: {
                   setValue={props.setValue}
                   reset={props.reset}
                   help={props.help}
-                  onHelp={props.onHelp}
                 />
               </Show>
             )}

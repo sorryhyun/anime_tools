@@ -328,7 +328,7 @@ dialog.settings { width:920px }
   .kv { grid-template-columns:110px minmax(0,1fr) }
   .models, .twoup { grid-template-columns:minmax(0,1fr) }
 }
-dialog h4 { margin:16px 0 4px; color:var(--dim); font-size:11px; text-transform:uppercase; letter-spacing:.06em }
+dialog h4 { display:flex; align-items:center; gap:8px; margin:16px 0 4px; color:var(--dim); font-size:11px; text-transform:uppercase; letter-spacing:.06em }
 dialog::backdrop { background:#0008 }
 dialog h3 { margin:0 0 10px }
 .dlg-actions { display:flex; gap:8px; justify-content:flex-end; margin-top:12px }

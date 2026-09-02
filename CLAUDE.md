@@ -259,8 +259,10 @@ Other server pieces:
 - ⚙ Settings is **three dialogs, not one tabbed one** (`SETTINGS_PANES`): roots, stage defaults +
   preflight, models. Only the open pane is mounted, so `SettingsOut` carries `null` for the other
   two.
-- The panel's own chrome is translated (`frontend/src/i18n/`); everything the server owns (stage
-  titles, argparse labels and help, the model catalog) ships as it arrives.
+- The panel's own chrome is translated (`frontend/src/i18n/`), and so is the dock's navigation —
+  the panel buttons and the stage names on them, keyed by this registry's own ids. Everything else
+  the server owns (a stage's doc and notes, argparse labels and help, the model catalog) ships as it
+  arrives.
 
 ### `downloads.py` (torch-free)
 

@@ -1,6 +1,27 @@
 import { createEffect, createSignal, on } from "solid-js";
 import { asFlag, fromFlag, persisted } from "./state";
 
+/** The places prose hides behind a (?). One entry per *spot on screen*, not per
+ * button: the caption panel and the stage form are visible at the same time, so
+ * one (?) may never speak for both. The Settings panes split the same way —
+ * each `<h4>` block is its own area, since a dialog shows several at once.
+ */
+export const HELP_AREAS = [
+  "stage",
+  "caption",
+  "roots",
+  "defaults",
+  "preprocess",
+  "token",
+  "models",
+] as const;
+export type HelpArea = (typeof HELP_AREAS)[number];
+
+const isArea = (v: string): v is HelpArea => (HELP_AREAS as readonly string[]).includes(v);
+/** Stored as the comma-joined list of what is open. An older `"1"`/`"0"` under
+    the same key parses to nothing open, which is the off state it meant. */
+const readAreas = (raw: string) => raw.split(",").filter(isArea);
+
 /** Which panes are on screen and how tall the dock is — preferences that
  * survive a reload but mean nothing to the server.
  */
@@ -14,9 +35,13 @@ export function createLayout() {
       look at the run happening now, not a preference about the layout, and a
       reload has no job of its own to open it on. */
   const [logOpen, setLogOpen] = createSignal(false);
-  /** One global "show the prose" preference, off by default: the stage doc and
-      the Settings blurbs sit behind the (?) buttons until it is on. */
-  const [help, setHelp] = persisted("help", false, asFlag, fromFlag);
+  /** Which explanations are open, off by default. A (?) speaks for its own
+      area only — pressing the stage bar's does not light up the caption panel
+      or the Settings blurbs — and the ☰ menu's row is the one that opens every
+      area at once. */
+  const [helpAreas, setHelpAreas] = persisted<HelpArea[]>("help", [], readAreas, (v) =>
+    v.join(","),
+  );
 
   // A class on <body>, not a <Show>: the tree keeps its expanded folders and
   // its scroll position while it is folded away.
@@ -47,8 +72,13 @@ export function createLayout() {
     grip,
     logOpen,
     setLogOpen,
-    help,
-    toggleHelp: () => setHelp(!help()),
+    helpOpen: (a: HelpArea) => helpAreas().includes(a),
+    toggleHelp: (a: HelpArea) =>
+      setHelpAreas((v) => (v.includes(a) ? v.filter((x) => x !== a) : [...v, a])),
+    /** The menu row: on only while nothing is left to open. */
+    allHelp: () => helpAreas().length === HELP_AREAS.length,
+    toggleAllHelp: () =>
+      setHelpAreas((v) => (v.length === HELP_AREAS.length ? [] : [...HELP_AREAS])),
   };
 }
 

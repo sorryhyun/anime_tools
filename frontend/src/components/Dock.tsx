@@ -1,5 +1,6 @@
 import { For, Show, type JSX } from "solid-js";
 import { t } from "../i18n";
+import { panelLabel, stageTitle } from "../stages";
 import type { Stage } from "../types";
 
 /** The bottom dock: one button per panel, a drag handle for its height, and the
@@ -34,10 +35,10 @@ export function Dock(props: {
                 sel: props.open && props.curPanel === p,
                 na: !ss.some((s) => s.available),
               }}
-              title={ss.map((s) => s.title).join(" · ")}
+              title={ss.map(stageTitle).join(" · ")}
               onClick={() => props.onPick(p, ss)}
             >
-              {p}
+              {panelLabel(p)}
             </a>
           )}
         </For>
