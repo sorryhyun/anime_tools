@@ -148,6 +148,7 @@ home: `ANIME_TOOLS_HOME` → `ANIMA_HOME` → current directory
   gates and knobs.
 - [`docs/multiview_audit.md`](docs/multiview_audit.md) — multi-view / multi-panel caption audit.
 - `.claude/skills/captions/` — the Claude Code skill for the caption pipeline.
+- [`examples/`](examples/) — one runnable script per feature, API beside CLI.
 
 ## Development
 

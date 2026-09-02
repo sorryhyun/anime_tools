@@ -438,7 +438,13 @@ def run_correct(req: CorrectRequest):
     from anime_tools.captions.tag_drop_groups import parse_drop_groups
     from anime_tools.stages.captions import write_corrected_preprocess_captions
 
-    csv_path = Path(req.tag_csv) if req.tag_csv else find_tag_csv(curation_home())
+    # Home-anchored like every other runner: a bare ``workspace/resized`` must
+    # name the curation home's tree, not the shell's cwd.
+    src = resolve_path(req.src)
+    dst = _resized(req.dst)
+    csv_path = (
+        resolve_path(req.tag_csv) if req.tag_csv else find_tag_csv(curation_home())
+    )
     if csv_path is None or not csv_path.exists():
         raise FileNotFoundError(
             "danbooru_tags_classified.csv not found. Run "
@@ -459,8 +465,8 @@ def run_correct(req: CorrectRequest):
         t5_tokenizer = load_t5_tokenizer_from_dir(req.t5_tokenizer_path)
 
     stats = write_corrected_preprocess_captions(
-        Path(req.src),
-        Path(req.dst),
+        src,
+        dst,
         load_tag_knowledge_base(csv_path),
         options=CaptionCorrectionOptions(
             insert_no_artist=req.caption_insert_no_artist,
