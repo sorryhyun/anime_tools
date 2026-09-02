@@ -14,6 +14,7 @@ from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 from PIL import Image
@@ -238,10 +239,12 @@ class MaskRun:
 
 
 @contextmanager
-def mask_run(
-    args: argparse.Namespace, *, desc: str = "Generating masks"
-) -> Iterator[MaskRun]:
+def mask_run(args: Any, *, desc: str = "Generating masks") -> Iterator[MaskRun]:
     """The scaffolding both generators wrap their inner loop in.
+
+    ``args`` is anything carrying the walk attributes ``add_mask_dir_args`` /
+    ``add_walk_args`` / ``add_force_arg`` / ``add_workers_arg`` declare — the parsed
+    namespace, or a ``masking.requests`` request, whose fields are those dests.
 
     Both roots are home-anchored (the ``--mask-dir`` defaults are home-relative, so a run
     from another directory still means the tree the GUI and the merge do), the output root

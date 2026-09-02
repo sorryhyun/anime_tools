@@ -165,7 +165,18 @@ deliberately not unified.
 ### `masking/`
 
 SAM3 subject masks, SAM3/UNet++/ComicTextDetector text masks, merged into 8-bit L
-`{stem}_mask.png` mirroring the source subdir. Two private cores:
+`{stem}_mask.png` mirroring the source subdir.
+
+**The surface is a request object per stage** (`requests.py`, torch-free): `SamMaskRequest`,
+`MitMaskRequest`, `MergeMasksRequest`, run by `sam.py::run_sam_masks`, `mit.py::run_mit_masks`,
+`merge.py::run_merge_masks`. Each field is the matching CLI's argparse `dest` with the CLI's
+default;
+`to_argv()` / `from_namespace()` come from `anime_tools/_request.py` and are inverses over
+`build_parser()` (`tests/test_masking_requests.py` round-trips every one, and a default argv must
+read back as a default request). Validation lives in `__post_init__`; the CLIs in `cli/` are shells
+that parse, build the request, and turn its `ValueError` into `parser.error`. `load_sam3` caches
+per process on its arguments, so a text-mask pass after a subject-mask pass reuses the model.
+`masking/__init__.py` exposes all six names lazily. Two private cores:
 
 - `_sam3.py` is the **only** place SAM3 is constructed, the one declaration of `--checkpoint` /
   `--prompt_embed`, and the home of `ground_with_soft_prompt` (a soft prompt *is* the text encoder's
@@ -235,9 +246,9 @@ Other server pieces:
 - `proposals.py` is `stages/replay.py` seen from the server: `load_report` / `report_rows` /
   `apply_one` are imported; an Undo is `apply_one` with the two texts swapped, and Export branches
   to
-  `revert_export` at the top. Only the three `ReplaySpec` instances in `proposals.SHAPES` are
-  hand-copied (importing a stage CLI would pull torch in), pinned by object equality in
-  `tests/test_gui_proposals.py`.
+  `revert_export` at the top. `proposals.SHAPES` is `contract.REPLAY_SHAPES`, the same objects the
+  three stage CLIs bind as their `REPLAY_SPEC` (importing a stage CLI would pull torch in);
+  `tests/test_gui_proposals.py` pins the identity.
 - `jobs.py` runs one `python -m` subprocess at a time over SSE. A job is a *sequence* of `Step`s
   sharing one slot, log and stream, because `preprocess_for()` puts `resize` in front of every stage
   bound to the `dst` root; a failing step stops the chain. `masks_merge` and the `NO_PREFLIGHT`
@@ -269,7 +280,7 @@ Other server pieces:
 The model catalog — one `Asset` per checkpoint (tagger + gated dbv4 backbone, SAM3, PE-Spatial, MIT
 text net, ComicTextDetector, SAM3 subject soft prompt, Danbooru tag KB) with repo, files,
 destination and an offline `installed` probe. It is the **single source of truth for weight
-locations**: `vision/pe.py`, `masking/cli/generate_masks_mit.py` and `_sam3`'s flag defaults import
+locations**: `vision/pe.py`, `masking/mit.py` and `_sam3`'s flag defaults import
 theirs from here, and `default_ctd_onnx_path()` has no flag at all — a path you could point
 elsewhere is a Download button that writes where the loader doesn't look.
 

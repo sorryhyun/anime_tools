@@ -83,6 +83,10 @@ def autocast(device: str):
     return contextlib.nullcontext()
 
 
+_LOADED: dict[tuple, tuple] = {}
+"""``load_sam3``'s per-process cache, keyed on its arguments."""
+
+
 def load_sam3(
     checkpoint: str | Path | None = None,
     device: str = "cuda",
@@ -100,8 +104,20 @@ def load_sam3(
     ``disable_act_ckpt`` turns off the two activation-checkpoint paths SAM3 leaves on even
     in eval mode; they cost a recompute for nothing when the trunk is frozen.
 
-    Returns ``(model, processor)``.
+    Returns ``(model, processor)``. Cached per process on every argument, so a
+    text-mask pass that follows a subject-mask pass (or a position pass) in one
+    interpreter reuses the model instead of reading the weights again.
     """
+    key = (
+        None if checkpoint is None else str(checkpoint),
+        device,
+        confidence_threshold,
+        disable_act_ckpt,
+    )
+    loaded = _LOADED.get(key)
+    if loaded is not None:
+        return loaded
+
     from sam3.model_builder import build_sam3_image_model
 
     build_kwargs: dict = {"device": device, "eval_mode": True}
@@ -120,7 +136,8 @@ def load_sam3(
         if n:
             print(f"sam3: disabled activation checkpointing on {n} modules", flush=True)
 
-    return model, make_processor(model, confidence_threshold)
+    loaded = _LOADED[key] = (model, make_processor(model, confidence_threshold))
+    return loaded
 
 
 def ground_with_soft_prompt(processor, model, state: dict, soft_prompt: dict) -> dict:

@@ -96,10 +96,11 @@ def test_rows_land_where_the_loaders_look():
     assert embed == by["soft_prompt"].dest / DL.SOFT_PROMPT_FILENAME
 
     # The CTD gate has no flag: the row and the loader are the same call.
-    from anime_tools.masking.cli import generate_masks_mit as mit
+    from anime_tools.masking import mit
+    from anime_tools.masking.cli import generate_masks_mit as mit_cli
 
     assert mit.default_ctd_onnx_path is DL.default_ctd_onnx_path
-    assert "ctd_onnx" not in {a.dest for a in mit.build_parser()._actions}
+    assert "ctd_onnx" not in {a.dest for a in mit_cli.build_parser()._actions}
     assert DL.default_ctd_onnx_path() == by["ctd_onnx"].dest / DL.CTD_ONNX_FILENAME
 
 

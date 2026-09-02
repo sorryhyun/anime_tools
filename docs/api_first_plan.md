@@ -22,16 +22,18 @@ One frozen dataclass per stage, in a **torch-free module**, with the heavy
 imports deferred into the call:
 
 ```python
-from anime_tools.masking import SamMaskRequest, generate_sam_masks
+from anime_tools.masking import SamMaskRequest, run_sam_masks
 
 req = SamMaskRequest(
     image_dir="post_image_dataset/resized",
     mask_dir="workspace/masks_sam",
     prompts=("speech bubble", "text bubble"),
-    threshold=0.7, dilate=3, path_pattern="artist_a/*",
+    threshold=0.7,
+    dilate=3,
+    path_pattern="artist_a/*",
 )
-report = generate_sam_masks(req)   # in-process
-argv = req.to_argv()               # for a subprocess / the trainer's daemon
+run = run_sam_masks(req)  # in-process
+argv = req.to_argv()  # for a subprocess / the trainer's daemon
 ```
 
 Every request class carries the same four things:
@@ -88,11 +90,16 @@ nothing today; each gains a lazy PEP 562 `__getattr__` like `tagger/__init__.py`
   the constants above and `CONTRACT_VERSION = 1`; switch `gui/proposals.py`,
   `gui/stages.py` and `tagger/cli/autotag_server.py` to import from it.
   `tests/test_boundary.py` gains `test_contract_is_torch_free`.
-- [ ] **P1. Masking.** Move the two mask mains into `masking/sam.py` /
-  `masking/mit.py` as `run_*` functions over request dataclasses in
-  `masking/requests.py` (torch-free). Add `masking/_sam3.py::load_sam3()` with
-  a process-level cache so MIT's SAM gate reuses the subject-mask model when
-  both run in one process. CLIs become shells; flags unchanged (aliases).
+- [x] **P1. Masking.** The three mask mains are `masking/sam.py` /
+  `masking/mit.py` / `masking/merge.py`, `run_*` functions over request
+  dataclasses in `masking/requests.py` (torch-free) on the generic
+  `anime_tools/_request.py` base (`to_argv` / `from_namespace`, field metadata
+  for flag spelling and converters). `masking/_sam3.py::load_sam3()` caches per
+  process so MIT's SAM gate reuses the subject-mask model when both run in one
+  process. CLIs are shells; `build_parser()` stays hand-written until P4
+  rewrites the GUI schema off the dataclass, with the round-trip tests
+  (`tests/test_masking_requests.py`, the P6 shape) keeping the two in step.
+  Flags unchanged, no aliases yet.
 - [ ] **P2. Caption stages.** Request classes over the existing `run_*`
   functions for autotag, position, correct, OCR, resize, export, audit. The
   detection block (`stages/cli/_detection.py`) becomes a nested dataclass
