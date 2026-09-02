@@ -67,6 +67,9 @@ export interface Stage {
   /** Label for the in-panel picker — the title minus what the panel says. */
   short: string;
   module: string;
+  /** `module:Class` of the request dataclass the form describes — the server's
+      to resolve; here it only says which surface the fields came from. */
+  request: string;
   extra: string;
   notes: string;
   report: boolean;
@@ -119,8 +122,8 @@ export interface Info {
   models_dir: string;
   hf_token: boolean;
   running: string | null;
-  /** False while the background stage-schema dump is still running, during
-      which `/api/stages` answers 503 — poll info and refetch stages then. */
+  /** False while the server's background stage-schema build is still running,
+      during which `/api/stages` answers 503 — poll info and refetch stages then. */
   schemas_ready: boolean;
 }
 

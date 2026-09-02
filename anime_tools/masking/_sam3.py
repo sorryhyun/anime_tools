@@ -142,32 +142,32 @@ soft prompt is the textual inversion of: ``--prompt``'s default, and what
 ``--prompt_embed`` stands in for."""
 
 
-def add_checkpoint_arg(p: argparse._ActionsContainer) -> None:
-    """``--checkpoint`` — SAM3 weights, defaulted from the download catalog.
+CHECKPOINT_HELP = "SAM3 weights"
+PROMPT_EMBED_HELP = (
+    "learned soft prompt (.safetensors) used in place of the "
+    f"{SUBJECT_PROMPT!r} text prompt for the subject pass; every other "
+    f"prompt stays textual. Default = the shipped "
+    f"{DEFAULT_SUBJECT_PROMPT_EMBED}; pass `none` for the plain text prompt"
+)
+"""The help for ``--checkpoint`` / ``--prompt_embed``, wherever they are declared:
+the stage requests carry them as field metadata, the probe CLIs below take them
+through :func:`add_checkpoint_arg` / :func:`add_prompt_embed_arg`. Both name a
+file a ⚙ Settings → Models row writes and are
+:data:`anime_tools.gui.stages.SETTING_FIELDS` dests filled once from Settings,
+which only works while every stage spells them identically."""
 
-    It names the file the ⚙ Settings → Models row writes, and it is a
-    :data:`anime_tools.gui.stages.SETTING_FIELDS` dest filled once from Settings — which
-    only works while every SAM3 CLI spells it identically. Takes a group as readily as a
-    parser: the text-mask stage declares it inside its ``use_sam`` drawer.
-    """
-    p.add_argument("--checkpoint", default=DEFAULT_SAM3_CHECKPOINT, help="SAM3 weights")
+
+def add_checkpoint_arg(p: argparse._ActionsContainer) -> None:
+    """``--checkpoint`` — SAM3 weights, defaulted from the download catalog."""
+    p.add_argument(
+        "--checkpoint", default=DEFAULT_SAM3_CHECKPOINT, help=CHECKPOINT_HELP
+    )
 
 
 def add_prompt_embed_arg(p: argparse._ActionsContainer) -> None:
-    """``--prompt_embed`` — the learned subject prompt, from the same catalog.
-
-    Like ``--checkpoint``: a :data:`anime_tools.gui.stages.SETTING_FIELDS` dest naming a
-    file a ⚙ Settings → Models row writes, which only works while every stage that takes
-    one spells it identically. Takes a group as readily as a parser, because the detection
-    stages declare it inside their ``detection`` group.
-    """
+    """``--prompt_embed`` — the learned subject prompt, from the same catalog."""
     p.add_argument(
-        "--prompt_embed",
-        default=DEFAULT_SUBJECT_PROMPT_EMBED,
-        help="learned soft prompt (.safetensors) used in place of the "
-        f"{SUBJECT_PROMPT!r} text prompt for the subject pass; every other "
-        f"prompt stays textual. Default = the shipped "
-        f"{DEFAULT_SUBJECT_PROMPT_EMBED}; pass `none` for the plain text prompt",
+        "--prompt_embed", default=DEFAULT_SUBJECT_PROMPT_EMBED, help=PROMPT_EMBED_HELP
     )
 
 

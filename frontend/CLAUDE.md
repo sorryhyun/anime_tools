@@ -61,9 +61,10 @@ nothing fetched, no business rule lives there. The state is five composables at
   just-saved caption back into the row rather than re-walking the tree.
 - **`stages.ts`** — the stage registry and the form over the open one, including
   how the dock's buttons bucket stages into panels. Every field comes from the
-  stage CLI's own argparse (`gui/stages.py` dumps it in a child interpreter), so
-  **nothing about a flag is ever re-typed here** — a label, a default or a choice
-  list in this directory is a bug. Which fields are `advanced` is that same
+  stage's request dataclass (`gui/stages.py` walks the same field list the CLI
+  parser is generated from), so **nothing about a flag is ever re-typed here** —
+  a label, a default or a choice list in this directory is a bug.
+  Which fields are `advanced` is that same
   rule: the server marks them, `StageForm`'s `FieldGroup` only folds them, one
   fold per group and on that group's own bottom edge. That fold is local,
   unsaved state — it is a look at one group of one stage, not a preference

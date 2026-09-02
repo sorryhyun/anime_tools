@@ -48,7 +48,7 @@ Every request class carries the same four things:
 Three consumers derive from it, so the request is the single contract:
 
 - **CLI**: `build_parser()` is generated from the dataclass fields (help from
-  field metadata), `main()` is `run(Request.from_namespace(parse_args()))`.
+  field metadata), `main()` is `run(Request.from_argv(build_parser()))`.
   Every flag gets both spellings (`--foo_bar` canonical, `--foo-bar` alias)
   from one helper, ending the per-package hyphen/underscore split.
 - **Web GUI**: `gui/stages.py` builds its form schema from the dataclass
@@ -115,12 +115,22 @@ nothing today; each gains a lazy PEP 562 `__getattr__` like `tagger/__init__.py`
   `tests/test_stage_requests.py` is the P6 shape for every stage.
 - [x] **P3. Grouping.** `grouping/requests.py::GroupRequest` over
   `groups.run_groups`, which resolves `--embedder` and calls `build_groups`.
-- [ ] **P4. Registry and GUI.** Move `STAGES` out of `gui/stages.py` into
-  `stages/registry.py` (torch-free: it only names request classes and
-  modules). `gui/stages.py::schema()` is derived from the dataclass; drop the
-  argparse-private introspection and the on-disk schema cache, which existed
-  only because importing the CLIs was expensive. Keep `build_argv()` as a
-  thin call to `Request.to_argv()`.
+- [x] **P4. Registry and GUI.** `stages/registry.py` holds `STAGES`
+  (`Stage(id, title, request="module:Class", module, panel, …)`, resolved
+  lazily), re-exported by `gui/stages.py`. The field list is the one source
+  for both consumers: `_request.arg(default, help=, group=, gate=, choices=,
+  nargs=, …)` declares a field's flag, `_request.args_of(Request)` flattens a
+  class (nested blocks inline) into `Arg`s, `_request.build_parser` /
+  `Request.parser()` generates the argparse parser from them (class docstring
+  as the description, `contract.GATE_ATTR` stamped on a drawer's group, both
+  separator spellings accepted for every flag), and `gui/stages.py::schema()`
+  draws the form from them. The CLIs are one-line shells; `cli/_args.py` keeps
+  only `make_progress`, `cli/_detection.py` and `_masks.py`'s flag blocks are
+  gone. `build_argv()` coerces the form payload into a namespace,
+  `Request.from_namespace` validates it (a 400 before any child is spawned)
+  and `to_argv()` spells it. Schemas are built in-process — the request
+  modules are torch-free by test and all eleven take ~0.1 s — so the child
+  interpreter and the on-disk cache are gone.
 - [ ] **P5. Daemon-friendly progress.** `anime_tools/_progress.py`
   (stdlib): when `ANIMA_DAEMON_JOB_DIR` is set, the stage's `progress()`
   callback also appends `{"event": "step", "step": i, "total": n, "detail":

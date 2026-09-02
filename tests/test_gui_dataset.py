@@ -597,9 +597,11 @@ def test_the_mask_root_setting_moves_both_generators_and_the_merge(client):
 
     got = {}
     for sid in ("masks_sam", "masks_mit", "masks_merge"):
-        fields = S.schema(S.BY_ID[sid])["fields"]
         argv = S.build_argv(
-            fields, {}, roots=SV.root_paths(roots), mask_root="elsewhere"
+            S.schema(S.BY_ID[sid]),
+            {},
+            roots=SV.root_paths(roots),
+            mask_root="elsewhere",
         )
         got[sid] = [a for a in argv if a.startswith("elsewhere")]
     assert got["masks_sam"] == ["elsewhere/masks_sam"]

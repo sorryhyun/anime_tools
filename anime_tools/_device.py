@@ -10,15 +10,18 @@ from __future__ import annotations
 
 import argparse
 
+DEVICE_HELP = "cuda|cpu (default: auto)"
+"""The help every ``device`` field and flag carries. Its dest is in
+:data:`anime_tools.gui.stages.AUTO_FIELDS`, neither shown on the form nor sent
+on the argv, so every stage must spell it identically and default it to
+``None``."""
+
 
 def add_device_arg(p: argparse._ActionsContainer) -> None:
-    """``--device`` — the flag :func:`resolve_device` answers.
-
-    Its dest is in :data:`anime_tools.gui.stages.AUTO_FIELDS`, neither shown on
-    the form nor sent on the argv, so every CLI must spell it identically and
-    default it to ``None``. Takes a group as readily as a parser.
-    """
-    p.add_argument("--device", default=None, help="cuda|cpu (default: auto)")
+    """``--device`` — the flag :func:`resolve_device` answers, for the CLIs that
+    are not request objects (the tagger's, the probes). Takes a group as
+    readily as a parser."""
+    p.add_argument("--device", default=None, help=DEVICE_HELP)
 
 
 def resolve_device(name: str | None = None) -> str:

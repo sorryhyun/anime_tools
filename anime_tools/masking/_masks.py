@@ -1,14 +1,11 @@
-"""What every mask generator does around the model: flags, plan, run, write, read.
+"""What every mask generator does around the model: plan, run, write, read.
 
-Declaration *order* is part of the argparse contract (``gui.stages.fields_of`` walks
-``parser._actions`` in order and the form follows it), hence the small contiguous flag
-blocks the generators interleave their own flags between. The flags declared here are
-read back here too, in :func:`mask_run`.
+The flags themselves are the fields of ``masking.requests.MaskWalkRequest``; this
+module reads them back by attribute in :func:`mask_run`.
 """
 
 from __future__ import annotations
 
-import argparse
 from collections.abc import Iterator
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
@@ -22,108 +19,14 @@ from tqdm import tqdm
 
 from anime_tools._env import resolve_path
 from anime_tools._walk import walk_images
-from anime_tools.contract import GATE_ATTR
 
 MASK_SUFFIX = "_mask.png"
 """The contract between the generators, ``merge_masks`` and the GUI's mask lookup:
 this suffix plus "mirror the source subdir"."""
 
-WALK_HELP = (
-    "Walk subfolders under --image-dir. Mask output mirrors the source "
-    "subdir structure under --mask-dir."
-)
-PATTERN_HELP = (
-    "fnmatch glob (| to OR-combine) on each image's path relative to "
-    "--image-dir, restricting which images get masked. Same semantics "
-    "as the training path_pattern."
-)
-
 
 def mask_name(stem: str) -> str:
     return f"{stem}{MASK_SUFFIX}"
-
-
-# ---- argparse blocks ---------------------------------------------------
-
-
-def add_mask_dir_args(p: argparse.ArgumentParser, *, mask_default: str) -> None:
-    """``--image-dir`` / ``--mask-dir``, the two ends of a generator's walk.
-
-    ``mask_default`` is this generator's own tree
-    (:data:`anime_tools.workspace.MASKS_SAM` / ``MASKS_MIT``) and is required of the
-    caller: a mask directory must not be *shared*, since two generators writing
-    ``{stem}_mask.png`` at the same relative path would overwrite each other.
-    ``merge_masks`` unions them into the ``masks`` root.
-    """
-    p.add_argument("--image-dir", type=str, required=True, help="Image directory")
-    p.add_argument(
-        "--mask-dir",
-        type=str,
-        default=mask_default,
-        help=f"Output mask directory for this generator alone (default: "
-        f"{mask_default}); `merge_masks` unions it with the other's into the "
-        f"masks root",
-    )
-
-
-# ``GATE_ATTR`` is what :func:`gated_group` stamps a group with, naming the dest that
-# switches it on; ``anime_tools.gui.stages.fields_of`` reads the same name from the
-# contract rather than importing this module, so it stays free of every stage's
-# dependencies (``tests/test_masking_plan.py`` pins the two).
-
-
-def gated_group(
-    p: argparse.ArgumentParser,
-    title: str,
-    *,
-    gate: str,
-    default: bool,
-    help: str,
-) -> argparse._ArgumentGroup:
-    """An argument group behind an on/off flag — a *drawer* in the GUI form.
-
-    Returns the group with the gate declared as its first argument, so the flags that only
-    matter while it is on are written inside it and the browser can fold them away when it
-    is off. :func:`anime_tools.gui.stages.build_argv` drops a shut drawer's values from
-    the argv.
-
-    ``gate`` is the dest (``use_sam`` → ``--use-sam`` / ``--no-use-sam``) and is also the
-    drawer's checkbox; it stays a plain flag either way.
-    """
-    g = p.add_argument_group(title)
-    g.add_argument(
-        f"--{gate.replace('_', '-')}",
-        dest=gate,
-        action=argparse.BooleanOptionalAction,
-        default=default,
-        help=help,
-    )
-    setattr(g, GATE_ATTR, gate)
-    return g
-
-
-def add_force_arg(p: argparse.ArgumentParser) -> None:
-    p.add_argument("--force", action="store_true", help="Regenerate existing masks")
-
-
-def add_workers_arg(
-    p: argparse.ArgumentParser, *, help: str = "I/O workers (default: 4)"
-) -> None:
-    p.add_argument("--workers", type=int, default=4, help=help)
-
-
-def add_walk_args(p: argparse.ArgumentParser, *, pattern_help: str = "") -> None:
-    """``--recursive`` / ``--path-pattern``: which images get masked at all.
-
-    ``pattern_help`` appends a stage-specific sentence to :data:`PATTERN_HELP`.
-    """
-    p.add_argument("--recursive", action="store_true", help=WALK_HELP)
-    p.add_argument(
-        "--path-pattern",
-        type=str,
-        default=None,
-        help=PATTERN_HELP + pattern_help,
-    )
 
 
 # ---- the write side ----------------------------------------------------
@@ -242,14 +145,15 @@ class MaskRun:
 def mask_run(args: Any, *, desc: str = "Generating masks") -> Iterator[MaskRun]:
     """The scaffolding both generators wrap their inner loop in.
 
-    ``args`` is anything carrying the walk attributes ``add_mask_dir_args`` /
-    ``add_walk_args`` / ``add_force_arg`` / ``add_workers_arg`` declare — the parsed
-    namespace, or a ``masking.requests`` request, whose fields are those dests.
+    ``args`` is anything carrying the walk attributes of
+    ``masking.requests.MaskWalkRequest`` (``image_dir`` / ``mask_dir`` / ``recursive`` /
+    ``path_pattern`` / ``force`` / ``workers``) — the request itself, or a parsed
+    namespace.
 
     Both roots are home-anchored (the ``--mask-dir`` defaults are home-relative, so a run
     from another directory still means the tree the GUI and the merge do), the output root
-    exists before the first write, the plan comes from the walk flags this module
-    declared, and the bar closes before the pool so its line is finished first.
+    exists before the first write, the plan comes from the request's walk fields, and the
+    bar closes before the pool so its line is finished first.
 
     Draining the saves is the caller's job, inside the ``with``: a future whose exception
     nobody reads is a mask that silently did not get written.

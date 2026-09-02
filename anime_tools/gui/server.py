@@ -202,7 +202,7 @@ def preprocess_steps(
     values = S.form_values(sc["fields"], saved)
     reports = report_root(settings, roots)
     argv = S.build_argv(
-        sc["fields"],
+        sc,
         values,
         roots=root_paths(roots),
         settings=defaults,
@@ -216,10 +216,10 @@ def preprocess_steps(
 class Schemas:
     """The stage form schemas, kept off the startup path.
 
-    Collecting them means a child interpreter (this process stays torch-free),
-    which costs seconds on a cache miss, so the loader runs on a background thread
-    and only the endpoints that need a schema block on it. A failing dump is a 500
-    there, not a dead server.
+    Building them imports every request module (torch-free, but numpy and PIL
+    come along), so the loader runs on a background thread and only the
+    endpoints that need a schema block on it. A failing build is a 500 there,
+    not a dead server.
     """
 
     TIMEOUT = 60.0
@@ -311,9 +311,9 @@ def create_app(
     def list_stages() -> list[dict[str, Any]]:
         """Every stage's form schema, in registry order.
 
-        The dump is cached on the source tree; the only settings-dependent part
-        is the default of a field the panel may override (``S.PANEL_FIELDS``),
-        which opens on what Settings says a Run would use.
+        The schemas are built once at startup; the only settings-dependent
+        part is the default of a field the panel may override
+        (``S.PANEL_FIELDS``), which opens on what Settings says a Run would use.
         """
         schemas = store.get()
         settings = load_settings()
@@ -408,7 +408,7 @@ def create_app(
             defaults = {**defaults, S.SCOPE_FIELD: D.item_pattern(rel)}
         try:
             argv = S.build_argv(
-                sc["fields"],
+                sc,
                 values,
                 apply=apply,
                 roots=root_paths(roots),

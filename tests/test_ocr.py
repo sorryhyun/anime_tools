@@ -411,12 +411,19 @@ def test_the_ocr_stage_asks_onnxruntime_not_torch_for_its_device():
     src = inspect.getsource(run.run_ocr)
     assert "device = resolve_onnx_device(req.device)" in src
     assert "resolve_device(" not in src
-    # The CLI declares the flag through `add_device_arg` — declared once, in
-    # `_device` — but the torch resolver beside it is not imported.
+    # The request declares the flag as every stage does — a `device` field
+    # carrying `_device.DEVICE_HELP` — and neither it nor the CLI shell touches
+    # the torch resolver.
+    import dataclasses
+
+    from anime_tools._device import DEVICE_HELP
+    from anime_tools.stages.requests import OcrRequest
+
+    device = next(f for f in dataclasses.fields(OcrRequest) if f.name == "device")
+    assert device.metadata["help"] == DEVICE_HELP and device.default is None
     cli = (
         Path(anime_tools.__file__).parent / "stages" / "cli" / "ocr_captions.py"
     ).read_text(encoding="utf-8")
-    assert "from anime_tools._device import add_device_arg\n" in cli
     assert "resolve_device" not in cli
 
 

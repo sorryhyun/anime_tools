@@ -222,27 +222,34 @@ def test_coverage_is_the_masks_own_denominator(tmp_path):
 
 
 def test_a_gated_group_names_its_switch_where_the_gui_reads_it():
-    """``masking._masks.GATE_ATTR`` and ``gui.stages.GATE_ATTR`` are the same
-    spelling: the GUI draws a drawer off that attribute but does not import the
-    stage that stamps it.
+    """A drawer is a field's ``gate`` metadata naming the switch (the switch
+    names itself). The GUI form reads it off the schema; the generated parser
+    also stamps the argparse group with ``GATE_ATTR`` for anyone introspecting.
     """
-    import argparse
-
+    from anime_tools._request import args_of
     from anime_tools.gui import stages as S
-    from anime_tools.masking._masks import GATE_ATTR, gated_group
+    from anime_tools.masking.requests import MitMaskRequest
 
-    assert S.GATE_ATTR == GATE_ATTR
+    args = {a.name: a for a in args_of(MitMaskRequest)}
+    # The gate names itself; everything else in the drawer names the gate, and
+    # takes the gate's group.
+    assert args["use_sam"].gate == "use_sam" and args["use_sam"].group == "SAM3 prompts"
+    assert args["sam_prompts"].gate == "use_sam"
+    assert args["sam_prompts"].group == args["use_sam"].group
+    assert args["use_sam"].negate == "--no-use-sam"
 
-    parser = argparse.ArgumentParser()
-    group = gated_group(parser, "T", gate="use_thing", default=False, help="h")
-    assert getattr(group, GATE_ATTR) == "use_thing"
-    group.add_argument("--knob", type=int, default=1)
+    fields = {f["dest"]: f for f in S.schema(S.BY_ID["masks_mit"])["fields"]}
+    assert fields["use_sam"]["gate"] == "use_sam"
+    assert fields["checkpoint"]["gate"] == "use_sam"
+    assert fields["dilate"]["gate"] is None
 
-    fields = {f.dest: f for f in S.fields_of(parser)}
-    # The gate names itself; everything else in the group names the gate.
-    assert fields["use_thing"].gate == "use_thing"
-    assert fields["knob"].gate == "use_thing"
-    assert fields["use_thing"].negate == "--no-use-thing"
+    parser = MitMaskRequest.parser()
+    stamped = {
+        getattr(g, S.GATE_ATTR): g.title
+        for g in parser._action_groups
+        if getattr(g, S.GATE_ATTR, None)
+    }
+    assert stamped == {"use_sam": "SAM3 prompts", "use_mit": "MIT text segmentation"}
 
 
 def test_the_text_stage_runs_two_detectors_behind_two_switches():

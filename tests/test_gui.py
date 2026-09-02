@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import re
+import subprocess
 import sys
 import threading
 import time
@@ -36,12 +37,12 @@ def _opt(argv: list[str], flag: str) -> str:
     return argv[argv.index(flag) + 1]
 
 
-def _stage(sid: str) -> tuple[S.Stage, list[dict]]:
+def _stage(sid: str) -> tuple[S.Stage, dict]:
     st = S.BY_ID[sid]
     sc = S.schema(st)
     if not sc["available"]:
         pytest.skip(f"{sid} unavailable: {sc['error']}")
-    return st, sc["fields"]
+    return st, sc
 
 
 def test_every_stage_has_a_schema():
@@ -57,13 +58,13 @@ def test_every_stage_has_a_schema():
 
 
 def test_defaults_produce_empty_argv():
-    _, fs = _stage("position")
-    assert S.build_argv(fs, {}) == []
-    assert S.build_argv(fs, {}, apply=True) == ["--apply"]
+    _, sc = _stage("position")
+    assert S.build_argv(sc, {}) == []
+    assert S.build_argv(sc, {}, apply=True) == ["--apply"]
 
 
 def test_argv_round_trips_through_the_real_parser():
-    st, fs = _stage("position")
+    st, sc = _stage("position")
     values = {
         "score_threshold": "0.4",
         "blank_crops": False,
@@ -71,7 +72,7 @@ def test_argv_round_trips_through_the_real_parser():
         "flatten": True,
     }
     argv = S.build_argv(
-        fs,
+        sc,
         values,
         apply=True,
         roots={"src": "img"},
@@ -86,12 +87,12 @@ def test_argv_round_trips_through_the_real_parser():
 
 
 def test_enum_and_float_kinds():
-    _, fs = _stage("autotag")
-    fields = {f["dest"]: f for f in fs}
+    _, sc = _stage("autotag")
+    fields = {f["dest"]: f for f in sc["fields"]}
     assert fields["mode"]["kind"] == "enum" and "missing" in fields["mode"]["choices"]
     assert fields["min_confidence"]["kind"] == "float"
     assert fields["src"]["path"] and fields["report_dir"]["path"]
-    assert S.build_argv(fs, {"mode": "merge", "min_confidence": 0}) == [
+    assert S.build_argv(sc, {"mode": "merge", "min_confidence": 0}) == [
         "--mode",
         "merge",
     ]
@@ -99,47 +100,47 @@ def test_enum_and_float_kinds():
 
 def test_dataset_roots_fill_the_bound_fields():
     """--src/--dst come from the Settings roots, not from the stage form."""
-    _, fs = _stage("position")
-    assert {f["dest"]: f["root"] for f in fs if f["root"]} == {
+    _, sc = _stage("position")
+    assert {f["dest"]: f["root"] for f in sc["fields"] if f["root"]} == {
         "src": "src",
         "dst": "dst",
     }
     argv = S.build_argv(
-        fs, {"src": "ignored", "dst": "ignored"}, roots={"src": "a", "dst": "b"}
+        sc, {"src": "ignored", "dst": "ignored"}, roots={"src": "a", "dst": "b"}
     )
     assert argv == ["--src", "a", "--dst", "b"]
     # A root left at its default still drops out of the argv.
-    assert S.build_argv(fs, {}, roots={"src": "image_dataset"}) == []
+    assert S.build_argv(sc, {}, roots={"src": "image_dataset"}) == []
 
 
 def test_settings_fill_the_bound_stage_defaults():
     """--path_pattern / --tagger_dir are set once in Settings, not per form."""
-    _, fs = _stage("autotag")
-    assert {f["dest"]: f["setting"] for f in fs if f["setting"]} == {
+    _, sc = _stage("autotag")
+    assert {f["dest"]: f["setting"] for f in sc["fields"] if f["setting"]} == {
         "path_pattern": "path_pattern",
         "tagger_dir": "tagger_dir",
     }
     argv = S.build_argv(
-        fs, {}, settings={"path_pattern": "char/*", "tagger_dir": "ckpt"}
+        sc, {}, settings={"path_pattern": "char/*", "tagger_dir": "ckpt"}
     )
     assert argv == ["--path_pattern", "char/*", "--tagger_dir", "ckpt"]
     # A value stranded in a saved form never beats Settings.
-    assert S.build_argv(fs, {"path_pattern": "stale/*", "tagger_dir": "stale"}) == []
+    assert S.build_argv(sc, {"path_pattern": "stale/*", "tagger_dir": "stale"}) == []
     # ...and it is not written back into the settings file either.
-    assert S.form_values(fs, {"path_pattern": "stale/*", "mode": "merge"}) == {
-        "mode": "merge"
-    }
+    assert S.form_values(
+        sc["fields"], {"path_pattern": "stale/*", "mode": "merge"}
+    ) == {"mode": "merge"}
 
 
 def test_device_is_never_on_the_form_or_the_argv():
     """``--device`` is resolved in the child, since this process is torch-free."""
     required = {"mask_dir": "m", "out": "g.json"}
     for stage_id in ("autotag", "position", "masks_sam", "masks_mit", "groups"):
-        _, fs = _stage(stage_id)
-        device = next(f for f in fs if f["dest"] == "device")
+        _, sc = _stage(stage_id)
+        device = next(f for f in sc["fields"] if f["dest"] == "device")
         assert device["auto"] is True
         argv = S.build_argv(
-            fs, {**required, "device": "cuda"}, roots={"src": "i", "dst": "d"}
+            sc, {**required, "device": "cuda"}, roots={"src": "i", "dst": "d"}
         )
         assert "--device" not in argv and "cuda" not in argv
 
@@ -162,38 +163,38 @@ def test_scoped_stages_are_the_ones_taking_a_pattern():
 
 
 def test_required_field_is_enforced():
-    _, fs = _stage("correct")
+    _, sc = _stage("correct")
     with pytest.raises(ValueError, match="--src"):
-        S.build_argv(fs, {"dst": "x"})
+        S.build_argv(sc, {"dst": "x"})
 
 
 def test_boolean_optional_action_and_positional_list():
-    _, fs = _stage("masks_mit")
+    _, sc = _stage("masks_mit")
     # --image-dir is bound to `dst` (the mask is cut from the pixels the loader
     # rescales it onto); --mask-dir to the mask root plus this generator's tail.
-    argv = S.build_argv(fs, {"ctd_gate": False}, roots={"dst": "d"}, mask_root="ws")
+    argv = S.build_argv(sc, {"ctd_gate": False}, roots={"dst": "d"}, mask_root="ws")
     assert argv == ["--image-dir", "d", "--mask-dir", "ws/masks_mit", "--no-ctd-gate"]
     # A positional list binds the same way, one joined tail per input.
-    _, fs = _stage("masks_merge")
-    argv = S.build_argv(fs, {}, roots={"masks": "o"}, mask_root="ws")
+    _, sc = _stage("masks_merge")
+    argv = S.build_argv(sc, {}, roots={"masks": "o"}, mask_root="ws")
     assert argv == ["--output-dir", "o", "ws/masks_sam", "ws/masks_mit"]
 
 
 def test_a_shut_drawer_sends_none_of_its_knobs():
     """Two detectors behind two checkboxes: a knob under a shut switch never
     reaches the argv."""
-    _, fs = _stage("masks_mit")
+    _, sc = _stage("masks_mit")
     roots, settings = {"dst": "d"}, {"checkpoint": "sam3.pt"}
     bound = ["--image-dir", "d", "--mask-dir", "ws/masks_mit"]
 
     # SAM3 is opt-in, so its prompt and its checkpoint stay off the argv...
     argv = S.build_argv(
-        fs, {"sam_prompts": "text"}, roots=roots, settings=settings, mask_root="ws"
+        sc, {"sam_prompts": "text"}, roots=roots, settings=settings, mask_root="ws"
     )
     assert argv == bound
     # ...and both arrive the moment the drawer opens.
     argv = S.build_argv(
-        fs,
+        sc,
         {"use_sam": True, "sam_prompts": "text"},
         roots=roots,
         settings=settings,
@@ -209,7 +210,7 @@ def test_a_shut_drawer_sends_none_of_its_knobs():
     ]
     # The other switch folds away the gate its own drawer holds.
     argv = S.build_argv(
-        fs,
+        sc,
         {"use_mit": False, "ctd_gate": False, "use_sam": True},
         roots=roots,
         mask_root="ws",
@@ -220,25 +221,27 @@ def test_a_shut_drawer_sends_none_of_its_knobs():
 def test_export_destinations_are_bound_and_on_the_panel():
     """Export keeps ``--out`` / ``--index`` on its form as ``overridable`` paths
     (a per-run choice); every other bound field stays hidden."""
-    _, fs = _stage("export")
-    over = {f["dest"] for f in fs if f["overridable"]}
+    _, sc = _stage("export")
+    over = {f["dest"] for f in sc["fields"] if f["overridable"]}
     assert over == S.PANEL_FIELDS["export"] == {"out", "index"}
-    by = {f["dest"]: f for f in fs}
+    by = {f["dest"]: f for f in sc["fields"]}
     # Bound as before: the destination to a root, the index to the report root.
     assert by["out"]["root"] == "out"
     assert by["index"]["report"] == "captions/caption_index.json"
     assert (by["out"]["path"], by["out"]["path_kind"]) == (True, "dir")
     assert (by["index"]["path"], by["index"]["path_kind"]) == (True, "file")
     # Everything Export reads stays bound and hidden.
-    assert not any(f["overridable"] for f in fs if f["dest"] in ("src", "dst", "masks"))
+    assert not any(
+        f["overridable"] for f in sc["fields"] if f["dest"] in ("src", "dst", "masks")
+    )
 
 
 def test_every_basic_field_names_a_flag_the_stage_actually_has():
     """Every dest in :data:`BASIC_FIELDS` names a flag the stage has; a typo
     would silently fold the knob it meant to keep."""
     for sid, basic in S.BASIC_FIELDS.items():
-        _, fs = _stage(sid)
-        assert basic <= {f["dest"] for f in fs}, sid
+        _, sc = _stage(sid)
+        assert basic <= {f["dest"] for f in sc["fields"]}, sid
 
 
 def test_advanced_folds_the_research_parameters_and_never_the_form_itself():
@@ -246,14 +249,14 @@ def test_advanced_folds_the_research_parameters_and_never_the_form_itself():
     row still never folds a drawer's gate, a required field, or an already-hidden
     one.
     """
-    _, fs = _stage("autotag")
-    assert not any(f["advanced"] for f in fs)
+    _, sc = _stage("autotag")
+    assert not any(f["advanced"] for f in sc["fields"])
 
-    _, fs = _stage("position")
-    by = {f["dest"]: f for f in fs}
+    _, sc = _stage("position")
+    by = {f["dest"]: f for f in sc["fields"]}
     shown = [
         f
-        for f in fs
+        for f in sc["fields"]
         if not any(f[k] for k in ("root", "setting", "report", "mask", "auto"))
     ]
     kept = {f["dest"] for f in shown if not f["advanced"]} - {"apply", S.REPLAY_FIELD}
@@ -261,12 +264,12 @@ def test_advanced_folds_the_research_parameters_and_never_the_form_itself():
     assert by["prompt"]["advanced"] is False and by["iou_threshold"]["advanced"] is True
     # Bound fields are hidden already.
     assert not any(
-        f["advanced"] for f in fs if f["setting"] or f["root"] or f["report"]
+        f["advanced"] for f in sc["fields"] if f["setting"] or f["root"] or f["report"]
     )
 
     # The two detector switches are gates: a folded gate is a drawer you cannot open.
-    _, fs = _stage("masks_mit")
-    for f in fs:
+    _, sc = _stage("masks_mit")
+    for f in sc["fields"]:
         if f["gate"] == f["dest"] or f["required"]:
             assert f["advanced"] is False, f["dest"]
 
@@ -274,7 +277,7 @@ def test_advanced_folds_the_research_parameters_and_never_the_form_itself():
 def test_an_overridable_field_opens_on_settings_and_yields_to_the_form():
     """Blank means "whatever Settings says"; a typed value wins for that run.
 
-    The schema dump knows nothing about a settings file, so the Settings value
+    The schema knows nothing about a settings file, so the Settings value
     reaches the form as the field's *default*, through ``resolved_schema``.
     """
     sc = S.schema(S.BY_ID["export"])
@@ -283,22 +286,22 @@ def test_an_overridable_field_opens_on_settings_and_yields_to_the_form():
     by = {f["dest"]: f for f in got["fields"]}
     assert by["out"]["default"] == "/data/export"
     assert by["index"]["default"] == "ws/captions/captions/caption_index.json"
-    # Untouched for every other stage, and the cached dump is left alone.
+    # Untouched for every other stage, and the stored schema is left alone.
     assert S.resolved_schema(S.schema(S.BY_ID["autotag"]), roots=roots) == S.schema(
         S.BY_ID["autotag"]
     )
     raw = {f["dest"]: f["default"] for f in sc["fields"]}
     assert raw["out"] == "post_image_dataset"
 
-    def _out(fields, values):
-        argv = S.build_argv(fields, values, roots=roots, report_root=reports)
+    def _out(schema, values):
+        argv = S.build_argv(schema, values, roots=roots, report_root=reports)
         return argv[argv.index("--out") + 1]
 
-    # Resolved and raw build the same argv: a value equal to the resolved default
-    # is still spelled out, or the run falls back to the CLI's own default.
-    assert _out(got["fields"], {}) == _out(sc["fields"], {}) == "/data/export"
-    assert _out(got["fields"], {"out": "/tmp/scratch"}) == "/tmp/scratch"
-    assert _out(got["fields"], {"out": "  "}) == "/data/export"
+    # Resolved and raw build the same argv: the bound value is what goes out,
+    # whichever default the form was shown.
+    assert _out(got, {}) == _out(sc, {}) == "/data/export"
+    assert _out(got, {"out": "/tmp/scratch"}) == "/tmp/scratch"
+    assert _out(got, {"out": "  "}) == "/data/export"
     # ...and unlike every other bound dest, it is the form's to remember.
     assert S.form_values(sc["fields"], {"out": "/tmp/scratch", "src": "stale"}) == {
         "out": "/tmp/scratch"
@@ -307,19 +310,19 @@ def test_an_overridable_field_opens_on_settings_and_yields_to_the_form():
 
 def test_export_has_no_undo_flag():
     """Taking an export back is the GUI's Undo over the run's report, not a flag."""
-    _, fs = _stage("export")
-    assert "undo" not in {f["dest"] for f in fs}
+    _, sc = _stage("export")
+    assert "undo" not in {f["dest"] for f in sc["fields"]}
 
 
 def test_a_stale_mask_dir_in_a_saved_form_never_wins():
     """``mask_dir`` lives in ⚙ Settings, so a value left in a saved payload is
     dead: two generators sharing one directory overwrite each other."""
-    _, fs = _stage("masks_sam")
-    argv = S.build_argv(fs, {"mask_dir": "typo"}, roots={"dst": "d"}, mask_root="ws")
+    _, sc = _stage("masks_sam")
+    argv = S.build_argv(sc, {"mask_dir": "typo"}, roots={"dst": "d"}, mask_root="ws")
     assert "typo" not in argv
     assert argv == ["--image-dir", "d", "--mask-dir", "ws/masks_sam"]
     # With no root to bind against, the flag falls away and the CLI default stands.
-    assert S.build_argv(fs, {"mask_dir": "typo"}, roots={"dst": "d"}) == [
+    assert S.build_argv(sc, {"mask_dir": "typo"}, roots={"dst": "d"}) == [
         "--image-dir",
         "d",
     ]
@@ -329,12 +332,12 @@ def test_the_sam3_checkpoint_is_one_setting_for_three_stages():
     """position / audit / masks_sam build the same SAM3 from one Settings value."""
     required = {"mask_dir": "m"}
     for stage_id in ("position", "audit", "masks_sam"):
-        _, fs = _stage(stage_id)
-        ckpt = next(f for f in fs if f["dest"] == "checkpoint")
+        _, sc = _stage(stage_id)
+        ckpt = next(f for f in sc["fields"] if f["dest"] == "checkpoint")
         assert ckpt["setting"] == "checkpoint", stage_id
         assert ckpt["default"] == "models/sam3/sam3.pt", stage_id
         argv = S.build_argv(
-            fs,
+            sc,
             required,
             settings={"checkpoint": "w.pt"},
             roots={"src": "i", "dst": "d"},
@@ -342,7 +345,7 @@ def test_the_sam3_checkpoint_is_one_setting_for_three_stages():
         assert _opt(argv, "--checkpoint") == "w.pt", stage_id
         # A path stranded in a saved form never stands in for the setting.
         assert "--checkpoint" not in S.build_argv(
-            fs,
+            sc,
             {**required, "checkpoint": "stale.pt"},
             roots={"src": "i", "dst": "d"},
         )
@@ -351,14 +354,14 @@ def test_the_sam3_checkpoint_is_one_setting_for_three_stages():
 def test_the_soft_prompt_is_one_setting_for_both_detector_stages():
     """Both detector stages take the soft prompt from one Settings value."""
     for stage_id in ("position", "audit"):
-        _, fs = _stage(stage_id)
-        embed = next(f for f in fs if f["dest"] == "prompt_embed")
+        _, sc = _stage(stage_id)
+        embed = next(f for f in sc["fields"] if f["dest"] == "prompt_embed")
         assert embed["setting"] == "prompt_embed", stage_id
-        argv = S.build_argv(fs, {}, settings={"prompt_embed": "none"})
+        argv = S.build_argv(sc, {}, settings={"prompt_embed": "none"})
         assert _opt(argv, "--prompt_embed") == "none", stage_id
         # Blank in Settings = the shipped default, which the CLI already holds.
         assert "--prompt_embed" not in S.build_argv(
-            fs, {"prompt_embed": "stale.safetensors"}
+            sc, {"prompt_embed": "stale.safetensors"}
         )
 
 
@@ -367,115 +370,78 @@ def test_the_report_root_moves_every_report_and_splits_none():
     own CLI default, so no two stages share a report."""
     tails = {}
     for stage_id in ("resize", "autotag", "position", "audit", "groups"):
-        st, fs = _stage(stage_id)
+        st, sc = _stage(stage_id)
         dest = st.report[0]
-        f = next(x for x in fs if x["dest"] == dest)
+        f = next(x for x in sc["fields"] if x["dest"] == dest)
         assert f["report"] and f["default"].endswith(f["report"])
         tails[stage_id] = f["report"]
-        assert _opt(S.build_argv(fs, {}, report_root="d"), f["flags"][0]) == (
+        assert _opt(S.build_argv(sc, {}, report_root="d"), f["flags"][0]) == (
             f"d/{f['report']}"
         )
     assert len(set(tails.values())) == len(tails), tails
 
 
 def test_report_path_follows_the_settings_report_root():
-    st, fs = _stage("autotag")
+    st, sc = _stage("autotag")
     # No root: the CLI's own default, which is what a hand-run stage writes.
-    assert S.report_path(st, fs, {}) == "workspace/captions/autotag/report.json"
-    assert S.report_path(st, fs, {}, "moved") == "moved/captions/autotag/report.json"
+    assert (
+        S.report_path(st, sc["fields"], {}) == "workspace/captions/autotag/report.json"
+    )
+    assert (
+        S.report_path(st, sc["fields"], {}, "moved")
+        == "moved/captions/autotag/report.json"
+    )
     # A value stranded in a saved form is not consulted at all.
-    assert S.report_path(st, fs, {"report_dir": "r"}, "moved").startswith("moved/")
-    assert S.form_values(fs, {"report_dir": "r", "mode": "merge"}) == {"mode": "merge"}
-    st, fs = _stage("groups")
-    assert S.report_path(st, fs, {}, "moved") == "moved/groups/groups.json"
+    assert S.report_path(st, sc["fields"], {"report_dir": "r"}, "moved").startswith(
+        "moved/"
+    )
+    assert S.form_values(sc["fields"], {"report_dir": "r", "mode": "merge"}) == {
+        "mode": "merge"
+    }
+    st, sc = _stage("groups")
+    assert S.report_path(st, sc["fields"], {}, "moved") == "moved/groups/groups.json"
 
 
-# -- schema cache ---------------------------------------------------------
+# -- the schemas are built in-process, off the request classes --------------
 
 
-@pytest.fixture
-def cache(tmp_path, monkeypatch):
-    """An empty, private schema cache dir + a counter for the child dumps."""
-    monkeypatch.setenv(S.CACHE_ENV, str(tmp_path / "cache"))
-    calls: list[int] = []
-    real = S.dump_schemas_in_child
-
-    def counted():
-        calls.append(1)
-        return {"fake": {"id": "fake", "available": True, "fields": []}}
-
-    monkeypatch.setattr(S, "dump_schemas_in_child", counted)
-    return calls, tmp_path, real
-
-
-def test_cache_dir_is_outside_the_curation_home(tmp_path, monkeypatch):
-    monkeypatch.setenv("ANIME_TOOLS_HOME", str(tmp_path / "home"))
-    monkeypatch.delenv(S.CACHE_ENV, raising=False)
-    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "xdg"))
-    assert S.cache_dir() == tmp_path / "xdg" / "anime_tools" / "gui"
-    assert S.schema_cache_path().name == "schemas.json"
-    monkeypatch.setenv(S.CACHE_ENV, str(tmp_path / "c"))
-    assert S.cache_dir() == tmp_path / "c"
+def test_schemas_build_in_process_without_a_model_library():
+    """No child interpreter and no cache: the request modules are torch-free,
+    so the server describes every stage itself. Pinned in a fresh interpreter,
+    since a model library already imported by another test would hide it."""
+    code = (
+        "import sys; from anime_tools.gui import stages as S; "
+        "schemas = S.load_schemas(); "
+        "assert set(schemas) == {s.id for s in S.STAGES}, set(schemas); "
+        "assert all(sc['available'] for sc in schemas.values()); "
+        "heavy = {'torch', 'cv2', 'sam3', 'onnxruntime', 'timm'} & set(sys.modules); "
+        "assert not heavy, heavy"
+    )
+    r = subprocess.run(
+        [sys.executable, "-c", code], capture_output=True, text=True, check=False
+    )
+    assert r.returncode == 0, r.stderr
 
 
-def test_second_load_hits_the_cache_and_skips_the_child(cache):
-    calls, _, _ = cache
-    first = S.load_schemas()
-    assert calls == [1]
-    assert S.schema_cache_path().is_file()
-    assert S.load_schemas() == first
-    assert calls == [1]  # no second interpreter
-    # ...and opting out still shells out.
-    S.load_schemas(cache=False)
-    assert calls == [1, 1]
+def test_the_form_and_the_cli_are_one_field_list():
+    """Every form field is a flag of the stage's generated parser with the same
+    default, and the request's docstring is the stage's doc."""
+    import inspect
 
-
-def test_touching_a_stage_module_invalidates_the_cache(cache, monkeypatch):
-    """The cache key is keyed on the module files, so an edited parser is never stale."""
-    calls, tmp_path, _ = cache
-    mod = tmp_path / "cachestub_stage.py"
-    mod.write_text("def build_parser():\n    pass\n", encoding="utf-8")
-    monkeypatch.syspath_prepend(str(tmp_path))
-    extra = S.Stage("cachestub", "Stub", "cachestub_stage", "test", "")
-    monkeypatch.setattr(S, "STAGES", (*S.STAGES, extra))
-
-    before = S.schema_cache_key()
-    S.load_schemas()
-    S.load_schemas()
-    assert calls == [1]  # second call came off disk
-
-    mod.write_text("def build_parser():\n    return None  # edited\n", encoding="utf-8")
-    assert S.schema_cache_key() != before
-    S.load_schemas()
-    assert calls == [1, 1]  # rebuilt
-
-
-def test_a_corrupt_cache_is_a_rebuild_not_a_crash(cache):
-    calls, _, _ = cache
-    S.load_schemas()
-    p = S.schema_cache_path()
-    for junk in ("{not json", "[]", '{"key": "x"}', ""):
-        p.write_text(junk, encoding="utf-8")
-        assert S.load_schemas() == {
-            "fake": {"id": "fake", "available": True, "fields": []}
-        }
-    assert len(calls) == 5
-
-
-def test_an_unwritable_cache_dir_still_serves_schemas(cache, monkeypatch):
-    calls, tmp_path, _ = cache
-    monkeypatch.setenv(S.CACHE_ENV, str(tmp_path / "blocked" / "sub"))
-    (tmp_path / "blocked").write_text("not a directory", encoding="utf-8")
-    assert S.load_schemas()["fake"]["id"] == "fake"
-    assert calls == [1]
-
-
-def test_the_real_dump_round_trips_through_the_cache(tmp_path, monkeypatch):
-    """End to end, with the actual child interpreter, once."""
-    monkeypatch.setenv(S.CACHE_ENV, str(tmp_path / "cache"))
-    fresh = S.load_schemas()
-    assert set(fresh) == {s.id for s in S.STAGES}
-    assert S.load_schemas() == fresh
+    for st in S.STAGES:
+        sc = S.schema(st)
+        actions = {a.dest: a for a in S.load_parser(st)._actions if a.dest != "help"}
+        assert {f["dest"] for f in sc["fields"]} == set(actions), st.id
+        for f in sc["fields"]:
+            a = actions[f["dest"]]
+            # A bool's ``--no-`` spellings are the parser's; the form carries
+            # one ``negate`` instead.
+            assert set(f["flags"]) <= set(a.option_strings), (st.id, f["dest"])
+            assert (a.option_strings[:1] or [None])[0] == (f["flags"] or [None])[0]
+            if not f["required"]:
+                got = list(a.default) if isinstance(a.default, tuple) else a.default
+                assert got == f["default"], (st.id, f["dest"])
+        assert sc["doc"] == inspect.getdoc(st.request_class())
 
 
 # -- server ---------------------------------------------------------------
@@ -494,18 +460,24 @@ def client(tmp_path, monkeypatch):
     schemas = S.load_schemas()
     stub = tmp_path / "stub_stage.py"
     stub.write_text(
-        "import argparse, json, os, sys, pathlib, time\n"
-        "def build_parser():\n"
-        "    p = argparse.ArgumentParser(); p.add_argument('--n', type=int, default=1)\n"
-        "    p.add_argument('--apply', action='store_true')\n"
-        "    p.add_argument('--sleep', type=float, default=0)\n"
+        "import json, os, pathlib, time\n"
+        "from dataclasses import dataclass\n"
+        "from anime_tools._request import Request, arg\n"
+        "@dataclass(frozen=True, kw_only=True)\n"
+        "class StubRequest(Request):\n"
+        "    FLAG_SEP = '_'\n"
+        "    n: int = arg(1)\n"
+        "    apply: bool = arg(False)\n"
+        "    sleep: float = arg(0.0)\n"
         # The two Settings-bound dests and the auto-detected one, so the stub
         # exercises the same binding the real stages get.
-        "    p.add_argument('--path_pattern', default='*')\n"
-        "    p.add_argument('--device', default=None)\n"
-        "    p.add_argument('--report_dir', default='out'); return p\n"
+        "    path_pattern: str = arg('*')\n"
+        "    device: str | None = arg(None)\n"
+        "    report_dir: str = arg('out')\n"
+        "def build_parser():\n"
+        "    return StubRequest.parser()\n"
         "if __name__ == '__main__':\n"
-        "    a = build_parser().parse_args()\n"
+        "    a = StubRequest.from_argv(build_parser())\n"
         "    for i in range(a.n): print('line', i, flush=True)\n"
         "    time.sleep(a.sleep)\n"
         "    d = pathlib.Path(os.environ['ANIME_TOOLS_HOME'], a.report_dir); d.mkdir(exist_ok=True)\n"
@@ -514,7 +486,12 @@ def client(tmp_path, monkeypatch):
     monkeypatch.syspath_prepend(str(tmp_path))
     monkeypatch.setenv("PYTHONPATH", str(tmp_path))
     fake = S.Stage(
-        "stub", "Stub", "stub_stage", "test", "", report=("report_dir", "report.json")
+        id="stub",
+        title="Stub",
+        request="stub_stage:StubRequest",
+        module="stub_stage",
+        panel="test",
+        report=("report_dir", "report.json"),
     )
     monkeypatch.setitem(S.BY_ID, "stub", fake)
     schemas["stub"] = S.schema(fake)
@@ -633,14 +610,14 @@ def test_job_runs_streams_and_persists_values(client):
 
 def test_stage_schemas_carry_the_settings_value_for_a_panel_field(client):
     """``/api/stages`` fills a panel field's default from Settings; every other
-    stage's schema is the dump verbatim."""
+    stage's schema is served verbatim."""
     c, _home = client
     c.put("/api/settings", json={"dataset": {"out": "elsewhere/export"}})
     export = next(s for s in c.get("/api/stages").json() if s["id"] == "export")
     by = {f["dest"]: f for f in export["fields"]}
     assert by["out"]["default"] == "elsewhere/export"
     assert by["out"]["overridable"] is True
-    # Every other stage's schema is the dump verbatim.
+    # Every other stage's schema is served verbatim.
     autotag = next(s for s in c.get("/api/stages").json() if s["id"] == "autotag")
     assert autotag == S.schema(S.BY_ID["autotag"])
     c.put("/api/settings", json={"dataset": {}})
@@ -931,7 +908,7 @@ def test_model_catalog_and_download_job(client, monkeypatch):
     assert job["state"] in ("done", "failed")
 
 
-# -- startup: the schema dump is off the critical path ---------------------
+# -- startup: the schema build is off the critical path --------------------
 
 
 def _app(tmp_path, monkeypatch, loader):
@@ -943,7 +920,7 @@ def _app(tmp_path, monkeypatch, loader):
     return create_app(jobs=JobManager(log_dir=tmp_path / "logs"))
 
 
-def test_startup_does_not_wait_for_the_schema_dump(tmp_path, monkeypatch):
+def test_startup_does_not_wait_for_the_schemas(tmp_path, monkeypatch):
     from fastapi.testclient import TestClient
 
     gate = threading.Event()
@@ -954,7 +931,7 @@ def test_startup_does_not_wait_for_the_schema_dump(tmp_path, monkeypatch):
 
     t0 = time.perf_counter()
     app = _app(tmp_path, monkeypatch, slow)
-    assert time.perf_counter() - t0 < 1.0  # bind the port, don't dump schemas
+    assert time.perf_counter() - t0 < 1.0  # bind the port, don't build schemas
 
     with TestClient(app) as c:
         assert c.get("/api/info").json()["schemas_ready"] is False
@@ -979,11 +956,11 @@ def test_stages_time_out_rather_than_hang_forever(tmp_path, monkeypatch):
         stuck.set()
 
 
-def test_a_failed_schema_dump_is_reported_not_fatal(tmp_path, monkeypatch):
+def test_a_failed_schema_build_is_reported_not_fatal(tmp_path, monkeypatch):
     from fastapi.testclient import TestClient
 
     def boom():
-        raise RuntimeError("stage schema dump failed: boom")
+        raise RuntimeError("stage schema build failed: boom")
 
     with TestClient(_app(tmp_path, monkeypatch, boom)) as c:
         assert c.get("/api/info").status_code == 200  # the process is alive
@@ -1012,9 +989,9 @@ def test_pick_port_skips_busy_port():
 def test_replay_capable_stages_advertise_it():
     """Apply reads ``schema()["replay"]``, so a ``--from_report`` stage carries it."""
     for stage_id in ("autotag", "position"):
-        st, fs = _stage(stage_id)
+        st, sc = _stage(stage_id)
         assert S.schema(st)["replay"] is True
-        assert any(f["dest"] == S.REPLAY_FIELD for f in fs)
+        assert any(f["dest"] == S.REPLAY_FIELD for f in sc["fields"])
     assert S.schema(S.BY_ID["groups"])["replay"] is False
 
 
@@ -1027,16 +1004,16 @@ def test_replay_report_name_matches_the_stages():
 
 def test_a_replay_reports_beside_the_run_it_replays():
     """A replay reports beside the dry run it reads, never over it."""
-    st, fs = _stage("autotag")
-    dry = S.report_path(st, fs, {}, "r")
+    st, sc = _stage("autotag")
+    dry = S.report_path(st, sc["fields"], {}, "r")
     assert dry == "r/captions/autotag/report.json"
-    replay = S.report_path(st, fs, {S.REPLAY_FIELD: dry}, "r")
+    replay = S.report_path(st, sc["fields"], {S.REPLAY_FIELD: dry}, "r")
     assert replay == f"r/captions/autotag/{S.REPLAY_REPORT_NAME}" != dry
 
 
 def test_from_report_reaches_the_argv():
-    _, fs = _stage("autotag")
-    argv = S.build_argv(fs, {S.REPLAY_FIELD: "r/report.json"}, apply=True)
+    _, sc = _stage("autotag")
+    argv = S.build_argv(sc, {S.REPLAY_FIELD: "r/report.json"}, apply=True)
     assert "--from_report" in argv
     assert argv[argv.index("--from_report") + 1] == "r/report.json"
     assert "--apply" in argv

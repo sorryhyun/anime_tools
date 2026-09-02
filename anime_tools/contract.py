@@ -53,8 +53,9 @@ and never over it."""
 
 GATE_ATTR = "gui_gate"
 """The attribute an argparse group carries when it is a *drawer*: the dest of the
-boolean that switches the whole group on. Stamped by
-``masking._masks.gated_group``, read by ``gui.stages.fields_of``."""
+boolean that switches the whole group on. The source is the request field's
+``gate`` metadata (``anime_tools._request``); the generated parser stamps the
+group with it for anyone introspecting argparse directly."""
 
 
 @dataclass(frozen=True)

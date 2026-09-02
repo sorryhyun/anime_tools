@@ -1,9 +1,10 @@
-"""The stage CLIs' shared argparse blocks, pinned.
+"""The stage CLIs' shared flags, pinned.
 
-``anime_tools.gui.stages`` builds the GUI form by introspecting each stage's
-``build_parser()``, so an argparse detail is a UI contract: a dropped ``dest=``
-renames a form field, a lost ``--foo-bar`` alias breaks a saved command line,
-and a drifted default silently changes what a run does.
+Every parser is generated from its request class (``anime_tools._request``),
+so a flag's spelling, default and group live in one field's metadata — and the
+GUI form is drawn from the same list. What this file pins is the *shared*
+part: a dest that several stages take is spelled and defaulted identically, so
+one ⚙ Settings value can fill it everywhere.
 """
 
 from __future__ import annotations
@@ -14,6 +15,7 @@ from pathlib import Path
 
 import pytest
 
+from anime_tools._request import args_of
 from anime_tools.downloads import DEFAULT_SAM3_CHECKPOINT
 from anime_tools.masking._sam3 import SUBJECT_PROMPT
 from anime_tools.masking.cli import generate_masks, generate_masks_mit
@@ -25,10 +27,15 @@ from anime_tools.stages.cli import (
     position_captions,
     resize_images,
 )
-from anime_tools.stages.cli._detection import POSITION_ONLY_FLAGS
 from anime_tools.stages.instance_detection import DEFAULT_SUBJECT_PROMPT_EMBED
 from anime_tools.stages.position_captions import PositionCaptionOptions
-from anime_tools.stages.requests import AuditRequest, DetectionRequest
+from anime_tools.stages.requests import (
+    DETECTION,
+    POSITION_ONLY_FLAGS,
+    AuditRequest,
+    DetectionRequest,
+    PositionRequest,
+)
 
 SAM3_STAGES = {
     "position": position_captions,
@@ -54,11 +61,9 @@ def actions(parser: argparse.ArgumentParser) -> dict[str, argparse.Action]:
     return {a.dest: a for a in parser._actions if a.dest != "help"}
 
 
-def detection_dests(module) -> set[str]:
-    """The dests in a stage parser's ``detection`` argument group."""
-    parser = module.build_parser()
-    group = next(g for g in parser._action_groups if g.title == "detection")
-    return {a.dest for a in group._group_actions}
+def detection_dests(cls) -> set[str]:
+    """The dests a stage request puts in its ``detection`` group."""
+    return {a.name for a in args_of(cls) if a.group == DETECTION}
 
 
 @pytest.fixture(scope="module")
@@ -77,14 +82,19 @@ def parsers() -> dict[str, dict[str, argparse.Action]]:
         ("from_report", ("--from_report", "--from-report"), None),
         ("tagger_dir", ("--tagger_dir", "--tagger-dir"), None),
         ("checkpoint", ("--checkpoint",), DEFAULT_SAM3_CHECKPOINT),
-        ("prompt_embed", ("--prompt_embed",), DEFAULT_SUBJECT_PROMPT_EMBED),
+        (
+            "prompt_embed",
+            ("--prompt_embed", "--prompt-embed"),
+            DEFAULT_SUBJECT_PROMPT_EMBED,
+        ),
         ("device", ("--device",), None),
         ("src", ("--src",), "image_dataset"),
         ("dst", ("--dst",), "workspace/resized"),
     ],
 )
 def test_shared_flags_keep_one_spelling(parsers, dest, flags, default):
-    """Every stage that takes one of these takes it identically.
+    """Every stage that takes one of these takes it identically: the canonical
+    spelling first, the other separator as an alias.
 
     ``--report_dir``'s default is per-stage, so only its spelling is pinned;
     ``correct_captions`` requires its roots rather than defaulting them.
@@ -103,11 +113,26 @@ def test_shared_flags_keep_one_spelling(parsers, dest, flags, default):
     assert seen >= 2, f"{dest} is no longer shared — drop it from this test"
 
 
+def test_every_flag_takes_both_separators():
+    """A flag with a separator in it is accepted either way, so the caption
+    stages' underscores and the masking CLIs' hyphens are one convention."""
+    for name, mod in {**ALL_STAGES, "masks": generate_masks}.items():
+        for a in actions(mod.build_parser()).values():
+            canon = a.option_strings[0] if a.option_strings else ""
+            if "_" in canon or "-" in canon[2:]:
+                assert len(a.option_strings) >= 2, (name, canon)
+                body = canon[2:]
+                other = "--" + (
+                    body.replace("_", "-") if "_" in body else body.replace("-", "_")
+                )
+                assert other in a.option_strings, (name, canon)
+
+
 def test_every_caption_stage_is_dry_run_by_default(parsers):
     """Nothing is written without ``--apply``."""
     for name in CAPTION_STAGES:
         apply_action = parsers[name]["apply"]
-        assert apply_action.option_strings == ["--apply"]
+        assert apply_action.option_strings[0] == "--apply"
         assert apply_action.default is False
 
 
@@ -125,6 +150,18 @@ def test_the_curated_apply_reads_the_report_the_audit_writes():
     assert report.default == f"{audit_multiview.DEFAULT_REPORT_DIR}/report.json"
 
 
+def test_the_help_is_the_field_metadata():
+    """``--help`` prints what the request field says, ``%`` included, and the
+    parser's description is the class docstring."""
+    parser = position_captions.build_parser()
+    acts = actions(parser)
+    novel = next(a for a in args_of(PositionRequest) if a.name == "max_novel_tags")
+    assert "46% novel" in novel.help
+    assert acts["max_novel_tags"].help == novel.help.replace("%", "%%")
+    assert "46% novel" in parser.format_help()
+    assert parser.description.startswith("Rewrite multi-subject captions")
+
+
 # ---- the two SAM3 stages run the same detector -------------------------
 
 
@@ -133,7 +170,7 @@ def test_the_two_sam3_stages_declare_identical_detection_flags(parsers):
     :data:`POSITION_ONLY_FLAGS` and help text may differ.
     """
     position, audit = parsers["position"], parsers["audit"]
-    shared = detection_dests(position_captions) & detection_dests(audit_multiview)
+    shared = detection_dests(PositionRequest) & detection_dests(AuditRequest)
     assert shared, "the detection group vanished from one of them"
     for dest in sorted(shared - set(POSITION_ONLY_FLAGS)):
         a, b = position[dest], audit[dest]
@@ -191,17 +228,12 @@ def test_a_prompt_flag_is_a_comma_separated_list():
 
 
 def test_the_detection_group_is_exactly_the_detection_request():
-    """Every detection-group dest is a ``DetectionRequest`` field and the
-    reverse, so a flag declared without a field parses fine and does nothing,
-    and a field without a flag never reaches the CLI. ``--checkpoint`` is the
-    one field declared outside the group (``add_checkpoint_arg``)."""
+    """The ``detection`` group of either SAM3 stage is the nested
+    ``DetectionRequest`` block, plus the stage's own detection knobs
+    (:data:`POSITION_ONLY_FLAGS`, the audit's ``name_confidence``)."""
     request_fields = {f.name for f in dataclasses.fields(DetectionRequest)}
-    assert detection_dests(position_captions) - set(POSITION_ONLY_FLAGS) == (
-        request_fields - {"checkpoint"}
-    )
-    assert detection_dests(audit_multiview) - AUDIT_GROUP_EXTRAS == (
-        request_fields - {"checkpoint"}
-    )
+    assert detection_dests(PositionRequest) - set(POSITION_ONLY_FLAGS) == request_fields
+    assert detection_dests(AuditRequest) - AUDIT_GROUP_EXTRAS == request_fields
 
 
 def test_every_option_field_has_a_flag_naming_it():
@@ -235,8 +267,9 @@ def test_the_device_flag_has_no_copies_left():
 
     It is a :data:`anime_tools.gui.stages.AUTO_FIELDS` dest — neither shown on
     the form nor put on the argv — so the child resolves it through
-    :func:`anime_tools._device.resolve_device`, which only works while every CLI
-    defaults it to ``None``.
+    :func:`anime_tools._device.resolve_device`, which only works while every
+    stage defaults it to ``None``. The request classes spell it as a field
+    (``device: str | None = arg(None, help=DEVICE_HELP)``), never as a flag.
     """
     from anime_tools import _device
 

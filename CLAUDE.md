@@ -132,7 +132,12 @@ run by `stages/run.py::run_<stage>(req)`, which is the old CLI main minus the pa
 model load, the library call, `report.json`, the printed epilogue). Same base as masking's
 (`anime_tools/_request.py`), with two differences: flags are spelled with underscores
 (`FLAG_SEP = "_"`), and a `store_false` switch names its one flag in `off` metadata
-(`skip_en` is `--keep_en`). The SAM3 detection flags are one nested `DetectionRequest` shared by
+(`skip_en` is `--keep_en`). **The parser is generated from the class** (`Request.parser()` →
+`_request.build_parser`): every field is declared through `arg(default, help=…, group=…, gate=…,
+choices=…)`, the class docstring is the `--help` description, and every flag with a separator
+takes the other spelling as an alias (`--path_pattern` / `--path-pattern`). The CLIs in `cli/` are
+one-line shells (`build_parser()` = `Request.parser()`, `main()` = `run_<stage>(from_argv())`).
+The SAM3 detection flags are one nested `DetectionRequest` (`GROUP = "detection"`) shared by
 `PositionRequest` and `AuditRequest`; `.options()` on either builds the `PositionCaptionOptions`
 field by field, so an option field with no request field is an error, not a silent default. The
 audit pins `min_instances=2` there rather than exposing it. Validation lives in `__post_init__`
@@ -140,6 +145,11 @@ audit pins `min_instances=2` there rather than exposing it. Validation lives in 
 input tree is a `FileNotFoundError` the shell turns into `SystemExit`. `stages/__init__.py` exposes
 all fifteen names lazily; `tests/test_stage_requests.py` round-trips every request through its
 parser and imports the request half torch-poisoned.
+
+**`stages/registry.py`** is the stage list — `Stage(id, title, request="module:Class", module,
+panel, …)` for all eleven stages, masking and grouping included — resolved lazily
+(`Stage.request_class()`), so the GUI server and the trainer can enumerate stages without importing
+one.
 
 `stages/_models.py::load_anima_tagger` caches the tagger per `(checkpoint dir, device)`, so
 autotag followed by position in one process loads it once; `stages/detector.py::build_detect_fn`
@@ -154,14 +164,13 @@ builds the SAM3 detector from a `DetectionRequest` (the A/B, review and probe CL
 Stages are dry-run by default **from the CLI** and write `report.json`; `--apply` writes for real.
 The GUI always passes it.
 
-Shared scaffolding, because `gui/stages.py` introspects `build_parser()` — a dropped `dest=` or a
-drifted default silently changes the GUI form, and `tests/test_stage_cli_args.py` pins one spelling
-per shared flag:
+Shared scaffolding (`tests/test_stage_cli_args.py` pins one spelling per shared flag, since the
+GUI fills `--path_pattern` / `--tagger_dir` / `--checkpoint` / `--prompt_embed` from one Settings
+value each):
 
-- `cli/_args.py` (dataset roots, apply/replay, model flags, progress), `cli/_detection.py` (the SAM3
-  detection group; its reader is `DetectionRequest`, and `test_stage_cli_args` pins the two as
-  equal sets), `cli/_report.py`, `replay.run_replay_cli` (reads `from_report` / `path_pattern` /
-  `apply` off the request).
+- `cli/_args.py::make_progress` (the `  [done/total] detail` line the GUI's progress bar parses),
+  `cli/_report.py`, `replay.run_replay_cli` (reads `from_report` / `path_pattern` / `apply` off the
+  request).
 - `_caption_io.py` — `read_caption`/`write_caption`, the trailing-newline invariant, the
   `.variants.txt` drop, and `history_by`.
 - `_walk_captions.py` — `resolve_caption`/`iter_captions`: revised caption first, master as
@@ -192,12 +201,13 @@ SAM3 subject masks, SAM3/UNet++/ComicTextDetector text masks, merged into 8-bit 
 
 **The surface is a request object per stage** (`requests.py`, torch-free): `SamMaskRequest`,
 `MitMaskRequest`, `MergeMasksRequest`, run by `sam.py::run_sam_masks`, `mit.py::run_mit_masks`,
-`merge.py::run_merge_masks`. Each field is the matching CLI's argparse `dest` with the CLI's
-default;
-`to_argv()` / `from_namespace()` come from `anime_tools/_request.py` and are inverses over
-`build_parser()` (`tests/test_masking_requests.py` round-trips every one, and a default argv must
-read back as a default request). Validation lives in `__post_init__`; the CLIs in `cli/` are shells
-that parse, build the request, and turn its `ValueError` into `parser.error`. `load_sam3` caches
+`merge.py::run_merge_masks`. Each field is one flag of the matching CLI, whose parser is
+generated from the class (`Request.parser()`, hyphenated: `FLAG_SEP = "-"`, with the underscore
+spelling as an alias);
+`to_argv()` / `from_namespace()` come from `anime_tools/_request.py` and are inverses over it
+(`tests/test_masking_requests.py` round-trips every one, and a default argv must read back as a
+default request). Validation lives in `__post_init__`; the CLIs in `cli/` are shells that parse,
+build the request, and turn its `ValueError` into `parser.error`. `load_sam3` caches
 per process on its arguments, so a text-mask pass after a subject-mask pass reuses the model.
 `masking/__init__.py` exposes all six names lazily. Two private cores:
 
@@ -210,10 +220,10 @@ per process on its arguments, so a text-mask pass after a subject-mask pass reus
   macOS build) with a stand-in that refuses to run, and `shim_sam3_for_cpu` redirects the image
   model's two build-time `"cuda"` literals to CPU when torch has none. Neither fakes `triton`
   itself: torch guards its own import of it and would take a fake one for real.
-- `_masks.py` owns the mask layout — flag blocks (small and contiguous; the GUI form follows
-  declaration order), `plan_mask_jobs`, `write_mask`/`write_ignore_mask` (`detected=1 → alpha=0`),
-  the read side (`mask_name`/`mask_path_for`/`iter_masks`), and `mask_run`, the scaffolding both
-  generators wrap their inner loop in. It deliberately does **not** import `_sam3`, because
+- `_masks.py` owns the mask layout — `plan_mask_jobs`, `write_mask`/`write_ignore_mask`
+  (`detected=1 → alpha=0`), the read side (`mask_name`/`mask_path_for`/`iter_masks`), and
+  `mask_run`, the scaffolding both generators wrap their inner loop in (it reads the walk fields
+  of `MaskWalkRequest` by attribute). It deliberately does **not** import `_sam3`, because
   `gui/dataset.py` imports `mask_name` and would otherwise drag in that side effect.
 
 The subject-mask CLI takes prompts, not a config: `--prompts` (masked out) / `--focus-prompts` (keep
@@ -223,10 +233,11 @@ behind its own switch, unioned before the single dilation: `--use-sam` grounds S
 is a shape, a letter is a stroke), neither subsumes the other, and both being off is the one argv
 the stage refuses.
 
-Each switch is a `gated_group` — an argparse group carrying the dest that turns it on, which the GUI
-renders as a **drawer**. The attribute is spelled in `_masks.GATE_ATTR` and again in
-`gui/stages.GATE_ATTR` (that module stays free of stage dependencies); `tests/test_masking_plan.py`
-pins them together.
+Each switch is a **drawer**: the switch field carries `gate=<its own name>` plus the drawer's
+`group` title, and every knob inside it carries `gate=<the switch>` (`MitMaskRequest`). The GUI
+folds a shut drawer's knobs away and drops them from the argv; the generated parser also stamps the
+argparse group with `contract.GATE_ATTR` for anyone introspecting it directly.
+`tests/test_masking_plan.py` pins the shape.
 
 The three mask directories are **one ⚙ Settings value, not three form fields**: both generators name
 a mask `{stem}_mask.png` at the same relative path, so a shared directory would have the second run
@@ -238,8 +249,14 @@ three hanging off `MASK_SETTING` (`mask_root`).
 The `anime-tools-gui` web panel. `frontend/CLAUDE.md` owns the browser half; this section is the
 server side of the same seam.
 
-**`stages.py` turns each stage CLI's argparse into a form schema and back into an argv.** The dump
-runs in a *child* interpreter, so a stage's imports never leak into the server. Field binding:
+**`stages.py` turns each stage's request dataclass into a form schema and a form payload back
+into the request's argv.** The registry is `stages/registry.py` (re-exported); `schema()` walks
+`_request.args_of(Request)` — the same field list the CLI parser is generated from, so a flag's
+kind, default, help, group and drawer reach the form without argparse in between — and
+`build_argv()` coerces the payload into a namespace, reads it with `Request.from_namespace` (so the
+request's own validation runs server-side, as a 400) and spells it with `to_argv()`. Both happen
+in-process: the request modules are torch-free by test, and building all eleven schemas takes
+~0.1 s, so there is no child interpreter and no cache. Field binding:
 
 | Map | Bound to | Shown? |
 |---|---|---|
@@ -325,15 +342,16 @@ cache. `python -m anime_tools.downloads [ID…]` fetches; the GUI's Models pane 
   pins the numbers and the `anima_resize_*` PNG text keys.
 - **`contract.py`** (stdlib-only leaf, pinned by `test_contract_is_torch_free`): the constants both
   sides of the seam spell — autotag stdio sentinels and modes, tagger checkpoint file sets,
-  `REPLAY_REPORT_NAME`, `GATE_ATTR`, `ReplaySpec` + `REPLAY_SHAPES`, `CONTRACT_VERSION`. Anything
-  the GUI server or the trainer needs without importing a stage goes here; the stage re-exports it.
+  `REPLAY_REPORT_NAME`, `GATE_ATTR` (the stamp the generated parser leaves on a drawer's argparse
+  group), `ReplaySpec` + `REPLAY_SHAPES`, `CONTRACT_VERSION`. Anything the GUI server or the
+  trainer needs without importing a stage goes here; the stage re-exports it.
 - **Shared infra** (tiny copies, not trainer imports): `_env.py` (`curation_home()` =
   `ANIME_TOOLS_HOME` → `ANIMA_HOME` → CWD; `models_dir()`; `workspace_dir()`; `resolve_path`),
   `_walk.py` (the one image walk — `IMAGE_EXTENSIONS` / `glob_images_pathlib` / `walk_images`),
   `_json.py` (UTF-8 both ways, `ensure_ascii=False`, `indent=2` — a bare `open()` reads in the
-  platform codepage, which isn't UTF-8 on Windows), `_device.py` (`add_device_arg` + the one
-  `cuda if available` probe; exactly one declaration exists, pinned by
-  `tests/test_stage_cli_args.py`),
+  platform codepage, which isn't UTF-8 on Windows), `_device.py` (`DEVICE_HELP` for the request
+  fields, `add_device_arg` for the hand-written CLIs, and the one `cuda if available` probe; the
+  flag literal exists once, pinned by `tests/test_stage_cli_args.py`),
   `_hf.py` (tests patch this path), `path_filter.py` (the one `path_pattern` implementation).
 - **`comfyui/anima_tagger/`** (not installed — `packages.find` only includes `anime_tools*`): the
   ComfyUI node. Imports `AnimaTagger` plus `ensure_tagger_checkpoint` and the `dbv4_meta` constants

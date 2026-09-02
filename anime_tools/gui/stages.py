@@ -1,38 +1,67 @@
-"""Stage registry for the web GUI: which CLIs are exposed, and how their
-argparse parsers become a JSON form schema + back into an argv.
+"""The web GUI over the stage registry: how a stage's request dataclass becomes
+a JSON form schema, and how a form payload becomes the request's argv.
 
-Torch/FastAPI-free on purpose. Every stage's ``build_parser()`` is imported
-lazily, so a stage whose deps are missing is listed as *unavailable* rather than
-breaking the server.
+The registry itself is :mod:`anime_tools.stages.registry` (re-exported here);
+this module adds the GUI's *bindings* — which flags are dataset roots, which
+are ⚙ Settings values, which fold under Advanced — and stays torch-free: a
+request class is imported to be described (:func:`schema`) or built
+(:func:`build_argv`), and a stage whose deps are missing is listed as
+*unavailable* rather than breaking the server.
 """
 
 from __future__ import annotations
 
-import argparse
-import hashlib
-import importlib
-import importlib.util
-import json
-import os
-import subprocess
-import sys
-from dataclasses import dataclass, field
-from pathlib import Path, PurePosixPath
+import inspect
+from dataclasses import MISSING, dataclass, field
+from pathlib import PurePosixPath
+from types import SimpleNamespace
 from typing import Any
 
-from anime_tools import __version__
+from anime_tools._request import Arg, args_of
 from anime_tools.contract import GATE_ATTR, REPLAY_REPORT_NAME
+from anime_tools.stages.registry import BY_ID, PANELS, STAGES, Stage, request_class
+
+__all__ = [
+    "AUTO_FIELDS",
+    "BASIC_FIELDS",
+    "BY_ID",
+    "GATE_ATTR",
+    "MASK_FIELDS",
+    "MASK_SETTING",
+    "NO_PREFLIGHT",
+    "PANELS",
+    "PANEL_FIELDS",
+    "PREPROCESS_SETTINGS_KEY",
+    "PREPROCESS_STAGE",
+    "REPLAY_FIELD",
+    "REPLAY_REPORT_NAME",
+    "REPORT_INPUTS",
+    "REPORT_SETTING",
+    "ROOT_FIELDS",
+    "SCOPE_FIELD",
+    "SETTINGS_KEY",
+    "SETTING_FIELDS",
+    "STAGES",
+    "Field",
+    "Stage",
+    "bound_value",
+    "build_argv",
+    "dump_schemas",
+    "form_values",
+    "load_parser",
+    "load_schemas",
+    "mask_subpath",
+    "preprocess_for",
+    "report_path",
+    "report_subpath",
+    "resolved_schema",
+    "schema",
+]
 
 REPLAY_FIELD = "from_report"
-"""``--from_report``: the argparse dest a replay-capable stage exposes."""
-# Both are read here rather than from the stage that owns them, so this module
-# stays free of every stage's imports: ``GATE_ATTR`` marks a *drawer* (an
-# argument group whose dest switches the whole group on), ``REPLAY_REPORT_NAME``
-# is what ``--from_report --apply`` writes.
-
-CACHE_ENV = "ANIME_TOOLS_CACHE"
-CACHE_VERSION = 2
-"""Bumped when the on-disk schema cache format changes, so old files miss."""
+"""``--from_report``: the dest a replay-capable stage exposes."""
+# ``REPLAY_REPORT_NAME`` is what ``--from_report --apply`` writes; read from the
+# contract rather than the stage that owns it, so this module imports no stage.
 
 _PATH_HINTS = (
     "dir",
@@ -60,8 +89,8 @@ SETTINGS_KEY = "stage_defaults"
 """Where :data:`SETTING_FIELDS`' values live in the settings file."""
 
 SETTING_FIELDS: dict[str, str] = {
-    # argparse dest → settings key. Stage-independent knobs, set once in
-    # ⚙ Settings; hidden from the form and filled by :func:`build_argv`.
+    # dest → settings key. Stage-independent knobs, set once in ⚙ Settings;
+    # hidden from the form and filled by :func:`build_argv`.
     "path_pattern": "path_pattern",
     "tagger_dir": "tagger_dir",
     "checkpoint": "checkpoint",
@@ -186,8 +215,8 @@ itself."""
 
 
 ROOT_FIELDS: dict[str, dict[str, str]] = {
-    # stage id → {argparse dest: dataset root name}, filled from the Settings
-    # dialog's dataset roots so no stage form re-asks for them.
+    # stage id → {dest: dataset root name}, filled from the Settings dialog's
+    # dataset roots so no stage form re-asks for them.
     "resize": {"src": "src", "dst": "dst"},
     "autotag": {"src": "src", "dst": "dst"},
     "position": {"src": "src", "dst": "dst"},
@@ -216,149 +245,6 @@ ROOT_FIELDS: dict[str, dict[str, str]] = {
 }
 
 
-@dataclass(frozen=True)
-class Stage:
-    id: str
-    title: str
-    module: str
-    panel: str
-    """Which dock button this stage lives under; several stages share one, and
-    the panel picks between them."""
-    extra: str
-    """Feature area (``tagger`` / ``stages`` / ...); informational only."""
-    report: tuple[str, str | None] | None = None
-    """``(dest, filename)``: the form field naming the report dir (or file when
-    ``filename`` is None), so the GUI can fetch the result after a run."""
-    notes: str = ""
-    short: str = ""
-    """Label for the in-panel picker; defaults to :attr:`title`."""
-    hidden: bool = False
-    """Keep this stage out of the dock. It still has a schema and an argv, so
-    it can run as a preflight and be configured from Settings."""
-
-
-STAGES: tuple[Stage, ...] = (
-    Stage(
-        "resize",
-        "Resize to buckets",
-        "anime_tools.stages.cli.resize_images",
-        "Resize",
-        "stages",
-        report=("report_dir", "report.json"),
-        hidden=True,
-        notes=(
-            "Runs automatically before every stage that reads the resized "
-            "tree. These defaults apply to all of them."
-        ),
-    ),
-    Stage(
-        "autotag",
-        "Autotag captions",
-        "anime_tools.stages.cli.autotag_captions",
-        "Autotag",
-        "tagger",
-        report=("report_dir", "report.json"),
-        notes=(
-            "Writes the revised caption under the resized tree; the master is "
-            "read as a fallback and never edited. `missing` skips any image a "
-            "caption already speaks for."
-        ),
-    ),
-    Stage(
-        "position",
-        "Position captions",
-        "anime_tools.stages.cli.position_captions",
-        "Curate",
-        "stages",
-        report=("report_dir", "report.json"),
-        short="Position",
-    ),
-    Stage(
-        "correct",
-        "Correct + mirror captions",
-        "anime_tools.stages.cli.correct_captions",
-        "Curate",
-        "tokenizers",
-        notes="Writes the revised captions under the resized tree; the master is never edited.",
-        short="Correct",
-    ),
-    Stage(
-        "audit",
-        "Multiview audit",
-        "anime_tools.stages.cli.audit_multiview",
-        "Curate",
-        "stages",
-        report=("report_dir", "report.json"),
-        short="Audit",
-    ),
-    Stage(
-        "ocr",
-        "OCR text",
-        "anime_tools.stages.cli.ocr_captions",
-        "OCR",
-        "stages",
-        report=("report_dir", "report.json"),
-        notes=(
-            "Writes {stem}.ocr.txt into the OCR tree, mirroring the resized "
-            "tree. Reads and writes no caption."
-        ),
-    ),
-    Stage(
-        "groups",
-        "Build groups",
-        "anime_tools.grouping.cli.build_groups",
-        "Groups",
-        "grouping",
-        report=("out", None),
-    ),
-    Stage(
-        "masks_sam",
-        "SAM3 subject masks",
-        "anime_tools.masking.cli.generate_masks",
-        "Masks",
-        "masking",
-        short="Subject",
-    ),
-    Stage(
-        "masks_mit",
-        "Text masks",
-        "anime_tools.masking.cli.generate_masks_mit",
-        "Masks",
-        "masking",
-        short="Text",
-        notes=(
-            "Two detectors, each behind its own switch: SAM3 on a prompt "
-            "(balloons) and the UNet++ segmenter (lettering). Their masks are "
-            "unioned."
-        ),
-    ),
-    Stage(
-        "masks_merge",
-        "Merge masks",
-        "anime_tools.masking.cli.merge_masks",
-        "Masks",
-        "masking",
-        short="Merge",
-    ),
-    Stage(
-        "export",
-        "Export workspace",
-        "anime_tools.stages.cli.export_workspace",
-        "Export",
-        "stages",
-        report=("report_dir", "report.json"),
-        notes=(
-            "The only stage that writes outside the workspace. Run shows what "
-            "would publish; Apply copies it to the tree the trainer reads."
-        ),
-    ),
-)
-
-
-PANELS: tuple[str, ...] = tuple(dict.fromkeys(s.panel for s in STAGES if not s.hidden))
-"""The dock's buttons, in registry order. Hidden stages contribute none."""
-
-
 NO_PREFLIGHT: frozenset[str] = frozenset({PREPROCESS_STAGE, "export"})
 """Stages the resize preflight never runs in front of.
 
@@ -378,9 +264,6 @@ def preprocess_for(stage_id: str) -> str | None:
     if "dst" in ROOT_FIELDS.get(stage_id, {}).values():
         return PREPROCESS_STAGE
     return None
-
-
-BY_ID: dict[str, Stage] = {s.id: s for s in STAGES}
 
 
 def _tail(default: str) -> str:
@@ -412,10 +295,16 @@ def mask_subpath(default: str | list[str]) -> str | list[str]:
 
 @dataclass
 class Field:
+    """One form field — an :class:`anime_tools._request.Arg` plus the GUI's
+    bindings. Shipped to the browser as a dict (``frontend/src/types.ts``
+    mirrors it)."""
+
     dest: str
     kind: str  # bool | int | float | str | enum | list
     flags: list[str] = field(default_factory=list)  # [] → positional
     default: Any = None
+    """The argv spelling of the field's default (a prompt list is its
+    comma-separated string), JSON-ready; ``None`` for a required field."""
     choices: list[Any] | None = None
     help: str = ""
     required: bool = False
@@ -425,7 +314,7 @@ class Field:
     opens. Meaningless unless ``path``."""
     group: str = ""
     negate: str | None = None
-    """For BooleanOptionalAction: the ``--no-…`` flag."""
+    """For a bool without a ``store_false`` spelling: the ``--no-…`` flag."""
     label: str = ""
     """What the form shows: the flag, or the dest for a ``store_false`` flag so
     a ticked box always means *on*."""
@@ -453,87 +342,46 @@ class Field:
     away until the Advanced toggle is on. Never set on a required field or on a
     drawer's own gate."""
     gate: str | None = None
-    """The dest of the boolean this field hangs off — a *drawer* (see
-    :data:`GATE_ATTR`). The gate carries its own dest here, which is how the form
-    tells the checkbox from what it folds away. A shut drawer's fields never reach
-    the argv."""
+    """The dest of the boolean this field hangs off — a *drawer*. The gate carries
+    its own dest here, which is how the form tells the checkbox from what it folds
+    away. A shut drawer's fields never reach the argv."""
+
+    @property
+    def bound(self) -> bool:
+        return bool(self.root or self.setting or self.report or self.mask)
 
 
-def load_parser(stage: Stage) -> argparse.ArgumentParser:
-    return importlib.import_module(stage.module).build_parser()
+def load_parser(stage: Stage):
+    """The stage's CLI parser — generated from the same request the schema is."""
+    return stage.request_class().parser()
 
 
-def _kind(a: argparse.Action) -> str:
-    if isinstance(
-        a,
-        argparse.BooleanOptionalAction
-        | argparse._StoreTrueAction
-        | argparse._StoreFalseAction,
-    ):
-        return "bool"
-    if a.nargs in ("+", "*") or (isinstance(a.nargs, int) and a.nargs > 1):
-        return "list"
-    if a.choices:
-        return "enum"
-    if a.type is int:
-        return "int"
-    if a.type is float:
-        return "float"
-    return "str"
+def _json(value: Any) -> Any:
+    if value is MISSING:
+        return None
+    if isinstance(value, tuple):
+        return list(value)
+    return value
 
 
-def fields_of(parser: argparse.ArgumentParser) -> list[Field]:
-    groups: dict[int, str] = {}
-    gates: dict[int, str] = {}
-    for g in parser._action_groups:
-        if g.title not in ("positional arguments", "options", "optional arguments"):
-            gate = getattr(g, GATE_ATTR, None)
-            for a in g._group_actions:
-                groups[id(a)] = g.title or ""
-                if gate:
-                    gates[id(a)] = gate
-    out: list[Field] = []
-    for a in parser._actions:
-        if isinstance(a, argparse._HelpAction):
-            continue
-        kind = _kind(a)
-        flags = list(a.option_strings)
-        negate = None
-        if isinstance(a, argparse.BooleanOptionalAction):
-            negate = next((f for f in flags if f.startswith("--no-")), None)
-            flags = [f for f in flags if not f.startswith("--no-")]
-        default = a.default
-        if default is argparse.SUPPRESS:
-            default = None
-        if kind == "bool":
-            default = bool(default)
-        name = a.dest.replace("_", "-")
-        label = (
-            a.dest
-            if isinstance(a, argparse._StoreFalseAction)
-            else (flags[0] if flags else a.dest)
-        )
-        out.append(
-            Field(
-                dest=a.dest,
-                kind=kind,
-                flags=flags,
-                default=default,
-                choices=list(a.choices) if a.choices else None,
-                help=(a.help or "").replace("%(default)s", str(default)),
-                # A positional is required unless argparse can do without it:
-                # ``nargs="*"`` plus a default is the one shape that can, and
-                # clearing such a field falls back to that default.
-                required=bool(a.required) or (not flags and a.default is None),
-                path=any(h in name for h in _PATH_HINTS),
-                path_kind="dir" if any(h in name for h in _DIR_HINTS) else "file",
-                group=groups.get(id(a), ""),
-                negate=negate,
-                label=label,
-                gate=gates.get(id(a)),
-            )
-        )
-    return out
+def field_of(a: Arg) -> Field:
+    """An :class:`Arg` as the form sees it, before the stage's bindings."""
+    name = a.name.replace("_", "-")
+    return Field(
+        dest=a.name,
+        kind=a.kind,
+        flags=list(a.flags),
+        default=_json(a.default),
+        choices=list(a.choices) if a.choices else None,
+        help=a.help,
+        required=a.required,
+        path=any(h in name for h in _PATH_HINTS),
+        path_kind="dir" if any(h in name for h in _DIR_HINTS) else "file",
+        group=a.group,
+        negate=a.negate,
+        label=a.name if a.off else (a.flags[0] if a.flags else a.name),
+        gate=a.gate,
+    )
 
 
 def schema(stage: Stage) -> dict[str, Any]:
@@ -544,6 +392,7 @@ def schema(stage: Stage) -> dict[str, Any]:
         "panel": stage.panel,
         "short": stage.short or stage.title,
         "module": stage.module,
+        "request": stage.request,
         "extra": stage.extra,
         "notes": stage.notes,
         "report": bool(stage.report),
@@ -552,10 +401,10 @@ def schema(stage: Stage) -> dict[str, Any]:
         "preprocess": preprocess_for(stage.id),
     }
     try:
-        parser = load_parser(stage)
+        cls = stage.request_class()
     except ImportError as e:  # extra not installed
         return {**base, "available": False, "error": str(e), "fields": [], "doc": ""}
-    fs = fields_of(parser)
+    fs = [field_of(a) for a in args_of(cls)]
     bound = ROOT_FIELDS.get(stage.id, {})
     basic = BASIC_FIELDS.get(stage.id)
     report_dests = {stage.report[0] if stage.report else None} | {
@@ -575,10 +424,7 @@ def schema(stage: Stage) -> dict[str, Any]:
         f.advanced = bool(
             basic is not None
             and f.dest not in basic
-            and (
-                f.overridable
-                or not (f.root or f.setting or f.report or f.mask or f.auto)
-            )
+            and (f.overridable or not (f.bound or f.auto))
             and not f.required
             and f.gate != f.dest
             and f.dest not in ("apply", REPLAY_FIELD)
@@ -597,7 +443,7 @@ def schema(stage: Stage) -> dict[str, Any]:
     return {
         **base,
         "available": True,
-        "doc": parser.description or "",
+        "doc": inspect.getdoc(cls) or "",
         "apply": any(f.dest == "apply" for f in fs),
         # Takes a ``--path_pattern``, so one run can be narrowed to one image.
         "scoped": any(f.dest == SCOPE_FIELD for f in fs),
@@ -649,9 +495,9 @@ def resolved_schema(
     """``sc`` with every :attr:`Field.overridable` default replaced by what
     Settings currently says (:func:`bound_value`).
 
-    The dump is collected once in a child interpreter and cached on the source
-    tree, so the bound values a *form* has to show are filled in here, per
-    request. Returns a copy, leaving the cached dump alone.
+    The schemas are built once at startup and know nothing about a settings
+    file, so the bound values a *form* has to show are filled in here, per
+    request. Returns a copy, leaving the stored schema alone.
     """
     fields = sc.get("fields") or []
     if not any(f.get("overridable") for f in fields):
@@ -673,8 +519,34 @@ def resolved_schema(
     return {**sc, "fields": out}
 
 
+def _blank(v: Any) -> bool:
+    return v is None or v == "" or v == []
+
+
+def _coerce(f: Field, v: Any) -> Any:
+    """A form value as the request's parser would have left it on the namespace:
+    the field's kind decides the Python type, and a blank falls back to the
+    default (or is refused on a required field)."""
+    if f.kind == "list" and not _blank(v):
+        items = v if isinstance(v, list) else str(v).split("\n")
+        v = [str(x).strip() for x in items if str(x).strip()]
+    if _blank(v):
+        if f.required:
+            raise ValueError(f"{f.flags[0] if f.flags else f.dest} is required")
+        return f.default
+    if f.kind == "bool":
+        return bool(v)
+    if f.kind == "int":
+        return int(v)
+    if f.kind == "float":
+        return float(v)
+    if f.kind == "list":
+        return v
+    return str(v)
+
+
 def build_argv(
-    fields: list[dict[str, Any]],
+    sc: dict[str, Any],
     values: dict[str, Any],
     *,
     apply: bool = False,
@@ -685,98 +557,54 @@ def build_argv(
 ) -> list[str]:
     """Turn a ``{dest: value}`` form payload into argv for ``python -m <module>``.
 
-    ``fields`` is the ``schema()["fields"]`` list, so the server never imports the
-    stage module. A value equal to the parser default (or empty) is omitted;
+    ``sc`` is the stage's :func:`schema`. The payload is coerced field by field
+    into the namespace the stage's own parser would have produced, read into
+    the request (so its ``__post_init__`` validation runs here, before a child
+    is spawned — a ``ValueError`` is the form's error), and spelled back out by
+    ``Request.to_argv()``: a value at the request default is omitted, and
     ``apply`` toggles ``--apply`` regardless of what the form sent.
 
     ``roots``, ``settings``, ``report_root`` and ``mask_root`` fill the bound
     fields (:data:`ROOT_FIELDS`, :data:`SETTING_FIELDS`, :attr:`Field.report`,
     :attr:`Field.mask`), overriding whatever the form sent — each root joined to
     the stage's own tail. Narrowing a run to one image is a ``path_pattern``
-    handed in through ``settings``. :data:`AUTO_FIELDS` never reach the argv.
+    handed in through ``settings``. :data:`AUTO_FIELDS` never reach the argv,
+    and neither do the knobs of a shut drawer.
     """
-    argv: list[str] = []
-    positional: list[str] = []
-    fs = [Field(**fd) if isinstance(fd, dict) else fd for fd in fields]
+    cls = request_class(sc["request"])
+    fs = [Field(**fd) if isinstance(fd, dict) else fd for fd in sc["fields"]]
     # A drawer's own checkbox decides whether the rest of it is even a value: the
     # stage ignores the knobs of a detector it is not running.
     gate_on = {
         f.dest: bool(values.get(f.dest, f.default)) for f in fs if f.gate == f.dest
     }
+    ns: dict[str, Any] = {}
     for f in fs:
-        bound = bool(f.root or f.setting or f.report or f.mask)
-        if f.auto or f.dest in AUTO_FIELDS:
-            continue
-        if f.gate and f.gate != f.dest and not gate_on.get(f.gate, True):
-            continue
         if f.dest == "apply":
-            if apply:
-                argv.append(f.flags[0])
+            ns[f.dest] = apply
             continue
-        if bound:
+        shut = f.gate and f.gate != f.dest and not gate_on.get(f.gate, True)
+        if f.auto or f.dest in AUTO_FIELDS or shut:
+            v = f.default
+        elif f.bound:
             # Bound fields come from Settings only, so a stale value in a saved
             # form cannot win over the roots or the pattern the user set. The
             # exception is a :data:`PANEL_FIELDS` dest, where a typed value wins
             # and a blank means "whatever Settings says".
-            v = (
-                bound_value(
-                    f,
-                    roots=roots,
-                    settings=settings,
-                    report_root=report_root,
-                    mask_root=mask_root,
-                )
-                or ""
+            v = bound_value(
+                f,
+                roots=roots,
+                settings=settings,
+                report_root=report_root,
+                mask_root=mask_root,
             )
             if f.overridable:
                 typed = values.get(f.dest)
                 v = typed if str(typed or "").strip() else v
         else:
             v = values.get(f.dest, f.default)
-        if f.kind == "bool":
-            v = bool(v)
-            if v == f.default:
-                continue
-            if f.negate is not None:
-                argv.append(f.flags[0] if v else f.negate)
-            else:
-                argv.append(f.flags[0])
-            continue
-        if v is None or v == "" or v == []:
-            if f.required:
-                raise ValueError(f"{f.flags[0] if f.flags else f.dest} is required")
-            continue
-        if f.kind == "list":
-            items = v if isinstance(v, list) else str(v).split("\n")
-            items = [str(x).strip() for x in items if str(x).strip()]
-            if not items:
-                if f.required:
-                    raise ValueError(f"{f.dest} is required")
-                continue
-            if f.flags:
-                argv += [f.flags[0], *items]
-            else:
-                positional += items
-            continue
-        if f.kind == "int":
-            v = int(v)
-        elif f.kind == "float":
-            v = float(v)
-        # An overridable field is spelled out even when it equals the default,
-        # since :func:`resolved_schema` may have *made* the Settings value that
-        # default; dropping it would hand the run back to the CLI's own.
-        if (
-            not f.overridable
-            and f.default is not None
-            and v == f.default
-            and not f.required
-        ):
-            continue
-        if f.flags:
-            argv += [f.flags[0], str(v)]
-        else:
-            positional.append(str(v))
-    return argv + positional
+        ns[f.dest] = _coerce(f, v)
+    return cls.from_namespace(SimpleNamespace(**ns)).to_argv()
 
 
 def form_values(fields: list[dict[str, Any]], values: dict[str, Any]) -> dict[str, Any]:
@@ -828,125 +656,12 @@ def report_path(
 
 
 def dump_schemas() -> dict[str, dict[str, Any]]:
-    """Every stage's schema, keyed by id. Imports every stage CLI module, so
-    call it in a child process from anything long-lived."""
+    """Every stage's schema, keyed by id. Imports every request module (all
+    torch-free, pinned by ``tests/test_stage_requests.py``)."""
     return {s.id: schema(s) for s in STAGES}
 
 
-def dump_schemas_in_child() -> dict[str, dict[str, Any]]:
-    """:func:`dump_schemas` in a fresh interpreter, so the caller stays torch-free."""
-    code = (
-        "import json, anime_tools.gui.stages as S; print(json.dumps(S.dump_schemas()))"
-    )
-    r = subprocess.run(
-        [sys.executable, "-c", code],
-        capture_output=True,
-        text=True,
-        # json.dumps escapes non-ASCII, but a traceback on stderr does not, and
-        # the locale codec (cp949/cp1252 on Windows) would raise on it.
-        encoding="utf-8",
-        errors="replace",
-        check=False,
-    )
-    if r.returncode != 0:
-        raise RuntimeError(f"stage schema dump failed:\n{r.stderr}")
-    return json.loads(r.stdout.strip().splitlines()[-1])
-
-
-# ---- on-disk memo for the child dump ------------------------------------
-# The child interpreter is on the GUI's startup path. Stage CLIs defer their heavy
-# imports, so the dump is ~0.2s and the memo only keeps startup flat if a stage
-# regains a slow import.
-
-
-def cache_dir() -> Path:
-    """Where the GUI keeps derived, throw-away state — outside the curation home.
-    ``$ANIME_TOOLS_CACHE`` overrides."""
-    override = os.environ.get(CACHE_ENV)
-    if override:
-        return Path(override).expanduser()
-    base = os.environ.get("XDG_CACHE_HOME")
-    root = Path(base).expanduser() if base else Path.home() / ".cache"
-    return root / "anime_tools" / "gui"
-
-
-def schema_cache_path() -> Path:
-    return cache_dir() / "schemas.json"
-
-
-def schema_cache_key() -> str:
-    """What has to change for a cached dump to be wrong: the installed version, the
-    interpreter, and ``(path, mtime_ns, size)`` for every ``.py`` under the package
-    — whole-package, because a parser's defaults routinely come from the stage
-    module behind its CLI. :func:`importlib.util.find_spec` keys on a stage module
-    outside the package without importing it.
-    """
-    parts = [f"v{CACHE_VERSION}", __version__, sys.version]
-    files = set(Path(__file__).resolve().parent.parent.rglob("*.py"))
-    for s in STAGES:
-        try:
-            spec = importlib.util.find_spec(s.module)
-        except (ImportError, ValueError, AttributeError):
-            spec = None
-        origin = spec.origin if spec is not None else None
-        parts.append(f"{s.id}={s.module}@{origin}")
-        if origin:
-            files.add(Path(origin).resolve())
-    for f in sorted(files):
-        try:
-            st = f.stat()
-        except OSError:
-            parts.append(f"{f}:gone")
-        else:
-            parts.append(f"{f}:{st.st_mtime_ns}:{st.st_size}")
-    return hashlib.sha256("\0".join(parts).encode("utf-8")).hexdigest()
-
-
-def _read_schema_cache(path: Path, key: str) -> dict[str, dict[str, Any]] | None:
-    """The cached dump if it is still valid. Anything else — missing, truncated,
-    stale — is ``None`` ("dump again"), never an error."""
-    try:
-        blob = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return None
-    if not isinstance(blob, dict) or blob.get("key") != key:
-        return None
-    schemas = blob.get("schemas")
-    if not isinstance(schemas, dict) or not schemas:
-        return None
-    return schemas
-
-
-def _write_schema_cache(
-    path: Path, key: str, schemas: dict[str, dict[str, Any]]
-) -> None:
-    """Best effort: a read-only or full cache dir costs a rebuild, not a start."""
-    tmp = path.with_name(f"{path.name}.{os.getpid()}.tmp")
-    try:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        tmp.write_text(json.dumps({"key": key, "schemas": schemas}), encoding="utf-8")
-        tmp.replace(path)
-    except OSError:
-        try:
-            tmp.unlink(missing_ok=True)
-        except OSError:
-            pass
-
-
-def load_schemas(*, cache: bool = True) -> dict[str, dict[str, Any]]:
-    """Every stage's schema, from :func:`schema_cache_path` when it is still
-    valid and from a fresh child interpreter otherwise."""
-    if not cache:
-        return dump_schemas_in_child()
-    try:
-        key, path = schema_cache_key(), schema_cache_path()
-    except (OSError, RuntimeError):
-        # No usable cache location (``Path.home()`` unresolvable, package dir
-        # gone); the cache is an optimisation, so fall through to a fresh dump.
-        return dump_schemas_in_child()
-    cached = _read_schema_cache(path, key)
-    if cached is not None:
-        return cached
-    schemas = dump_schemas_in_child()
-    _write_schema_cache(path, key, schemas)
-    return schemas
+def load_schemas() -> dict[str, dict[str, Any]]:
+    """Every stage's schema, built in this process from the request classes.
+    Cheap enough (no model library is imported) that there is nothing to cache."""
+    return dump_schemas()

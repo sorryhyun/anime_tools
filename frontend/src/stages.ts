@@ -29,9 +29,9 @@ export const stageShort = (s: Stage) =>
 /** The stage registry and the forms over it: which stage is open, what its form
  * says, and how the dock's buttons bucket the stages.
  *
- * Every field comes from the stage CLI's own argparse (`gui/stages.py` dumps it
- * in a child interpreter), so nothing about a flag is re-typed here. Running one
- * is `runner.ts`.
+ * Every field comes from the stage's request dataclass (`gui/stages.py` walks
+ * the field list its CLI parser is generated from), so nothing about a flag is
+ * re-typed here. Running one is `runner.ts`.
  */
 export function createStages(config: Config) {
   const [all, { refetch }] = createResource<Stage[]>(api.stages);
@@ -101,7 +101,7 @@ export function createStages(config: Config) {
     ),
   );
   // Cold start: /api/stages answers 503 while the server's background schema
-  // dump is still running, and a resource error is otherwise permanent. Poll
+  // build is still running, and a resource error is otherwise permanent. Poll
   // info until `schemas_ready` flips, then refetch stages out of its error.
   createEffect(
     on(config.info, (i) => {
