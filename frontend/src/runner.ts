@@ -49,7 +49,8 @@ export function createRunner(deps: {
 }) {
   const { config, stages, dataset } = deps;
 
-  /** No log panel yet, so the newest line *is* the dock's status. */
+  /** The newest line is the dock's status; the rest of them, and the count the
+      follower reads out of them, are the log window the dock strip opens. */
   const run$ = createJobFollower({ done: (job) => onStageDone(job) });
   const { id: jobId, running: busy, status, setStatus } = run$;
   onCleanup(() => run$.close());
@@ -114,7 +115,9 @@ export function createRunner(deps: {
     return applied[s.id] ? "" : t().runner.nothingApplied;
   });
 
-  /** Follow a job in the dock, opening it so the status line is visible. */
+  /** Follow a job, opening the dock on the panel it belongs to. What it *says*
+      is the job bar's, along the bottom of the window, whether the dock is open
+      or not. */
   function attach(id: string) {
     run$.follow(id, { text: t().runner.following(id), state: "running" });
     deps.openDock();
@@ -180,7 +183,7 @@ export function createRunner(deps: {
 
   /** Start the open stage and follow it. The one place a start can fail — a
       rejected form, or the single job slot already taken — and it says so on the
-      run bar, with the dock open so the message is visible. */
+      job bar, with the dock open on the form that has to change. */
   async function startStage(v: Values, rel: string | null) {
     const s = stages.cur();
     if (!s) return null;
@@ -243,6 +246,12 @@ export function createRunner(deps: {
     jobId,
     busy,
     status,
+    /** The tail of the followed job's output, and how far it says it has got:
+        what the dock's progress bar draws and its log window lists. Both
+        outlive the run — a failed job's reason is in the lines the one-line
+        status scrolled past. */
+    log: run$.lines,
+    progress: run$.progress,
     attach,
     run,
     undo,

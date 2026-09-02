@@ -17,8 +17,9 @@
 * { box-sizing:border-box }
 body { margin:0; font:14px/1.45 var(--font-ui); background:var(--bg); color:var(--fg); height:100vh; overflow:hidden }
 /* Sidebar tree | item view, with the stage runner docked below the item view
-   only; the tree runs the full height beside both. */
-#root { height:100vh; display:grid; grid-template-columns:290px 1fr; grid-template-rows:44px minmax(0,1fr) auto }
+   only; the tree runs the full height beside both. The job bar is the last row,
+   spanning under all of it -- it is the window's bottom edge, not a panel's. */
+#root { height:100vh; display:grid; grid-template-columns:290px 1fr; grid-template-rows:44px minmax(0,1fr) auto auto }
 header { grid-column:1/3; display:flex; align-items:center; gap:14px; padding:0 14px; border-bottom:1px solid var(--line); background:var(--panel) }
 header b { color:var(--accent) }
 /* The popup hangs from the ☰ button, which is why the pair is a positioned
@@ -211,7 +212,30 @@ textarea.cap { display:block; position:relative; z-index:1; min-height:78px; ove
 table.variants td { font-size:12px; vertical-align:top }
 td.vlabel { width:4ch; color:var(--warn); font-family:var(--font-mono) }
 
-/* ---- bottom dock: the stage runner (log/report/jobs panels: later) ---- */
+/* ---- the job bar: the window's own bottom edge ---- */
+/* How far the running job has got, read off its log (`state.ts`). It spans the
+   whole window under the dock and the tree both, so it says the same thing
+   whichever panel is open and whether the dock is folded or not, and the fill
+   is the page's bottom edge rather than a widget inside a panel. It carries the
+   one status line too, which is why the run bar above it is buttons and nothing
+   else; the state is the colour of that line (.err on a failure) rather than a
+   chip. A step between its counter lines has no total to fill, so the bar sweeps
+   instead -- an empty bar reads as a stalled one. */
+.jobbar { position:relative; grid-column:1/3; grid-row:4; display:flex; align-items:center; gap:8px; min-width:0; overflow:hidden; padding:3px 12px 5px; border-top:1px solid var(--line); background:var(--panel); font-size:12px; color:var(--dim) }
+.jobbar .status { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap }
+.jobbar .num { font-family:var(--font-mono); font-size:11px; white-space:nowrap }
+.jobbar .fill { position:absolute; left:0; bottom:0; width:0; height:3px; background:var(--accent); transition:width .2s linear }
+.jobbar .fill.wait { width:22%; animation:sweep 1.3s ease-in-out infinite }
+@keyframes sweep { from { transform:translateX(-110%) } to { transform:translateX(560%) } }
+/* The log window: the same status line the run bar carries, then the tail the
+   page kept. The <pre> scrolls in its own box, so the dialog does not. */
+dialog.joblog { width:820px }
+.jobhead { display:flex; align-items:center; gap:10px; min-width:0; margin-bottom:8px }
+.jobhead .status { flex:1; min-width:0; color:var(--dim); font-size:12px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap }
+.jobhead .num { font-family:var(--font-mono); font-size:11px; color:var(--dim); white-space:nowrap }
+.logbox { max-height:58vh; overflow:auto; padding:8px 10px; border:1px solid var(--line); border-radius:6px; background:var(--input) }
+
+/* ---- bottom dock: the stage runner (report/jobs panels: later) ---- */
 .dock { position:relative; grid-column:2; grid-row:3; border-top:1px solid var(--line); background:var(--bg); display:grid; grid-template-rows:auto minmax(0,var(--dock-h,320px)) }
 .dockgrip { position:absolute; top:-2px; left:0; right:0; height:5px; cursor:ns-resize; z-index:2 }
 .dockgrip:hover { background:var(--accent) }
@@ -220,7 +244,6 @@ td.vlabel { width:4ch; color:var(--warn); font-family:var(--font-mono) }
 .stagepanel { display:grid; grid-template-rows:auto minmax(0,1fr); overflow:hidden }
 .stagebar { display:flex; align-items:center; gap:8px; padding:8px 12px; border-bottom:1px solid var(--line) }
 .stagebar .mono { font-size:11px; color:var(--dim); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:34ch }
-.stagebar .status { color:var(--dim); font-size:12px; margin-left:10px; max-width:40ch; overflow:hidden; text-overflow:ellipsis; white-space:nowrap }
 .stageform { overflow:auto; padding:12px }
 .doc { color:var(--dim); white-space:pre-wrap; font-size:12px; margin-bottom:12px; max-height:140px; overflow:auto; border-left:2px solid var(--line); padding-left:10px }
 .notes { color:var(--warn); font-size:12px; margin-bottom:10px }

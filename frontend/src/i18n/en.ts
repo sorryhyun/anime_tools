@@ -257,6 +257,17 @@ const en = {
     skipped: (what: string) => `— skipped ${what}`,
     logClosed: "log stream closed",
   },
+  job: {
+    log: "log",
+    logHint: "The job's own output, in full",
+    title: "Job log",
+    empty: "no output yet",
+    /** The progress counter beside the bar: images done of images in this step. */
+    of: (done: number, total: number) => `${done} / ${total}`,
+    step: (index: number, total: number, label: string) => `step ${index}/${total} · ${label}`,
+    /** Only the tail is kept in the page; the job's log file has all of it. */
+    tail: (n: number) => `showing the last ${n} lines`,
+  },
   downloads: {
     starting: "starting…",
     finished: "download finished",

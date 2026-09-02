@@ -432,6 +432,22 @@ export interface TagInfo {
   exact?: boolean;
 }
 
+/** How far the job being followed has got, read off its own log. Two line
+    formats, one writer each: `stages/cli/_args.py`'s `make_progress` prints
+    `  [done/total] detail` from every stage, and `gui/jobs.py` heads each step
+    of a multi-step job (the resize preflight in front of a stage) with
+    `── step i/n: label ──`. Nothing else in the log is parsed, and a stage that
+    prints neither simply has no bar. */
+export interface JobProgress {
+  done: number;
+  total: number;
+  /** What the counter line named -- the image it was on. */
+  detail: string;
+  /** The step the count belongs to, or null in a job that has only one. Each
+      step counts from zero again, so the bar restarts with it. */
+  step: { index: number; total: number; label: string } | null;
+}
+
 /** What the run bar (and the Settings download row) is saying right now.
     `state` is a job state — `running` / `done` / `failed` — and doubles as the
     badge's class; absent means "just this text, no badge". */

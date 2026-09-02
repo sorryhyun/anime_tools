@@ -70,11 +70,24 @@ nothing fetched, no business rule lives there. The state is five composables at
   replaces becomes a version badge beside the caption, so what a run did is read
   after it and on the caption rather than agreed to in a dialog first. The
   report it leaves is still read back, as the diff of what it *did* and the dots
-  on the rows it touched, and Undo replays that report backwards.
+  on the rows it touched, and Undo replays that report backwards. It also holds
+  everything the page says about a run: `JobBar`, across the window's bottom
+  edge under the dock and the tree both, is the **one** status line — the newest
+  log line, an error that stopped a start, what a finished run changed — with
+  the count beside it and the `log` button that opens the rest of the output.
+  The run bar above it is three buttons and nothing else, and the state is the
+  colour of that line rather than a chip. The text and the lines outlive the run
+  on purpose — a failed job says why in the lines the one-line status scrolled
+  past — so the button stays after it, while the fill is drawn only while
+  something is running.
 
 Plus **`downloads.ts`** (a weights fetch: the same job slot, but it reports into
 the Settings dialog rather than the dock) and **`state.ts`**, the two primitives
-that outlive a render: `persisted` and `createJobFollower`.
+that outlive a render: `persisted` and `createJobFollower`. The follower is also
+where the log is *read*: two line formats, one writer each — `make_progress`'s
+`  [done/total] detail` and `jobs.py`'s `── step i/n: label ──` header — and
+nothing else in a job's output is parsed here. A stage that prints neither just
+has no bar.
 
 **`i18n/`** is the GUI's own text, one file per language — `en.ts` / `ko.ts` /
 `ja.ts` / `zh.ts`, with `index.ts` holding the locale signal, `t()` and

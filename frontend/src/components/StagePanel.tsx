@@ -2,8 +2,7 @@ import { createMemo, For, Show } from "solid-js";
 import { t } from "../i18n";
 import { StageForm } from "./StageForm";
 import { HelpToggle } from "./HelpToggle";
-import { StatusLine } from "./StatusLine";
-import type { JobStatus, Stage, Values } from "../types";
+import type { Stage, Values } from "../types";
 
 /** The stage runner's body: the run bar + the schema-driven form for the
     current stage. The dock's button strip (in App) picks a *panel*; when that
@@ -12,7 +11,11 @@ import type { JobStatus, Stage, Values } from "../types";
     The bar is three buttons: **Run** the selected image, **Run batch** every
     image the Settings `path_pattern` names, and **Undo** what the last one
     wrote, out of the report it wrote. A Run writes; the text it replaces becomes
-    a version badge beside the caption (`revised@2`). */
+    a version badge beside the caption (`revised@2`).
+
+    What the run is *saying* is not here: the job bar along the bottom of the
+    window carries the one status line, so the buttons keep their row and a
+    message about a job does not move with the panel it was started from. */
 export function StagePanel(props: {
   cur?: Stage;
   /** Every stage under the open dock button, including the current one. */
@@ -27,7 +30,6 @@ export function StagePanel(props: {
       starting a stage would only 409. Greys the run buttons; Cancel stays on
       `busy`, since it can only cancel *this* panel's job. */
   locked?: boolean;
-  status: JobStatus;
   /** The selected image, or null -- what the per-image Run acts on. */
   rel?: string | null;
   /** Run: `rel` narrows it to one image, null runs the batch. */
@@ -116,8 +118,6 @@ export function StagePanel(props: {
           >
             <button onClick={props.onCancel}>{t().stage.cancel}</button>
           </Show>
-
-          <StatusLine status={props.status} />
         </div>
 
         <div class="stageform">

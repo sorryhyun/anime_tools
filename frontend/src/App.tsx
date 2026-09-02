@@ -12,6 +12,7 @@ import { DatasetTree } from "./components/DatasetTree";
 import { Dock } from "./components/Dock";
 import { Header } from "./components/Header";
 import { ItemView } from "./components/ItemView";
+import { JobBar, JobLog } from "./components/JobLog";
 import { SettingsDialog } from "./components/SettingsDialog";
 import { StagePanel } from "./components/StagePanel";
 import { TagLens } from "./components/TagLens";
@@ -142,7 +143,6 @@ export default function App() {
           reset={stages.resetForm}
           busy={runner.busy()}
           locked={downloads.busy()}
-          status={runner.status()}
           rel={dataset.rel()}
           onRun={runner.run}
           onUndo={runner.undo}
@@ -154,6 +154,29 @@ export default function App() {
           onHelp={layout.toggleHelp}
         />
       </Dock>
+
+      {/* Under the dock and the tree both: the window's own bottom edge, so a
+          batch reports from wherever the page has been left. The download
+          follower is not here -- it reports into the Settings dialog it was
+          started from. */}
+      <JobBar
+        status={runner.status()}
+        progress={runner.progress()}
+        running={runner.busy()}
+        hasLog={runner.log().length > 0}
+        onLog={() => layout.setLogOpen(true)}
+      />
+
+      <JobLog
+        open={layout.logOpen()}
+        jobId={runner.jobId()}
+        lines={runner.log()}
+        status={runner.status()}
+        progress={runner.progress()}
+        running={runner.busy()}
+        onCancel={runner.cancel}
+        onClose={() => layout.setLogOpen(false)}
+      />
 
       {/* One card for every tag chip in the app; it floats, so it is mounted at
           the root. */}

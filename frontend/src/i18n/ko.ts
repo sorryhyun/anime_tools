@@ -228,6 +228,15 @@ const ko: Dict = {
     skipped: (what) => `— 건너뜀 ${what}`,
     logClosed: "로그 스트림이 닫혔습니다",
   },
+  job: {
+    log: "로그",
+    logHint: "작업이 출력한 내용 전체",
+    title: "작업 로그",
+    empty: "아직 출력이 없습니다",
+    of: (done, total) => `${done} / ${total}`,
+    step: (index, total, label) => `단계 ${index}/${total} · ${label}`,
+    tail: (n) => `마지막 ${n}줄만 표시합니다`,
+  },
   downloads: {
     starting: "시작하는 중…",
     finished: "내려받기 완료",

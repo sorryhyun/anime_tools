@@ -10,6 +10,10 @@ export function createLayout() {
   // Not `persisted`: this moves on every pointermove of a drag, so it is saved
   // once on pointerup (see `grip`) rather than at frame rate.
   const [dockH, setDockH] = createSignal(Number(localStorage.getItem("dockh")) || 320);
+  /** The job log window. Not `persisted`, unlike everything else here: it is a
+      look at the run happening now, not a preference about the layout, and a
+      reload has no job of its own to open it on. */
+  const [logOpen, setLogOpen] = createSignal(false);
   /** One global "show the prose" preference, off by default: the stage doc and
       the Settings blurbs sit behind the (?) buttons until it is on. */
   const [help, setHelp] = persisted("help", false, asFlag, fromFlag);
@@ -41,6 +45,8 @@ export function createLayout() {
     toggleDock: () => setDockOpen(!dockOpen()),
     dockH,
     grip,
+    logOpen,
+    setLogOpen,
     help,
     toggleHelp: () => setHelp(!help()),
   };

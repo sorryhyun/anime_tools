@@ -241,6 +241,10 @@ Other server pieces:
   bound to the `dst` root; a failing step stops the chain. `masks_merge` and the `NO_PREFLIGHT`
   names
   sit outside it.
+  A running stage tells the browser nothing but its stdout, so the panel's progress bar and log
+  window are read straight off it — `stages/cli/_args.py::make_progress`'s `  [done/total] detail`
+  and the `── step i/n: label ──` header this module prints in front of each step of a sequence are
+  the two formats parsed there, and a stage printing neither simply has no bar.
 - `tags.py` merges the two Danbooru KB files (base CSV = taxonomy; optional `.en.csv` replaces only
   the description) for `/api/tags/describe`, cached on both mtimes; a missing KB answers
   `installed: false` rather than erroring.

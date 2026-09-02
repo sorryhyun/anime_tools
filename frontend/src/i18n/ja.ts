@@ -231,6 +231,15 @@ const ja: Dict = {
     skipped: (what) => `— 飛ばした ${what}`,
     logClosed: "ログのストリームが閉じました",
   },
+  job: {
+    log: "ログ",
+    logHint: "ジョブが出力した内容すべて",
+    title: "ジョブログ",
+    empty: "まだ出力がありません",
+    of: (done, total) => `${done} / ${total}`,
+    step: (index, total, label) => `ステップ ${index}/${total} · ${label}`,
+    tail: (n) => `最後の ${n} 行だけを表示しています`,
+  },
   downloads: {
     starting: "開始しています…",
     finished: "ダウンロード完了",

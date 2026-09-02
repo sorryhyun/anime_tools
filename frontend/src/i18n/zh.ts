@@ -223,6 +223,15 @@ const zh: Dict = {
     skipped: (what) => `— 跳过 ${what}`,
     logClosed: "日志流已关闭",
   },
+  job: {
+    log: "日志",
+    logHint: "任务输出的全部内容",
+    title: "任务日志",
+    empty: "还没有输出",
+    of: (done, total) => `${done} / ${total}`,
+    step: (index, total, label) => `步骤 ${index}/${total} · ${label}`,
+    tail: (n) => `只显示最后 ${n} 行`,
+  },
   downloads: {
     starting: "开始中…",
     finished: "下载完成",
