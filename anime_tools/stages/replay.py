@@ -25,13 +25,15 @@ from pathlib import Path
 
 from anime_tools._env import resolve_path
 from anime_tools._json import read_json, write_json
+from anime_tools.contract import REPLAY_REPORT_NAME, ReplaySpec
 from anime_tools.path_filter import filter_paths_by_glob
 
 from ._caption_io import read_caption, write_caption
 
-# The replay writes here, never over the dry run's ``report.json`` — the usual
-# invocation points ``--from_report`` and ``--report_dir`` at one directory.
-REPLAY_REPORT_NAME = "apply_report.json"
+__all__ = [
+    "REPLAY_REPORT_NAME",
+    "ReplaySpec",
+]  # re-exported from ``anime_tools.contract``
 
 # Where a stage records whether its own run wrote anything.
 _APPLIED_KEYS = ("apply", "applied")
@@ -39,35 +41,6 @@ _APPLIED_KEYS = ("apply", "applied")
 
 class StaleReportError(RuntimeError):
     """The report cannot be replayed against this run (roots, shape, or state)."""
-
-
-@dataclass(frozen=True)
-class ReplaySpec:
-    """How to read one stage's report and where its proposals get written.
-
-    ``target_root`` is the tree ``caption_path`` is relative to: ``"src"`` for
-    the stages that write the caption master, ``"dst"`` for the clause rewrite.
-    """
-
-    stage: str
-    # Report container keys — ``rows``/``stats`` (autotag) or ``images``/``summary``
-    # (position clauses, multiview audit).
-    rows_key: str = "rows"
-    stats_key: str = "stats"
-    # A row is writable when its status matches, and/or ``row_filter`` says so.
-    # The multiview audit gates on verdict/confidence instead of a status field,
-    # so it supplies a closure over the CLI's own gate.
-    ok_status: str | None = None
-    row_filter: Callable[[Mapping[str, object]], bool] | None = None
-    before_field: str = "existing"
-    after_field: str = "proposed"
-    target_root: str = "src"
-    # Passed straight to ``_caption_io.write_caption``; ``history_by`` names who
-    # the superseded version is filed under, so a replay pushes the same history
-    # entry the stage's own apply would have.
-    newline: bool = False
-    drop_variants: bool = False
-    history_by: str | None = None
 
 
 @dataclass

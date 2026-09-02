@@ -32,15 +32,20 @@ import sys
 
 from anime_tools._device import add_device_arg, resolve_device
 from anime_tools._env import resolve_path, setup_logging
+from anime_tools.contract import (
+    AUTOTAG_ERROR_PREFIX,
+    AUTOTAG_READY,
+    AUTOTAG_RESULT_PREFIX,
+)
 from anime_tools.tagger.tagger import (
     DEFAULT_TAGGER_DIR,
     AnimaTagger,
     ensure_tagger_checkpoint,
 )
 
-READY = "ANIMA_AUTOTAG_READY"
-RESULT_PREFIX = "ANIMA_AUTOTAG_RESULT\t"
-ERROR_PREFIX = "ANIMA_AUTOTAG_ERROR\t"
+READY = AUTOTAG_READY
+RESULT_PREFIX = AUTOTAG_RESULT_PREFIX
+ERROR_PREFIX = AUTOTAG_ERROR_PREFIX
 
 setup_logging()
 logger = logging.getLogger(__name__)

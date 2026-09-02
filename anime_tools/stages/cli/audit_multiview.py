@@ -18,6 +18,7 @@ from pathlib import Path
 
 from anime_tools import workspace as WS
 from anime_tools._env import resolve_path
+from anime_tools.contract import REPLAY_SHAPES
 from anime_tools.masking._sam3 import add_checkpoint_arg
 from anime_tools.stages.cli._args import (
     add_apply_args,
@@ -46,7 +47,7 @@ from anime_tools.stages.multiview_audit import (
     run_multiview_audit,
 )
 from anime_tools.stages.position_captions import PositionCaptionOptions
-from anime_tools.stages.replay import ReplaySpec, run_replay_cli
+from anime_tools.stages.replay import run_replay_cli
 
 DEFAULT_REPORT_DIR = f"{WS.REPORTS}/multiview_audit"
 
@@ -153,17 +154,7 @@ def _gate(args) -> tuple[tuple[str, ...], tuple[str, ...]]:
 
 # The writable set is the verdict/confidence gate, not a row ``status``, so
 # ``row_filter`` is left open here and closed over the gate at replay time.
-REPLAY_SPEC = ReplaySpec(
-    stage="audit_multiview",
-    rows_key="images",
-    stats_key="summary",
-    before_field="caption",
-    after_field="proposed",
-    target_root="src",
-    # ``apply_findings`` writes ``proposed + "\n"``; a replay must be
-    # byte-identical to it.
-    newline=True,
-)
+REPLAY_SPEC = REPLAY_SHAPES["audit"]
 
 
 def _run_replay(args, src: Path, dst: Path, report_dir: Path) -> None:

@@ -21,6 +21,7 @@ from tqdm import tqdm
 
 from anime_tools._env import resolve_path
 from anime_tools._walk import walk_images
+from anime_tools.contract import GATE_ATTR
 
 MASK_SUFFIX = "_mask.png"
 """The contract between the generators, ``merge_masks`` and the GUI's mask lookup:
@@ -64,11 +65,10 @@ def add_mask_dir_args(p: argparse.ArgumentParser, *, mask_default: str) -> None:
     )
 
 
-GATE_ATTR = "gui_gate"
-"""The attribute :func:`gated_group` stamps a group with, naming the dest that switches
-it on. ``anime_tools.gui.stages.fields_of`` spells the same string rather than importing
-it, so that module stays free of every stage's dependencies; the two spellings are pinned
-together by ``tests/test_masking_plan.py``."""
+# ``GATE_ATTR`` is what :func:`gated_group` stamps a group with, naming the dest that
+# switches it on; ``anime_tools.gui.stages.fields_of`` reads the same name from the
+# contract rather than importing this module, so it stays free of every stage's
+# dependencies (``tests/test_masking_plan.py`` pins the two).
 
 
 def gated_group(

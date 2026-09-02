@@ -34,11 +34,12 @@ from PIL import Image
 
 from anime_tools.captions.position_clauses import compose_caption, parse_caption
 from anime_tools.captions.taxonomy import RATING_LITERALS, normalize_tag
+from anime_tools.contract import AUTOTAG_MODES
 
 from ._caption_io import read_caption, write_caption
 from ._walk_captions import resolve_caption
 
-MODES = ("missing", "merge", "overwrite")
+MODES = AUTOTAG_MODES
 
 
 @dataclass

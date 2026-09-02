@@ -285,6 +285,10 @@ cache. `python -m anime_tools.downloads [ID…]` fetches; the GUI's Models pane 
   trainer's. `stages/resize.py` must land an image on the *same* `(W, H)` as the trainer's
   `make preprocess-resize` or each side re-encodes the other's PNGs; `tests/test_resize_images.py`
   pins the numbers and the `anima_resize_*` PNG text keys.
+- **`contract.py`** (stdlib-only leaf, pinned by `test_contract_is_torch_free`): the constants both
+  sides of the seam spell — autotag stdio sentinels and modes, tagger checkpoint file sets,
+  `REPLAY_REPORT_NAME`, `GATE_ATTR`, `ReplaySpec` + `REPLAY_SHAPES`, `CONTRACT_VERSION`. Anything
+  the GUI server or the trainer needs without importing a stage goes here; the stage re-exports it.
 - **Shared infra** (tiny copies, not trainer imports): `_env.py` (`curation_home()` =
   `ANIME_TOOLS_HOME` → `ANIMA_HOME` → CWD; `models_dir()`; `workspace_dir()`; `resolve_path`),
   `_walk.py` (the one image walk — `IMAGE_EXTENSIONS` / `glob_images_pathlib` / `walk_images`),

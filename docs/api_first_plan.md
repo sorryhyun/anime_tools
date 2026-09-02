@@ -83,7 +83,7 @@ nothing today; each gains a lazy PEP 562 `__getattr__` like `tagger/__init__.py`
 
 ## Phases
 
-- [ ] **P0. Hygiene.** `__version__` reads `importlib.metadata` (it says
+- [x] **P0. Hygiene.** `__version__` reads `importlib.metadata` (it says
   `0.1.0`; `pyproject.toml` says `0.3.1`). Land `anime_tools/contract.py` with
   the constants above and `CONTRACT_VERSION = 1`; switch `gui/proposals.py`,
   `gui/stages.py` and `tagger/cli/autotag_server.py` to import from it.

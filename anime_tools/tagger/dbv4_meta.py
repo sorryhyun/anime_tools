@@ -11,25 +11,32 @@ from __future__ import annotations
 from pathlib import Path
 
 from anime_tools._json import read_json
+from anime_tools.contract import (
+    DBV4_BACKBONE_FILES,
+    DBV4_OPTIONAL_FILES,
+    DBV4_REQUIRED_FILES,
+    TAGGER_OPTIONAL_FILES,
+    TAGGER_REQUIRED_FILES,
+)
+
+__all__ = [
+    "DBV4_BACKBONE_FILES",
+    "DBV4_OPTIONAL_FILES",
+    "DBV4_REQUIRED_FILES",
+    "TAGGER_OPTIONAL_FILES",
+    "TAGGER_REQUIRED_FILES",
+]
 
 DEFAULT_DBV4_REPO = "animetimm/caformer_b36.dbv4-full"
 DEFAULT_DBV4_ARCH = "caformer_b36"
 DEFAULT_DBV4_IMG_SIZE = 384
 
-# Everything :class:`Dbv4Backend` pulls from the backbone repo.
-DBV4_BACKBONE_FILES = ("model.safetensors", "selected_tags.csv", "meta.json")
-
 # Our half of the tagger: auto-fetched when ckpt_dir is missing required files.
 # The live checkpoint is the `dbv4/` subfolder — vocab / rules / groups /
-# thresholds / sidecar only.
+# thresholds / sidecar only. The file sets are contract (the trainer probes
+# them too), so they live in ``anime_tools.contract`` and are re-exported here.
 TAGGER_HF_REPO = "sorryhyun/anima-tagger"
 TAGGER_HF_SUBFOLDER = "dbv4"
-TAGGER_REQUIRED_FILES = ("config.json", "model.safetensors", "vocab.json", "rules.yaml")
-TAGGER_OPTIONAL_FILES = ("thresholds.safetensors", "groups.yaml")
-# dbv4-backed checkpoints carry no model.safetensors (weights come from the
-# gated upstream repo); the sidecar pair is optional.
-DBV4_REQUIRED_FILES = ("config.json", "vocab.json", "rules.yaml")
-DBV4_OPTIONAL_FILES = TAGGER_OPTIONAL_FILES + ("sidecar.safetensors", "sidecar.json")
 DEFAULT_TAGGER_DIR = "models/captioners/anima-tagger-dbv4"
 
 

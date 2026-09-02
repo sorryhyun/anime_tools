@@ -11,7 +11,13 @@ imports the trainer (``docs/contract.md``).
 
 from __future__ import annotations
 
-__version__ = "0.1.0"
+from importlib.metadata import PackageNotFoundError
+from importlib.metadata import version as _dist_version
+
+try:
+    __version__ = _dist_version("anime_tools")
+except PackageNotFoundError:  # a checkout on sys.path without an install
+    __version__ = "0+unknown"
 
 __all__ = ["AnimaTagger", "__version__"]
 

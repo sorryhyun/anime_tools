@@ -18,10 +18,10 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
+from anime_tools.contract import REPLAY_SHAPES, ReplaySpec
 from anime_tools.gui import dataset as D
 from anime_tools.stages._caption_io import read_caption
 from anime_tools.stages.replay import (
-    ReplaySpec,
     StaleReportError,
     apply_one,
     load_report,
@@ -33,43 +33,8 @@ from anime_tools.stages.replay import (
 _REPLAY_OK = ("written", "would-write")
 
 
-SHAPES: dict[str, ReplaySpec] = {
-    "autotag": ReplaySpec(
-        stage="autotag_captions",
-        rows_key="rows",
-        stats_key="stats",
-        ok_status="ok",
-        before_field="target_before",
-        after_field="proposed",
-        target_root="dst",
-        drop_variants=True,
-        history_by="autotag",
-    ),
-    "position": ReplaySpec(
-        stage="position_captions",
-        rows_key="images",
-        stats_key="summary",
-        ok_status="proposed",
-        before_field="original",
-        after_field="proposed",
-        target_root="dst",
-        drop_variants=True,
-        history_by="position",
-    ),
-    # OCR is absent: it writes only its own sidecar tree and touches no caption.
-    # The audit gates on verdict/confidence rather than a row status, so there
-    # is no ``ok_status`` to match: a row is a proposal when it proposes text.
-    "audit": ReplaySpec(
-        stage="audit_multiview",
-        rows_key="images",
-        stats_key="summary",
-        before_field="caption",
-        after_field="proposed",
-        target_root="src",
-        newline=True,
-    ),
-}
-"""GUI stage id → the report shape its CLI declares."""
+SHAPES = REPLAY_SHAPES
+"""GUI stage id → the report shape its CLI declares (``anime_tools.contract``)."""
 
 CAPTION_KIND: dict[str, str] = {"src": "master", "dst": "revised"}
 """Which of the two editable captions a stage's ``target_root`` names."""

@@ -20,6 +20,7 @@ from pathlib import Path
 from anime_tools import workspace as WS
 from anime_tools._device import resolve_device
 from anime_tools._env import resolve_path
+from anime_tools.contract import REPLAY_SHAPES
 from anime_tools.stages.autotag import (
     MODES,
     AutotagOptions,
@@ -38,7 +39,7 @@ from anime_tools.stages.cli._report import (
     stage_report_header,
     write_stage_report,
 )
-from anime_tools.stages.replay import ReplaySpec, run_replay_cli
+from anime_tools.stages.replay import run_replay_cli
 
 DEFAULT_REPORT_DIR = f"{WS.REPORTS}/autotag"
 TE_NOTE = "captions changed — run `make preprocess-te` to re-encode."
@@ -86,17 +87,7 @@ def parse_args() -> argparse.Namespace:
 # The proposal lands on the **revised** caption (``--dst``); the master is the
 # read-only fallback the tagger merged into, so the drift baseline is the target's
 # own text (``target_before``), not what spoke for the image.
-REPLAY_SPEC = ReplaySpec(
-    stage="autotag_captions",
-    rows_key="rows",
-    stats_key="stats",
-    ok_status="ok",
-    before_field="target_before",
-    after_field="proposed",
-    target_root="dst",
-    drop_variants=True,
-    history_by="autotag",
-)
+REPLAY_SPEC = REPLAY_SHAPES["autotag"]
 
 
 def _replay(args, *, src: Path, dst: Path, report_dir: Path) -> None:

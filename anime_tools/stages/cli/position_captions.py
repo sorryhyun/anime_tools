@@ -23,6 +23,7 @@ from anime_tools import workspace as WS
 from anime_tools._device import resolve_device
 from anime_tools._env import resolve_path
 from anime_tools._json import write_json
+from anime_tools.contract import REPLAY_SHAPES
 
 # Importing _sam3 also installs the `np.bool` alias sam3 needs before it loads.
 from anime_tools.masking._sam3 import (
@@ -59,7 +60,7 @@ from anime_tools.stages.position_captions import (
     flatten_captions,
     run_position_captions,
 )
-from anime_tools.stages.replay import ReplaySpec, run_replay_cli
+from anime_tools.stages.replay import run_replay_cli
 
 DEFAULT_REPORT_DIR = f"{WS.REPORTS}/position"
 TE_NOTE = (
@@ -428,17 +429,7 @@ def _run_flatten(args, src: Path, dst: Path, report_dir: Path) -> None:
 
 # ``drop_variants`` mirrors the stage's own write: a stale
 # ``{stem}.variants.txt`` outranks ``{stem}.txt`` at encode time.
-REPLAY_SPEC = ReplaySpec(
-    stage="position_captions",
-    rows_key="images",
-    stats_key="summary",
-    ok_status="proposed",
-    before_field="original",
-    after_field="proposed",
-    target_root="dst",
-    drop_variants=True,
-    history_by="position",
-)
+REPLAY_SPEC = REPLAY_SHAPES["position"]
 
 
 def _run_replay(args, src: Path, dst: Path, report_dir: Path) -> None:

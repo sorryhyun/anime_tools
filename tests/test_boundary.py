@@ -50,6 +50,24 @@ def test_captions_core_is_torch_free():
     assert r.returncode == 0, r.stderr
 
 
+def test_contract_is_torch_free():
+    """``anime_tools.contract`` is a stdlib-only leaf: the trainer and the GUI
+    server read it without pulling a stage into their process."""
+    import subprocess
+    import sys
+
+    code = (
+        "import sys, anime_tools.contract; "
+        "assert 'torch' not in sys.modules; "
+        "loaded = sorted(m for m in sys.modules if m.startswith('anime_tools')); "
+        "assert loaded == ['anime_tools', 'anime_tools.contract'], loaded"
+    )
+    r = subprocess.run(
+        [sys.executable, "-c", code], capture_output=True, text=True, check=False
+    )
+    assert r.returncode == 0, r.stderr
+
+
 def test_gui_server_is_torch_free():
     """The GUI process only spawns stages; model loading stays in the child."""
     import subprocess

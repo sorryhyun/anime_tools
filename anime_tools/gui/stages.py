@@ -20,16 +20,15 @@ from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath
 from typing import Any
 
+from anime_tools import __version__
+from anime_tools.contract import GATE_ATTR, REPLAY_REPORT_NAME
+
 REPLAY_FIELD = "from_report"
 """``--from_report``: the argparse dest a replay-capable stage exposes."""
-REPLAY_REPORT_NAME = "apply_report.json"
-"""What a replay writes, mirroring ``anime_tools.stages.replay``. Duplicated to
-keep this module free of stage imports."""
-
-GATE_ATTR = "gui_gate"
-"""The attribute an argument group carries when it is a *drawer*: the dest of the
-boolean that switches the whole group on. Set by
-``anime_tools.masking._masks.gated_group``, spelled here to avoid importing it."""
+# Both are read here rather than from the stage that owns them, so this module
+# stays free of every stage's imports: ``GATE_ATTR`` marks a *drawer* (an
+# argument group whose dest switches the whole group on), ``REPLAY_REPORT_NAME``
+# is what ``--from_report --apply`` writes.
 
 CACHE_ENV = "ANIME_TOOLS_CACHE"
 CACHE_VERSION = 2
@@ -882,7 +881,7 @@ def schema_cache_key() -> str:
     module behind its CLI. :func:`importlib.util.find_spec` keys on a stage module
     outside the package without importing it.
     """
-    parts = [f"v{CACHE_VERSION}", _distribution_version(), sys.version]
+    parts = [f"v{CACHE_VERSION}", __version__, sys.version]
     files = set(Path(__file__).resolve().parent.parent.rglob("*.py"))
     for s in STAGES:
         try:
@@ -901,15 +900,6 @@ def schema_cache_key() -> str:
         else:
             parts.append(f"{f}:{st.st_mtime_ns}:{st.st_size}")
     return hashlib.sha256("\0".join(parts).encode("utf-8")).hexdigest()
-
-
-def _distribution_version() -> str:
-    try:
-        from importlib.metadata import PackageNotFoundError, version
-
-        return version("anime_tools")
-    except (PackageNotFoundError, ImportError, ValueError):
-        return "unknown"
 
 
 def _read_schema_cache(path: Path, key: str) -> dict[str, dict[str, Any]] | None:
