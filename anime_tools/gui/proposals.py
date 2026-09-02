@@ -39,9 +39,11 @@ SHAPES: dict[str, ReplaySpec] = {
         rows_key="rows",
         stats_key="stats",
         ok_status="ok",
-        before_field="existing",
+        before_field="target_before",
         after_field="proposed",
-        target_root="src",
+        target_root="dst",
+        drop_variants=True,
+        history_by="autotag",
     ),
     "position": ReplaySpec(
         stage="position_captions",

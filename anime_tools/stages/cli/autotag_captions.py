@@ -1,12 +1,14 @@
-"""Auto-tag the dataset with the Anima Tagger and write the caption master.
+"""Auto-tag the dataset with the Anima Tagger and write the revised caption.
 
 Walks the resized tree and proposes a caption per image, in one of three
-``--mode``s: ``missing`` (uncaptioned images only, the default and the one
-non-destructive mode), ``merge`` (append novel tags, keeping clauses) or
-``overwrite`` (replace the caption outright).
+``--mode``s: ``missing`` (images no caption speaks for, the default), ``merge``
+(append novel tags, keeping clauses) or ``overwrite`` (replace the caption
+outright). The caption it reads is the revised one, falling back to the master;
+the caption it writes is always the revised one, and what that replaced is kept
+as a ``{stem}.history.txt`` version.
 
-Dry-run by default; ``--apply`` writes the master. The TE caches go stale but
-still look current, so follow a real apply with ``make preprocess-te``.
+Dry-run by default; ``--apply`` writes. The TE caches go stale but still look
+current, so follow a real apply with ``make preprocess-te``.
 """
 
 from __future__ import annotations
@@ -49,9 +51,10 @@ def build_parser() -> argparse.ArgumentParser:
         "--mode",
         choices=MODES,
         default="missing",
-        help="missing: only uncaptioned images (default). merge: append novel "
-        "tags to every caption, keeping its position clauses. overwrite: "
-        "replace the caption outright (discards hand-written text)",
+        help="missing: only images no caption speaks for (default). merge: "
+        "append novel tags to every caption, keeping its position clauses. "
+        "overwrite: replace the caption outright (the replaced text is kept as "
+        "a history version)",
     )
     p.add_argument(
         "--min_confidence",
@@ -64,7 +67,8 @@ def build_parser() -> argparse.ArgumentParser:
     )
     add_apply_args(
         p,
-        apply_help="Write the proposed captions into the master (default: dry run)",
+        apply_help="Write the proposed captions into the revised tree "
+        "(default: dry run)",
         from_report_help="Replay a previous dry run's report.json instead of "
         "re-tagging: writes exactly the captions it proposed and loads no "
         "model. Skips any row whose caption changed since. Emits "
@@ -79,15 +83,19 @@ def parse_args() -> argparse.Namespace:
     return build_parser().parse_args()
 
 
-# The proposal lands in the caption **master** (``--src``).
+# The proposal lands on the **revised** caption (``--dst``); the master is the
+# read-only fallback the tagger merged into, so the drift baseline is the target's
+# own text (``target_before``), not what spoke for the image.
 REPLAY_SPEC = ReplaySpec(
     stage="autotag_captions",
     rows_key="rows",
     stats_key="stats",
     ok_status="ok",
-    before_field="existing",
+    before_field="target_before",
     after_field="proposed",
-    target_root="src",
+    target_root="dst",
+    drop_variants=True,
+    history_by="autotag",
 )
 
 

@@ -9,7 +9,7 @@ caption master and sidecars, split out so it can be used on datasets bound for
 |---|---|---|
 | `anime_tools.captions` | The caption **grammar** (`parse_caption` / `compose_caption` — never `split(",")` a caption), tag taxonomy + Danbooru-KB correction, `--caption_drop_groups`, shuffle/dropout **variants sidecars**, `caption_index.json` builder | base (torch-free) |
 | `anime_tools.tagger` | **Anima Tagger** — a vocab/threshold/sidecar head over the external `animetimm/*.dbv4-full` caformer tagger, emitting Anima-format tags (`rating, count, characters, copyrights, @artists, generals`). CLIs: `python -m anime_tools.tagger.cli --mode …`, `…cli.autotag`, `…cli.autotag_server`, `…cli.train_sidecar` |
-| `anime_tools.stages` | Caption-master stages: batch **autotag**, **position clauses** (SAM3 crops → tagger → v2 rewrite), correction + variants mirror, **multiview audit** |
+| `anime_tools.stages` | Caption stages: batch **autotag**, **position clauses** (SAM3 crops → tagger → v2 rewrite), correction + variants mirror, **multiview audit** |
 | `anime_tools.grouping` | Near-twin / same-concept **grouping** on PE-Spatial-B16-512 features (`anime_tools.vision.pe`, weights fetched from the Hub) → `groups.json`; decensor match tools. CLI: `python -m anime_tools.grouping.cli.build_groups --source-dir …` |
 | `anime_tools.masking` | Training masks: SAM3 subject masks, MIT / ComicTextDetector text masks, merge. CLIs: `python -m anime_tools.masking.cli.{generate_masks,generate_masks_mit,merge_masks}` |
 
@@ -111,7 +111,7 @@ the rich editor.
 ## Layout of a curated dataset
 
 ```
-image_dataset/**/{stem}.png + {stem}.txt        caption master   ← autotag / position / correction write here
+image_dataset/**/{stem}.png + {stem}.txt        caption master   ← hand-written; Export publishes back here
 post_image_dataset/resized/{stem}.txt           revised caption  ← stages.captions mirrors + corrects
 post_image_dataset/resized/{stem}.variants.txt  shuffle / dropout variants (tab-delimited, v0 = pristine)
 post_image_dataset/captions/caption_index.json  typed-tag index (character / copyright / artist / count)

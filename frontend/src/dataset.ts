@@ -1,7 +1,7 @@
 import { createEffect, createResource, createSignal, on, onCleanup } from "solid-js";
 import { api } from "./api";
 import { persisted } from "./state";
-import type { CaptionEntry, ItemDetail, NodeKind, Sel, TreeMode } from "./types";
+import type { ItemDetail, NodeKind, SavedCaption, Sel, TreeMode } from "./types";
 import type { Config } from "./config";
 
 /** `#rel|kind` — the dataset item is what a GUI link should point at now. */
@@ -85,20 +85,25 @@ export function createDataset(config: Config) {
   });
 
   /** Fold a just-saved caption back into the loaded item and its tree row,
-      so neither has to be re-fetched. */
-  const onSaved = (entry: CaptionEntry) => {
-    mutateItem((prev) =>
-      prev
-        ? { ...prev, versions: prev.versions.map((c) => (c.kind === entry.kind ? entry : c)) }
-        : prev,
-    );
+      so neither has to be re-fetched.
+
+      The whole ladder is taken from the answer rather than the one entry
+      patched into place: a write *adds* a rung -- the text it replaced becomes
+      a `revised@N` history badge -- so replacing by `kind` would drop the very
+      version the save just created. The row's dots follow, one flag per rung
+      that has a file behind it. */
+  const onSaved = (saved: SavedCaption) => {
+    const versions = saved.versions;
+    mutateItem((prev) => (prev ? { ...prev, versions } : prev));
+    const captions: Record<string, boolean> = {};
+    for (const v of versions) captions[v.rung] ||= v.exists;
     const rel = sel()?.rel;
     mutateList((prev) =>
       prev
         ? {
             ...prev,
             items: prev.items.map((x) =>
-              x.rel === rel ? { ...x, captions: { ...x.captions, [entry.kind]: true } } : x,
+              x.rel === rel ? { ...x, captions: { ...x.captions, ...captions } } : x,
             ),
           }
         : prev,

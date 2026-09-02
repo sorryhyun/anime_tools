@@ -5,6 +5,9 @@
    as present, and clauses round-trip verbatim.
 3. Only one rating survives a merge (``predict_caption`` always emits one).
 4. Dry run writes nothing; ``apply`` defaults off.
+5. The write lands on the **revised** caption beside the resized image; the
+   master is read as the fallback and never written, and what a write replaced
+   stays in ``{stem}.history.txt``.
 """
 
 from __future__ import annotations
@@ -26,8 +29,16 @@ from anime_tools.stages.autotag import (
 )
 
 
-def _dataset(tmp_path: Path, images: dict[str, str | None]) -> tuple[Path, Path]:
-    """Build ``(resized_dir, source_dir)``; ``None`` caption → no sidecar."""
+def _dataset(
+    tmp_path: Path,
+    images: dict[str, str | None],
+    revised: dict[str, str] | None = None,
+) -> tuple[Path, Path]:
+    """Build ``(resized_dir, source_dir)``; ``None`` caption → no sidecar.
+
+    ``images`` fills the **master**; ``revised`` fills the resized tree, which is
+    both what the stage prefers to read and the only tree it writes.
+    """
     resized = tmp_path / "resized"
     source = tmp_path / "master"
     resized.mkdir()
@@ -36,6 +47,8 @@ def _dataset(tmp_path: Path, images: dict[str, str | None]) -> tuple[Path, Path]
         Image.new("RGB", (8, 8), (10, 20, 30)).save(resized / f"{stem}.png")
         if caption is not None:
             (source / f"{stem}.txt").write_text(caption, encoding="utf-8")
+    for stem, caption in (revised or {}).items():
+        (resized / f"{stem}.txt").write_text(caption, encoding="utf-8")
     return resized, source
 
 
@@ -139,9 +152,12 @@ def test_missing_mode_only_fills_gaps(tmp_path):
     assert stats.candidates == 2
     assert stats.written == 2
     assert stats.skipped["has-caption"] == 1
-    # The hand-written caption is byte-identical.
+    # A master speaks for `a`, so `missing` skips it — and the master is never
+    # written, here or anywhere.
     assert (source / "a.txt").read_text(encoding="utf-8") == "hand written, 1girl"
-    assert (source / "b.txt").read_text(encoding="utf-8") == "safe, 1girl, smile"
+    assert not (resized / "a.txt").exists()
+    assert (resized / "b.txt").read_text(encoding="utf-8") == "safe, 1girl, smile"
+    assert not (source / "b.txt").exists()
     assert {r.caption_path for r in rows} == {"b.txt", "c.txt"}
 
 
@@ -157,7 +173,9 @@ def test_overwrite_mode_replaces_every_caption(tmp_path):
     )
 
     assert stats.written == 2
-    assert (source / "a.txt").read_text(encoding="utf-8") == "safe, 1girl, smile"
+    assert (resized / "a.txt").read_text(encoding="utf-8") == "safe, 1girl, smile"
+    # The hand-written master is what `overwrite` used to destroy.
+    assert (source / "a.txt").read_text(encoding="utf-8") == "hand written, 1girl"
 
 
 def test_merge_mode_leaves_a_saturated_caption_untouched(tmp_path):
@@ -186,12 +204,12 @@ def test_dry_run_writes_nothing(tmp_path):
 
     assert stats.proposed == 1
     assert stats.written == 0
-    assert not (source / "a.txt").exists()
+    assert not (resized / "a.txt").exists()
     assert rows[0].proposed == "safe, 1girl"
 
 
 def test_missing_mode_creates_nested_caption_dirs(tmp_path):
-    """The master mirrors the resized tree; a new artist subdir must be made."""
+    """The caption lands beside its image, however deep the subdir."""
     resized = tmp_path / "resized"
     source = tmp_path / "master"
     (resized / "artist_x").mkdir(parents=True)
@@ -201,7 +219,7 @@ def test_missing_mode_creates_nested_caption_dirs(tmp_path):
     _, stats = _run(resized, source, "safe, 1girl", apply=True)
 
     assert stats.written == 1
-    assert (source / "artist_x" / "a.txt").read_text(encoding="utf-8") == "safe, 1girl"
+    assert (resized / "artist_x" / "a.txt").read_text(encoding="utf-8") == "safe, 1girl"
 
 
 def test_empty_tagger_output_is_a_skip_not_a_blank_caption(tmp_path):
@@ -212,7 +230,68 @@ def test_empty_tagger_output_is_a_skip_not_a_blank_caption(tmp_path):
     assert stats.written == 0
     assert stats.skipped["no-tags"] == 1
     assert rows[0].status == "skip:no-tags"
-    assert not (source / "a.txt").exists()
+    assert not (resized / "a.txt").exists()
+
+
+def test_a_replaced_caption_is_kept_as_a_history_version(tmp_path):
+    """No mode loses text: what a write replaces is one badge away."""
+    from anime_tools.captions.history import history_sidecar_path, read_history
+
+    resized, source = _dataset(
+        tmp_path, {"a": "hand written, 1girl"}, revised={"a": "safe, 1girl"}
+    )
+
+    _, stats = _run(
+        resized,
+        source,
+        "safe, 1girl, smile",
+        options=AutotagOptions(mode="overwrite"),
+        apply=True,
+    )
+
+    assert stats.written == 1
+    entries = read_history(history_sidecar_path(resized / "a.txt"))
+    assert [(e.seq, e.by, e.text) for e in entries] == [(1, "autotag", "safe, 1girl")]
+    # The master keeps no history of its own: nothing wrote it.
+    assert not history_sidecar_path(source / "a.txt").exists()
+
+
+def test_merge_reads_the_revised_caption_over_the_master(tmp_path):
+    """The clauses live in the revised caption, so that is what a merge merges
+    into — reading the master would re-flatten a bound tag into the bag."""
+    resized, source = _dataset(
+        tmp_path,
+        {"a": "safe, 2girls, akita neru"},
+        revised={"a": "safe, 2girls. On the left, akita neru."},
+    )
+
+    rows, stats = _run(
+        resized,
+        source,
+        "safe, 2girls, akita neru, smile",
+        options=AutotagOptions(mode="merge"),
+        apply=True,
+    )
+
+    assert stats.written == 1
+    assert rows[0].added == ("smile",)
+    assert (resized / "a.txt").read_text(encoding="utf-8") == (
+        "safe, 2girls, smile. On the left, akita neru."
+    )
+
+
+def test_a_merge_into_a_master_records_the_absent_target_not_the_master(tmp_path):
+    """``existing`` is what spoke for the image; ``target_before`` is what the
+    file being written held. They differ exactly when the revised caption is
+    being created, and a replay drifts unless it gates on the second."""
+    resized, source = _dataset(tmp_path, {"a": "safe, 1girl"})
+
+    rows, _stats = _run(
+        resized, source, "safe, 1girl, smile", options=AutotagOptions(mode="merge")
+    )
+
+    assert rows[0].existing == "safe, 1girl"
+    assert rows[0].target_before == ""
 
 
 def test_bad_options_fail_at_construction():

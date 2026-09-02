@@ -4,8 +4,9 @@ The **revised** caption (``workspace/resized/<rel>.txt``) is authoritative when
 it exists; the hand-written **master** is the read-only fallback. Revised-first
 is what makes ``is_candidate`` / ``is_audit_target`` skip an image a previous
 ``--apply`` already rewrote — reading the master would re-propose clauses on
-every run. Stages that deliberately read one tree (autotag,
-``ab_position_captions``) do not go through here.
+every run. ``autotag`` calls :func:`resolve_caption` directly rather than walking
+here (its walk is over images, not captions); ``ab_position_captions``
+deliberately reads the master only and does not go through here at all.
 
 Torch-free.
 """

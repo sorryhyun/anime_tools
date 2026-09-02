@@ -3,7 +3,14 @@ import { api } from "../api";
 import { t } from "../i18n";
 import { BoxedCaption } from "./BoxedCaption";
 import { CaptionDiff } from "./CaptionDiff";
-import type { CaptionEntry, CaptionKind, Parsed, Proposal, VersionKind } from "../types";
+import type {
+  CaptionEntry,
+  CaptionKind,
+  Parsed,
+  Proposal,
+  SavedCaption,
+  VersionKind,
+} from "../types";
 
 /** The caption panel: one editor, and a badge per version of this image's
  * caption.
@@ -62,7 +69,7 @@ export function CaptionCard(props: {
   proposalStage?: string;
   /** The global "show explanations" preference. */
   help: boolean;
-  onSaved: (entry: CaptionEntry) => void;
+  onSaved: (saved: SavedCaption) => void;
 }) {
   let card!: HTMLDivElement;
 

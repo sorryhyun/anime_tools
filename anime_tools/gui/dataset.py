@@ -687,6 +687,10 @@ def write_caption(roots: Roots, rel_str: str, kind: str, text: str) -> dict[str,
     A caption is a single line by contract, so newlines fold to spaces. An empty
     body is refused rather than treated as a delete. A hand edit pushes history
     like a stage run does, for the rungs :data:`HISTORY_OF` gives one.
+
+    The answer carries the whole ladder back under ``versions``, not just the
+    entry written: the push above *creates a rung* (``revised@1``), and a caller
+    that folded one entry into the row it already had could never show it.
     """
     if kind not in CAPTION_KINDS:
         raise DatasetError(f"not an editable caption: {kind!r}")
@@ -708,6 +712,7 @@ def write_caption(roots: Roots, rel_str: str, kind: str, text: str) -> dict[str,
     # The sidecar was generated from the previous revised text, so its v0 no
     # longer matches what the TE step would encode.
     entry["variants_stale"] = kind == "revised" and caps["variants"].is_file()
+    entry["versions"] = caption_versions(roots, rel)
     return entry
 
 

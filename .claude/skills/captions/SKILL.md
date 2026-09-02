@@ -37,20 +37,23 @@ Setting it alone is enough to enable the correction pass. Note it is KB-faithful
 
 ## Auto-tagging (`make caption-autotag`)
 
-Batch Anima Tagger over the dataset, writing `.txt` sidecars into the **caption master**
-(`image_dataset/`) — the dataset-wide counterpart to the Dataset tab's per-image autotag button
+Batch Anima Tagger over the dataset, writing `.txt` sidecars into the **revised** tree
+(`workspace/resized/`) — the dataset-wide counterpart to the Dataset tab's per-image autotag button
 (`anime_tools/tagger/cli/autotag.py` is single-image + stdout-only and is *not* a batch path).
 Orchestration in `anime_tools/stages/autotag.py`, thin CLI at
-`anime_tools/stages/cli/autotag_captions.py`. Tags the **resized** image (the pixels training sees),
-writes next to the original.
+`anime_tools/stages/cli/autotag_captions.py`. Tags the **resized** image (the pixels training sees)
+and writes beside it; the hand-written master is read (`resolve_caption`'s fallback) and never
+written. What a write replaces is pushed onto `{stem}.history.txt` under `by=autotag`, so no mode
+loses text outright.
 
 Three `--mode`s:
 
-- `missing` (default) — only images with no sidecar; the only non-destructive mode.
+- `missing` (default) — only images no caption speaks for, revised or master.
 - `merge` — append only tags the caption lacks. **Position clauses round-trip verbatim and their
   bound tags count as present**, so a merge after `caption-position` can't re-flatten one back into
-  the bag, and a second rating is dropped.
-- `overwrite` — replace outright; discards hand-written captions.
+  the bag, and a second rating is dropped. The revised-first read is what makes this hold: the
+  clauses live there.
+- `overwrite` — replace outright; the replaced text stays as a history version.
 
 `--min_confidence` is an extra floor on top of the tagger's per-tag F1 thresholds (0 = leave its
 calibrated decisions alone; the rating slot ignores it). Dry-run by default (`report.json` with

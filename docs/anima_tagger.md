@@ -315,10 +315,13 @@ driver or in the ComfyUI node.
 
 `anime_tools/stages/cli/autotag_captions.py` (over `stages/autotag.py`) is the
 dataset-wide counterpart to the Dataset tab's per-image button: it walks the
-resized tree, tags each image, and writes the `.txt` sidecar into the caption
-**master** under `image_dataset/`. `--mode missing` (default) is the only
-non-destructive mode; `merge` appends only novel tags and round-trips position
-clauses verbatim; `overwrite` replaces. Dry run by default, `--apply` writes,
+resized tree, tags each image, and writes the `.txt` sidecar beside the resized
+image — the **revised** caption under `workspace/resized/`. The hand-written
+master is the read-only fallback (`resolve_caption`), so `--mode missing`
+(default) means "no caption speaks for this image"; `merge` appends only novel
+tags and round-trips position clauses verbatim; `overwrite` replaces. Every
+write keeps what it replaced as a `{stem}.history.txt` version.
+Dry run by default, `--apply` writes,
 and any apply must be followed by the trainer's TE re-encode
 (`make preprocess-te`).
 

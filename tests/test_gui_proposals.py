@@ -60,6 +60,7 @@ def _autotag_report(home: Path, *, apply: bool = False) -> Path:
                 "image": "a.png",
                 "caption_path": "a.txt",
                 "existing": "1girl, solo",
+                "target_before": "1girl, solo",
                 "proposed": "safe, 1girl, solo, long hair",
                 "status": "ok",
             },
@@ -67,6 +68,7 @@ def _autotag_report(home: Path, *, apply: bool = False) -> Path:
                 "image": "sub/b.png",
                 "caption_path": "sub/b.txt",
                 "existing": "",
+                "target_before": "",
                 "proposed": "safe, 1boy",
                 "status": "ok",
             },
@@ -74,6 +76,7 @@ def _autotag_report(home: Path, *, apply: bool = False) -> Path:
                 "image": "a.png",
                 "caption_path": "a.txt",
                 "existing": "x",
+                "target_before": "x",
                 "proposed": "x",
                 "status": "skip:unchanged",
             },
@@ -93,8 +96,9 @@ def test_proposals_are_keyed_by_dataset_rel(home, roots):
     found = P.read(_autotag_report(home), roots, "autotag")
     assert sorted(found) == ["a.png", "sub/b.jpg"]
     assert found["a.png"].after == "safe, 1girl, solo, long hair"
-    assert found["a.png"].kind == "master"
-    assert found["a.png"].path == "image_dataset/a.txt"
+    # Autotag writes the resized tree, so its diff is the revised caption.
+    assert found["a.png"].kind == "revised"
+    assert found["a.png"].path == "workspace/resized/a.txt"
 
 
 def test_a_row_that_changes_nothing_is_not_a_proposal(home, roots):
@@ -182,37 +186,37 @@ def _apply_report(home: Path) -> Path:
 
 
 def test_undo_restores_what_the_apply_overwrote(home, roots):
-    src = home / "image_dataset"
-    (src / "a.txt").write_text("safe, 1girl, solo, long hair", encoding="utf-8")
-    (src / "sub" / "b.txt").write_text("safe, 1boy", encoding="utf-8")
+    dst = home / "workspace" / "resized"
+    (dst / "a.txt").write_text("safe, 1girl, solo, long hair", encoding="utf-8")
+    (dst / "sub" / "b.txt").write_text("safe, 1boy", encoding="utf-8")
 
     out = P.undo(_apply_report(home), roots, "autotag")
-    assert (src / "a.txt").read_text(encoding="utf-8") == "1girl, solo"
+    assert (dst / "a.txt").read_text(encoding="utf-8") == "1girl, solo"
     # An empty before-text means the run created the file: the inverse is a delete.
-    assert not (src / "sub" / "b.txt").exists()
+    assert not (dst / "sub" / "b.txt").exists()
     assert out["restored"] == 1 and out["removed"] == 1
     assert sorted(out["written"]) == ["a.png", "sub/b.jpg"]
 
 
 def test_undo_leaves_a_caption_edited_since_alone(home, roots):
-    src = home / "image_dataset"
-    (src / "a.txt").write_text("hand-written since the apply", encoding="utf-8")
-    (src / "sub" / "b.txt").write_text("safe, 1boy", encoding="utf-8")
+    dst = home / "workspace" / "resized"
+    (dst / "a.txt").write_text("hand-written since the apply", encoding="utf-8")
+    (dst / "sub" / "b.txt").write_text("safe, 1boy", encoding="utf-8")
 
     out = P.undo(_apply_report(home), roots, "autotag")
-    assert (src / "a.txt").read_text(encoding="utf-8") == "hand-written since the apply"
+    assert (dst / "a.txt").read_text(encoding="utf-8") == "hand-written since the apply"
     assert out["skipped"]["drifted"] == 1 and out["restored"] == 0
 
 
 def test_undo_twice_is_a_no_op_not_a_second_revert(home, roots):
-    src = home / "image_dataset"
-    (src / "a.txt").write_text("safe, 1girl, solo, long hair", encoding="utf-8")
-    (src / "sub" / "b.txt").write_text("safe, 1boy", encoding="utf-8")
+    dst = home / "workspace" / "resized"
+    (dst / "a.txt").write_text("safe, 1girl, solo, long hair", encoding="utf-8")
+    (dst / "sub" / "b.txt").write_text("safe, 1boy", encoding="utf-8")
     P.undo(_apply_report(home), roots, "autotag")
     out = P.undo(_apply_report(home), roots, "autotag")
     assert out["restored"] == 0 and out["removed"] == 0
     assert out["skipped"]["already-undone"] == 2
-    assert (src / "a.txt").read_text(encoding="utf-8") == "1girl, solo"
+    assert (dst / "a.txt").read_text(encoding="utf-8") == "1girl, solo"
 
 
 def test_undoing_the_clause_rewrite_drops_the_stale_sidecar(home, roots):
@@ -311,7 +315,7 @@ def test_the_index_is_rels_only_and_one_proposal_carries_the_text(client):
     job = _finished_job(mgr, home, apply=False, report=_autotag_report(home))
 
     index = c.get(f"/api/jobs/{job.id}/proposals").json()
-    assert index["kind"] == "master" and index["total"] == 2
+    assert index["kind"] == "revised" and index["total"] == 2
     assert index["rels"] == ["a.png", "sub/b.jpg"]
     assert "before" not in json.dumps(index)  # the index carries no caption text
 
@@ -334,21 +338,16 @@ def test_undo_refuses_a_run_that_wrote_nothing(client):
 
 def test_undo_over_http_restores_and_names_what_to_reload(client):
     c, mgr, home = client
-    (home / "image_dataset" / "a.txt").write_text(
-        "safe, 1girl, solo, long hair", encoding="utf-8"
-    )
-    (home / "image_dataset" / "sub" / "b.txt").write_text(
-        "safe, 1boy", encoding="utf-8"
-    )
+    dst = home / "workspace" / "resized"
+    (dst / "a.txt").write_text("safe, 1girl, solo, long hair", encoding="utf-8")
+    (dst / "sub" / "b.txt").write_text("safe, 1boy", encoding="utf-8")
     job = _finished_job(mgr, home, apply=True, report=_apply_report(home))
 
     out = c.post(f"/api/jobs/{job.id}/undo").json()
     assert out["restored"] == 1 and out["removed"] == 1
     # The rels the sidebar re-stats, same contract as a job's ``written``.
     assert sorted(out["written"]) == ["a.png", "sub/b.jpg"]
-    assert (home / "image_dataset" / "a.txt").read_text(
-        encoding="utf-8"
-    ) == "1girl, solo"
+    assert (dst / "a.txt").read_text(encoding="utf-8") == "1girl, solo"
 
 
 # ---- export: the one report that is not a caption diff ------------------

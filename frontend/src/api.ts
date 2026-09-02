@@ -1,5 +1,4 @@
 import type {
-  CaptionEntry,
   CaptionKind,
   DatasetGroups,
   DatasetItem,
@@ -15,6 +14,7 @@ import type {
   PickResult,
   Proposal,
   ProposalIndex,
+  SavedCaption,
   Settings,
   Stage,
   TagInfo,
@@ -89,7 +89,7 @@ export const api = {
   parse: (text: string) => req<Parsed>("/api/dataset/parse", json("POST", { text })),
   describeTag: (tag: string) => req<TagInfo>(`/api/tags/describe?tag=${encodeURIComponent(tag)}`),
   saveCaption: (rel: string, kind: CaptionKind, text: string) =>
-    req<CaptionEntry>("/api/dataset/item", json("PUT", { rel, kind, text })),
+    req<SavedCaption>("/api/dataset/item", json("PUT", { rel, kind, text })),
 };
 
 /** Any thrown error as a failed status line. */

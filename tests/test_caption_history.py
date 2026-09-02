@@ -190,6 +190,27 @@ def test_an_edit_is_a_version_and_the_badge_row_says_what_it_was(client):
     assert it["versions"][2]["text"] == "1girl, solo, smile"
 
 
+def test_a_save_answers_with_the_whole_ladder_not_just_the_rung_written(client):
+    """The write *adds* a rung, so the panel cannot patch one entry into place:
+    the answer carries the ladder as it now stands."""
+    c, _home = client
+    saved = c.put(
+        "/api/dataset/item",
+        json={"rel": "a.png", "kind": "revised", "text": "1girl, solo, smile"},
+    ).json()
+
+    assert saved["kind"] == "revised" and saved["text"] == "1girl, solo, smile"
+    assert [v["kind"] for v in saved["versions"]] == [
+        "master",
+        "revised@1",
+        "revised",
+        "variants",
+    ]
+    # …and it is the same ladder a re-read would give.
+    it = c.get("/api/dataset/item", params={"rel": "a.png"}).json()
+    assert saved["versions"] == it["versions"]
+
+
 def test_the_master_rung_keeps_no_history(client):
     """``image_dataset/`` is the input tree: no history sidecar lands in it."""
     c, home = client

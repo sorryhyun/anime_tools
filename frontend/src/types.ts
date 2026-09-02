@@ -194,7 +194,7 @@ export interface DatasetItem {
   captions: Record<string, boolean>;
   /** The resized image exists under the dst root — matched on stem, since
       resize may have re-encoded. Everything downstream of resize walks that
-      tree, so a row without it is invisible to every stage but autotag. */
+      tree, so a row without it is invisible to every stage. */
   resized: boolean;
   mask: boolean;
 }
@@ -327,6 +327,14 @@ export interface CaptionEntry {
   parsed: Parsed | null;
   /** Set by the PUT: the .variants.txt sidecar no longer matches v0. */
   variants_stale?: boolean;
+}
+
+/** What `PUT /api/dataset/item` answers: the entry it wrote, plus the ladder as
+    it now stands. The whole ladder, because a write *adds* a rung -- the text it
+    replaced becomes a `revised@N` badge -- and patching the one entry by `kind`
+    could never surface that. */
+export interface SavedCaption extends CaptionEntry {
+  versions: CaptionEntry[];
 }
 
 // ---- proposals (mirrors anime_tools/gui/proposals.py) ----

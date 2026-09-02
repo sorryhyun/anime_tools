@@ -1093,6 +1093,9 @@ def test_apply_replays_a_dry_run_end_to_end(tmp_path, monkeypatch):
         (src / f"{n}.png").write_bytes(b"\x89PNG\r\n\x1a\n")
         (src / f"{n}.txt").write_text("1girl, solo.")
         (dst / f"{n}.png").write_bytes(b"\x89PNG\r\n\x1a\n")
+        # Autotag writes the revised caption, so that is what a replay of it
+        # gates on and what comes out the other end.
+        (dst / f"{n}.txt").write_text("1girl, solo.")
 
     # What the tagger pass left behind.
     rdir = tmp_path / "workspace" / "captions" / "autotag"
@@ -1107,8 +1110,9 @@ def test_apply_replays_a_dry_run_end_to_end(tmp_path, monkeypatch):
                 "rows": [
                     {
                         "image": f"{n}.png",
-                        "caption_path": str(src / f"{n}.txt"),
+                        "caption_path": f"{n}.txt",
                         "existing": "1girl, solo.",
+                        "target_before": "1girl, solo.",
                         "proposed": f"1girl, solo, {n}_tag.",
                         "status": "ok",
                     }
@@ -1118,7 +1122,7 @@ def test_apply_replays_a_dry_run_end_to_end(tmp_path, monkeypatch):
         )
     )
     # Hand-edited after the dry run: its proposal is stale, so it is skipped.
-    (src / "c.txt").write_text("1girl, solo, hand edited.")
+    (dst / "c.txt").write_text("1girl, solo, hand edited.")
 
     job = c.post(
         "/api/jobs",
@@ -1143,8 +1147,10 @@ def test_apply_replays_a_dry_run_end_to_end(tmp_path, monkeypatch):
 
     report = c.get(f"/api/jobs/{job['id']}/report").json()["report"]
     assert report["written"] == ["a.png", "b.png"]
-    assert (src / "a.txt").read_text() == "1girl, solo, a_tag."
-    assert (src / "c.txt").read_text() == "1girl, solo, hand edited."
+    assert (dst / "a.txt").read_text() == "1girl, solo, a_tag."
+    assert (dst / "c.txt").read_text() == "1girl, solo, hand edited."
+    # The master is not autotag's to write.
+    assert (src / "a.txt").read_text() == "1girl, solo."
     # …and that list is all the sidebar has to re-stat.
     rows = c.post("/api/dataset/items", json={"rels": report["written"]}).json()[
         "items"

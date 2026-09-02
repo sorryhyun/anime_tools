@@ -67,8 +67,9 @@ because resize rewrites files under a key that doesn't move, and `resize`'s `min
 "invisible to the pipeline", so it names each dropped file rather than counting it.
 
 Caption stages write the **revised** caption under `workspace/resized/`; the hand-written master
-under `image_dataset/` is a read-only fallback (autotag `missing` is the exception that creates
-masters). Each write pushes the replaced text onto `{stem}.history.txt`, which is what makes a run
+under `image_dataset/` is a read-only fallback. Nothing in `stages/` writes it — Export and the
+GUI's caption editor are the only writers of `image_dataset/`. Each write pushes the replaced text
+onto `{stem}.history.txt`, which is what makes a run
 safe without an Apply gate: the old version is a badge in the panel and Undo replays the report
 backwards.
 
@@ -143,7 +144,8 @@ per shared flag:
 - `_caption_io.py` — `read_caption`/`write_caption`, the trailing-newline invariant, the
   `.variants.txt` drop, and `history_by`.
 - `_walk_captions.py` — `resolve_caption`/`iter_captions`: revised caption first, master as
-  read-only fallback. `autotag` and `ab_position_captions` deliberately read the master only.
+  read-only fallback. `autotag` walks images rather than captions, so it calls `resolve_caption`
+  itself; `ab_position_captions` deliberately reads the master only.
 - `replay.apply_one` — the one drift-guarded write: `no-proposal` → `missing-caption` →
   `already-applied` → `drifted` → `would-write`/`written`.
 

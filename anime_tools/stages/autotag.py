@@ -1,19 +1,22 @@
-"""Batch auto-tagging: image → Anima Tagger → caption master.
+"""Batch auto-tagging: image → Anima Tagger → the revised caption.
 
-Walks the resized tree and writes ``.txt`` sidecars into the caption **master**,
-since it creates the caption every later stage reads.
+Walks the resized tree and writes ``.txt`` sidecars beside the resized image —
+the **revised** caption, like every other caption stage. The hand-written master
+under ``source_dir`` is read (as ``resolve_caption``'s fallback) and never
+written, so a run cannot lose text nobody can get back: what it replaces is
+pushed onto ``{stem}.history.txt`` and is one badge away in the GUI.
 
 Three modes:
 
 ``missing``
-    Tag only images with no caption sidecar — the only mode that cannot lose
-    hand-written text.
+    Tag only images no caption speaks for — neither a revised one nor a master.
 ``merge``
     Tag everything, but only *append* tags the caption does not already carry.
     Clause tags count as present, so a merge after ``caption-position`` cannot
-    re-flatten a bound tag back into the bag.
+    re-flatten a bound tag back into the bag — which is why the read goes
+    through ``resolve_caption``: the clauses live in the revised caption.
 ``overwrite``
-    Replace the caption with the tagger's output. Destructive.
+    Replace the caption with the tagger's output.
 
 **Dry-run is the default** (the caller passes ``apply``). An applied run must be
 followed by ``make preprocess-te``, since caption edits do not invalidate the TE
@@ -33,6 +36,7 @@ from anime_tools.captions.position_clauses import compose_caption, parse_caption
 from anime_tools.captions.taxonomy import RATING_LITERALS, normalize_tag
 
 from ._caption_io import read_caption, write_caption
+from ._walk_captions import resolve_caption
 
 MODES = ("missing", "merge", "overwrite")
 
@@ -62,6 +66,12 @@ class AutotagProposal:
     image: str = ""
     caption_path: str = ""
     existing: str = ""
+    """What already speaks for this image — the revised caption, or the master
+    when there is no revised one yet. What ``merge`` merges into."""
+    target_before: str = ""
+    """What the *write target* holds right now (``""`` when it does not exist
+    yet). The replay's drift baseline, which is not ``existing``: a merge into a
+    master writes a revised caption that was never there."""
     proposed: str = ""
     added: tuple[str, ...] = ()
     status: str = "ok"
@@ -135,11 +145,14 @@ def run_autotag_captions(
     apply: bool = False,
     progress: Callable[[int, int, str], None] | None = None,
 ) -> tuple[list[AutotagProposal], AutotagStats]:
-    """Walk the resized tree, tag, and (with ``apply``) write the caption master.
+    """Walk the resized tree, tag, and (with ``apply``) write the revised caption.
 
-    Tagging runs on the *resized* image (the pixel data training sees); the
-    caption lands next to the original under ``source_dir``. ``tag_fn`` is
-    normally ``AnimaTagger.predict_caption`` bound to ``min_confidence``.
+    Tagging runs on the *resized* image (the pixel data training sees) and the
+    caption lands beside it under ``resized_dir``. ``source_dir`` is the master
+    tree, read-only here: it is the fallback half of ``resolve_caption``, so
+    "what this image already says" means the revised caption when there is one
+    and the hand-written master otherwise. ``tag_fn`` is normally
+    ``AnimaTagger.predict_caption`` bound to ``min_confidence``.
     """
     from anime_tools._walk import walk_images
 
@@ -152,13 +165,15 @@ def run_autotag_captions(
 
     for index, image_path in enumerate(images, 1):
         rel = image_path.relative_to(resized_dir).with_suffix(".txt")
-        caption_path = source_dir / rel
+        caption_path = resized_dir / rel
         if progress is not None:
             progress(index, len(images), str(rel))
 
-        existing = ""
-        if caption_path.exists():
-            existing = read_caption(caption_path)
+        # Revised first, master as the read-only fallback: `missing` means no
+        # caption anywhere, and `merge` merges into the text that actually
+        # speaks for the image — clauses included.
+        speaks = resolve_caption(resized_dir, source_dir, rel)
+        existing = read_caption(speaks) if speaks is not None else ""
         if existing and options.mode == "missing":
             stats.skip("has-caption")
             continue
@@ -172,6 +187,7 @@ def run_autotag_captions(
             image=str(image_path.relative_to(resized_dir)),
             caption_path=str(rel),
             existing=existing,
+            target_before=read_caption(caption_path) if caption_path.exists() else "",
         )
         if not tagged:
             proposal.status = "skip:no-tags"
@@ -194,9 +210,14 @@ def run_autotag_captions(
         rows.append(proposal)
         stats.proposed += 1
         if apply:
-            # The master, so no sidecar to drop and no trailing newline — the
-            # replay of this report writes the same bytes.
-            write_caption(caption_path, proposal.proposed)
+            # No trailing newline, so the replay of this report writes the
+            # same bytes.
+            write_caption(
+                caption_path,
+                proposal.proposed,
+                drop_variants=True,
+                history_by="autotag",
+            )
             stats.written += 1
 
     return rows, stats

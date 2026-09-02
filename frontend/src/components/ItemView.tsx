@@ -4,11 +4,11 @@ import { t } from "../i18n";
 import { CaptionCard } from "./CaptionCard";
 import { OcrPanel } from "./OcrPanel";
 import type {
-  CaptionEntry,
   ImageInfo,
   ItemDetail,
   NodeKind,
   Proposal,
+  SavedCaption,
   VersionKind,
 } from "../types";
 
@@ -77,7 +77,7 @@ export function ItemView(props: {
   proposalStage?: string;
   /** The one global "show explanations" preference. */
   help: boolean;
-  onSaved: (entry: CaptionEntry) => void;
+  onSaved: (saved: SavedCaption) => void;
 }) {
   const [view, setView] = createSignal<View>("image");
   const [capW, setCapW] = createSignal(Number(localStorage.getItem(CAP_W)) || 420);

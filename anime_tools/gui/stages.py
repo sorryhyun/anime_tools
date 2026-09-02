@@ -259,7 +259,11 @@ STAGES: tuple[Stage, ...] = (
         "Autotag",
         "tagger",
         report=("report_dir", "report.json"),
-        notes="Only `missing` mode is non-destructive.",
+        notes=(
+            "Writes the revised caption under the resized tree; the master is "
+            "read as a fallback and never edited. `missing` skips any image a "
+            "caption already speaks for."
+        ),
     ),
     Stage(
         "position",

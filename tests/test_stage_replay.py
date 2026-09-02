@@ -42,8 +42,16 @@ TAGGED = "safe, 1girl, blue hair, smile"
 # ---------------------------------------------------------------------------
 
 
-def _dataset(tmp_path: Path, images: dict[str, str | None]) -> tuple[Path, Path]:
-    """``(resized_dir, source_dir)``; a ``None`` caption means no sidecar."""
+def _dataset(
+    tmp_path: Path,
+    images: dict[str, str | None],
+    revised: dict[str, str] | None = None,
+) -> tuple[Path, Path]:
+    """``(resized_dir, source_dir)``; a ``None`` caption means no sidecar.
+
+    ``images`` fills the master, ``revised`` the resized tree. Autotag writes the
+    second, so a replay of it can only drift against a caption that lives there.
+    """
     resized = tmp_path / "resized"
     source = tmp_path / "master"
     resized.mkdir(parents=True)
@@ -52,6 +60,8 @@ def _dataset(tmp_path: Path, images: dict[str, str | None]) -> tuple[Path, Path]
         Image.new("RGB", (8, 8), (10, 20, 30)).save(resized / f"{stem}.png")
         if caption is not None:
             (source / f"{stem}.txt").write_text(caption, encoding="utf-8")
+    for stem, caption in (revised or {}).items():
+        (resized / f"{stem}.txt").write_text(caption, encoding="utf-8")
     return resized, source
 
 
@@ -99,7 +109,7 @@ def _position_report(
 def test_autotag_round_trip_writes_exactly_the_proposed_text(tmp_path: Path):
     resized, source = _dataset(tmp_path, {"a": None, "b": None})
     report = _autotag_dry_run(resized, source)
-    assert not (source / "a.txt").exists()
+    assert not (resized / "a.txt").exists()
 
     rows, stats = replay_rows(
         report, spec=AUTOTAG_SPEC, src=source, dst=resized, apply=True
@@ -109,7 +119,8 @@ def test_autotag_round_trip_writes_exactly_the_proposed_text(tmp_path: Path):
     assert not stats.skipped
     assert {r.status for r in rows} == {"written"}
     for stem in ("a", "b"):
-        assert (source / f"{stem}.txt").read_text(encoding="utf-8") == TAGGED
+        assert (resized / f"{stem}.txt").read_text(encoding="utf-8") == TAGGED
+        assert not (source / f"{stem}.txt").exists()
 
 
 def test_replay_matches_a_live_apply_byte_for_byte(tmp_path: Path):
@@ -129,20 +140,20 @@ def test_replay_matches_a_live_apply_byte_for_byte(tmp_path: Path):
         report, spec=AUTOTAG_SPEC, src=replay_source, dst=replay_resized, apply=True
     )
 
-    assert (replay_source / "a.txt").read_bytes() == (
-        live_source / "a.txt"
+    assert (replay_resized / "a.txt").read_bytes() == (
+        live_resized / "a.txt"
     ).read_bytes()
 
 
 def test_merge_mode_round_trips_a_caption_with_clauses(tmp_path: Path):
     """The replay carries composed text, so clause structure survives untouched."""
     existing = "safe, 2girls. On the left, akita neru. On the right, kasane teto."
-    resized, source = _dataset(tmp_path, {"a": existing})
+    resized, source = _dataset(tmp_path, {"a": None}, revised={"a": existing})
     report = _autotag_dry_run(resized, source, mode="merge")
 
     replay_rows(report, spec=AUTOTAG_SPEC, src=source, dst=resized, apply=True)
 
-    written = (source / "a.txt").read_text(encoding="utf-8")
+    written = (resized / "a.txt").read_text(encoding="utf-8")
     assert written == report["rows"][0]["proposed"]
     assert written.endswith("On the left, akita neru. On the right, kasane teto.")
 
@@ -153,11 +164,15 @@ def test_merge_mode_round_trips_a_caption_with_clauses(tmp_path: Path):
 
 
 def test_drifted_caption_is_skipped_and_counted(tmp_path: Path):
-    resized, source = _dataset(tmp_path, {"a": "safe, 1girl", "b": "safe, 1girl"})
+    resized, source = _dataset(
+        tmp_path,
+        {"a": None, "b": None},
+        revised={"a": "safe, 1girl", "b": "safe, 1girl"},
+    )
     report = _autotag_dry_run(resized, source, mode="merge")
 
     # A hand edit lands between the dry run and the apply.
-    (source / "a.txt").write_text("safe, 1girl, hand edited", encoding="utf-8")
+    (resized / "a.txt").write_text("safe, 1girl, hand edited", encoding="utf-8")
 
     rows, stats = replay_rows(
         report, spec=AUTOTAG_SPEC, src=source, dst=resized, apply=True
@@ -168,8 +183,8 @@ def test_drifted_caption_is_skipped_and_counted(tmp_path: Path):
     drifted = next(r for r in rows if r.image == "a.png")
     assert drifted.status == "skip:drifted"
     # Untouched — the hand edit survives.
-    assert (source / "a.txt").read_text(encoding="utf-8") == "safe, 1girl, hand edited"
-    assert (source / "b.txt").read_text(encoding="utf-8") == report["rows"][1][
+    assert (resized / "a.txt").read_text(encoding="utf-8") == "safe, 1girl, hand edited"
+    assert (resized / "b.txt").read_text(encoding="utf-8") == report["rows"][1][
         "proposed"
     ]
 
@@ -190,9 +205,9 @@ def test_replay_is_idempotent(tmp_path: Path):
 
 
 def test_deleted_caption_that_the_dry_run_saw_is_skipped(tmp_path: Path):
-    resized, source = _dataset(tmp_path, {"a": "safe, 1girl"})
+    resized, source = _dataset(tmp_path, {"a": None}, revised={"a": "safe, 1girl"})
     report = _autotag_dry_run(resized, source, mode="merge")
-    (source / "a.txt").unlink()
+    (resized / "a.txt").unlink()
 
     rows, stats = replay_rows(
         report, spec=AUTOTAG_SPEC, src=source, dst=resized, apply=True
@@ -201,7 +216,7 @@ def test_deleted_caption_that_the_dry_run_saw_is_skipped(tmp_path: Path):
     assert stats.written == 0
     assert stats.skipped["missing-caption"] == 1
     assert rows[0].status == "skip:missing-caption"
-    assert not (source / "a.txt").exists()
+    assert not (resized / "a.txt").exists()
 
 
 def test_applied_report_is_refused(tmp_path: Path):
@@ -255,7 +270,7 @@ def test_replay_without_apply_writes_nothing(tmp_path: Path):
 
     assert stats.would_write == 1 and stats.written == 0
     assert rows[0].status == "would-write"
-    assert not (source / "a.txt").exists()
+    assert not (resized / "a.txt").exists()
 
 
 def test_path_pattern_filters_a_replay(tmp_path: Path):
@@ -276,8 +291,8 @@ def test_path_pattern_filters_a_replay(tmp_path: Path):
 
     assert stats.written == 1
     assert stats.skipped["filtered"] == 2
-    assert (source / "sub" / "c.txt").exists()
-    assert not (source / "a.txt").exists()
+    assert (resized / "sub" / "c.txt").exists()
+    assert not (resized / "a.txt").exists()
 
 
 def test_replay_report_names_the_written_images(tmp_path: Path):
@@ -413,17 +428,19 @@ def test_replay_cli_does_not_import_torch(tmp_path: Path, module: str, repo_root
     and never imports torch."""
     import subprocess
 
-    position = module.endswith("position_captions")
+    # The multiview audit is the last stage that writes the master; the other
+    # two write the revised caption beside the resized image.
+    writes_master = module.endswith("audit_multiview")
     resized = tmp_path / "resized"
     source = tmp_path / "master"
     resized.mkdir()
     source.mkdir()
     Image.new("RGB", (8, 8)).save(resized / "a.png")
-    target = (resized if position else source) / "a.txt"
+    target = (source if writes_master else resized) / "a.txt"
     target.write_text("safe, 2girls, blue hair", encoding="utf-8")
     proposed = "safe, 2girls. On the left, blue hair."
 
-    if position:
+    if module.endswith("position_captions"):
         report = {
             "summary": {
                 "applied": False,
@@ -447,6 +464,7 @@ def test_replay_cli_does_not_import_torch(tmp_path: Path, module: str, repo_root
                     "verdict": "multiple views",
                     "confidence": "strong",
                     "existing": "safe, 2girls, blue hair",
+                    "target_before": "safe, 2girls, blue hair",
                     "caption": "safe, 2girls, blue hair",
                     "proposed": proposed,
                 }
