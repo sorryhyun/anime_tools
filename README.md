@@ -29,7 +29,7 @@ Windows (PowerShell)
 irm https://github.com/sorryhyun/anime_tools/releases/latest/download/install.ps1 | iex
 ```
 
-`ANIME_TOOLS_VERSION=v0.3.0` pins a tag, `TORCH_INDEX=https://download.pytorch.org/whl/cu130` picks
+`ANIME_TOOLS_VERSION=v0.3.1` pins a tag, `TORCH_INDEX=https://download.pytorch.org/whl/cu130` picks
 a torch
 index (PyPI's Linux wheel is already CUDA; Windows defaults to CPU). Update
 with `uv tool upgrade anime-tools`.
@@ -42,6 +42,17 @@ uv add "anime-tools @ git+https://github.com/sorryhyun/anime_tools"   # git depe
 
 The repo is the product (kohya-ss/sd-scripts style): pin a tag, or use a
 `[tool.uv.sources]` path override for a live checkout.
+
+sam3 pins `numpy>=1.26,<2` and the pin is stale (see `[tool.uv]` in `pyproject.toml`), but uv
+reads `tool.uv` only from the workspace root — a project that *depends* on anime-tools has to
+repeat the override in its own `pyproject.toml`, or the resolve fails on numpy:
+
+```toml
+[tool.uv]
+override-dependencies = ["numpy>=2.0"]
+```
+
+The installers above pass the same override on the command line.
 
 ## Web GUI
 

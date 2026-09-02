@@ -9,7 +9,7 @@
 # wheel bundles its CUDA runtime.
 #
 # Options (env vars, since args are awkward through a pipe):
-#   ANIME_TOOLS_VERSION=v0.2.0   install a specific tag      (default: latest release)
+#   ANIME_TOOLS_VERSION=v0.3.0   install a specific tag      (default: latest release)
 #   TORCH_INDEX=https://download.pytorch.org/whl/cu130
 #                                extra index for torch (Windows/CPU-only hosts;
 #                                PyPI's Linux torch is already CUDA)
@@ -43,8 +43,16 @@ if [ -z "$VERSION" ]; then
 fi
 
 # 3. install -----------------------------------------------------------------
+# sam3's numpy>=1.26,<2 pin is stale, and pyproject's [tool.uv] override-dependencies says so
+# -- but uv reads tool.uv only from the workspace root, and installed this way anime-tools is
+# a dependency rather than the root. So the pin bites here and nowhere else: hand uv the same
+# override on the argv. --overrides wants a file, and stdin is the script itself.
+OVERRIDES=$(mktemp) || die "could not write the numpy override file"
+trap 'rm -f "$OVERRIDES"' EXIT
+printf 'numpy>=2.0\n' > "$OVERRIDES"
+
 say "installing anime-tools @ $VERSION (resolves torch + sam3; may take a while)"
-set -- --python 3.13
+set -- --python 3.13 --overrides "$OVERRIDES"
 [ -n "${TORCH_INDEX:-}" ] && set -- "$@" --index "$TORCH_INDEX"
 uv tool install --force "$@" "anime-tools @ git+https://github.com/$REPO@$VERSION"
 uv tool update-shell >/dev/null 2>&1 || true

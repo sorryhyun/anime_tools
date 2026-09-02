@@ -6,7 +6,7 @@
 # and puts `anime-tools-gui` on PATH.
 #
 # Options (env vars):
-#   $env:ANIME_TOOLS_VERSION = "v0.2.0"     specific tag (default: latest release)
+#   $env:ANIME_TOOLS_VERSION = "v0.3.0"     specific tag (default: latest release)
 #   $env:TORCH_INDEX = "https://download.pytorch.org/whl/cu130"
 #       PyPI's Windows torch wheel is CPU-only; set this for a CUDA build.
 $ErrorActionPreference = "Stop"
@@ -30,9 +30,20 @@ if (-not $Version) {
   if (-not $Version) { throw "could not resolve latest release tag" }
 }
 
+# sam3's numpy>=1.26,<2 pin is stale, and pyproject's [tool.uv] override-dependencies says so
+# -- but uv reads tool.uv only from the workspace root, and installed this way anime-tools is
+# a dependency rather than the root. So the pin bites here and nowhere else: hand uv the same
+# override on the argv. --overrides wants a file, hence the temp one.
+$Overrides = Join-Path ([IO.Path]::GetTempPath()) "anime-tools-overrides.txt"
+Set-Content -Path $Overrides -Value "numpy>=2.0" -Encoding ascii
+
 Say "installing anime-tools @ $Version (torch from $Torch; may take a while)"
-uv tool install --force --python 3.13 --index $Torch "anime-tools @ git+https://github.com/$Repo@$Version"
-if ($LASTEXITCODE -ne 0) { throw "uv tool install failed" }
+try {
+  uv tool install --force --python 3.13 --overrides $Overrides --index $Torch "anime-tools @ git+https://github.com/$Repo@$Version"
+  if ($LASTEXITCODE -ne 0) { throw "uv tool install failed" }
+} finally {
+  Remove-Item $Overrides -ErrorAction SilentlyContinue
+}
 uv tool update-shell | Out-Null
 
 Write-Host ""
