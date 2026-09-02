@@ -169,9 +169,10 @@ def _session(onnx_path: Path, device: str):
         import onnxruntime as ort
     except ImportError as exc:  # pragma: no cover - depends on the install
         raise RuntimeError(
-            "onnxruntime is required for OCR but is not installed — "
-            "`uv pip install onnxruntime` (or onnxruntime-gpu for CUDA). "
-            "It is deliberately unpinned: the CPU and GPU wheels conflict."
+            "onnxruntime is required for OCR but is not installed — `uv sync`. "
+            "It is a declared dependency, split by platform marker "
+            "(onnxruntime on macOS, onnxruntime-gpu elsewhere), so an "
+            "environment missing it was not synced against the lockfile."
         ) from exc
     if not onnx_path.is_file():
         raise OcrWeightsMissing(onnx_path.parent)

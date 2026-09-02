@@ -46,11 +46,18 @@ dependencies = [
     "pycocotools>=2.0.8",
     "psutil",
     "matplotlib",
-    # MIT/ComicTextDetector text masks. onnxruntime(-gpu) stays optional: the CTD gate falls
-    # back to cv2.dnn without it; not pinned because onnxruntime vs onnxruntime-gpu conflict.
+    # MIT/ComicTextDetector text masks.
     "segmentation-models-pytorch>=0.3.4",
     "albumentations>=1.4.0",
     "opencv-python>=4.11",
+    # PP-OCRv6 text recognition, and the CTD text-mask gate (which alone would fall back to
+    # cv2.dnn -- OCR has no fallback). The CPU and GPU builds are the same `import
+    # onnxruntime` from two conflicting distributions, so the marker picks one per platform
+    # rather than leaving it to the installer: onnxruntime-gpu publishes no macOS wheel, and
+    # on linux/windows its CUDA + cuDNN libraries come from the nvidia-* wheels torch already
+    # pulls in, which `_preload_cuda_libs` puts on the loader path. >=1.21 for `preload_dlls`.
+    "onnxruntime>=1.21; sys_platform == 'darwin'",
+    "onnxruntime-gpu>=1.21; sys_platform != 'darwin'",
     # Web GUI (`anime-tools-gui`): FastAPI + uvicorn; the server process never imports torch.
     "fastapi>=0.115",
     "uvicorn>=0.30",

@@ -31,8 +31,10 @@ python3 scripts/wrap_md.py **/*.md                    # semantic-wrap markdown a
 ```
 
 Python >= 3.13. `[tool.uv] override-dependencies = ["numpy>=2.0"]` overrides sam3's stale `numpy<2`
-pin. `onnxruntime` is intentionally unpinned (gpu/cpu wheels conflict; the CTD text-mask gate falls
-back to `cv2.dnn`).
+pin. `onnxruntime` is a plain dependency split by marker — `onnxruntime` on macOS,
+`onnxruntime-gpu` everywhere else — because the two are the same import from two conflicting
+distributions and OCR (unlike the CTD text-mask gate, which falls back to `cv2.dnn`) has no
+fallback.
 
 `make hooks` points `core.hooksPath` at `scripts/hooks`. Pre-commit formats staged files only
 (`ruff check --fix --exit-zero` + `ruff format`, prettier on `frontend/`, `scripts/wrap_md.py` on
