@@ -29,7 +29,7 @@ Windows (PowerShell)
 irm https://github.com/sorryhyun/anime_tools/releases/latest/download/install.ps1 | iex
 ```
 
-`ANIME_TOOLS_VERSION=v0.2.0` pins a tag, `TORCH_INDEX=https://download.pytorch.org/whl/cu130` picks
+`ANIME_TOOLS_VERSION=v0.3.0` pins a tag, `TORCH_INDEX=https://download.pytorch.org/whl/cu130` picks
 a torch
 index (PyPI's Linux wheel is already CUDA; Windows defaults to CPU). Update
 with `uv tool upgrade anime-tools`.
