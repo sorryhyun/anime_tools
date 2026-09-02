@@ -298,7 +298,7 @@ def build_index(
         "meta": {
             "generated": datetime.now(UTC).isoformat(timespec="seconds"),
             "src": str(src),
-            "vocab_path": vocab_path,
+            "vocab_path": str(vocab_path),
             "vocab_mtime": datetime.fromtimestamp(vstat.st_mtime, UTC).isoformat(
                 timespec="seconds"
             ),

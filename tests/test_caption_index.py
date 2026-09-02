@@ -228,3 +228,24 @@ def test_flat_layout_key_is_bare_stem(tmp_path):
 
     assert set(index["image_meta"]) == {"pic"}
     assert index["image_meta"]["pic"]["path"] == "pic.txt"
+
+
+def test_build_index_with_path_arguments_is_json_serializable(tmp_path, monkeypatch):
+    """The CLI resolves ``--vocab`` to a ``Path``; the meta block must still
+    serialize (regression: ``TypeError: Object of type PosixPath`` from
+    ``write_json`` at the end of every ``captions.index`` run)."""
+    from anime_tools._json import write_json
+
+    monkeypatch.setattr(bci, "_load_vocab_sets", lambda _path: VSETS)
+    src = tmp_path / "image_dataset"
+    src.mkdir()
+    (src / "a.txt").write_text("1girl, hatsune miku, vocaloid", encoding="utf-8")
+    vocab = tmp_path / "vocab.json"
+    vocab.write_text("{}", encoding="utf-8")
+
+    index = bci.build_index(src, vocab)
+    out = write_json(tmp_path / "caption_index.json", index)
+
+    payload = json.loads(out.read_text(encoding="utf-8"))
+    assert payload["meta"]["vocab_path"] == str(vocab)
+    assert payload["image_meta"]["a"]["character"] == ["hatsune miku"]
