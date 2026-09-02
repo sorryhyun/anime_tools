@@ -394,11 +394,11 @@ The clauses go to the **revised** caption beside the resized image
 (`workspace/resized/<rel>.txt`) — the file the caption mirror writes and the TE
 step encodes. The master under `image_dataset/` is **never** written; it is only
 the read fallback for an image the caption step has not mirrored yet. Three
-things make that safe. **The mirror re-attaches them**:
-`write_corrected_preprocess_captions` finds clauses on a destination caption
-whose master has none and composes them back onto the freshly corrected bag,
-minus the tags the rewrite moved, so each attribute stays asserted once and the
-next mirror cannot write the clause-free master over the rewrite. **The write
+things make that safe. **The mirror reads the revised caption first**:
+`write_corrected_preprocess_captions` corrects the revised caption in place
+(`correct_caption` reorders the flat bag around its clauses) and reads the
+master only for an image that has no revised caption yet, so the next mirror
+cannot write the clause-free master over the rewrite. **The write
 invalidates the TE cache**, since `_cache_is_current` compares the cache mtime
 against the caption and its sidecar. And **the stale variant sidecar is
 dropped**, because `{stem}.variants.txt` is the encode source of truth when

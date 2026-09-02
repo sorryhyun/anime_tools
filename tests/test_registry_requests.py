@@ -333,6 +333,20 @@ anime_tools.grouping.GroupRequest
     assert r.returncode == 0, r.stderr
 
 
+# ---- the runner -------------------------------------------------------------
+
+
+@stages
+def test_every_stage_names_its_runner(stage):
+    """``Stage.run`` resolves to the in-process ``run_<stage>(request)`` the
+    CLI shell wraps, so a driver can go from the registry to a call without
+    importing a runner by name."""
+    fn = stage.runner()
+    assert callable(fn)
+    assert fn.__name__ == stage.run.rpartition(":")[2]
+    assert fn.__name__.startswith("run_"), stage.id
+
+
 # ---- one spelling per shared flag ------------------------------------------
 
 

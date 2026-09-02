@@ -12,11 +12,7 @@ from anime_tools.captions.correction import (
     TagKnowledgeBase,
     correct_caption,
 )
-from anime_tools.captions.position_clauses import (
-    compose_caption,
-    has_clauses,
-    parse_caption,
-)
+from anime_tools.captions.position_clauses import has_clauses
 from anime_tools.captions.taxonomy import normalize_tag
 from anime_tools.captions.variants import (
     build_erasure_token_pool,
@@ -27,6 +23,7 @@ from anime_tools.captions.variants import (
 )
 
 from ._caption_io import read_caption, write_caption
+from ._walk_captions import resolve_caption
 
 
 @dataclass
@@ -34,11 +31,14 @@ class PreprocessCaptionStats:
     seen: int = 0
     written: int = 0
     unchanged: int = 0
-    removed_stale: int = 0
-    missing_source: int = 0
+    no_caption: int = 0
+    """Images with neither a revised nor a master caption."""
+    from_master: int = 0
+    """Captions read from the master because no revised caption existed yet."""
     variants_written: int = 0
     variants_removed: int = 0
     clauses_preserved: int = 0
+    """Captions that carried position clauses through the correction."""
 
 
 def _resolve_n_rand(num_variants: int, tag_randomize_rate: float) -> int:
@@ -90,33 +90,6 @@ def _build_variant_rows(
     return rows
 
 
-def _reattach_clauses(corrected: str, existing: str) -> str:
-    """Put ``existing``'s position clauses back onto a freshly corrected caption.
-
-    Position clauses live in the *revised* layer, so a plain mirror would drop
-    them. The clause rewrite *moves* a bound tag out of the flat bag, so
-    restoring the clauses alone would re-assert every moved attribute twice; the
-    moved set is a tag the destination's clauses carry that its bag does not, and
-    is dropped from the corrected bag again.
-
-    All three sides are keyed on :func:`normalize_tag` — the master holds the
-    hand-written spelling and the clause holds the tagger's, so any other key
-    reads ``long_hair`` and ``long hair`` as two tags.
-    """
-    prev = parse_caption(existing)
-    prev_bag = prev.tag_keys
-    moved = {
-        key
-        for clause in prev.clauses
-        for t in clause.tags
-        if (key := normalize_tag(t)) and key not in prev_bag
-    }
-    bag = [
-        t for t in parse_caption(corrected).flat_tags if normalize_tag(t) not in moved
-    ]
-    return compose_caption(bag, prev.clauses)
-
-
 def _sidecar_is_current(
     path: Path, corrected: str, num_variants: int, n_rand: int
 ) -> bool:
@@ -124,7 +97,10 @@ def _sidecar_is_current(
     pristine v0 equals the corrected caption *and* the v/r counts match.
 
     The draws are stochastic, so rewriting every run would bump the sidecar
-    mtime and force a needless TE re-encode.
+    mtime and force a needless TE re-encode. ``v0`` is the corrected caption
+    minus the ``@no-artist`` sentinel (the generator strips it from every
+    variant), so the comparison is against that, not the raw caption — else a
+    caption carrying the sentinel rewrote its sidecar on every run.
     """
     if not path.exists():
         return False
@@ -138,7 +114,7 @@ def _sidecar_is_current(
     if n_v != num_variants or n_r != n_rand:
         return False
     v0 = next((text for label, text in rows if label == "v0"), None)
-    return v0 == corrected
+    return v0 == generate_caption_variants(corrected, 1, 0.0, None)[0]
 
 
 def write_corrected_preprocess_captions(
@@ -159,9 +135,15 @@ def write_corrected_preprocess_captions(
 ) -> PreprocessCaptionStats:
     """Write ``.txt`` captions next to already-resized images.
 
-    The source captions are never modified, and the resized tree is the
-    authority over which images are visited. Clauses already on a destination
-    caption are preserved (:func:`_reattach_clauses`).
+    The resized tree is the authority over which images are visited, and the
+    caption read for each is the **revised** one (``resized_dir / rel``) when it
+    exists, the master under ``source_dir`` otherwise — the same rule every
+    other caption stage follows (:func:`resolve_caption`). Correcting the
+    revised caption in place is what keeps the tags autotag merged and the
+    clauses the position rewrite bound: :func:`correct_caption` reorders the
+    flat bag around the clauses. The master is never modified, and once an image
+    has a revised caption a hand-edit of its master no longer reaches it — the
+    revised caption is the one to edit (or delete, to re-mirror).
 
     ``correct`` (default True) bucket-reorders each caption; ``correct=False``
     mirrors the raw source caption verbatim. Either way v0 lands in
@@ -189,29 +171,25 @@ def write_corrected_preprocess_captions(
     entries: list[_Entry] = []
     for image_path in images:
         rel_caption = image_path.relative_to(resized_dir).with_suffix(".txt")
-        src_caption = source_dir / rel_caption
         dst_caption = resized_dir / rel_caption
+        caption_path = resolve_caption(resized_dir, source_dir, rel_caption)
 
-        if not src_caption.exists():
-            stats.missing_source += 1
-            if dst_caption.exists():
-                dst_caption.unlink()
-                stats.removed_stale += 1
-            # A vanished source also orphans any variant sidecar.
+        if caption_path is None:
+            stats.no_caption += 1
+            # No caption at all, so a variant sidecar left behind is an orphan.
             sidecar = variants_sidecar_path(dst_caption)
             if sidecar.exists():
                 sidecar.unlink()
                 stats.variants_removed += 1
             continue
+        if caption_path != dst_caption:
+            stats.from_master += 1
 
-        raw = read_caption(src_caption)
+        raw = read_caption(caption_path)
         corrected = correct_caption(raw, kb, options=options).text if correct else raw
-        if dst_caption.exists() and not has_clauses(corrected):
-            existing = read_caption(dst_caption)
-            if has_clauses(existing):
-                corrected = _reattach_clauses(corrected, existing)
-                stats.clauses_preserved += 1
-        entries.append(_Entry(src_caption, dst_caption, corrected))
+        if has_clauses(corrected):
+            stats.clauses_preserved += 1
+        entries.append(_Entry(caption_path, dst_caption, corrected))
 
     n_rand = _resolve_n_rand(num_variants, tag_randomize_rate)
     erasure_pool: list[str] | None = None

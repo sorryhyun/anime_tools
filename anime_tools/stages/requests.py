@@ -556,8 +556,9 @@ class _Pinned:
 class CorrectRequest(StageRequest):
     """Write corrected captions next to resized preprocessing images.
 
-    Mirrors the master into corrected revised captions, with optional variant
-    sidecars. Always writes: there is no dry run and no report.
+    Corrects the revised caption in place, reading the master only for an image
+    that has no revised caption yet, with optional variant sidecars. Always
+    writes: there is no dry run and no report.
     """
 
     src: str = arg(help="Raw source image directory")

@@ -66,8 +66,10 @@ consequences are pinned by tests: the near-twin feature cache needs its `(size, 
 because resize rewrites files under a key that doesn't move, and `resize`'s `min_pixels` skip means
 "invisible to the pipeline", so it names each dropped file rather than counting it.
 
-Caption stages write the **revised** caption under `workspace/resized/`; the hand-written master
-under `image_dataset/` is a read-only fallback. Export, the GUI's caption editor and the multiview
+Caption stages write the **revised** caption under `workspace/resized/` and read it first — the
+correction pass included, which corrects it in place; the hand-written master under
+`image_dataset/` is a read-only fallback for an image that has no revised caption yet.
+Export, the GUI's caption editor and the multiview
 audit's `--apply` (which adds `multiple views` to the master, report holding the before-text) are
 the only writers of `image_dataset/`. Each write pushes the replaced text
 onto `{stem}.history.txt`, which is what makes a run
@@ -149,10 +151,11 @@ request through its
 parser and imports the request half torch-poisoned; `tests/test_stage_requests.py` keeps the
 stage-specific pins.
 
-**`stages/registry.py`** is the stage list — `Stage(id, title, request="module:Class", module,
-panel, …)` for all eleven stages, masking and grouping included — resolved lazily
-(`Stage.request_class()`), so the GUI server and the trainer can enumerate stages without importing
-one.
+**`stages/registry.py`** is the stage list — `Stage(id, title, request="module:Class",
+run="module:function", module, panel, …)` for all eleven stages, masking and grouping included —
+resolved lazily (`Stage.request_class()`, `Stage.runner()`), so the GUI server and the trainer can
+enumerate stages without importing one, and a driver can go from a stage id to the in-process
+`run_<stage>(req)` call without naming a runner.
 
 `stages/_models.py::load_anima_tagger` caches the tagger per `(checkpoint dir, device)`, so
 autotag followed by position in one process loads it once; `stages/detector.py::build_detect_fn`

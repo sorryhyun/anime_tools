@@ -428,8 +428,9 @@ def run_audit(req: AuditRequest):
 
 
 def run_correct(req: CorrectRequest):
-    """Mirror the master into corrected revised captions (plus variant
-    sidecars). Returns the :class:`~anime_tools.stages.captions.CaptionStats`."""
+    """Correct the revised captions in place — mirroring the master for an image
+    that has none yet — plus variant sidecars. Returns the
+    :class:`~anime_tools.stages.captions.PreprocessCaptionStats`."""
     from anime_tools.captions.correction import (
         CaptionCorrectionOptions,
         find_tag_csv,
@@ -486,7 +487,8 @@ def run_correct(req: CorrectRequest):
     print(
         "Corrected preprocess captions: "
         f"{stats.written} written, {stats.unchanged} unchanged, "
-        f"{stats.missing_source} missing source, {stats.removed_stale} stale removed, "
+        f"{stats.from_master} mirrored from the master, "
+        f"{stats.no_caption} without a caption, "
         f"{stats.variants_written} variant sidecars, "
         f"{stats.clauses_preserved} position clauses kept "
         f"({stats.seen} resized images)"

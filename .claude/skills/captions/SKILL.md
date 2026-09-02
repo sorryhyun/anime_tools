@@ -138,9 +138,11 @@ Dry-run by default (`report.json` + `--crops`); `ARGS="--apply"` writes and **mu
 so the cache is correctly stale, and the apply pass unlinks the now-stale `.variants.txt` sidecar,
 which would otherwise override `{stem}.txt` at encode time).
 
-The mirror (`write_corrected_preprocess_captions`) **re-attaches clauses** it finds on a destination
-caption whose master has none — minus the tags v2 moved — so a later `preprocess-captions`
-re-corrects the flat bag around them instead of mirroring the clause-free master over the rewrite.
+The mirror (`write_corrected_preprocess_captions`) **reads the revised caption first** and corrects
+it in place — the flat bag is reordered around its clauses — reading the master only for an image
+with no revised caption yet, so a later `preprocess-captions` cannot mirror the clause-free master
+over the rewrite (nor drop the tags autotag merged). Once a revised caption exists a master edit no
+longer reaches it: edit the revised one, or delete it to re-mirror.
 
 ### Preprocess-stage wiring
 

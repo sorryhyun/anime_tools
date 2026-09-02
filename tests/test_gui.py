@@ -489,6 +489,7 @@ def client(tmp_path, monkeypatch):
         id="stub",
         title="Stub",
         request="stub_stage:StubRequest",
+        run="stub_stage:main",
         module="stub_stage",
         panel="test",
         report=("report_dir", "report.json"),
