@@ -179,8 +179,9 @@ STAGES: tuple[Stage, ...] = (
         extra="stages",
         report=("report_dir", "report.json"),
         notes=(
-            "The only stage that writes outside the workspace. Run shows what "
-            "would publish; Apply copies it to the tree the trainer reads."
+            "The only stage that writes outside the workspace: Run copies to the "
+            "tree the trainer reads, skipping what is already identical. Undo "
+            "restores the text it overwrote; a replaced pixel is not undoable."
         ),
     ),
 )

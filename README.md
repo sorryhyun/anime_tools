@@ -57,64 +57,28 @@ The installers above pass the same override on the command line.
 ## Web GUI
 
 ```bash
-cd <your dataset folder>   # image_dataset/, post_image_dataset/, models/ live here
+cd <your dataset folder>   # image_dataset/, workspace/, models/ live here
 anime-tools-gui --open     # http://127.0.0.1:8790
 ```
 
 A small standalone panel on your dataset. The **sidebar is the dataset**: every
-source image, and under each one its captions as child nodes —
+source image, and under each one its captions as a ladder — the hand-written
+`master`, every version the `revised` caption used to be (`revised@N`), that
+caption, then the generated `v0…vN` variants. `master` and `revised` are
+editable; every write, by hand or by a stage, keeps what it replaced as a
+version badge, and **Undo** puts it back from the run's report. The **stage
+runner is the bottom dock**: its buttons are the stage list, the form is
+generated from the CLI's own `--help`, and a Run works on the selected image or
+the whole batch as one `python -m …` subprocess while the dataset stays on
+screen. The ☰ menu holds three Settings dialogs (dataset roots, stage defaults,
+models with a Download button and the Hugging Face sign-in) and a language
+switch (English, Korean, Japanese, Chinese). `--host 0.0.0.0` exposes it on the
+LAN for a headless GPU box (no auth — use your own tunnel), `--home` overrides
+the curation home.
 
-```
-▾ chars/alice
-  ▾ chars_alice_001.png
-      master      image_dataset/…/chars_alice_001.txt      (editable)
-      revised@1   …/….history.txt                          (what it used to say)
-      revised     workspace/resized/…/….txt                (editable)
-      variants    …/….variants.txt                         (generated, read-only)
-```
-
-Selecting an image shows it (source / resized / mask) beside its captions,
-each with its flat tag bag and position clauses broken out — parsed by
-`captions.position_clauses` server-side, never by splitting on commas in the
-browser. The captions are a **ladder** — the hand-written `master`, every version the
-`revised` caption used to be, that caption, then the generated `v0…vN` — and the
-panel is one editor with a badge per version. `master` and `revised` are
-editable: type, watch the clause preview update, **Save**. Editing is a file
-write, so it must still be followed by the trainer's TE re-encode; a `revised`
-edit also says so, because it leaves the `.variants.txt` sidecar stale. Every
-write to `revised`, by hand or by a stage, keeps what it replaced as a
-`revised@N` badge beside it. `↑`/`↓` (or `j`/`k`) walk the images, the filter
-box narrows the tree, and `#<rel>|<kind>` in the URL is a link to one caption.
-
-The **stage runner is the bottom dock**: its button strip *is* the stage list
-(grouped: captions / grouping / masking), so one click picks a stage and a
-second click on the open one folds the dock away. Fill the form (generated from
-the CLI's own `--help`) and **Run** it, on the selected image or over the whole
-batch — the dataset stays on screen throughout, and refreshes when the job
-finishes. A form opens on the knobs a run changes its mind about; each group's
-research parameters fold on its own bottom edge, behind an *advanced (n)* the
-group carries next to its title. A Run writes: what it replaced is a version badge on the caption,
-and
-**Undo** puts it back from the report the run wrote. The run's newest output
-line shows in the stage bar; the log / `report.json` / job-history panels are
-being reworked. Stages run as `python -m …` subprocesses, one at a time; the server
-never loads a model. `--host 0.0.0.0` exposes it on the LAN for a headless GPU
-box (no auth — use your own tunnel), `--home` overrides the curation home. The ☰ menu holds
-**three separate Settings dialogs** — one for the dataset roots, one for the
-advanced stage defaults, one for models — so each is opened on its own and OK
-saves only what it holds. Between them: the dataset roots, a one-time Hugging
-Face sign-in (the tagger backbone and SAM3 weights are gated), and a **Models**
-list: one row per
-checkpoint the stages need, saying whether it is here and where it goes, with a
-Download button that runs `python -m anime_tools.downloads` as an ordinary job
-(so it shares the one slot with the stages and streams into the same bar).
-Nothing has to be pre-fetched — every loader still fetches on first use; the
-buttons only move the wait, and any gated-repo refusal, to a moment you picked.
-The panel speaks **English, Korean, Japanese and Chinese**: the ☰ menu's
-*Language* row switches it in place, and a first visit follows the browser's own
-language list. Only the GUI's own chrome is translated — a stage's title, its
-form fields and their help text come from that CLI's `--help` and stay in
-English, and captions, tags and paths are data, never translated.
+The end-to-end walkthrough — install, the curation home, the panel, every stage
+in the order you run it, and the hand-off to the trainer — is the
+[**guidebook**](docs/guidelines/guidebook.md).
 
 FastAPI + uvicorn are plain dependencies; the trainer's own PySide6 GUI remains
 the rich editor.
@@ -122,14 +86,19 @@ the rich editor.
 ## Layout of a curated dataset
 
 ```
-image_dataset/**/{stem}.png + {stem}.txt        caption master   ← hand-written; Export publishes back here
-post_image_dataset/resized/{stem}.txt           revised caption  ← stages.captions mirrors + corrects
-post_image_dataset/resized/{stem}.variants.txt  shuffle / dropout variants (tab-delimited, v0 = pristine)
-post_image_dataset/captions/caption_index.json  typed-tag index (character / copyright / artist / count)
+image_dataset/**/{stem}.png + {stem}.txt        caption master   ← hand-written; read-only for the tools
+workspace/                                       everything the tools write
+  resized/{stem}.{png,txt,variants.txt}            resized image, revised caption, shuffle / dropout variants
+  master/{stem}.txt                                revised master (Export publishes it back to image_dataset/)
+  masks_sam/ masks_mit/ masks/                     each mask generator's tree, and their merge
+  captions/<stage>/report.json  groups/groups.json  ocr/  export/report.json
+post_image_dataset/resized/ masks/               what the trainer reads   ← written only by Export
 models/captioners/anima-tagger-dbv4/            tagger checkpoint (auto-fetched from sorryhyun/anima-tagger)
-models/sam3/sam3.pt, models/pe/…             SAM3 / PE-Spatial weights (`python -m anime_tools.downloads --list`)
+models/sam3/  models/pe/  models/mit/  models/ppocr/   SAM3 / PE-Spatial / text-mask / OCR weights
 networks/calibration/sam3_girl_prompt.safetensors  SAM3 subject soft prompt (default `--prompt_embed`)
 ```
+
+`python -m anime_tools.downloads --list` says which weights are present and where each one goes.
 
 Every artifact the trainer reads is a **file**; the formats are frozen in
 [`docs/contract.md`](docs/contract.md). Paths resolve against the curation
@@ -138,15 +107,22 @@ home: `ANIME_TOOLS_HOME` → `ANIMA_HOME` → current directory
 
 ## Docs
 
+[`docs/README.md`](docs/README.md) is the index. Start with the
+[guidebook](docs/guidelines/guidebook.md) (end-to-end walkthrough for users); the
+rest are per-piece references:
+
 - [`docs/contract.md`](docs/contract.md) — the `anime_tools` ↔ `anima_lora` contract (dependency
   direction, file formats, grammar, seams).
 - [`docs/anima_tagger.md`](docs/anima_tagger.md) — the tagger: vocab build, dbv4 backend,
   sidecar head, calibration.
-- [`comfyui/anima_tagger/`](comfyui/anima_tagger/) — the Anima Tagger ComfyUI node (loader +
-  captioner; link the directory into `custom_nodes/`).
 - [`docs/position_captions.md`](docs/position_captions.md) — position-clause grammar, rewrite rules,
   gates and knobs.
 - [`docs/multiview_audit.md`](docs/multiview_audit.md) — multi-view / multi-panel caption audit.
+- [`docs/grouping.md`](docs/grouping.md) — near-twin grouping, `groups.json`, the feature cache,
+  decensor match tools.
+- [`docs/masking.md`](docs/masking.md) — SAM3 subject masks, text masks, merge, where a mask lives.
+- [`comfyui/anima_tagger/`](comfyui/anima_tagger/) — the Anima Tagger ComfyUI node (loader +
+  captioner; link the directory into `custom_nodes/`).
 - `.claude/skills/captions/` — the Claude Code skill for the caption pipeline.
 - [`examples/`](examples/) — one runnable script per feature, API beside CLI.
 

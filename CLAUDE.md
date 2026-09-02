@@ -67,8 +67,9 @@ because resize rewrites files under a key that doesn't move, and `resize`'s `min
 "invisible to the pipeline", so it names each dropped file rather than counting it.
 
 Caption stages write the **revised** caption under `workspace/resized/`; the hand-written master
-under `image_dataset/` is a read-only fallback. Nothing in `stages/` writes it — Export and the
-GUI's caption editor are the only writers of `image_dataset/`. Each write pushes the replaced text
+under `image_dataset/` is a read-only fallback. Export, the GUI's caption editor and the multiview
+audit's `--apply` (which adds `multiple views` to the master, report holding the before-text) are
+the only writers of `image_dataset/`. Each write pushes the replaced text
 onto `{stem}.history.txt`, which is what makes a run
 safe without an Apply gate: the old version is a badge in the panel and Undo replays the report
 backwards.
