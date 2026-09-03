@@ -210,6 +210,7 @@ def test_the_tagger_loads_once_per_process(monkeypatch, tmp_path):
         def __init__(self, ckpt_dir, device):
             built.append((ckpt_dir, device))
             self.device = FakeDevice()
+            self.dbv4_runtime = "torch"
 
         def predict_caption(self, image, min_confidence=0.0):
             return "1girl"
@@ -234,5 +235,7 @@ def test_the_tagger_loads_once_per_process(monkeypatch, tmp_path):
     assert json.loads(json.dumps(info)) == {
         "tagger_dir": str(tmp_path),
         "device": "cpu",
+        # Which backbone ran, since an exported dbv4.onnx is picked up silently.
+        "runtime": "torch",
     }
     assert tag_fn(None) == "1girl"

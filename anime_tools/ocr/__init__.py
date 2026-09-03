@@ -8,6 +8,10 @@ is read off the string itself in :mod:`anime_tools.ocr._text`, which also joins 
 balloon's columns and applies the ``min_chars`` / ``skip_en`` floors.
 """
 
+# `resolve_onnx_device` is not OCR's own: the tagger's exported backbone asks the
+# same question. It lives in `anime_tools._onnx` and is re-exported here, where
+# every caller already looks for it.
+from anime_tools._onnx import resolve_onnx_device
 from anime_tools.ocr._onnx import (
     OcrEngine,
     OcrWeightsMissing,
@@ -15,7 +19,6 @@ from anime_tools.ocr._onnx import (
     TextRecognizer,
     load_ocr,
     reading_order,
-    resolve_onnx_device,
 )
 
 __all__ = [

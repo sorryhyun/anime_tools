@@ -35,9 +35,27 @@ DEFAULT_DBV4_IMG_SIZE = 384
 # The live checkpoint is the `dbv4/` subfolder — vocab / rules / groups /
 # thresholds / sidecar only. The file sets are contract (the trainer probes
 # them too), so they live in ``anime_tools.contract`` and are re-exported here.
+DBV4_ONNX_NAME = "dbv4.onnx"
+"""The exported backbone, when there is one: ``<ckpt_dir>/dbv4.onnx``.
+
+Not a fetched file — the dbv4 weights are gated and GPL-3.0, so the graph can only
+ever be built locally (``python -m anime_tools.tagger.cli.export_onnx``) and is
+absent from every file set above. Its presence is what makes
+:class:`~anime_tools.tagger.tagger.AnimaTagger` pick the onnxruntime backend.
+"""
+
 TAGGER_HF_REPO = "sorryhyun/anima-tagger"
 TAGGER_HF_SUBFOLDER = "dbv4"
 DEFAULT_TAGGER_DIR = "models/captioners/anima-tagger-dbv4"
+
+
+def dbv4_onnx_path(ckpt_dir: str | Path) -> Path:
+    """``<ckpt_dir>/dbv4.onnx`` — the one spelling of the exported graph's location.
+
+    The exporter writes it, :class:`AnimaTagger` probes it, the GUI's Models pane
+    reports it; a path with a flag would be a fourth answer.
+    """
+    return Path(ckpt_dir) / DBV4_ONNX_NAME
 
 
 def gated_hint(repo: str) -> str:

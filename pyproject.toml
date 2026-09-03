@@ -73,6 +73,12 @@ dev = ["pytest>=8", "pytest-xdist", "ruff", "httpx"]  # httpx: fastapi TestClien
 # bench/ scripts (not installed; run from a checkout): scipy for the soft-prompt Hungarian match,
 # cv2 / matplotlib for the MIT text-mask rows and contact sheets.
 bench = ["scipy>=1.12"]
+# `python -m anime_tools.tagger.cli.export_onnx` only: torch's exporter serializes through
+# the `onnx` package and traces through `onnxscript`, and neither is needed to *run* the
+# exported graph (that is onnxruntime, a plain dependency). The export is a one-time local
+# build -- the dbv4 weights are gated and GPL, so the graph can never be shipped -- so the
+# two stay out of the default sync: `uv sync --group export`.
+export = ["onnx>=1.17", "onnxscript>=0.5"]
 
 [tool.uv]
 default-groups = ["dev"]

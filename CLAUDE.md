@@ -31,7 +31,9 @@ python3 scripts/wrap_md.py **/*.md                    # semantic-wrap markdown a
 ```
 
 Python >= 3.13. `[tool.uv] override-dependencies = ["numpy>=2.0"]` overrides sam3's stale `numpy<2`
-pin. `onnxruntime` is a plain dependency split by marker — `onnxruntime` on macOS,
+pin. The `export` dependency group (`uv sync --group export`) is `onnx` + `onnxscript` — needed
+only to *build* the tagger's ONNX graph, never to run it.
+`onnxruntime` is a plain dependency split by marker — `onnxruntime` on macOS,
 `onnxruntime-gpu` everywhere else — because the two are the same import from two conflicting
 distributions and OCR (unlike the CTD text-mask gate, which falls back to `cv2.dnn`) has no
 fallback.
@@ -112,6 +114,15 @@ clauses, commas delimit tags inside one. **Never `split(",")` a caption**; go th
 caformer. Checkpoint dir = `config.json`, `vocab.json`, `rules.yaml`, `groups.json`,
 `thresholds.safetensors`, optional `sidecar.safetensors`; GPL backbone weights are fetched at load
 via `_hf.py` under the user's HF token, never vendored.
+
+The backbone runs on timm, or on **onnxruntime** when `<ckpt_dir>/dbv4.onnx` exists —
+`python -m anime_tools.tagger.cli.export_onnx` builds that graph and its presence is the whole
+selection rule (`ANIMA_TAGGER_BACKEND=torch` opts out). The upstream repo's own `model.onnx` is
+the wrong graph: its `embedding` output is the 768-d pooled feature, while the sidecar trains on
+the 3072-d `mlp_hidden` from inside timm's `MlpHead`, so `onnx_export.py` exports both outputs
+itself and the sidecar / feature cache / trainer stay untouched. Measured end to end on one CPU:
+0.49 s/img against torch's 1.80 (fp32) and 2.39 (bf16), 7.6e-06 off the fp32 scores. bf16 was
+both slower and less accurate there, so `default_dtype` picks per device.
 
 `data.py::TaggerCheckpoint.from_dir` is the one read of a checkpoint dir. `feature_cache.py` owns
 the dbv4 hidden-state cache (a cache built for another manifest is misaligned row-for-row, so every
@@ -361,6 +372,8 @@ cache. `python -m anime_tools.downloads [ID…]` fetches; the GUI's Models pane 
   fields, `add_device_arg` for the hand-written CLIs, and the one `cuda if available` probe; the
   flag literal exists once, pinned by `tests/test_registry_requests.py`),
   `_hf.py` (tests patch this path), `path_filter.py` (the one `path_pattern` implementation),
+  `_onnx.py` (the one ORT provider choice — `resolve_onnx_device` + `make_session`, shared by OCR
+  and the tagger's exported backbone; CPU and CUDA only, never CoreML),
   `_progress.py` (stdlib: with `ANIMA_DAEMON_JOB_DIR` set, `step()` appends the daemon's own
   `{"ev": "step", "global_step", "total_steps", "detail"}` line to `<job_dir>/progress.jsonl` and
   `phase(name)` brackets a model load with a 30 s heartbeat so the daemon's stall watchdog does

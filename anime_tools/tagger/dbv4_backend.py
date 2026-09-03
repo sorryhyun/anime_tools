@@ -55,6 +55,20 @@ DBV4_RATING_MAP: dict[str, str] = {
 _PROB_EPS = 1e-6
 UNSUPPORTED_LOGIT = -30.0
 
+
+def default_dtype(device: torch.device | str) -> torch.dtype:
+    """bfloat16 on CUDA, float32 everywhere else.
+
+    bf16 is a win only where the hardware has kernels for it. On CPU torch emulates
+    it: measured on caformer_b36 at 384px, 2.21 s/img against float32's 1.54 — 43%
+    slower *and* 2e-2 off the float32 scores, which is the larger error of the two
+    the tagger can make. (``bench/tagger_external/probe_position_rescore.py`` has
+    picked per device this way all along; this is that rule, in the one place every
+    caller goes through.)
+    """
+    return torch.bfloat16 if torch.device(device).type == "cuda" else torch.float32
+
+
 SIDECAR_WEIGHTS = "sidecar.safetensors"
 SIDECAR_META = "sidecar.json"
 
@@ -218,7 +232,7 @@ class Dbv4Backend:
         arch: str = DEFAULT_DBV4_ARCH,
         img_size: int = DEFAULT_DBV4_IMG_SIZE,
         device: torch.device | str | None = None,
-        dtype: torch.dtype = torch.bfloat16,
+        dtype: torch.dtype | None = None,
         revision: str | None = None,
         card: Dbv4Card | None = None,
     ):
@@ -226,7 +240,7 @@ class Dbv4Backend:
         self.arch = arch
         self.img_size = int(img_size)
         self.device = torch.device(resolve_device(device))
-        self.dtype = dtype
+        self.dtype = dtype if dtype is not None else default_dtype(self.device)
         self.revision = revision
         self._card = card
         self._model: nn.Module | None = None
@@ -242,6 +256,16 @@ class Dbv4Backend:
     @property
     def d_hidden(self) -> int:
         return int(self.model.head.fc.fc1.out_features)
+
+    @property
+    def normalization(self) -> tuple[torch.Tensor, torch.Tensor]:
+        """``(mean, std)`` as ``[1, 3, 1, 1]``, from the checkpoint's ``pretrained_cfg``.
+
+        Loading the weights is what reads them, so asking loads the model. The ONNX
+        exporter folds the pair into its graph, which is why they are reachable.
+        """
+        _ = self.model
+        return self._mean, self._std  # type: ignore[return-value]
 
     @property
     def model(self) -> nn.Module:

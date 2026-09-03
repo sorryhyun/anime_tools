@@ -36,6 +36,7 @@ from anime_tools.tagger.dbv4_backend import (
     Dbv4Backend,
     SidecarHead,
     align_vocab,
+    default_dtype,
     probs_to_logits,
     rename_recovery_from_rules,
 )
@@ -44,12 +45,17 @@ from anime_tools.tagger.dbv4_backend import (
 from anime_tools.tagger.dbv4_meta import (
     DBV4_OPTIONAL_FILES,
     DBV4_REQUIRED_FILES,
+    DEFAULT_DBV4_ARCH,
+    DEFAULT_DBV4_IMG_SIZE,
+    DEFAULT_DBV4_REPO,
     DEFAULT_TAGGER_DIR,
     TAGGER_HF_REPO,
     TAGGER_HF_SUBFOLDER,
     TAGGER_OPTIONAL_FILES,
     TAGGER_REQUIRED_FILES,
+    dbv4_onnx_path,
 )
+from anime_tools.tagger.dbv4_onnx import Dbv4OnnxBackend
 
 logger = logging.getLogger(__name__)
 
@@ -278,6 +284,25 @@ def _load_thresholds(path: Path, n_tags: int, default: float = 0.5) -> torch.Ten
     return t
 
 
+BACKEND_CHOICES = ("auto", "onnx", "torch")
+BACKEND_ENV = "ANIMA_TAGGER_BACKEND"
+"""Which dbv4 runtime to use, for the call sites that take no flag.
+
+``load_anima_tagger``, the ComfyUI loader node and the autotag server all build an
+:class:`AnimaTagger` from a checkpoint dir and a device and nothing else, so the
+escape hatch from ``auto`` is an environment variable rather than a plumbing job
+through four signatures.
+"""
+
+
+def _resolve_backend_choice(backend: str | None) -> str:
+    choice = (backend or os.environ.get(BACKEND_ENV) or "auto").strip().lower()
+    if choice not in BACKEND_CHOICES:
+        where = "backend=" if backend else f"${BACKEND_ENV}="
+        raise ValueError(f"{where}{choice!r}: backend must be one of {BACKEND_CHOICES}")
+    return choice
+
+
 class AnimaTagger:
     """Multi-label tagger over the Anima-distribution vocabulary."""
 
@@ -285,16 +310,17 @@ class AnimaTagger:
         self,
         ckpt_dir: str | Path = DEFAULT_TAGGER_DIR,
         device: torch.device | str | None = None,
-        dtype: torch.dtype = torch.bfloat16,
+        dtype: torch.dtype | None = None,
         pe_ckpt: str | Path | None = None,
         character_floor: float = 0.5,
         pe_lora_path: str | Path | None = None,
         pe_lora_disabled: bool = False,
         pe_aux_ckpt: str | Path | None = None,
+        backend: str | None = None,
     ):
         self.ckpt_dir = Path(ckpt_dir)
         self.device = torch.device(resolve_device(device))
-        self.dtype = dtype
+        self.dtype = dtype if dtype is not None else default_dtype(self.device)
         # No-ops, accepted for call-site compat (ComfyUI workflows, old scripts).
         del pe_ckpt, pe_aux_ckpt, pe_lora_path, pe_lora_disabled
         # Absolute confidence floor for characters, above the per-tag F1
@@ -313,7 +339,11 @@ class AnimaTagger:
                 "`python -m anime_tools.downloads tagger` or "
                 "`python -m anime_tools.tagger.cli.build_dbv4_ckpt`)."
             )
-        self._dbv4: Dbv4Backend | None = None
+        self._backend_choice = _resolve_backend_choice(backend)
+        self.dbv4_runtime: str = "torch"
+        """Which runtime :meth:`_build_dbv4` gave the backbone — ``onnx`` or
+        ``torch``. The autotag report and the export CLI's verify both print it."""
+        self._dbv4: Dbv4Backend | Dbv4OnnxBackend | None = None
         self._sidecar: SidecarHead | None = None
 
         vocab = load_vocab(self.ckpt_dir)
@@ -397,19 +427,47 @@ class AnimaTagger:
                     "sentinel_local": sentinel_local,
                 }
 
+    def _build_dbv4(self, d: dict) -> Dbv4Backend | Dbv4OnnxBackend:
+        """The backbone this checkpoint's ``config.json['dbv4']`` block describes,
+        on onnxruntime when there is an exported graph beside it.
+
+        ``auto`` is the whole selection rule: :func:`dbv4_onnx_path` exists or it
+        does not. An export is a deliberate act (the weights are gated, the build
+        is a CLI run), so its presence *is* the request — there is no third state
+        where a user exported the graph and meant not to use it. ``onnx`` and
+        ``torch`` pin the answer for a bench run or a bad export.
+        """
+        repo = d.get("repo", DEFAULT_DBV4_REPO)
+        img_size = int(d.get("img_size", DEFAULT_DBV4_IMG_SIZE))
+        onnx_path = dbv4_onnx_path(self.ckpt_dir)
+        want_onnx = self._backend_choice == "onnx" or (
+            self._backend_choice == "auto" and onnx_path.is_file()
+        )
+        # Recorded rather than read back off the object: this is the decision, and
+        # the two backends are duck-typed on purpose (a test's stub is neither).
+        self.dbv4_runtime = "onnx" if want_onnx else "torch"
+        if want_onnx:
+            return Dbv4OnnxBackend(
+                onnx_path,
+                repo=repo,
+                img_size=img_size,
+                revision=d.get("revision"),
+            )
+        return Dbv4Backend(
+            repo=repo,
+            arch=d.get("arch", DEFAULT_DBV4_ARCH),
+            img_size=img_size,
+            device=self.device,
+            dtype=self.dtype,
+            revision=d.get("revision"),
+        )
+
     def _init_dbv4_backend(self, cfg_d: dict) -> None:
         """External dbv4 tagger projected onto our vocab (+ optional sidecar)."""
         from types import SimpleNamespace
 
         d = dict(cfg_d.get("dbv4") or {})
-        self._dbv4 = Dbv4Backend(
-            repo=d.get("repo", "animetimm/caformer_b36.dbv4-full"),
-            arch=d.get("arch", "caformer_b36"),
-            img_size=int(d.get("img_size", 384)),
-            device=self.device,
-            dtype=self.dtype,
-            revision=d.get("revision"),
-        )
+        self._dbv4 = self._build_dbv4(d)
         # readback / bench read ``cfg.n_tags``; the pool kinds are vestigial.
         self.cfg = SimpleNamespace(
             n_tags=self.n_tags, pool_kind=None, pool_kind_aux=None
@@ -438,8 +496,9 @@ class AnimaTagger:
             ):
                 raise ValueError("sidecar people_count_labels disagree with vocab.json")
         logger.info(
-            "AnimaTagger[dbv4]: %s → %d/%d vocab tags supported (unmatched by "
+            "AnimaTagger[dbv4/%s]: %s → %d/%d vocab tags supported (unmatched by "
             "category: %s); sidecar=%s",
+            self.dbv4_runtime,
             self._dbv4.repo,
             int(self._supported.sum()),
             self.n_tags,

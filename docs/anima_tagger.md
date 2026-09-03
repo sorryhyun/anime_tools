@@ -115,7 +115,9 @@ is the standard middle ground — softens the long-tail without overshoot.
 |---|---|
 | `tagger.py` | `AnimaTagger` — public inference class (`predict` / `predict_caption`), plus `ensure_tagger_checkpoint` / `ensure_tagger_backbone`. Implements every post-prediction refinement (group argmax, character floor, original-fallback, girls-count cap, top-1 artist/copyright). |
 | `dbv4_meta.py` | Torch-free facts about the backbone and our checkpoint: repo ids, required/optional file sets, `DEFAULT_TAGGER_DIR`. Shared by the loader, the ComfyUI node and `downloads.py`. |
-| `dbv4_backend.py` | Backbone loader + `align_vocab` (the single vocab join point) + `SidecarHead` (our linear head over the backbone's hidden state). |
+| `dbv4_backend.py` | Backbone loader + `align_vocab` (the single vocab join point) + `SidecarHead` (our linear head over the backbone's hidden state) + `default_dtype` (bf16 on CUDA, fp32 elsewhere). |
+| `dbv4_onnx.py` | `Dbv4OnnxBackend` — the same backbone on onnxruntime, used automatically when `<ckpt_dir>/dbv4.onnx` exists. |
+| `onnx_export.py` | `export_dbv4_onnx` / `export_for_checkpoint` — builds that graph (torch + timm + the `export` dependency group; a one-time local step). |
 | `feature_cache.py` | The dbv4 hidden-state cache: `dbv4_cache_path` / `dbv4_cache_stems` / `load_dbv4_cache` (the stem list rides in the safetensors metadata — a cache built for another manifest is misaligned row-for-row, so every reader checks it) + `multi_hot_from_manifest`. |
 | `data.py` | `TaggerCheckpoint.from_dir(path, require=…, backend=…)` — the one read of a checkpoint dir (`config.json` / `vocab.json` / `dataset.json`, the shared "run `--mode build_vocab` first" exit, `idx_to_name`) — and `TaggerManifest`. |
 | `readback.py` | Read-It-Back tag-adherence instrument. |
@@ -141,6 +143,7 @@ loader/applier: replacements, always-remove, clothing dedup,
 | `calibrate.py` | `calibrate_thresholds` — per-tag F1-optimal threshold sweep on val (skips softmax-group tags). Library function only. |
 | `eval_metrics.py` | Shared eval + `predict_with_inference_rule` (group argmax / count-tag rule). |
 | `predict.py` / `autotag.py` / `autotag_server.py` | Single-image debug entry; CLI one-shot autotag; resident GUI worker. |
+| `export_onnx.py` | `--ckpt_dir` → `dbv4.onnx`, with `--verify IMAGE` printing both runtimes' speed and their largest disagreement. |
 | `role_markers.py` | Read-only curator helper (see below). |
 | `constants.py` | `find_image_for_caption`, image extensions; re-exports the taxonomy count-tag regex. |
 
@@ -297,6 +300,51 @@ from the training corpus, re-applies `tag_rules` as a safety net (the dedup map
 already fired during training-data normalization, but the model could in
 principle predict both `bra` and `black bra`), replaces underscores with
 spaces, and joins with `, `.
+
+### Runtimes: timm or onnxruntime
+
+The backbone runs on timm by default and on **onnxruntime** as soon as an
+exported graph sits beside the checkpoint. Nothing downstream of the score vector
+changes — the sidecar, the thresholds, the groups and the slot order are the same
+code either way — so the choice is purely speed:
+
+```bash
+uv sync --group export                        # onnx + onnxscript, exporter only
+python -m anime_tools.tagger.cli.export_onnx \
+    --verify image_dataset/001.webp           # → models/captioners/…/dbv4.onnx
+```
+
+Measured on caformer_b36 at 384px, batch 1, one Apple CPU — end to end through
+`predict`, not just the forward pass:
+
+| Runtime | s/img | max \|Δscore\| vs float32 torch |
+|---|---|---|
+| torch, bfloat16 (the old default) | 2.39 | 2.1e-02 |
+| torch, float32 (the default on CPU now) | 1.80 | — |
+| onnxruntime | **0.49** | 7.6e-06 |
+
+Two things that table settles. The export is numerically a no-op (7.6e-06 is
+float32 rounding; the same 13 tags were emitted, same rating, same people count),
+and **bfloat16 on a CPU was the larger error of the two** as well as the slower
+path — torch emulates it there — which is why `default_dtype` now picks per
+device instead of always asking for bf16.
+
+The graph is never shipped: the dbv4 weights are gated and GPL-3.0, so every user
+exports their own, and `dbv4.onnx` is absent from every file set in
+`contract.py`. Its *presence* is the whole selection rule (`backend="auto"`);
+`ANIMA_TAGGER_BACKEND=torch` opts back out without deleting a 539 MB file, and
+`backend="onnx"` fails loudly rather than falling back, for a bench run that means
+to measure the graph.
+
+What onnxruntime does **not** buy is a torch-free tagger — SAM3 and PE-Spatial
+keep torch a plain dependency, and `Dbv4Output`, the sidecar head and the whole
+post-processing tail are still torch. It buys the forward pass, and it drops timm
+from the tagging path, which is what lets the ComfyUI node tag without building a
+second timm model inside ComfyUI's own torch.
+
+Only the CPU and CUDA execution providers are ever asked for. CoreML is available
+on macOS and is not used: it took 165 partitions out of a 1208-node graph, ran at
+1.13 s/img against the CPU provider's 0.49, and crashed the process on teardown.
 
 ## Wired-up touchpoints
 

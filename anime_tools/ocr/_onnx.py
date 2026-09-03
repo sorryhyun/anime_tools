@@ -17,6 +17,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from anime_tools._onnx import make_session
 from anime_tools.captions.ocr_sidecar import OcrLine
 from anime_tools.downloads import default_ppocr_det_dir, default_ppocr_rec_dir
 from anime_tools.ocr._text import join_cjk, keep_line
@@ -112,83 +113,16 @@ class OcrWeightsMissing(RuntimeError):
         )
 
 
-def _preload_cuda_libs(ort: Any) -> None:
-    """Put the ``nvidia-*`` wheels' CUDA/cuDNN libraries on the loader path.
-
-    Idempotent. A failed preload leaves the provider list exactly as it was, which the
-    caller already warns about. Absent on the CPU wheel and on onnxruntime < 1.21, hence
-    the ``getattr``.
-    """
-    preload = getattr(ort, "preload_dlls", None)
-    if preload is None:  # pragma: no cover - depends on the install
-        return
-    try:
-        preload()
-    except Exception:  # noqa: BLE001, S110 - a failed preload is just "no GPU"
-        pass
-
-
-def resolve_onnx_device(name: str | None = None) -> str:
-    """``name`` when the caller asked for one, else ``cuda`` if **ORT** sees a GPU.
-
-    :func:`anime_tools._device.resolve_device` answers the same question with
-    ``torch.cuda.is_available()``, and for a stage that runs on onnxruntime that probe
-    is not free: it imports torch and initialises CUDA, and torch's context then
-    time-shares the device with ORT's for the life of the process. Measured on
-    PP-OCRv6 over 160 images, 23 ms each against 40 — the probe cost 1.8x the run.
-
-    So the runtime that will do the work is the one asked. A disagreement with
-    :func:`_session` is impossible, since both read the same provider list after the
-    same preload; a missing provider answers ``cpu`` and the caller never asks for a
-    GPU it cannot have.
-    """
-    if name:
-        return str(name)
-    try:
-        import onnxruntime as ort
-
-        _preload_cuda_libs(ort)
-        providers = ort.get_available_providers()
-    except Exception:  # noqa: BLE001 - a failed probe is just "no GPU"
-        return "cpu"
-    return "cuda" if "CUDAExecutionProvider" in providers else "cpu"
-
-
 def _session(onnx_path: Path, device: str):
-    """An ``InferenceSession`` on the GPU when one was asked for and is there.
+    """The OCR half of :func:`anime_tools._onnx.make_session`.
 
-    The CUDA provider is a separate wheel (``onnxruntime-gpu``), so asking for it where
-    only the CPU build is installed warns and continues.
-
-    ``preload_dlls()`` first, and it is not optional: the CUDA and cuDNN libraries the
-    provider links against ship as their own ``nvidia-*`` wheels and nothing else puts
-    them on the loader path. Without it the provider ``.so`` fails to open and
-    ``get_available_providers()`` reports the *CPU* build's list.
+    Only the missing-weights case is OCR's own: a model directory the catalog has not
+    filled yet is one instruction away from working, and :class:`OcrWeightsMissing`
+    carries it.
     """
-    try:
-        import onnxruntime as ort
-    except ImportError as exc:  # pragma: no cover - depends on the install
-        raise RuntimeError(
-            "onnxruntime is required for OCR but is not installed — `uv sync`. "
-            "It is a declared dependency, split by platform marker "
-            "(onnxruntime on macOS, onnxruntime-gpu elsewhere), so an "
-            "environment missing it was not synced against the lockfile."
-        ) from exc
     if not onnx_path.is_file():
         raise OcrWeightsMissing(onnx_path.parent)
-
-    providers = ["CPUExecutionProvider"]
-    if device.startswith("cuda"):
-        _preload_cuda_libs(ort)
-        if "CUDAExecutionProvider" in ort.get_available_providers():
-            providers = ["CUDAExecutionProvider", "CPUExecutionProvider"]
-        else:
-            print(
-                "WARNING: onnxruntime CUDAExecutionProvider unavailable — "
-                "OCR falls back to CPU (install onnxruntime-gpu)",
-                flush=True,
-            )
-    return ort.InferenceSession(str(onnx_path), providers=providers)
+    return make_session(onnx_path, device, what="OCR")
 
 
 # --------------------------------------------------------------------------

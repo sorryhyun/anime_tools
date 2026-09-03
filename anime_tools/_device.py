@@ -34,7 +34,7 @@ def resolve_device(name: str | None = None) -> str:
     **Only for a stage that runs on torch.** The probe is not free where the model
     does not: it initialises CUDA, and torch's context then time-shares the GPU with
     whatever else holds one. A stage on onnxruntime asks
-    :func:`anime_tools.ocr.resolve_onnx_device` instead.
+    :func:`anime_tools._onnx.resolve_onnx_device` instead.
     """
     if name:
         return str(name)
