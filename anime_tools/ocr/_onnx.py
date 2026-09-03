@@ -20,7 +20,7 @@ from typing import Any
 from anime_tools._onnx import make_session
 from anime_tools.captions.ocr_sidecar import OcrLine
 from anime_tools.downloads import default_ppocr_det_dir, default_ppocr_rec_dir
-from anime_tools.ocr._text import join_cjk, keep_line
+from anime_tools.ocr._text import join_cjk, keep_line, normalize_line, reading_order
 
 ONNX_NAME = "inference.onnx"
 CONFIG_NAME = "inference.yml"
@@ -529,19 +529,6 @@ def crop_quad(bgr, box):
     return crop
 
 
-def reading_order(lines: list[OcrLine]) -> list[OcrLine]:
-    """Sort top-to-bottom, then left-to-right within a band.
-
-    The band is half the median line height, so two captions side by side on one row read
-    across rather than down.
-    """
-    if not lines:
-        return []
-    heights = sorted(max(1, line.height) for line in lines)
-    band = max(1, heights[len(heights) // 2] // 2)
-    return sorted(lines, key=lambda line: (line.box[1] // band, line.box[0]))
-
-
 @dataclass
 class OcrEngine:
     """Detector + recognizer as the one callable a stage needs."""
@@ -731,6 +718,7 @@ class OcrEngine:
         # part did, so reading order is settled afterwards.
         if self.join_cjk:
             lines = join_cjk(lines)
+        lines = [normalize_line(ln) for ln in lines]
         lines = [
             ln
             for ln in lines

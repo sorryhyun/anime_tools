@@ -3,13 +3,21 @@ filters and the CJK join.
 
 The models answer one box at a time, but a manga balloon is many boxes and a
 watermark is one, so the difference between a sidecar and a wall of noise is made
-here rather than in either graph. Three passes, in this order:
+here rather than in either graph. Five passes, in this order:
 
 1. :func:`join_cjk` — the columns (or rows) of one balloon back into one record.
    It runs **first**, because a two-glyph column is only short until it is joined.
-2. :func:`is_latin_only` — the ``skip_en`` drop: page numbers, URLs, romaji sfx.
-3. :func:`char_count` — the ``min_chars`` floor: a stray glyph is a misread
+2. :func:`normalize_line` — the glyphs PP-OCRv6 has no Japanese for: a vertical
+   ``ー`` comes back as ``1`` or ``|``, a horizontal one as ``-``; after kana they
+   are put back.
+3. :func:`is_latin_only` — the ``skip_en`` drop: page numbers, URLs, romaji sfx.
+4. :func:`is_tally` — the ``正`` tally marks of body writing, which are a count
+   and not a word.
+5. :func:`char_count` — the ``min_chars`` floor: a stray glyph is a misread
    screentone far more often than it is a word.
+
+:func:`reading_order` then settles the sidecar's sequence: a page set in columns
+reads right to left, one set in rows top to bottom.
 
 Stdlib only — no numpy, no cv2, no weights — so the content half of OCR is
 testable on hand-built boxes.
@@ -61,9 +69,112 @@ def is_latin_only(text: str) -> bool:
     return text.isascii()
 
 
+CHOON = "ー"
+"""The prolonged sound mark. PP-OCRv6's vocabulary is Chinese-first: set
+vertically the mark is a bare stroke it reads as ``1`` / ``|`` / ``l``, set
+horizontally a dash — so ``おちんぼの時間だぞ1`` and ``でるッリ一チ`` are one
+misread each, not two words."""
+
+_CHOON_VERTICAL = frozenset("1|lI１｜丨")
+"""What a vertical ``ー`` comes back as."""
+
+_CHOON_HORIZONTAL = frozenset("-—–ｰ")
+"""What a horizontal ``ー`` comes back as (``ｰ`` is its own halfwidth form)."""
+
+_NI_AS_EQUALS = frozenset("=＝")
+"""What ``ニ`` comes back as between katakana — ``メ=ュー`` — two strokes the
+vocabulary has as an equals sign."""
+
+
+def is_kana(ch: str) -> bool:
+    """Hiragana or katakana, ``ー`` included — the scripts a ``ー`` follows."""
+    return "\u3041" <= ch <= "\u3096" or "\u30a1" <= ch <= "\u30fc"
+
+
+def _is_katakana(ch: str) -> bool:
+    return "\u30a1" <= ch <= "\u30fc"
+
+
+_KANA_COUNTERS = frozenset("かつヶケ")
+"""Counters written in kana — ``1か月`` / ``あと1つ`` — after which a digit is a
+digit even though kana precedes it."""
+
+
+def _counts_something(nxt: str) -> bool:
+    """Whether the glyph after a would-be ``ー`` makes it a numeral instead:
+    a kanji (``もう1回``), another digit or Latin, or a kana counter."""
+    if not nxt:
+        return False
+    if "\u4e00" <= nxt <= "\u9fff" or nxt.isascii() and nxt.isalnum():
+        return True
+    return "\uff10" <= nxt <= "\uff19" or nxt in _KANA_COUNTERS
+
+
+def normalize_ja(text: str, *, vertical: bool) -> str:
+    """Put back the ``ー`` the recognizer spelled as a digit or a dash.
+
+    Only after kana, and only when nothing counted follows: ``1`` after a kanji
+    is a number, ``-`` after Latin a hyphen, and ``もう1回`` / ``1か月`` keep
+    their digit (:func:`_counts_something`). A horizontal ``一`` (the kanji *one*) is a ``ー`` only *between* katakana —
+    ``リ一チ`` — since ``一杯`` after a katakana word is a real ``一``. Vertical
+    text never confuses the two (the strokes cross), so ``一`` is left alone
+    there. The mark chains: ``ーー`` is written as such, and a fixed ``ー`` is
+    kana for the next glyph. Likewise ``=`` between katakana is ``ニ``
+    (``メ=ュー``), in either orientation.
+    """
+    out: list[str] = []
+    for i, ch in enumerate(text):
+        prev = out[-1] if out else ""
+        if prev and is_kana(prev):
+            nxt = text[i + 1] if i + 1 < len(text) else ""
+            if (
+                ch in _CHOON_HORIZONTAL or (vertical and ch in _CHOON_VERTICAL)
+            ) and not _counts_something(nxt):
+                out.append(CHOON)
+                continue
+            between_katakana = _is_katakana(prev) and bool(nxt) and _is_katakana(nxt)
+            if not vertical and ch == "一" and between_katakana:
+                out.append(CHOON)
+                continue
+            if ch in _NI_AS_EQUALS and between_katakana:
+                out.append("ニ")
+                continue
+        out.append(ch)
+    return "".join(out)
+
+
+def normalize_line(line: OcrLine) -> OcrLine:
+    """:func:`normalize_ja` applied along the axis the box was read along."""
+    text = normalize_ja(line.text, vertical=_vertical(line))
+    if text == line.text:
+        return line
+    return OcrLine(seq=line.seq, box=line.box, score=line.score, text=text)
+
+
+TALLY_STROKES = frozenset("正一丁下卜TF ")
+"""``正`` and the partial forms PP-OCRv6 spells its strokes as."""
+
+
+def is_tally(text: str) -> bool:
+    """Whether the line is tally marks — ``正T正正`` — rather than words.
+
+    Body-writing counts are set in ``正`` strokes; the recognizer reads a
+    complete one as the character and a partial one as whatever Latin or kanji
+    the strokes resemble. At least one ``正`` and nothing that is not a stroke.
+    """
+    stripped = text.strip()
+    return (
+        bool(stripped)
+        and "正" in stripped
+        and all(ch in TALLY_STROKES for ch in stripped)
+    )
+
+
 def keep_line(text: str, *, min_chars: int = 0, skip_en: bool = False) -> bool:
-    """Whether a joined line survives the two content filters."""
+    """Whether a joined line survives the content filters."""
     if skip_en and is_latin_only(text):
+        return False
+    if is_tally(text):
         return False
     return char_count(text) >= min_chars
 
@@ -182,3 +293,26 @@ def join_cjk(lines: Sequence[OcrLine]) -> list[OcrLine]:
     for group in _clusters(candidates):
         out.append((joinable[group[0]], _merge([candidates[k] for k in group])))
     return [ln for _, ln in sorted(out, key=lambda pair: pair[0])]
+
+
+def reading_order(lines: Sequence[OcrLine]) -> list[OcrLine]:
+    """Sort into the order the page is read.
+
+    A page set mostly in columns reads **right to left**, then down within a
+    column band; one set in rows reads top to bottom, then left to right within
+    a row band. The band is half the median thickness (width of a column, height
+    of a row), so two balloons side by side on one row read across rather than
+    down, and two columns of one balloon are never swapped by a few pixels of
+    skew. Mixed pages follow the majority; a horizontal sfx on a column page
+    takes its place by its right edge like everything else.
+    """
+    if not lines:
+        return []
+    columns = sum(1 for ln in lines if _vertical(ln))
+    if columns * 2 >= len(lines):
+        widths = sorted(max(1, ln.width) for ln in lines)
+        band = max(1, widths[len(widths) // 2] // 2)
+        return sorted(lines, key=lambda ln: (-(ln.box[2] // band), ln.box[1]))
+    heights = sorted(max(1, ln.height) for ln in lines)
+    band = max(1, heights[len(heights) // 2] // 2)
+    return sorted(lines, key=lambda ln: (ln.box[1] // band, ln.box[0]))

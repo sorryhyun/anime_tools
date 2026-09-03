@@ -719,3 +719,80 @@ def test_a_scanned_page_keeps_its_dialogue_and_drops_its_furniture():
         line("ぼやけた", box=(10, 300, 90, 320), score=0.2),
     )
     assert [(ln.seq, ln.text) for ln in got] == [(1, "むかしむかしあるところに")]
+
+
+def test_a_page_set_in_columns_reads_right_to_left_then_down():
+    """Manga columns start at the right edge; two balloons stacked at one x
+    read top first. A row page keeps the across-then-down order."""
+    from anime_tools.ocr._text import reading_order
+
+    lines = [
+        _col("left", 100),
+        _col("right-lower", 200, y0=140, y1=240),
+        _col("right-upper", 200),
+        _col("middle", 150),
+    ]
+    assert [ln.text for ln in reading_order(lines)] == [
+        "right-upper",
+        "right-lower",
+        "middle",
+        "left",
+    ]
+    # A horizontal sfx on a column page falls in by its right edge.
+    sfx = line("sfx", box=(120, 200, 180, 220))
+    assert [ln.text for ln in reading_order([_col("a", 100), sfx, _col("b", 200)])] == [
+        "b",
+        "sfx",
+        "a",
+    ]
+
+
+def test_a_vertical_choon_read_as_a_digit_or_bar_is_put_back_after_kana():
+    from anime_tools.ocr._text import normalize_ja, normalize_line
+
+    assert (
+        normalize_ja("おちんぼの時間だぞ1♡", vertical=True) == "おちんぼの時間だぞー♡"
+    )
+    assert normalize_ja("新メ|ューで1す", vertical=True) == "新メーューでーす"
+    # A real ``ー`` is kana for the next glyph, so a misread after it is fixed;
+    # two digits in a row are a number (``あと10``), never a double mark.
+    assert normalize_ja("あー1", vertical=True) == "あーー"
+    # After a kanji or a digit, ``1`` is a number — and so is one that counts
+    # something: a kanji counter, a kana counter, more digits.
+    assert normalize_ja("第1話", vertical=True) == "第1話"
+    assert normalize_ja("もう1回", vertical=True) == "もう1回"
+    assert normalize_ja("エナドリ１か月分", vertical=True) == "エナドリ１か月分"
+    assert normalize_ja("あと1つ", vertical=True) == "あと1つ"
+    assert normalize_ja("あと10", vertical=True) == "あと10"
+    assert normalize_ja("2024年1月", vertical=True) == "2024年1月"
+    # Horizontal text spells it as a dash, never a digit.
+    assert normalize_ja("だぞ1", vertical=False) == "だぞ1"
+    assert normalize_ja("だぞ-", vertical=False) == "だぞー"
+    assert normalize_ja("スゴ—イ", vertical=False) == "スゴーイ"
+    # ``一`` is a ``ー`` only between katakana, horizontally.
+    assert normalize_ja("リ一チ", vertical=False) == "リーチ"
+    assert normalize_ja("コーヒー一杯", vertical=False) == "コーヒー一杯"
+    assert normalize_ja("の一部", vertical=False) == "の一部"
+    assert normalize_ja("リ一チ", vertical=True) == "リ一チ"
+    # ``=`` between katakana is ``ニ`` whichever way the line runs; elsewhere
+    # it is an equals sign.
+    assert normalize_ja("新メ=ューで1す", vertical=True) == "新メニューでーす"
+    assert normalize_ja("メ＝ュー", vertical=False) == "メニュー"
+    assert normalize_ja("x=1", vertical=False) == "x=1"
+    assert normalize_ja("答え=正", vertical=False) == "答え=正"
+    # The line form picks the axis off the box and keeps identity when unchanged.
+    col = _col("だぞ1", 200)
+    assert normalize_line(col).text == "だぞー"
+    row = _row("だぞ1", 10)
+    assert normalize_line(row) is row
+
+
+def test_tally_marks_are_a_count_and_never_a_line():
+    from anime_tools.ocr._text import is_tally, keep_line
+
+    assert is_tally("正T正正")
+    assert is_tally("正正正 正一")
+    assert not is_tally("正しい")
+    assert not is_tally("TTT")  # no 正 at all: skip_en's job, not this one
+    assert not keep_line("正T正正", min_chars=0, skip_en=False)
+    assert keep_line("正解です", min_chars=0, skip_en=False)
