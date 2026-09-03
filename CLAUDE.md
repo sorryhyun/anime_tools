@@ -169,7 +169,10 @@ enumerate stages without importing one, and a driver can go from a stage id to t
 `run_<stage>(req)` call without naming a runner.
 
 `stages/_models.py::load_anima_tagger` caches the tagger per `(checkpoint dir, device)`, so
-autotag followed by position in one process loads it once; `stages/detector.py::build_detect_fn`
+autotag followed by position in one process loads it once, and `release_models()` (exported from
+`stages`) empties that cache and SAM3's for a driver that runs stages in-process and then hands the
+GPU to another process (the trainer's daemon job does, before its VAE/TE children);
+`stages/detector.py::build_detect_fn`
 builds the SAM3 detector from a `DetectionRequest` (the A/B, review and probe CLIs share it).
 
 **Export is the only thing that writes outside the workspace.** Six artifact kinds
@@ -355,10 +358,12 @@ cache. `python -m anime_tools.downloads [ID…]` fetches; the GUI's Models pane 
 
 ### Smaller pieces
 
-- **`buckets.py`** (torch-free, numpy-free): the free-fit token-band geometry, a copy of the
-  trainer's. `stages/resize.py` must land an image on the *same* `(W, H)` as the trainer's
-  `make preprocess-resize` or each side re-encodes the other's PNGs; `tests/test_resize_images.py`
-  pins the numbers and the `anima_resize_*` PNG text keys.
+- **`buckets.py`** (torch-free, numpy-free): the free-fit token-band geometry — the **owner**, since
+  2026-09-03: the trainer's `library/datasets/buckets.py` re-exports these names, so
+  `stages/resize.py` and the trainer's `make preprocess-resize` (itself a `ResizeRequest` now)
+  land an image on the same `(W, H)` by construction. `tests/test_resize_images.py` pins the
+  numbers and the `anima_resize_*` PNG text keys; `ResizeRequest.skip` carries the trainer GUI's
+  per-image curation decisions.
 - **`contract.py`** (stdlib-only leaf, pinned by `test_contract_is_torch_free`): the constants both
   sides of the seam spell — autotag stdio sentinels and modes, tagger checkpoint file sets,
   `REPLAY_REPORT_NAME`, `GATE_ATTR` (the stamp the generated parser leaves on a drawer's argparse

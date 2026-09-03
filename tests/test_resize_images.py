@@ -377,6 +377,60 @@ def test_worker_pool_agrees_with_the_inline_path(tmp_path):
         ).read_bytes()
 
 
+def test_skip_leaves_the_named_images_out_before_any_header_is_read(tmp_path):
+    """``skip`` is the trainer GUI's curation decision reaching the pass: the
+    named images are written nowhere, counted apart from the size filter, and
+    never opened (a corrupt file on the list cannot fail the run)."""
+    src, dst = tmp_path / "master", tmp_path / "resized"
+    _write_image(src / "keep.png", (1600, 900))
+    _write_image(src / "char_aki" / "drop.png", (1600, 900))
+    (src / "broken.png").parent.mkdir(parents=True, exist_ok=True)
+    (src / "broken.png").write_bytes(b"not a png")
+
+    stats = run_resize_images(
+        src=src,
+        dst=dst,
+        workers=1,
+        min_pixels=0,
+        # Backslashes are accepted so a Windows-written decision file matches.
+        skip={"char_aki\\drop.png", "broken.png"},
+    )
+
+    assert stats.seen == 3
+    assert stats.skipped_excluded == 2
+    assert stats.written == 1 and stats.failed == 0
+    assert (dst / "keep.png").is_file()
+    assert not (dst / "char_aki").exists()
+
+
+def test_skip_request_round_trips_and_reaches_the_runner(monkeypatch, tmp_path):
+    from anime_tools.stages import run as run_mod
+    from anime_tools.stages.requests import ResizeRequest
+
+    req = ResizeRequest(
+        src=str(tmp_path), dst=str(tmp_path / "out"), skip=("a/b.png", "c.png")
+    )
+    argv = req.to_argv()
+    assert argv[argv.index("--skip") : argv.index("--skip") + 3] == [
+        "--skip",
+        "a/b.png",
+        "c.png",
+    ]
+    assert ResizeRequest.from_argv(argv=argv) == req
+
+    seen = {}
+
+    def fake_run(**kw):
+        seen.update(kw)
+        from anime_tools.stages.resize import ResizeStats
+
+        return ResizeStats()
+
+    monkeypatch.setattr("anime_tools.stages.resize.run_resize_images", fake_run)
+    run_mod.run_resize(req)
+    assert seen["skip"] == ("a/b.png", "c.png")
+
+
 # --------------------------------------------------------------------------- #
 # CLI
 
@@ -414,9 +468,11 @@ def test_cli_writes_the_tree_and_a_report(tmp_path):
         "written": 1,
         "skipped_current": 0,
         "skipped_small": 1,
+        "skipped_excluded": 0,
         "failed": 0,
     }
     assert report["target_res"] == [1024]
+    assert report["skip"] == []
     assert sum(report["buckets"].values()) == 1
     assert len(report["too_small"]) == 1
 

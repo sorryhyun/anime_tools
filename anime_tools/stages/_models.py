@@ -4,7 +4,9 @@ process.
 ``load_anima_tagger`` caches on ``(checkpoint dir, device)``, so autotag followed
 by position in one interpreter reads the weights once. The clause vocabulary is
 read from the checkpoint the tagger actually loaded, so a caller cannot pair one
-model's predictions with another's clause gates.
+model's predictions with another's clause gates. ``release_models`` is the
+inverse: a driver that runs several stages in one process (the trainer's
+daemon job) calls it before handing the GPU to something else.
 
 Torch is imported inside the functions: a request's ``--from_report`` replay
 path must stay torch-free, so call these at the model-load site only.
@@ -52,3 +54,30 @@ def load_tagger(req, *, quiet: bool = False):
 
     tagger, ckpt_dir = load_anima_tagger(req.tagger_dir, req.device, quiet=quiet)
     return tagger, load_clause_vocabulary(ckpt_dir), ckpt_dir
+
+
+def release_models() -> None:
+    """Drop every per-process model cache this package keeps — the tagger
+    (:data:`_LOADED`) and SAM3 (``masking._sam3._LOADED``) — and return the
+    freed VRAM to the driver.
+
+    For a chain that runs stages in-process and then starts a *different* GPU
+    process (the trainer's daemon job runs autotag in-process and the VAE
+    encode as a child): a resident tagger + SAM3 would otherwise sit in VRAM
+    for the whole child. A no-op when nothing was loaded; importing torch only
+    when it already is.
+    """
+    import sys
+
+    from anime_tools.masking import _sam3
+
+    _LOADED.clear()
+    _sam3._LOADED.clear()
+    torch = sys.modules.get("torch")
+    if torch is None:
+        return
+    import gc
+
+    gc.collect()
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()

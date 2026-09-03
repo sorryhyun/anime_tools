@@ -4,9 +4,11 @@ Free-fit preserves an image's native aspect ratio and lands its patch-grid token
 count anywhere inside its tier's band, so the cropped residual on the covering
 axis is under one patch. Token count is ``(W//16) * (H//16)``.
 
-Every number here must match the trainer's ``library/datasets/buckets.py``, or
-the PNGs this package resizes get re-resized by ``make preprocess-resize``
-instead of skipped.
+This module is the one owner of the geometry: the trainer's
+``library/datasets/buckets.py`` re-exports these names (the way it re-exports
+the PE tower), so both sides land an image on the same ``(W, H)`` by
+construction and neither pass re-resizes the other's PNGs. Torch-free and
+numpy-free — the trainer's GUI reads it on the UI thread.
 """
 
 from __future__ import annotations
@@ -34,12 +36,9 @@ DEFAULT_FREEFIT_MAX_RATIO = 4.0
 FREEFIT_BAND_TOLERANCE = 0.025  # ±2.5%
 
 # 1024 stays at its natural (4032, 4200): the trainer's frozen top-5 aspect set
-# is drawn from this tier. Bump only with those consumers in mind.
+# (``DCW_ASPECT_BUCKETS``, consumed by CNS calibration + mod-distill) is drawn
+# from this tier. Bump only with those consumers in mind.
 FREEFIT_FROZEN_EDGES: tuple[int, ...] = (1024,)
-
-# Bumped whenever the band derivation changes so PNGs resized under an older
-# band re-resize; folded into the resize metadata signature.
-FREEFIT_BAND_VERSION = 2
 
 
 def band_for_tier(edge: int) -> tuple[int, int]:

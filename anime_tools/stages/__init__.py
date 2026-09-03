@@ -5,6 +5,8 @@ The surface is one request object per stage (:mod:`requests`, torch-free) and
 the function that runs it — ``run_autotag(AutotagRequest(...))`` — with the
 CLIs in ``cli/`` as shells over them. Both halves are exposed lazily (PEP 562)
 so the GUI server can name a request without importing a stage.
+``release_models`` drops the per-process model caches a chain of in-process
+runs leaves resident (the tagger, SAM3) so a driver can hand the GPU on.
 """
 
 __all__ = [
@@ -16,6 +18,7 @@ __all__ = [
     "OcrRequest",
     "PositionRequest",
     "ResizeRequest",
+    "release_models",
     "run_audit",
     "run_autotag",
     "run_correct",

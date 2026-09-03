@@ -14,7 +14,7 @@ Torch-free — PIL only.
 from __future__ import annotations
 
 import shutil
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Collection, Iterable
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -207,6 +207,9 @@ class ResizeStats:
     too_small: list[str] = field(default_factory=list)
     """``"<path>: <W>x<H>"`` per skip — named rather than counted, since a
     skipped image is invisible to every downstream stage."""
+    skipped_excluded: int = 0
+    """Named in the caller's ``skip`` set (a curation decision), left out
+    before any header is read."""
     skipped_current: int = 0
     """A resized PNG already at the target bucket (pass ``overwrite`` to force)."""
     failed: int = 0
@@ -412,6 +415,15 @@ def _rel_dir_of(image_path: Path, src: Path) -> str:
     return "" if rel == "." else rel
 
 
+def rel_key(image_path: Path, src: Path) -> str:
+    """The ``skip`` spelling of an image: its path relative to ``src`` with
+    forward slashes, or the bare name when it is not under ``src``."""
+    try:
+        return image_path.relative_to(src).as_posix()
+    except ValueError:
+        return image_path.name
+
+
 def run_resize_images(
     *,
     src: Path,
@@ -423,13 +435,16 @@ def run_resize_images(
     copy_captions: bool = False,
     overwrite: bool = False,
     workers: int = 4,
+    skip: Collection[str] | None = None,
     progress: Callable[[int, int, str], None] | None = None,
 ) -> ResizeStats:
     """Resize every image under ``src`` into ``dst``, mirroring the subdir layout.
 
-    Images below ``min_pixels`` are skipped rather than upscaled. This stage
-    always writes (there is no dry run): it is idempotent, and an up-to-date
-    output is skipped without a re-decode.
+    Images below ``min_pixels`` are skipped rather than upscaled. ``skip`` names
+    images to leave out by their :func:`rel_key` (the trainer GUI's curation
+    decisions); they are applied after ``path_pattern`` and never opened. This
+    stage always writes (there is no dry run): it is idempotent, and an
+    up-to-date output is skipped without a re-decode.
     """
     from anime_tools._walk import walk_images
 
@@ -438,6 +453,11 @@ def run_resize_images(
 
     images = walk_images(src, recursive=recursive, pattern=path_pattern)
     stats.seen = len(images)
+    if skip:
+        excluded = {key.replace("\\", "/") for key in skip}
+        kept = [p for p in images if rel_key(p, src) not in excluded]
+        stats.skipped_excluded = len(images) - len(kept)
+        images = kept
 
     # ``(path, oriented size)``: one header read per image, carried into
     # ``process_image`` so it need not re-open the file.

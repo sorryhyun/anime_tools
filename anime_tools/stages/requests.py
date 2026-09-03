@@ -706,6 +706,10 @@ def _margins(value) -> tuple[float, float, float, float] | None:
     return None if value is None else tuple(float(v) for v in value)
 
 
+def _rel_paths(value) -> tuple[str, ...]:
+    return tuple(str(v) for v in (value or ()))
+
+
 @dataclass(frozen=True, kw_only=True)
 class ResizeRequest(DatasetRequest):
     """Resize the caption master into the bucket-resolution tree every stage reads.
@@ -770,6 +774,17 @@ class ResizeRequest(DatasetRequest):
         4.0,
         help="Aspect-ratio clamp (default 4.0 = 1:4 / 4:1). Beyond-clamp images "
         "cover-crop to the limit; also keeps the token band solvable.",
+    )
+    skip: tuple[str, ...] = arg(
+        (),
+        read=_rel_paths,
+        write=list,
+        nargs="+",
+        metavar="REL",
+        help="Images to leave out, as paths relative to --src (forward slashes, "
+        "exact — no glob), applied after --path_pattern. How the trainer GUI's "
+        "per-image curation decisions (skip / move) reach the resize pass; a "
+        "skipped image is written nowhere and is invisible to every later stage.",
     )
     report_dir: str = _report_dir(f"{WS.REPORTS}/resize")
 

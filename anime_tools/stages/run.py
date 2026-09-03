@@ -20,6 +20,7 @@ from anime_tools._env import curation_home, resolve_path
 from anime_tools._json import write_json
 from anime_tools._progress import phase
 from anime_tools.contract import REPLAY_SHAPES
+from anime_tools.stages._models import release_models
 from anime_tools.stages.cli._args import make_progress
 from anime_tools.stages.cli._report import (
     print_dry_run_footer,
@@ -37,6 +38,7 @@ from anime_tools.stages.requests import (
 )
 
 __all__ = [
+    "release_models",
     "run_audit",
     "run_autotag",
     "run_correct",
@@ -606,6 +608,7 @@ def run_resize(req: ResizeRequest):
         copy_captions=req.copy_captions,
         overwrite=req.overwrite,
         workers=req.workers,
+        skip=req.skip,
         # Every line: there is no other per-image output.
         progress=make_progress(1),
     )
@@ -622,11 +625,13 @@ def run_resize(req: ResizeRequest):
             "max_ratio": options.max_ratio,
             "min_pixels": req.min_pixels,
             "overwrite": req.overwrite,
+            "skip": list(req.skip),
             "stats": {
                 "seen": stats.seen,
                 "written": stats.written,
                 "skipped_current": stats.skipped_current,
                 "skipped_small": stats.skipped_small,
+                "skipped_excluded": stats.skipped_excluded,
                 "failed": stats.failed,
             },
             "buckets": dict(sorted(stats.buckets.items())),
@@ -639,6 +644,7 @@ def run_resize(req: ResizeRequest):
         f"Resized: {stats.written} written, "
         f"{stats.skipped_current} already current, "
         f"{stats.skipped_small} below {req.min_pixels:,} px, "
+        f"{stats.skipped_excluded} excluded by --skip, "
         f"{stats.failed} failed ({stats.seen} images seen)"
     )
     for line in stats.failures:

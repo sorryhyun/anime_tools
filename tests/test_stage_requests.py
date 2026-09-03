@@ -239,3 +239,18 @@ def test_the_tagger_loads_once_per_process(monkeypatch, tmp_path):
         "runtime": "torch",
     }
     assert tag_fn(None) == "1girl"
+
+
+def test_release_models_empties_both_caches(monkeypatch, tmp_path):
+    """The inverse of the per-process caches: a driver that ran stages
+    in-process can hand the GPU to another process with nothing resident."""
+    from anime_tools.masking import _sam3
+    from anime_tools.stages import _models, release_models
+
+    monkeypatch.setattr(_models, "_LOADED", {("ckpt", "cpu"): ("tagger", tmp_path)})
+    monkeypatch.setattr(_sam3, "_LOADED", {("ckpt", "cpu", None, False): ("m", "p")})
+
+    release_models()
+
+    assert _models._LOADED == {} and _sam3._LOADED == {}
+    release_models()  # idempotent on empty caches

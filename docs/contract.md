@@ -43,14 +43,18 @@ destination, so re-exporting an unchanged dataset is a walk and a stat apiece.
 
 Resized PNGs under `post_image_dataset/resized/` are produced by **both** sides:
 `anime_tools/stages/resize.py` (`python -m anime_tools.stages.cli.resize_images`,
-the GUI's Resize stage) and the trainer's `make preprocess-resize`. They should be
-interchangeable: same tier (`choose_edge`), same free-fit band and solver, same
-`anima_resize_{crop_anchor,bucket_resos,crop_margins}` PNG text keys, so
-whichever side runs first the other finds every image already at its target
-bucket and skips it. `anime_tools/buckets.py` is a copy of the trainer's
-free-fit geometry rather than an import, so the two need to move together, and
-the tiers (`--target_res`) have to match or each pass re-resizes the other's
-output.
+the GUI's Resize stage) and the trainer's `make preprocess-resize`, which since
+the API-first migration (2026-09-03) builds the same `ResizeRequest` and runs
+the same stage — in-process under its daemon, as a `python -m` child from a
+shell. There is one geometry: `anime_tools/buckets.py` **owns** the free-fit
+tiers, bands and solver (`EDGE_TOKEN_BANDS`, `choose_edge`,
+`freefit_band_for_edge`, `freefit_bucket`) and the trainer's
+`library/datasets/buckets.py` re-exports them, so whichever side runs first the
+other finds every image already at its target bucket and skips it. The tiers
+(`--target_res`) still have to match or each pass re-resizes the other's output.
+`ResizeRequest.skip` (paths relative to `--src`) is how the trainer GUI's
+per-image curation decisions (`post_image_dataset/curation_decisions.json`,
+actions `skip` / `move`) reach the pass; the package has no notion of that file.
 
 Not in the contract (trainer-owned caches, never produced by curation): VAE
 latents `{stem}_{WxH}_anima.npz`, TE `{stem}_anima_te.safetensors`, PE
