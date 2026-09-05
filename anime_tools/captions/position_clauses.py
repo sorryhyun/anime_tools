@@ -10,6 +10,11 @@ clauses that bind attributes to subjects::
 GOTCHA: the **period** is the clause delimiter; commas separate tags *within* a
 segment. A naive ``caption.split(",")`` glues the header onto the previous tag
 (``"white socks. On the left"``), shredding the clause. Pure stdlib.
+
+Quoted lines (2026-09-05): a tag may be a quoted text line — ``「大丈夫、本当に」``,
+``『…』`` or ASCII ``"Are you okay? I'm fine, really."`` — and a comma or
+``. On the`` *inside an open quote pair* is content, not a separator. The
+quote pairs are :data:`QUOTE_PAIRS`; an opener with no closer is plain text.
 """
 
 from __future__ import annotations
@@ -28,6 +33,53 @@ CLAUSE_PREFIXES = ("On the ", "In the ")
 # ``. `` immediately before a clause header is the segment delimiter. Matched
 # case-insensitively on read so a hand-written ``on the left`` still parses.
 _CLAUSE_SPLIT_RE = re.compile(r"\.\s*(?=(?:On|In)\s+the\s)", re.IGNORECASE)
+
+# Quote pairs whose content is opaque to the grammar (no tag / clause split
+# inside). Same three pairs the trainer's ext-vocab span rule recognises.
+QUOTE_PAIRS: tuple[tuple[str, str], ...] = (("「", "」"), ("『", "』"), ('"', '"'))
+_QUOTE_RE = re.compile(
+    "|".join(
+        f"{re.escape(o)}[^{re.escape(o)}{re.escape(c)}]*?{re.escape(c)}"
+        for o, c in QUOTE_PAIRS
+    )
+)
+
+
+def quoted_spans(caption: str) -> tuple[tuple[int, int], ...]:
+    """``[start, end)`` of every closed quote pair in ``caption``, delimiters
+    included. Left to right, non-nesting; a stray opener matches nothing."""
+    return tuple((m.start(), m.end()) for m in _QUOTE_RE.finditer(caption))
+
+
+def _outside_quotes(caption: str):
+    """Predicate: is offset ``i`` outside every closed quote pair?"""
+    spans = quoted_spans(caption)
+    if not spans:
+        return lambda i: True
+    return lambda i: not any(a <= i < b for a, b in spans)
+
+
+def _find_outside(caption: str, ch: str, at: int, hi: int, ok) -> int:
+    """``caption.find(ch, at, hi)`` skipping hits inside a quote pair."""
+    while True:
+        i = caption.find(ch, at, hi)
+        if i < 0 or ok(i):
+            return i
+        at = i + 1
+
+
+def _split_outside(caption: str, sep: str) -> list[str]:
+    """``caption.split(sep)`` that leaves quoted content whole."""
+    ok = _outside_quotes(caption)
+    out: list[str] = []
+    at = 0
+    while True:
+        i = _find_outside(caption, sep, at, len(caption), ok)
+        if i < 0:
+            out.append(caption[at:])
+            return out
+        out.append(caption[at:i])
+        at = i + 1
 _CLAUSE_HEADER_RE = re.compile(r"^(On|In)\s+the\s+(.+)$", re.IGNORECASE)
 
 # Horizontal position words for N side-by-side subjects.
@@ -126,7 +178,7 @@ def _strip_trailing_period(tag: str) -> str:
 
 
 def _split_tags(segment: str) -> list[str]:
-    return [t for t in (raw.strip() for raw in segment.split(",")) if t]
+    return [t for t in (raw.strip() for raw in _split_outside(segment, ",")) if t]
 
 
 def is_clause_header(tag: str) -> bool:
@@ -142,7 +194,8 @@ def is_clause_header(tag: str) -> bool:
 
 def has_clauses(caption: str) -> bool:
     """Cheap "does this caption already carry positional clauses?" check."""
-    return bool(_CLAUSE_SPLIT_RE.search(caption)) or any(
+    outside = _outside_quotes(caption)
+    return any(outside(m.start()) for m in _CLAUSE_SPLIT_RE.finditer(caption)) or any(
         is_clause_header(t) for t in _split_tags(caption)
     )
 
@@ -156,22 +209,28 @@ def tag_spans(caption: str) -> tuple[TagSpan, ...]:
     spans: list[TagSpan] = []
     clause = -1
 
+    outside = _outside_quotes(caption)
+
     def comma_parts(lo: int, hi: int) -> list[tuple[int, int]]:
-        """``caption[lo:hi].split(",")`` as offsets — the pieces, not the text."""
+        """``caption[lo:hi].split(",")`` as offsets — the pieces, not the text.
+        A comma inside a quote pair is content and never splits."""
         out: list[tuple[int, int]] = []
         at = lo
         while True:
-            comma = caption.find(",", at, hi)
+            comma = _find_outside(caption, ",", at, hi, outside)
             out.append((at, hi if comma < 0 else comma))
             if comma < 0:
                 return out
             at = comma + 1
 
     # ``_CLAUSE_SPLIT_RE.split`` drops the delimiter it matched; walking the
-    # matches instead keeps each segment's offset.
+    # matches instead keeps each segment's offset. A ``. On the`` inside a
+    # quoted line is content too.
     bounds: list[tuple[int, int]] = []
     pos = 0
     for m in _CLAUSE_SPLIT_RE.finditer(caption):
+        if not outside(m.start()):
+            continue
         bounds.append((pos, m.start()))
         pos = m.end()
     bounds.append((pos, len(caption)))

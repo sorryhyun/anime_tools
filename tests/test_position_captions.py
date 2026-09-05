@@ -65,6 +65,42 @@ def test_parse_compose_round_trip():
     assert parse_caption(GT).render() == GT
 
 
+EN_TWIN = (
+    'safe, 1girl, english text, "Are you okay? I\'m fine, really.", '
+    "speech bubble. On the left, red eyes."
+)
+
+
+def test_quoted_line_with_inner_comma_is_one_tag():
+    # The paired-edition EN twin: the line carries a comma and a period, both
+    # content. Same rule for 「」 / 『』, and a stray opener is plain text.
+    parsed = parse_caption(EN_TWIN)
+    assert parsed.flat_tags == (
+        "safe",
+        "1girl",
+        "english text",
+        '"Are you okay? I\'m fine, really."',
+        "speech bubble",
+    )
+    assert parsed.clauses[0].tags == ("red eyes",)
+    assert compose_caption(parsed.flat_tags, parsed.clauses) == EN_TWIN
+    ja = "japanese text, 「大丈夫、本当に」, 『はい, そう』, smile"
+    assert parse_caption(ja).flat_tags == (
+        "japanese text",
+        "「大丈夫、本当に」",
+        "『はい, そう』",
+        "smile",
+    )
+    assert parse_caption('1girl, "open, quote').flat_tags == ("1girl", '"open', "quote")
+    # ``. On the`` inside a quote does not open a clause.
+    inner = '1girl, "Wait. On the left, no.", smile'
+    assert not has_clauses(inner)
+    assert parse_caption(inner).flat_tags == ("1girl", '"Wait. On the left, no."', "smile")
+    spans = tag_spans(EN_TWIN)
+    quoted = next(sp for sp in spans if sp.text.startswith('"'))
+    assert EN_TWIN[quoted.start : quoted.end] == quoted.text
+
+
 def test_parse_caption_without_clauses_is_flat():
     parsed = parse_caption("1girl, blue hair, smile")
     assert not parsed.has_clauses
