@@ -614,7 +614,7 @@ def test_a_balloon_of_vertical_columns_joins_right_to_left():
     from anime_tools.ocr._text import join_cjk
 
     joined = join_cjk([_col("げんきです", 170, y1=110), _col("こんにちは", 200)])
-    assert [ln.text for ln in joined] == ["こんにちはげんきです"]
+    assert [ln.text for ln in joined] == ["こんにちは げんきです"]
     # The record covers the whole balloon.
     assert joined[0].box == (170, 20, 220, 120)
 
@@ -623,7 +623,7 @@ def test_a_balloon_of_horizontal_rows_joins_top_to_bottom():
     from anime_tools.ocr._text import join_cjk
 
     joined = join_cjk([_row("あるところに", 36, x1=90), _row("むかしむかし", 10)])
-    assert [ln.text for ln in joined] == ["むかしむかしあるところに"]
+    assert [ln.text for ln in joined] == ["むかしむかし あるところに"]
 
 
 def test_two_balloons_stay_two_records():
@@ -634,7 +634,7 @@ def test_two_balloons_stay_two_records():
     joined = join_cjk(
         [_col("こんにちは", 200), _col("げんきです", 170), _col("さようなら", 100)]
     )
-    assert sorted(ln.text for ln in joined) == ["こんにちはげんきです", "さようなら"]
+    assert sorted(ln.text for ln in joined) == ["こんにちは げんきです", "さようなら"]
 
 
 def test_a_sfx_glyph_does_not_swallow_the_dialogue_beside_it():
@@ -701,7 +701,7 @@ def test_the_join_runs_before_the_floors_so_a_short_column_is_not_lost_first():
     parts = (_col("はい", 200), _col("そうです", 170))
 
     joined = _read(_engine(min_chars=3, skip_en=True, join_cjk=True), *parts)
-    assert [ln.text for ln in joined] == ["はいそうです"]
+    assert [ln.text for ln in joined] == ["はい そうです"]
     # Without the join each column faces the floor alone, and one of them loses.
     apart = _read(_engine(min_chars=3, skip_en=True, join_cjk=False), *parts)
     assert [ln.text for ln in apart] == ["そうです"]
@@ -718,7 +718,7 @@ def test_a_scanned_page_keeps_its_dialogue_and_drops_its_furniture():
         line("pixiv.net/en/users/1", box=(10, 440, 200, 460)),
         line("ぼやけた", box=(10, 300, 90, 320), score=0.2),
     )
-    assert [(ln.seq, ln.text) for ln in got] == [(1, "むかしむかしあるところに")]
+    assert [(ln.seq, ln.text) for ln in got] == [(1, "むかしむかし あるところに")]
 
 
 def test_a_page_set_in_columns_reads_right_to_left_then_down():

@@ -44,6 +44,10 @@ OVERLAP_RATIO = 0.4
 side by side rather than merely near. Balloon text is ragged — the last column is
 routinely half the first's — so this is a low bar."""
 
+JOIN_SEP = " "
+"""What :func:`_merge` puts between the columns (or rows) of one block: a
+column boundary is kept as a space so a list stays a list (2026-09-05)."""
+
 SIZE_RATIO = 2.5
 """How far the two thicknesses may differ. A sfx glyph twice the height of the
 dialogue beside it is a different piece of text, however close it lands."""
@@ -242,11 +246,14 @@ def _clusters(lines: Sequence[OcrLine]) -> list[list[int]]:
 def _merge(lines: Sequence[OcrLine]) -> OcrLine:
     """One block's boxes as a single record, read in its own direction.
 
-    Columns read right to left, rows top to bottom; the texts are concatenated
-    with no separator, because Japanese sets none — a balloon broken across four
-    columns is one sentence, not four words. The box is the block's bound and the
-    score the per-character mean of the parts, so a long confident column is not
-    outvoted by the two glyphs beside it.
+    Columns read right to left, rows top to bottom; the parts are joined with
+    :data:`JOIN_SEP` (one space). Japanese sets no separator between the columns
+    of a sentence, but a joined block is as often a list — a profile card's
+    ``名前 / 身長 / 好きなもの`` rows — and glued (``椎名真昼ちゃん身長：156cm``)
+    the boundary is lost for good, while a space inside a sentence costs a
+    reader nothing. The box is the block's bound and the score the
+    per-character mean of the parts, so a long confident column is not outvoted
+    by the two glyphs beside it.
     """
     if len(lines) == 1:
         return lines[0]
@@ -269,7 +276,7 @@ def _merge(lines: Sequence[OcrLine]) -> OcrLine:
             max(ln.box[3] for ln in ordered),
         ),
         score=score,
-        text="".join(ln.text for ln in ordered),
+        text=JOIN_SEP.join(ln.text.strip() for ln in ordered),
     )
 
 
