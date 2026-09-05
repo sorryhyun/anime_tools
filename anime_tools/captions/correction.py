@@ -334,7 +334,8 @@ def _drop_clause_tags(clauses, kb: TagKnowledgeBase, options: CaptionCorrectionO
     """Apply ``options.drop_groups`` inside position clauses.
 
     Only the dropped tags are removed; a clause left with no tags is removed
-    whole, since a bare ``On the left`` binds nothing.
+    whole, since a bare ``On the left`` binds nothing. A text clause's tags
+    are quoted lines, not taxonomy tags — it passes through untouched.
     """
     if not options.drop_groups:
         return list(clauses), ()
@@ -343,6 +344,9 @@ def _drop_clause_tags(clauses, kb: TagKnowledgeBase, options: CaptionCorrectionO
     kept = []
     dropped: list[str] = []
     for clause in clauses:
+        if clause.is_text:
+            kept.append(clause)
+            continue
         tags = []
         for tag in clause.tags:
             if should_drop_tag(normalize_tag(tag), kb, options.drop_groups):

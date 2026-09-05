@@ -15,6 +15,13 @@ Quoted lines (2026-09-05): a tag may be a quoted text line — ``「大丈夫、
 ``『…』`` or ASCII ``"Are you okay? I'm fine, really."`` — and a comma or
 ``. On the`` *inside an open quote pair* is content, not a separator. The
 quote pairs are :data:`QUOTE_PAIRS`; an opener with no closer is plain text.
+
+Text clauses (2026-09-05): a caption may end with the page's OCR'd lines as a
+sentence of its own kind, ``Japanese text reads as "…", "…"`` (or ``Japanese
+SFX reads as …``) — :data:`TEXT_PREFIXES`. It parses as a
+:class:`PositionClause` with an empty ``position`` and the quoted lines as its
+tags, in reading order; :func:`compose_caption` renders text clauses last,
+after every position clause, and the variants pass keeps them whole.
 """
 
 from __future__ import annotations
@@ -30,9 +37,21 @@ from anime_tools.captions.taxonomy import is_artist_tag, normalize_tag
 # (hand-written captions use it for scene regions) but never emitted.
 CLAUSE_PREFIXES = ("On the ", "In the ")
 
-# ``. `` immediately before a clause header is the segment delimiter. Matched
-# case-insensitively on read so a hand-written ``on the left`` still parses.
-_CLAUSE_SPLIT_RE = re.compile(r"\.\s*(?=(?:On|In)\s+the\s)", re.IGNORECASE)
+# Text-clause headers: the sentence that carries a page's OCR'd lines as quoted
+# tags (``Japanese text reads as "…", "…"``). Exact, case-sensitive — the
+# trainer emits the canonical form and nothing hand-written collides with it.
+# The ``order`` phrase (``Japanese text in following order: …``) is a flat tag.
+TEXT_PREFIXES = ("Japanese text reads as ", "Japanese SFX reads as ")
+
+# ``. `` immediately before a clause header is the segment delimiter. Position
+# headers are matched case-insensitively on read so a hand-written ``on the
+# left`` still parses; text headers exactly.
+_POSITION_SPLIT_RE = re.compile(r"\.\s*(?=(?:On|In)\s+the\s)", re.IGNORECASE)
+_CLAUSE_SPLIT_RE = re.compile(
+    r"\.\s*(?=(?i:(?:On|In)\s+the\s)|"
+    + "|".join(re.escape(p) for p in TEXT_PREFIXES)
+    + ")"
+)
 
 # Quote pairs whose content is opaque to the grammar (no tag / clause split
 # inside). Same three pairs the trainer's ext-vocab span rule recognises.
@@ -80,6 +99,8 @@ def _split_outside(caption: str, sep: str) -> list[str]:
             return out
         out.append(caption[at:i])
         at = i + 1
+
+
 _CLAUSE_HEADER_RE = re.compile(r"^(On|In)\s+the\s+(.+)$", re.IGNORECASE)
 
 # Horizontal position words for N side-by-side subjects.
@@ -106,19 +127,43 @@ MAX_ROWS = max(_ROW_WORDS)
 @dataclass(frozen=True)
 class PositionClause:
     """One ``On the <position>, <tags>`` segment; ``prefix`` is the header verb
-    kept verbatim, so ``In the background`` round-trips byte-stable."""
+    kept verbatim, so ``In the background`` round-trips byte-stable.
+
+    A **text clause** (``prefix`` in :data:`TEXT_PREFIXES`) has no position:
+    its tags are the quoted lines and it renders ``Japanese text reads as
+    "…", "…"`` — build one with :func:`text_clause`.
+    """
 
     position: str
     tags: tuple[str, ...]
     prefix: str = "On the "
 
     @property
+    def is_text(self) -> bool:
+        return self.prefix in TEXT_PREFIXES
+
+    @property
     def header(self) -> str:
+        if self.is_text:
+            return self.prefix.rstrip()
         return f"{self.prefix}{self.position}"
 
     def render(self) -> str:
         body = ", ".join(self.tags)
+        if self.is_text:
+            return f"{self.prefix}{body}" if body else self.header
         return f"{self.header}, {body}" if body else self.header
+
+
+def text_clause(lines: Iterable[str], *, sfx: bool = False) -> PositionClause:
+    """A text clause carrying ``lines`` in order, each as a ``"…"`` tag.
+
+    An inner ASCII double quote would close the pair early, so it is
+    rewritten to ``”``; commas and periods inside the pair are content.
+    """
+    prefix = TEXT_PREFIXES[1] if sfx else TEXT_PREFIXES[0]
+    tags = tuple(f'"{ln.replace(chr(34), "”")}"' for ln in lines if ln)
+    return PositionClause(position="", tags=tags, prefix=prefix)
 
 
 @dataclass(frozen=True)
@@ -130,7 +175,16 @@ class ParsedCaption:
 
     @property
     def has_clauses(self) -> bool:
+        """Anything beyond the flat bag — position *or* text clauses."""
         return bool(self.clauses)
+
+    @property
+    def position_clauses(self) -> tuple[PositionClause, ...]:
+        return tuple(c for c in self.clauses if not c.is_text)
+
+    @property
+    def text_clauses(self) -> tuple[PositionClause, ...]:
+        return tuple(c for c in self.clauses if c.is_text)
 
     @property
     def tag_keys(self) -> frozenset[str]:
@@ -170,34 +224,67 @@ def _strip_trailing_period(tag: str) -> str:
     """Drop the caption-terminating ``.`` from the final tag of a segment.
 
     Guarded on an alphanumeric remainder so punctuation-only booru tags
-    (``:d``, ``>_<``, ``...``) survive intact.
+    (``:d``, ``>_<``, ``...``) survive intact; a closed quote pair counts as
+    a remainder too, so a quoted ``"♡"`` at the caption's end sheds it.
     """
-    if tag.endswith(".") and any(c.isalnum() for c in tag[:-1]):
+    if tag.endswith(".") and (
+        any(c.isalnum() for c in tag[:-1]) or tag[:-1].endswith(_QUOTE_CLOSERS)
+    ):
         return tag[:-1].rstrip()
     return tag
+
+
+_QUOTE_CLOSERS = tuple(c for _, c in QUOTE_PAIRS)
+
+
+def _text_prefix(tag: str) -> str | None:
+    """The :data:`TEXT_PREFIXES` entry ``tag`` opens with — as a whole
+    comma-token (``Japanese text reads as "…"``) or as the bare header —
+    else ``None``."""
+    for prefix in TEXT_PREFIXES:
+        if tag.startswith(prefix) or tag == prefix.rstrip():
+            return prefix
+    return None
 
 
 def _split_tags(segment: str) -> list[str]:
     return [t for t in (raw.strip() for raw in _split_outside(segment, ",")) if t]
 
 
+def is_position_header(tag: str) -> bool:
+    """True for a bare position-clause header token (``"On the left"``)."""
+    return tag.startswith(CLAUSE_PREFIXES)
+
+
 def is_clause_header(tag: str) -> bool:
-    """True for a bare clause header token (``"On the left"``).
+    """True for a clause header token — a bare position header (``"On the
+    left"``) or a text header with its first line (``Japanese text reads as
+    "…"``).
 
     GOTCHA: case-SENSITIVE, unlike ``_CLAUSE_SPLIT_RE`` — with no period to
     delimit it, a lowercase ``on the beach`` mid-bag is a scene tag, not a
     header. The period-delimited form has the delimiter to go on, so
     :func:`parse_caption` accepts either case there.
     """
-    return tag.startswith(CLAUSE_PREFIXES)
+    return is_position_header(tag) or _text_prefix(tag) is not None
 
 
 def has_clauses(caption: str) -> bool:
-    """Cheap "does this caption already carry positional clauses?" check."""
+    """Cheap "does this caption already carry *positional* clauses?" check.
+
+    A text clause alone does not count — it binds no subject, and every
+    caller asks this to decide whether a position rewrite already happened.
+    See :func:`has_text_clauses`.
+    """
     outside = _outside_quotes(caption)
-    return any(outside(m.start()) for m in _CLAUSE_SPLIT_RE.finditer(caption)) or any(
-        is_clause_header(t) for t in _split_tags(caption)
+    return any(outside(m.start()) for m in _POSITION_SPLIT_RE.finditer(caption)) or any(
+        is_position_header(t) for t in _split_tags(caption)
     )
+
+
+def has_text_clauses(caption: str) -> bool:
+    """Does ``caption`` carry a :data:`TEXT_PREFIXES` sentence?"""
+    return any(c.is_text for c in parse_caption(caption).clauses)
 
 
 def tag_spans(caption: str) -> tuple[TagSpan, ...]:
@@ -259,6 +346,28 @@ def tag_spans(caption: str) -> tuple[TagSpan, ...]:
             j += 1
             if header:
                 clause += 1
+                text_prefix = _text_prefix(text)
+                if text_prefix is not None:
+                    # The header is the prefix alone; the first quoted line
+                    # riding the same comma-token is that clause's first tag.
+                    head = text_prefix.rstrip()
+                    spans.append(
+                        TagSpan(start, start + len(head), head, "header", clause)
+                    )
+                    rest_raw = text[len(text_prefix) :]
+                    rest = rest_raw.strip()
+                    if rest:
+                        rest_start = (
+                            start
+                            + len(text_prefix)
+                            + (len(rest_raw) - len(rest_raw.lstrip()))
+                        )
+                        spans.append(
+                            TagSpan(
+                                rest_start, rest_start + len(rest), rest, "tag", clause
+                            )
+                        )
+                    continue
             spans.append(
                 TagSpan(
                     start=start,
@@ -284,6 +393,10 @@ def parse_caption(caption: str) -> ParsedCaption:
     clauses: list[list] = []
     for span in tag_spans(caption):
         if span.kind == "header":
+            text_prefix = _text_prefix(span.text)
+            if text_prefix is not None:
+                clauses.append([text_prefix, "", []])
+                continue
             m = _CLAUSE_HEADER_RE.match(span.text)
             prefix = f"{m.group(1).capitalize()} the " if m else "On the "
             position = m.group(2).strip() if m else span.text
@@ -308,7 +421,8 @@ def flat_tag_set(caption: str) -> frozenset[str]:
 
 
 def flatten_caption(caption: str) -> str:
-    """Merge every clause's tags back into the flat bag, dropping the clauses.
+    """Merge every position clause's tags back into the flat bag, dropping
+    the clauses. A text clause is not a binding and stays as it is.
 
     Bag order first, then each clause left-to-right, duplicates dropped.
 
@@ -318,14 +432,17 @@ def flatten_caption(caption: str) -> str:
     parsed = parse_caption(caption)
     seen: set[str] = set()
     flat: list[str] = []
-    for tag in (*parsed.flat_tags, *(t for c in parsed.clauses for t in c.tags)):
+    for tag in (
+        *parsed.flat_tags,
+        *(t for c in parsed.position_clauses for t in c.tags),
+    ):
         # Same key as `tag_keys`: a tag moved out in space form must not come
         # back beside its own underscore spelling.
         key = normalize_tag(tag)
         if key and key not in seen:
             seen.add(key)
             flat.append(tag)
-    return compose_caption(flat)
+    return compose_caption(flat, parsed.text_clauses)
 
 
 def compose_caption(
@@ -334,10 +451,13 @@ def compose_caption(
     """Render a flat tag bag + clauses back into the hand-written convention.
 
     Inverse of :func:`parse_caption` modulo whitespace around commas; with no
-    clauses it is a plain ``", "`` join.
+    clauses it is a plain ``", "`` join. Text clauses render last, after
+    every position clause, whatever order they were given in.
     """
     flat = ", ".join(t for t in flat_tags if t)
-    parts = [c.render() for c in clauses if c.tags or c.position]
+    clauses = list(clauses)
+    ordered = [c for c in clauses if not c.is_text] + [c for c in clauses if c.is_text]
+    parts = [c.render() for c in ordered if c.tags or c.position]
     if not parts:
         return flat
     body = ". ".join(parts) + "."

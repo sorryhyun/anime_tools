@@ -62,11 +62,18 @@ latents `{stem}_{WxH}_anima.npz`, TE `{stem}_anima_te.safetensors`, PE
 
 ## 3. Caption grammar (the one shared parser)
 
-`<flat tag bag>. <Position clause>. <Position clause>. …`
+`<flat tag bag>. <Position clause>. <Position clause>. … <Text clause>.`
 
 - The period delimits clauses; commas separate tags inside one; the first
   clause is the flat bag. `@artist` handles, the `@no-artist` sentinel and
   `On the left, …` / `In the …` headers are grammar, not tags.
+- A closed quote pair (`「…」`, `『…』`, `"…"` — `QUOTE_PAIRS`) is one opaque
+  tag: a comma or `. On the` inside it is content. A **text clause**
+  (`Japanese text reads as "…", "…"` / `Japanese SFX reads as …`,
+  `TEXT_PREFIXES`) carries a page's OCR'd lines as quoted tags in reading
+  order; it composes last, after every position clause, and the variants
+  pass never shuffles, drops or randomizes it. `has_clauses` means
+  *position* clauses only.
 - One implementation, in `anime_tools/captions/position_clauses.py`
   (`parse_caption` / `compose_caption`), plus the shuffle grammar in
   `anime_tools/captions/shuffle.py` (`NO_ARTIST_SENTINEL`,

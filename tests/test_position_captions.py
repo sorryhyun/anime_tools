@@ -28,11 +28,15 @@ if str(REPO_ROOT) not in sys.path:
 from anime_tools.captions.position_clauses import (
     assign_positions,
     compose_caption,
+    flatten_caption,
     has_clauses,
+    has_text_clauses,
     horizontal_names,
+    is_clause_header,
     ordered_indices,
     parse_caption,
     tag_spans,
+    text_clause,
 )
 
 GT = (
@@ -95,10 +99,105 @@ def test_quoted_line_with_inner_comma_is_one_tag():
     # ``. On the`` inside a quote does not open a clause.
     inner = '1girl, "Wait. On the left, no.", smile'
     assert not has_clauses(inner)
-    assert parse_caption(inner).flat_tags == ("1girl", '"Wait. On the left, no."', "smile")
+    assert parse_caption(inner).flat_tags == (
+        "1girl",
+        '"Wait. On the left, no."',
+        "smile",
+    )
     spans = tag_spans(EN_TWIN)
     quoted = next(sp for sp in spans if sp.text.startswith('"'))
     assert EN_TWIN[quoted.start : quoted.end] == quoted.text
+
+
+# The C10 caption shape (anima_lora CJK DiT line, plan_base1 B2): the page's
+# OCR'd lines ride a trailing sentence of their own clause kind.
+C10 = (
+    "1girl, smile. On the left, akita neru, yellow eyes. "
+    'Japanese text reads as "温水くん、私と", "あっ…うっ…".'
+)
+
+
+def test_text_clause_parses_and_round_trips_byte_identical():
+    parsed = parse_caption(C10)
+    assert parsed.flat_tags == ("1girl", "smile")
+    pos, txt = parsed.clauses
+    assert pos.position == "left" and pos.tags == ("akita neru", "yellow eyes")
+    assert txt.is_text and txt.position == ""
+    assert txt.header == "Japanese text reads as"
+    # tags = the quoted lines, in reading order
+    assert txt.tags == ('"温水くん、私と"', '"あっ…うっ…"')
+    assert parsed.position_clauses == (pos,) and parsed.text_clauses == (txt,)
+    assert parsed.render() == C10
+    assert compose_caption(parsed.flat_tags, parsed.clauses) == C10
+    # Both sentence kinds; a quoted line keeps its inner comma and period.
+    both = (
+        '1girl. Japanese text reads as "Wait, no.", "はい". '
+        'Japanese SFX reads as "ぱんぱん".'
+    )
+    parsed = parse_caption(both)
+    assert [c.prefix for c in parsed.clauses] == [
+        "Japanese text reads as ",
+        "Japanese SFX reads as ",
+    ]
+    assert parsed.clauses[0].tags == ('"Wait, no."', '"はい"')
+    assert parsed.render() == both
+
+
+def test_text_clause_is_not_a_position_clause():
+    txt_only = '1girl, smile. Japanese text reads as "あっ".'
+    assert not has_clauses(txt_only)
+    assert has_text_clauses(txt_only)
+    assert has_clauses(C10)
+    assert not has_text_clauses("1girl, japanese text, 「あっ」")
+    # The ``order`` phrase is a flat tag, not a clause.
+    order = '1girl, Japanese text in following order: "a", "b"'
+    assert parse_caption(order).flat_tags == (
+        "1girl",
+        'Japanese text in following order: "a"',
+        '"b"',
+    )
+    assert not has_text_clauses(order)
+    assert is_clause_header('Japanese text reads as "a"')
+    assert not is_clause_header("japanese text")
+
+
+def test_text_clause_composes_last_and_accepts_the_comma_form():
+    # Given before a position clause, it still renders after it.
+    p = parse_caption('1girl. Japanese text reads as "a". On the left, red eyes.')
+    assert [c.is_text for c in p.clauses] == [True, False]
+    assert p.render() == '1girl. On the left, red eyes. Japanese text reads as "a".'
+    # Comma-form header canonicalizes to the period form.
+    assert (
+        parse_caption('1girl, Japanese text reads as "a", "b"').render()
+        == '1girl. Japanese text reads as "a", "b".'
+    )
+    # A punctuation-only quoted line at the caption's end sheds the period.
+    assert parse_caption('1girl. Japanese text reads as "♡".').render() == (
+        '1girl. Japanese text reads as "♡".'
+    )
+    # ``text_clause`` quotes the lines and defuses an inner ASCII quote.
+    assert compose_caption(["1girl"], [text_clause(['say "hi"', "b"])]) == (
+        '1girl. Japanese text reads as "say ”hi”", "b".'
+    )
+    assert compose_caption(["1girl"], [text_clause(["ぱんぱん"], sfx=True)]) == (
+        '1girl. Japanese SFX reads as "ぱんぱん".'
+    )
+    assert compose_caption(["1girl"], [text_clause([])]) == "1girl"
+
+
+def test_text_clause_spans_and_flatten():
+    spans = tag_spans(C10)
+    header = next(sp for sp in spans if sp.text == "Japanese text reads as")
+    assert header.kind == "header" and header.clause == 1
+    lines = [sp for sp in spans if sp.clause == 1 and sp.kind == "tag"]
+    assert [sp.text for sp in lines] == ['"温水くん、私と"', '"あっ…うっ…"']
+    for sp in spans:
+        assert C10[sp.start : sp.end] == sp.text
+    # Flatten undoes the position binding but keeps the text sentence whole.
+    assert flatten_caption(C10) == (
+        "1girl, smile, akita neru, yellow eyes. "
+        'Japanese text reads as "温水くん、私と", "あっ…うっ…".'
+    )
 
 
 def test_parse_caption_without_clauses_is_flat():
@@ -380,6 +479,31 @@ def test_artist_prefix_still_protected_with_clauses():
 def test_no_clause_caption_is_byte_identical_at_v0():
     raw = "@sincos,blue hair  ,1girl"
     assert _variants(raw, num_variants=1, tag_dropout_rate=0.0)[0] == raw
+
+
+def test_text_clause_rides_every_variant_whole():
+    """The OCR tail is content: never dropped, shuffled inside or randomized."""
+    random.seed(1)
+    tail = 'Japanese text reads as "温水くん、私と", "あっ…うっ…", "はい".'
+    variants = _variants(
+        C10, num_variants=16, tag_dropout_rate=0.5, clause_dropout_rate=1.0
+    )
+    assert variants[0] == C10
+    for text in variants[1:]:
+        assert text.endswith(" " + tail.replace(', "はい"', "")), text
+        parsed = parse_caption(text)
+        assert not parsed.position_clauses  # clause_dropout_rate=1.0
+        assert parsed.text_clauses[0].tags == ('"温水くん、私と"', '"あっ…うっ…"')
+    # Identity randomization skips the quoted lines too.
+    three = "1girl, smile. " + tail
+    for text in _variants(
+        three,
+        num_variants=8,
+        tag_dropout_rate=0.0,
+        tag_randomize_rate=1.0,
+        erasure_pool=["zzz"],
+    )[1:]:
+        assert text.endswith(" " + tail), text
 
 
 def test_clause_headers_are_never_identity_randomized():

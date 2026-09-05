@@ -162,3 +162,25 @@ def test_drop_groups_inside_position_clauses(tmp_path):
     )
     assert same.dropped_tags == ()
     assert "On the right, school uniform." in same.text
+
+
+def test_text_clause_passes_through_correction_untouched(tmp_path):
+    kb = _kb(tmp_path)
+    caption = (
+        "1girl, @sincos, long hair, speech bubble. On the left, backlighting. "
+        'Japanese text reads as "long hair, please", "sincos".'
+    )
+    result = correct_caption(
+        caption,
+        kb,
+        options=CaptionCorrectionOptions(
+            insert_no_artist=False, drop_groups=("artist", "lighting")
+        ),
+    )
+    # The quoted lines are not taxonomy tags: nothing inside them is dropped
+    # or reordered, and the sentence still composes last.
+    assert result.text == (
+        "1girl, long hair, speech bubble. "
+        'Japanese text reads as "long hair, please", "sincos".'
+    )
+    assert result.dropped_tags == ("@sincos", "backlighting")

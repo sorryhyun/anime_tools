@@ -155,6 +155,9 @@ def generate_caption_variants(
     **Position clauses are atomic**: each clause is kept or dropped *whole* at
     ``clause_dropout_rate`` (default: ``tag_dropout_rate``), with its tags
     shuffled inside — per-tag dropout would leave a half-described position.
+    **Text clauses** (``Japanese text reads as "…", "…"``) ride every variant
+    verbatim: never dropped, shuffled or randomized — the lines' reading
+    order is content, and the sentence is the page's text address.
     """
     from anime_tools.captions import shuffle as anima_train_utils
     from anime_tools.captions.position_clauses import (
@@ -206,6 +209,9 @@ def generate_caption_variants(
 
         clauses: list[PositionClause] = []
         for clause in parsed.clauses:
+            if clause.is_text:
+                clauses.append(clause)
+                continue
             protected = protect_fn is not None and any(
                 protect_fn(t) for t in clause.tags
             )

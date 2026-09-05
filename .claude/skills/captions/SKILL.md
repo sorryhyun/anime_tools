@@ -22,6 +22,16 @@ Caption variants treat each clause as an **atomic unit** (dropped whole at `clau
 shuffled inside, header never randomized); `correct_caption` splits clauses off before
 bucket-reordering the flat bag.
 
+Two content rules ride the same parser (both 2026-09-05, for the anima_lora CJK DiT line):
+a **quoted line** — `「…」`, `『…』` or `"…"` (`QUOTE_PAIRS`) — is opaque, so a comma or `. On the`
+inside a closed pair is content, not a separator; and a **text clause** — `Japanese text reads as
+"…", "…"` / `Japanese SFX reads as "…"` (`TEXT_PREFIXES`) — is a clause kind of its own: it parses
+to a `PositionClause` with an empty `position` and the quoted lines as tags (`is_text`, build one
+with `text_clause(lines)`), `compose_caption` always renders it **last**, after every position
+clause, and variants / `correct_caption` / `flatten_caption` pass it through verbatim (reading
+order is content). `has_clauses` stays *position*-only (a text sentence binds no subject, so it
+must not read as "already rewritten"); `has_text_clauses` is the other question.
+
 ## Dropping tag groups (`--caption_drop_groups`, GH #95)
 
 `make preprocess-captions ARGS="--caption_drop_groups artist,lighting,pose"` (or
