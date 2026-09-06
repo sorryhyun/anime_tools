@@ -5,7 +5,9 @@ under :data:`anime_tools.workspace.OCR`, mirroring its layout: every recognized
 line with box and confidence (:mod:`anime_tools.captions.ocr_sidecar`).
 
 It reads no caption and writes no caption, so it sits outside the caption ladder
-and invalidates no TE cache. **Dry-run is the default** (the caller passes
+and invalidates no TE cache. The reader is an argument: PP-OCRv6 alone, or
+(``--reader vl``) PP-OCRv6's lines re-read by the manga VL reader plus the text
+mask's uncovered components (:mod:`anime_tools.ocr.reread`). **Dry-run is the default** (the caller passes
 ``apply``), and a dry run reports every line it would have written.
 """
 

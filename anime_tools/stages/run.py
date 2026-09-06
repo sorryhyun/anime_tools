@@ -501,6 +501,36 @@ def run_correct(req: CorrectRequest):
 # ---- OCR -----------------------------------------------------------------
 
 
+def _vl_engine(req: OcrRequest, engine, resized_dir: Path):
+    """The ``--reader vl`` engine: PP-OCRv6's lines re-read by the manga VL
+    reader, the text mask's uncovered components read too
+    (:class:`anime_tools.ocr.reread.RereadEngine`). Torch lives here, not in
+    :func:`run_ocr`: the ONNX path never probes it."""
+    # The VL reader runs on torch; its device is torch's answer, not
+    # onnxruntime's (a CUDA-less torch beside a CUDA onnxruntime is possible).
+    from anime_tools._device import resolve_device
+    from anime_tools.ocr.reread import RereadEngine
+    from anime_tools.ocr.sfx import SfxReader
+
+    vl_device = resolve_device(req.device)
+    print(f"Loading the manga VL reader ({vl_device})...", flush=True)
+    with phase("load vl reader"):
+        reader = SfxReader.load(device=vl_device, batch_size=req.vl_batch_size)
+    mask_dir = resolve_path(req.mask_dir) if req.mask_dir else None
+    if mask_dir is not None and not mask_dir.is_dir():
+        raise FileNotFoundError(f"--mask_dir {mask_dir} is not a directory")
+    return RereadEngine(
+        engine=engine,
+        read_boxes=reader.read_boxes,
+        resized_dir=resized_dir,
+        masks=mask_dir,
+        comp_min_side=req.comp_min_side,
+        comp_max=req.comp_max,
+        min_chars=req.min_chars,
+        skip_en=req.skip_en,
+    )
+
+
 def run_ocr(req: OcrRequest):
     """Read the text in every resized image and (with ``apply``) write the
     ``{stem}.ocr.txt`` sidecars. Returns ``(rows, stats)``."""
@@ -529,6 +559,9 @@ def run_ocr(req: OcrRequest):
             batch_size=req.batch_size,
         )
 
+    if req.reader == "vl":
+        engine = _vl_engine(req, engine, resized_dir)
+
     rows, stats = read_tree(
         resized_dir=resized_dir,
         ocr_dir=ocr_dir,
@@ -549,6 +582,10 @@ def run_ocr(req: OcrRequest):
             "min_box_px": req.min_box_px,
             "max_boxes": req.max_boxes,
             "det_limit_side": req.det_limit_side,
+            "reader": req.reader,
+            "mask_dir": str(resolve_path(req.mask_dir)) if req.mask_dir else None,
+            "comp_min_side": req.comp_min_side,
+            "comp_max": req.comp_max,
             "applied": bool(req.apply),
             "apply": bool(req.apply),
             "dst": str(resized_dir),

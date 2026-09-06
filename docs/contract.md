@@ -27,6 +27,10 @@ default, `--apply` to publish; taking one back is `revert_export` over that
 run's report, which is what the GUI's **Undo** calls) and the GUI's **Export**
 stage. It always copies, skipping anything already identical at the
 destination, so re-exporting an unchanged dataset is a walk and a stat apiece.
+The OCR stage that fills that tree reads with PP-OCRv6 by default; `--reader vl`
+re-reads every line with the manga VL reader (`anime_tools.ocr.sfx`, torch,
+weights fetched on first use) and, with `--mask_dir`, reads the text mask's
+uncovered components as lines of their own (score `0.000`).
 `--combine_ocr` (default off; `--ocr_dir` names the OCR tree, `workspace/ocr`)
 publishes the revised caption and every `.variants.txt` line with the image's
 OCR'd lines attached as a trailing text clause (§3) — a render, not a copy;

@@ -4,7 +4,7 @@ Caption-master stages and their thin CLIs: `resize.py`, `autotag.py` (modes
 `missing`/`merge`/`overwrite`; only `missing` is non-destructive), `position_captions.py` (SAM3
 instances → reading order → mask-blanked crops → tagger → clause rewrite; see
 `docs/position_captions.md`), `captions.py` (correction + mirror), `multiview_audit.py`
-(`docs/multiview_audit.md`), `ocr.py`, `export_workspace.py`. Adding one is the `add-stage`
+(`docs/multiview_audit.md`), `ocr.py` (PP-OCRv6; `--reader vl` wraps it in `anime_tools.ocr.reread.RereadEngine` — every line re-read by the manga VL reader, `--mask_dir` components read as `0.000`-score lines; torch lives in `run.py::_vl_engine`, never in `run_ocr`), `export_workspace.py`. Adding one is the `add-stage`
 skill; the caption grammar these stages write is the `captions` skill.
 
 ## Requests and runners

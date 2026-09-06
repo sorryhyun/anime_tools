@@ -10,6 +10,8 @@ balloon's columns and applies the ``min_chars`` / ``skip_en`` floors.
 The manga SFX reader — a fine-tuned PaddleOCR-VL-1.6 that reads the hand-lettered
 onomatopoeia PP-OCRv6 garbles — is :mod:`anime_tools.ocr.sfx` (``SfxReader``), imported
 explicitly because it pulls torch; it reads crops another detector boxed, never pages.
+:mod:`anime_tools.ocr.reread` is the seam: the OCR stage's ``--reader vl`` runs every
+PP-OCRv6 line and the text mask's uncovered components through it.
 """
 
 # `resolve_onnx_device` is not OCR's own: the tagger's exported backbone asks the

@@ -75,6 +75,13 @@ DETECTION = "detection"
 OCR_DRAWER = "Combine OCR"
 """Export's drawer: the text-clause combine and the tree it reads."""
 
+OCR_READERS = ("ppocr", "vl")
+"""``--reader``: PP-OCRv6 alone, or every line re-read by the manga VL reader
+(:mod:`anime_tools.ocr.reread`)."""
+
+VL_READER = "VL reader"
+"""The OCR stage's group for the ``--reader vl`` knobs."""
+
 
 def _csv(default: tuple[str, ...], **meta) -> tuple[str, ...]:
     """A comma-separated flag held as a tuple."""
@@ -644,6 +651,12 @@ class OcrRequest(StageRequest):
     ``{stem}.ocr.txt`` into the OCR tree, mirroring the resized layout. No caption is
     read or written, and no TE re-encode is needed afterwards.
 
+    ``--reader vl`` runs the manga VL reader (``anime_tools.ocr.sfx``, PaddleOCR-VL-1.6
+    fine-tuned on hand-lettered SFX; torch, ~2.8 GB fetched on first use) over every
+    line PP-OCRv6 found — hearts, small kana and onomatopoeia come back, a read the
+    decode guard rejects keeps the PP-OCRv6 text — and, with ``--mask_dir``, reads the
+    text-mask components no detector boxed as lines of their own (score 0.000).
+
     Dry-run by default: a dry run emits ``report.json`` carrying every line it would
     have written, and ``--apply`` writes the sidecars and nothing else.
     """
@@ -694,11 +707,53 @@ class OcrRequest(StageRequest):
         "quadratically",
     )
     batch_size: int = arg(8, help="Line crops recognized per forward pass")
+    reader: str = arg(
+        "ppocr",
+        choices=OCR_READERS,
+        help="ppocr: PP-OCRv6 alone (ONNX, fast). vl: every line PP-OCRv6 found is "
+        "re-read by the manga VL reader (PaddleOCR-VL-1.6 + the SFX fine-tune; "
+        "torch, ~0.25 s per line on a GPU, weights fetched on first use) — hearts, "
+        "small kana and hand-lettered SFX read right; a read the decode guard rejects "
+        "keeps the PP-OCRv6 text",
+        group=VL_READER,
+    )
+    mask_dir: str | None = arg(
+        None,
+        help="With --reader vl: the text-mask tree (`make mask`'s {stem}_mask.png, "
+        f"mirroring --dst; usually {WS.MASKS}). Its text components no line covers "
+        "are read too and become lines of their own with score 0.000 — the SFX "
+        "drawn onto the artwork that no detector boxes",
+        group=VL_READER,
+    )
+    comp_min_side: int = arg(
+        32,
+        help="With --mask_dir: ignore a mask component whose shorter side is under "
+        "this many pixels — screentone, not lettering",
+        group=VL_READER,
+    )
+    comp_max: int = arg(
+        16,
+        help="With --mask_dir: read at most this many uncovered components per image, "
+        "largest first",
+        group=VL_READER,
+    )
+    vl_batch_size: int = arg(
+        16, help="With --reader vl: crops per VL forward pass", group=VL_READER
+    )
     apply: bool = arg(
         False, help="Write the sidecars (default: dry run). Touches no caption"
     )
     report_dir: str = _report_dir(f"{WS.REPORTS}/ocr")
     device: str | None = arg(None, help=DEVICE_HELP)
+
+    def __post_init__(self) -> None:
+        if self.reader not in OCR_READERS:
+            raise ValueError(f"--reader must be one of {list(OCR_READERS)}")
+        if self.mask_dir and self.reader != "vl":
+            raise ValueError(
+                "--mask_dir reads the text-mask components with the VL reader; "
+                "pass --reader vl with it"
+            )
 
 
 def _res(value) -> tuple[int, ...] | None:

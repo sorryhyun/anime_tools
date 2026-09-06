@@ -510,7 +510,7 @@ def catalog() -> tuple[Asset, ...]:
             repo=VL16_BASE_REPO,
             files=VL16_BASE_FILES,
             dest=default_vl16_base_dir(),
-            used_by="the manga SFX reader (anime_tools.ocr.sfx)",
+            used_by="the manga SFX reader (anime_tools.ocr.sfx; OCR --reader vl)",
             stages=(),
             notes="1.9 GB, Apache-2.0. The VLM the SFX reader below is a "
             "fine-tune of; the reader loads this and merges the row below "
@@ -522,11 +522,13 @@ def catalog() -> tuple[Asset, ...]:
             repo=SFX_READER_REPO,
             files=SFX_READER_FILES,
             dest=default_sfx_reader_dir(),
-            used_by="the manga SFX reader (anime_tools.ocr.sfx)",
+            used_by="the manga SFX reader (anime_tools.ocr.sfx; OCR --reader vl)",
             stages=(),
             notes="0.9 GB (adapter 24 MB + fine-tuned vision tower). Reads "
             "hand-lettered onomatopoeia PP-OCRv6 garbles; a crop reader, not a "
-            "detector. Needs the base above. Trained on Manga109-s (COO).",
+            "detector. Needs the base above; both fetched on first use by the OCR "
+            "stage's --reader vl (not listed under the stage so PP-OCRv6 alone "
+            "stays a 140 MB stage). Trained on Manga109-s (COO).",
         ),
         Asset(
             id="mit_text",
