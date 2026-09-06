@@ -247,7 +247,10 @@ export interface RootInfo {
   exists: boolean;
 }
 
-export type RootName = "src" | "master" | "dst" | "masks" | "out";
+/** The dataset trees, in the order the Settings dialog lists them: input, then
+    the three the workspace owns, then the tree Export publishes to. */
+export const ROOT_NAMES = ["src", "master", "dst", "masks", "out"] as const;
+export type RootName = (typeof ROOT_NAMES)[number];
 
 export interface DatasetRoots {
   roots: Record<RootName, RootInfo>;

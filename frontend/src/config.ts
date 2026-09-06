@@ -2,7 +2,24 @@ import { createResource, createSignal } from "solid-js";
 import { createStore } from "solid-js/store";
 import { api } from "./api";
 import type { DatasetRoots, Info, ModelCatalog, Settings } from "./types";
-import type { SettingsOut, SettingsPane } from "./components/SettingsDialog";
+
+/** The three Settings dialogs. Each entry point opens *one* of them: the ☰ menu
+    lists them separately and a missing-weights hint opens `models`. A pane is
+    also the unit of what OK writes — only the open one's inputs exist, so its
+    `SettingsOut` carries only the blocks it holds. */
+export const SETTINGS_PANES = ["general", "advanced", "models"] as const;
+export type SettingsPane = (typeof SETTINGS_PANES)[number];
+
+/** What a Settings dialog hands back on OK: only the blocks it showed, and each
+    only if it was touched, so an untouched block writes nothing. */
+export interface SettingsOut {
+  token?: string;
+  roots?: Record<string, string>;
+  /** The stage defaults. */
+  defaults?: Record<string, string>;
+  /** The preflight stage's form values. */
+  preprocess?: Record<string, unknown>;
+}
 
 /** What the server says about *itself* — the home it is running in, the dataset
  * roots, the weights catalog and the saved settings — plus the dialog that
@@ -32,13 +49,16 @@ export function createConfig() {
       about weights or the token opens the one that fixes it, and there is no way
       from one to another but closing it. */
   const [settingsPane, setSettingsPane] = createSignal<SettingsPane>("general");
+  /** Is *this* dialog the one on screen? Each of the three is mounted on its
+      own answer. */
+  const paneOpen = (pane: SettingsPane) => settingsOpen() && settingsPane() === pane;
   const openSettings = (pane: SettingsPane = "general") => {
     setSettingsPane(pane);
     setSettingsOpen(true);
     void refetchModels();
   };
   /** Close the dialog, writing back only the blocks it says were touched — at
-      most the open pane's, since the other two are not mounted. */
+      most the open pane's, since the other two are not on screen. */
   const closeSettings = async (out: SettingsOut | null) => {
     setSettingsOpen(false);
     if (!out) return;
@@ -67,6 +87,7 @@ export function createConfig() {
     stageDefaults,
     settingsOpen,
     settingsPane,
+    paneOpen,
     openSettings,
     closeSettings,
   };

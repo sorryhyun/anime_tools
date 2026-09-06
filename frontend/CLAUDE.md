@@ -90,12 +90,35 @@ nothing fetched, no business rule lives there. The state is five composables at
   something is running.
 
 Plus **`downloads.ts`** (a weights fetch: the same job slot, but it reports into
-the Settings dialog rather than the dock) and **`state.ts`**, the two primitives
-that outlive a render: `persisted` and `createJobFollower`. The follower is also
-where the log is *read*: two line formats, one writer each — `make_progress`'s
-`  [done/total] detail` and `jobs.py`'s `── step i/n: label ──` header — and
-nothing else in a job's output is parsed here. A stage that prints neither just
-has no bar.
+the Settings dialog rather than the dock) and **`state.ts`**, the primitives
+that outlive a render: `persisted`, `createJobFollower`, `debounced` and
+`trackPointer` (the one pointer-drag loop; every grip in the page is it). The
+follower is also where the log is *read*: two line formats, one writer each —
+`make_progress`'s `  [done/total] detail` and `jobs.py`'s `── step i/n: label ──`
+header — and nothing else in a job's output is parsed here. A stage that prints
+neither just has no bar.
+
+Three more `.ts` files at `src/` are **view-scoped** state: created per
+component rather than once in `App()`, but holding the rules the markup would
+otherwise carry. **`captionEditor.ts`** is the caption panel's brain — which
+version is on screen, the unsaved draft per rung, the debounced live parse and
+Save — and `CaptionCard` only draws it. **`zoomPan.ts`** is the preview's
+Ctrl+wheel zoom and drag-to-pan. **`tree.ts`** is the sidebar's model: `build`
+nests the listing into folders, `regroup` joins the grouping manifest onto it,
+and `createFolding` is the open/paged state both views share; the rows are
+`components/TreeNodes.tsx`, each reading one `TreeCtx` that `DatasetTree`
+builds. None of the three fetches anything but what it says (`captionEditor`
+parses and saves; the other two are pure over their inputs).
+
+Settings is **three dialogs, not one with tabs**, and the code says so:
+`SettingsGeneral` / `SettingsAdvanced` / `SettingsModels` are each their own
+`<dialog>` over the shared `SettingsShell` frame, mounted side by side in
+`App()` on `config.paneOpen(pane)`, and each hands `config.closeSettings` only
+the `SettingsOut` blocks it showed. `SettingsPane` / `SettingsOut` live in
+`config.ts`, since that is what owns which dialog is open — a state module never
+imports from `components/`. `FieldRow.tsx` (`FieldRow`, `grouped`, `str`) is the
+one argparse-field input, shared by `StageForm` and the Advanced dialog's
+preflight block.
 
 **`i18n/`** is the GUI's own text, one file per language — `en.ts` / `ko.ts` /
 `ja.ts` / `zh.ts`, with `index.ts` holding the locale signal, `t()` and
@@ -140,6 +163,6 @@ dicts and says which module writes each one.
   Run may write, or reach into another component's state.
 - Two drag sizes are deliberately *not* `persisted`: the dock height and
   `ItemView`'s `--cap-w` move on every pointermove, so each saves once on
-  pointerup instead of at frame rate.
+  pointerup instead of at frame rate — `trackPointer`'s `up` callback.
 - Comments here explain *why* a thing is shaped the way it is, in prose, above
   the code. Match that; a comment restating the line below it is noise.

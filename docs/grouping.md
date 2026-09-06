@@ -221,5 +221,5 @@ with its match, leaves the caption alone, and deletes the image-derived caches f
 | `anime_tools/grouping/cli/build_groups.py` | the shell: `GroupRequest.parser()` → `run_groups` |
 | `anime_tools/grouping/cli/{match,apply}_decensored.py`, `_decensored.py` | the decensor pass and its fixed paths |
 | `anime_tools/gui/dataset.py::load_groups` | the manifest as the sidebar's group view |
-| `frontend/src/components/DatasetTree.tsx` | the *groups* ordering and the ungrouped bucket |
+| `frontend/src/tree.ts::regroup` | the *groups* ordering and the ungrouped bucket |
 | `tests/test_grouping_grid_match.py`, `tests/test_grouping_features.py` | the gate, the cache stamp, stem collisions |

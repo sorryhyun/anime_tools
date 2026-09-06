@@ -13,7 +13,9 @@ import { Dock } from "./components/Dock";
 import { Header } from "./components/Header";
 import { ItemView } from "./components/ItemView";
 import { JobBar, JobLog } from "./components/JobLog";
-import { SettingsDialog } from "./components/SettingsDialog";
+import { SettingsAdvanced } from "./components/SettingsAdvanced";
+import { SettingsGeneral } from "./components/SettingsGeneral";
+import { SettingsModels } from "./components/SettingsModels";
 import { StagePanel } from "./components/StagePanel";
 import { TagLens } from "./components/TagLens";
 
@@ -183,15 +185,30 @@ export default function App() {
           the root. */}
       <TagLens onInstall={() => config.openSettings("models")} />
 
-      <SettingsDialog
-        open={config.settingsOpen()}
-        pane={config.settingsPane()}
+      {/* Three dialogs, not one with tabs: each entry point opens the one that
+          fixes what it was pointing at, and OK writes only that one's blocks. */}
+      <SettingsGeneral
+        open={config.paneOpen("general")}
         info={config.info()}
+        roots={config.roots()}
+        helpOpen={layout.helpOpen}
+        onHelp={layout.toggleHelp}
+        onClose={config.closeSettings}
+      />
+      <SettingsAdvanced
+        open={config.paneOpen("advanced")}
         roots={config.roots()}
         fields={stages.settingFields()}
         defaults={config.stageDefaults()}
         preprocess={stages.preprocessStage()}
         preprocessValues={config.settings.preprocess ?? {}}
+        helpOpen={layout.helpOpen}
+        onHelp={layout.toggleHelp}
+        onClose={config.closeSettings}
+      />
+      <SettingsModels
+        open={config.paneOpen("models")}
+        info={config.info()}
         models={config.models()}
         busy={runner.busy() || downloads.busy()}
         downloading={downloads.busy()}

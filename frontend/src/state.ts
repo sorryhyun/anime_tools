@@ -23,6 +23,42 @@ export function persisted<T>(
 export const asFlag = (raw: string) => raw !== "0";
 export const fromFlag = (v: boolean) => (v ? "1" : "0");
 
+/** A signal that trails `source` by `ms` of quiet: the live caption parse reads
+    it so a keystroke is not a request. */
+export function debounced<T>(source: () => T, ms: number): Accessor<T> {
+  const [out, setOut] = createSignal(source());
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  createEffect(
+    on(source, (v) => {
+      clearTimeout(timer);
+      timer = setTimeout(() => setOut(() => v), ms);
+    }),
+  );
+  return out;
+}
+
+/** Follow one pointer drag from the `pointerdown` that started it: `move` on
+ * every pointermove until the pointer is released, then `up` once. The
+ * listeners go on `window`, so a drag survives the pointer leaving the grip,
+ * and both come off on release. Every drag in the page (the dock height, the
+ * caption column, the zoomed preview) is this and only what it does with the
+ * point differs; the once-on-release save the two sizes want is `up`.
+ */
+export function trackPointer(
+  e: PointerEvent,
+  move: (ev: PointerEvent) => void,
+  up?: () => void,
+): void {
+  e.preventDefault();
+  const onUp = () => {
+    window.removeEventListener("pointermove", move);
+    window.removeEventListener("pointerup", onUp);
+    up?.();
+  };
+  window.addEventListener("pointermove", move);
+  window.addEventListener("pointerup", onUp);
+}
+
 /** How many of a job's lines the browser keeps. The server holds 20 000 and
  * replays every one of them when the stream is opened, so this is only how far
  * back the log window scrolls; the job's own file under `workspace/gui_logs/`

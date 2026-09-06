@@ -2,7 +2,7 @@ import { Show } from "solid-js";
 import { t } from "../i18n";
 import type { DatasetList, Info } from "../types";
 import { HeaderMenu } from "./HeaderMenu";
-import type { SettingsPane } from "./SettingsDialog";
+import type { SettingsPane } from "../config";
 
 /** The title bar: where the dataset is, how big it is, and the two things that
     can be wrong before anything is run (no HF token, a download in flight).

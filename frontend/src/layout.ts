@@ -1,5 +1,5 @@
 import { createEffect, createSignal, on } from "solid-js";
-import { asFlag, fromFlag, persisted } from "./state";
+import { asFlag, fromFlag, persisted, trackPointer } from "./state";
 
 /** The places prose hides behind a (?). One entry per *spot on screen*, not per
  * button: the caption panel and the stage form are visible at the same time, so
@@ -48,18 +48,13 @@ export function createLayout() {
   createEffect(on(sidebar, (v) => document.body.classList.toggle("nosidebar", !v)));
 
   function grip(e: PointerEvent) {
-    e.preventDefault();
     const y0 = e.clientY;
     const h0 = dockH();
-    const move = (ev: PointerEvent) =>
-      setDockH(Math.max(120, Math.min(window.innerHeight - 220, h0 + (y0 - ev.clientY))));
-    const up = () => {
-      window.removeEventListener("pointermove", move);
-      window.removeEventListener("pointerup", up);
-      localStorage.setItem("dockh", String(dockH()));
-    };
-    window.addEventListener("pointermove", move);
-    window.addEventListener("pointerup", up);
+    trackPointer(
+      e,
+      (ev) => setDockH(Math.max(120, Math.min(window.innerHeight - 220, h0 + (y0 - ev.clientY)))),
+      () => localStorage.setItem("dockh", String(dockH())),
+    );
   }
 
   return {

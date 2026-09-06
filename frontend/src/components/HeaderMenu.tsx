@@ -1,6 +1,6 @@
 import { createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import { locale, localeName, LOCALES, setLocale, t } from "../i18n";
-import type { SettingsPane } from "./SettingsDialog";
+import type { SettingsPane } from "../config";
 
 /** The ☰ menu: the three Settings dialogs, the Hub token they all need, and the
     row that opens every explanation at once — each (?) on the page speaks for
