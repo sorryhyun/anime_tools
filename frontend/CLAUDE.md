@@ -24,7 +24,9 @@ over HTTP by `gui/server.py`, never opened as `file://`, and the wheel's
 `package-data` is `static/*`, which globs the whole (flat) directory.
 
 ```bash
-make frontend        # rebuild the committed bundle (scripts/build_frontend.sh)
+make frontend        # rebuild the committed bundle (scripts/build_frontend.sh) -- needs the
+                     # bun pinned in frontend/.bun-version: minified output differs between bun
+                     # releases and CI diffs the bundle, so it refuses any other bun
 make frontend-dev    # bun dev server with hot reload, /api proxied to `make gui`
 cd frontend && bun run check          # tsc --noEmit; strict, and it must stay clean
 cd frontend && bun run format:check   # prettier; the pre-commit hook formats staged files

@@ -20,7 +20,12 @@ jobs:
       - run: uv run ruff check .
         continue-on-error: true
       - run: uv run pytest -q -n auto
+      # Pinned: bun is the bundler, and its minified output changes between
+      # releases -- an unpinned CI bun rebuilt the committed page a few bytes
+      # differently and failed the drift check below on every push (2026-09-06).
       - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: frontend/.bun-version
       # Same prettier pass the pre-commit hook runs (scripts/hooks/pre-commit).
       - run: cd frontend && bun install --frozen-lockfile && bun run format:check
       # The built frontend (anime_tools/gui/static/) is committed -- the page and the

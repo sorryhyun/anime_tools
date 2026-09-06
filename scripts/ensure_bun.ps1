@@ -16,8 +16,11 @@ if (Test-Path $local) {
     exit 0
 }
 
-Write-Host "bun not found; installing from https://bun.sh/install.ps1 ..."
-Invoke-RestMethod https://bun.sh/install.ps1 | Invoke-Expression
+# The pinned bundler version (frontend/.bun-version): the committed bundle is built
+# with it and scripts/build_frontend.ps1 refuses any other.
+$want = (Get-Content (Join-Path $PSScriptRoot "..\frontend\.bun-version") -Raw).Trim()
+Write-Host "bun not found; installing bun $want from https://bun.sh/install.ps1 ..."
+& ([scriptblock]::Create((Invoke-RestMethod https://bun.sh/install.ps1))) -Version $want
 
 Write-Host ""
 Write-Host "bun installed to $env:USERPROFILE\.bun\bin -- the installer put it on your user"
