@@ -19,6 +19,16 @@ revision, with its previous text recorded for the revert.
 cleared. An identical destination is skipped and :func:`shutil.copy2` preserves
 mtime, so a second export is a walk and a stat apiece.
 
+With ``combine_ocr`` (:attr:`ExportPaths.ocr` set) the ``caption`` and
+``variants`` rows of an image that has a ``{stem}.ocr.txt`` are *rendered*
+rather than copied: the OCR'd lines ride along as a trailing text clause
+(:func:`~anime_tools.captions.ocr_sidecar.with_ocr_clause`) on the caption and
+on every variant line. The workspace files stay as curated, so the combine is a
+property of the published tree, taken back by exporting without it. Such a row
+carries the sidecar it read (``ocr``) and the text it publishes (``text``); the
+text is re-derived from disk whenever the row is decided, and a revert compares
+against the text recorded at the time.
+
 Rows are per *artifact*, not per image, each decided on its own.
 
 Torch-free.
@@ -33,7 +43,12 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from anime_tools._walk import walk_images
-from anime_tools.captions.variants import variants_sidecar_path
+from anime_tools.captions._sidecar import render_rows, sidecar_header
+from anime_tools.captions.ocr_sidecar import ocr_sidecar_path, read_ocr, with_ocr_clause
+from anime_tools.captions.variants import (
+    read_variants_sidecar,
+    variants_sidecar_path,
+)
 from anime_tools.masking._masks import mask_name, mask_path_for
 
 KINDS = ("image", "caption", "variants", "mask", "master", "index")
@@ -42,6 +57,11 @@ KINDS = ("image", "caption", "variants", "mask", "master", "index")
 TEXT_KINDS = frozenset({"caption", "variants", "master", "index"})
 """Kinds compared (and reverted) by content rather than by stat. Captions are
 small enough for a byte compare; pixels go by ``(size, mtime_ns)``."""
+
+COMBINE_KINDS = frozenset({"caption", "variants"})
+"""The kinds ``combine_ocr`` renders with the text clause attached — what the
+trainer encodes. The master is hand-written and stays so; the index carries no
+caption text."""
 
 
 @dataclass(frozen=True)
@@ -58,6 +78,9 @@ class ExportPaths:
     index: Path
     src: Path
     out: Path
+    ocr: Path | None = None
+    """The OCR tree to combine from, or ``None`` to publish captions as they
+    are. Set by ``--combine_ocr``; mirrors ``resized``."""
 
 
 @dataclass
@@ -72,6 +95,15 @@ class ExportRow:
     before: str = ""
     """The destination's previous text, for the kinds a revert can put back.
     Empty for a pixel kind, and for a destination that did not exist."""
+    ocr: str = ""
+    """The OCR sidecar a combined row read, or empty for a verbatim copy."""
+    text: str = ""
+    """What a combined row publishes — the source with the text clause attached.
+    Empty for a verbatim copy, whose bytes are the source's."""
+
+    @property
+    def combined(self) -> bool:
+        return bool(self.ocr)
 
     def to_dict(self) -> dict[str, object]:
         return dict(vars(self))
@@ -82,6 +114,8 @@ class ExportStats:
     rows: int = 0
     created: int = 0
     overwrote: int = 0
+    combined: int = 0
+    """Rows published (or, dry, to be published) with the OCR clause attached."""
     by_kind: Counter = field(default_factory=Counter)
     skipped: Counter = field(default_factory=Counter)
 
@@ -93,21 +127,49 @@ class ExportStats:
             "rows": self.rows,
             "created": self.created,
             "overwrote": self.overwrote,
+            "combined": self.combined,
             "by_kind": dict(sorted(self.by_kind.items())),
             "skipped": dict(sorted(self.skipped.items())),
         }
 
 
-def _same(src: Path, dst: Path, *, text: bool) -> bool:
-    """Is the destination already this file?
+def _combine(kind: str, src: Path, lines) -> str:
+    """The text a combined row publishes: the caption, or every variant line,
+    with the OCR clause attached."""
+    if kind == "caption":
+        return with_ocr_clause(src.read_text(encoding="utf-8"), lines)
+    rows = [
+        (label, with_ocr_clause(text, lines))
+        for label, text in read_variants_sidecar(src)
+    ]
+    return render_rows(sidecar_header("variants"), rows)
+
+
+def _derive(row: ExportRow) -> None:
+    """Refresh a combined row's ``text`` from the source and sidecar as they
+    are on disk now. A sidecar that has gone away publishes the caption with
+    no text clause — the OCR pass deletes it when it finds nothing."""
+    if row.combined:
+        row.text = _combine(row.kind, Path(row.src), read_ocr(Path(row.ocr)))
+
+
+def _published(row: ExportRow) -> bytes:
+    """The bytes this row puts at its destination."""
+    if row.combined:
+        return row.text.encode("utf-8")
+    return Path(row.src).read_bytes()
+
+
+def _same(row: ExportRow, dst: Path) -> bool:
+    """Is the destination already what this row publishes?
 
     Pixels are compared by ``(size, mtime_ns)``, which :func:`shutil.copy2`
     preserves, so an unchanged image compares equal without being read.
     """
     try:
-        if text:
-            return src.read_bytes() == dst.read_bytes()
-        a, b = src.stat(), dst.stat()
+        if row.kind in TEXT_KINDS:
+            return _published(row) == dst.read_bytes()
+        a, b = Path(row.src).stat(), dst.stat()
         return (a.st_size, a.st_mtime_ns) == (b.st_size, b.st_mtime_ns)
     except OSError:
         return False
@@ -119,9 +181,11 @@ def _decide(row: ExportRow) -> ExportRow:
     text = row.kind in TEXT_KINDS
     if not src.is_file():
         row.status = "missing-source"
-    elif not dst.exists():
+        return row
+    _derive(row)
+    if not dst.exists():
         row.status = "would-create"
-    elif _same(src, dst, text=text):
+    elif _same(row, dst):
         row.status = "identical"
     else:
         row.status = "would-overwrite"
@@ -133,8 +197,22 @@ def _decide(row: ExportRow) -> ExportRow:
     return row
 
 
-def _row(rel: Path, kind: str, src: Path, dst: Path) -> ExportRow:
-    return _decide(ExportRow(rel=rel.as_posix(), kind=kind, src=str(src), dst=str(dst)))
+def _row(
+    rel: Path, kind: str, src: Path, dst: Path, *, ocr: Path | None = None
+) -> ExportRow:
+    """One row, decided. ``ocr`` (the image's sidecar, when combining) marks it
+    combined only if the sidecar exists — an image with no text publishes its
+    caption verbatim, as a plain copy."""
+    combined = ocr is not None and kind in COMBINE_KINDS and ocr.is_file()
+    return _decide(
+        ExportRow(
+            rel=rel.as_posix(),
+            kind=kind,
+            src=str(src),
+            dst=str(dst),
+            ocr=str(ocr) if combined else "",
+        )
+    )
 
 
 def _mask_source(paths: ExportPaths, image: Path, rel: Path) -> Path:
@@ -161,14 +239,23 @@ def plan_export(
         out_image = paths.out / "resized" / rel
         rows.append(_row(rel, "image", image, out_image))
 
+        ocr = ocr_sidecar_path(paths.ocr / rel) if paths.ocr is not None else None
         caption = image.with_suffix(".txt")
         if caption.is_file():
-            rows.append(_row(rel, "caption", caption, out_image.with_suffix(".txt")))
+            rows.append(
+                _row(rel, "caption", caption, out_image.with_suffix(".txt"), ocr=ocr)
+            )
 
         variants = variants_sidecar_path(caption)
         if variants.is_file():
             rows.append(
-                _row(rel, "variants", variants, variants_sidecar_path(out_image))
+                _row(
+                    rel,
+                    "variants",
+                    variants,
+                    variants_sidecar_path(out_image),
+                    ocr=ocr,
+                )
             )
 
         mask = _mask_source(paths, image, rel)
@@ -209,7 +296,10 @@ def export_one(row: ExportRow, *, apply: bool) -> str:
         return row.status
     dst = Path(row.dst)
     dst.parent.mkdir(parents=True, exist_ok=True)
-    shutil.copy2(row.src, dst)
+    if row.combined:
+        dst.write_text(row.text, encoding="utf-8")
+    else:
+        shutil.copy2(row.src, dst)
     row.status = "created" if row.status == "would-create" else "overwrote"
     return row.status
 
@@ -237,9 +327,11 @@ def _run(
         status = export_one(row, apply=apply)
         if status in ("created", "overwrote"):
             stats.by_kind[row.kind] += 1
+            stats.combined += row.combined
             setattr(stats, status, getattr(stats, status) + 1)
         elif status.startswith("would-"):
             stats.by_kind[row.kind] += 1
+            stats.combined += row.combined
         else:
             stats.skip(status)
         if progress:
@@ -273,7 +365,7 @@ _REVERT = {"created": "remove", "overwrote": "restore"}
 """Apply status → what putting that row back means. Anything else published
 nothing and so has nothing to undo."""
 
-ROW_FIELDS = ("rel", "kind", "src", "dst", "status", "before")
+ROW_FIELDS = ("rel", "kind", "src", "dst", "status", "before", "ocr", "text")
 
 
 def rows_from_report(report: Mapping[str, object]) -> list[ExportRow]:
@@ -297,16 +389,19 @@ def revert_export(
 
     A **pixel** row it overwrote reports ``not-undoable`` — the previous bytes
     were never kept.
+
+    A combined row is checked against the ``text`` the report recorded, not
+    against a fresh combine: what was published is what must still be there.
     """
     stats = RevertStats(rows=len(rows))
     for row in rows:
         verb = _REVERT.get(row.status)
-        src, dst = Path(row.src), Path(row.dst)
+        dst = Path(row.dst)
         if verb is None:
             row.status = "nothing-to-undo"
         elif not dst.exists():
             row.status = "already-undone"
-        elif not _same(src, dst, text=row.kind in TEXT_KINDS):
+        elif not _same(row, dst):
             row.status = "drifted"
         elif verb == "restore" and row.kind not in TEXT_KINDS:
             row.status = "not-undoable"

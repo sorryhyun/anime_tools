@@ -676,6 +676,7 @@ def run_export(req: ExportRequest):
         index=resolve_path(req.index),
         src=resolve_path(req.src),
         out=resolve_path(req.out),
+        ocr=resolve_path(req.ocr_dir) if req.combine_ocr else None,
     )
     if not paths.resized.is_dir():
         raise FileNotFoundError(
@@ -692,12 +693,16 @@ def run_export(req: ExportRequest):
                 src=paths.src, dst=paths.resized, path_pattern=pattern, apply=req.apply
             ),
             "out": str(paths.out),
+            "combine_ocr": req.combine_ocr,
+            "ocr_dir": str(paths.ocr) if paths.ocr is not None else None,
             "stats": stats.to_dict(),
             "rows": [r.to_dict() for r in rows],
         },
     )
     print(f"\nreport → {path}")
+    combined = f", {stats.combined} with OCR attached" if req.combine_ocr else ""
     print_dry_run_footer(
-        req.apply, f"published: {stats.created} created, {stats.overwrote} overwritten"
+        req.apply,
+        f"published: {stats.created} created, {stats.overwrote} overwritten{combined}",
     )
     return rows, stats

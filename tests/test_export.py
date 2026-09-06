@@ -226,3 +226,104 @@ def test_rows_survive_the_round_trip_through_a_report(ws):
     report = {"rows": [r.to_dict() for r in rows]}
     again = rows_from_report(json.loads(json.dumps(report)))
     assert [r.to_dict() for r in again] == [r.to_dict() for r in rows]
+
+
+# ---- combining OCR ---------------------------------------------------------
+
+
+JA = 'Japanese text reads as "大丈夫", "本当に".'
+
+
+@pytest.fixture
+def ocr(ws, tmp_path):
+    """The workspace's OCR tree: ``a`` has two lines, ``sub/b`` none."""
+    from anime_tools.captions.ocr_sidecar import OcrLine, write_ocr_for
+
+    ocr_dir = tmp_path / "workspace" / "ocr"
+    write_ocr_for(
+        ocr_dir,
+        Path("a.txt"),
+        [
+            OcrLine(seq=1, box=(0, 0, 10, 10), score=0.9, text="大丈夫"),
+            OcrLine(seq=2, box=(0, 20, 10, 30), score=0.9, text="本当に"),
+        ],
+    )
+    return ExportPaths(**{**vars(ws), "ocr": ocr_dir})
+
+
+def test_combine_attaches_the_clause_to_the_caption_and_every_variant(ocr):
+    rows, stats = run_export(ocr, apply=True)
+    caption = (ocr.out / "resized" / "a.txt").read_text(encoding="utf-8")
+    assert caption == f"1girl, solo. On the left, cat. {JA}"
+    variants = (ocr.out / "resized" / "a.variants.txt").read_text(encoding="utf-8")
+    assert variants.splitlines()[0].startswith("#")
+    assert variants.splitlines()[1] == f"v0\t1girl, solo. {JA}"
+    assert stats.combined == 2
+    assert {r.kind for r in rows if r.combined} == {"caption", "variants"}
+    # The workspace copies are what they were: the combine is a property of
+    # the published tree.
+    assert (ocr.resized / "a.txt").read_text(encoding="utf-8").endswith("cat.")
+
+
+def test_combine_leaves_the_master_and_an_image_with_no_sidecar_alone(ocr):
+    _txt(ocr.resized / "sub" / "b.txt", "2girls")
+    rows, stats = run_export(ocr, apply=True)
+    assert (ocr.src / "a.txt").read_text(encoding="utf-8") == "1girl, solo, revised"
+    assert (ocr.out / "resized" / "sub" / "b.txt").read_text(
+        encoding="utf-8"
+    ) == "2girls"
+    (b,) = [r for r in rows if r.kind == "caption" and r.rel == "sub/b.png"]
+    assert not b.combined and not b.text
+    assert stats.combined == 2
+
+
+def test_combining_twice_publishes_nothing_the_second_time(ocr):
+    run_export(ocr, apply=True)
+    rows, stats = run_export(ocr, apply=True)
+    assert stats.created == 0 and stats.overwrote == 0 and stats.combined == 0
+    assert stats.skipped["identical"] == len(rows)
+
+
+def test_exporting_without_the_combine_takes_the_clause_back(ocr, ws):
+    run_export(ocr, apply=True)
+    rows, stats = run_export(ws, apply=True)
+    assert stats.overwrote == 2
+    assert {r.kind for r in rows if r.status == "overwrote"} == {"caption", "variants"}
+    assert (ws.out / "resized" / "a.txt").read_text(encoding="utf-8").endswith("cat.")
+
+
+def test_a_sidecar_gone_since_the_plan_publishes_the_caption_bare(ocr):
+    """The text is re-derived at write time: the OCR pass deletes a sidecar
+    when a re-run finds nothing, and the export must not keep the old claim."""
+    rows = plan_export(ocr)
+    (caption,) = [r for r in rows if r.kind == "caption"]
+    assert caption.combined and caption.text.endswith(JA)
+    Path(caption.ocr).unlink()
+    from anime_tools.stages.export_workspace import _run
+
+    _run(rows, apply=True)
+    assert (ocr.out / "resized" / "a.txt").read_text(encoding="utf-8").endswith("cat.")
+
+
+def test_a_combined_row_survives_the_report_and_reverts(ocr):
+    rows, _ = run_export(ocr, apply=True)
+    again = rows_from_report({"rows": [r.to_dict() for r in rows]})
+    assert [(r.ocr, r.text) for r in again] == [(r.ocr, r.text) for r in rows]
+    assert sum(r.combined for r in again) == 2
+    back, stats = revert_export(again, apply=True)
+    assert stats.removed == 6 and not (ocr.out / "resized" / "a.txt").exists()
+    assert {r.status for r in back} == {"removed", "restored"}
+
+
+def test_revert_checks_a_combined_row_against_what_it_recorded(ocr):
+    """A sidecar rewritten after the export changes what a fresh combine would
+    say, but the destination still holds what was published, so it reverts."""
+    from anime_tools.captions.ocr_sidecar import OcrLine, write_ocr_for
+
+    rows, _ = run_export(ocr, apply=True)
+    write_ocr_for(
+        ocr.ocr, Path("a.txt"), [OcrLine(seq=1, box=(0, 0, 1, 1), score=1, text="別")]
+    )
+    _, stats = revert_export(rows, apply=True)
+    assert stats.skipped.get("drifted", 0) == 0
+    assert not (ocr.out / "resized" / "a.txt").exists()

@@ -72,6 +72,9 @@ two."""
 DETECTION = "detection"
 """The argument group both SAM3 stages run their detector under."""
 
+OCR_DRAWER = "Combine OCR"
+"""Export's drawer: the text-clause combine and the tree it reads."""
+
 
 def _csv(default: tuple[str, ...], **meta) -> tuple[str, ...]:
     """A comma-separated flag held as a tuple."""
@@ -834,6 +837,22 @@ class ExportRequest(DatasetRequest):
         WS.EXPORT_ROOT,
         help="Export root: resized/, masks/ and captions/ land under it (default: "
         f"{WS.EXPORT_ROOT}). The tree the trainer reads.",
+    )
+    combine_ocr: bool = arg(
+        False,
+        gate="combine_ocr",
+        group=OCR_DRAWER,
+        help="Attach each image's OCR'd lines to the caption it publishes, as a "
+        'trailing `Japanese text reads as "…", "…"` clause on the revised '
+        "caption and on every line of its .variants.txt. The workspace copies stay "
+        "as they are; an image with no {stem}.ocr.txt publishes unchanged. Off by "
+        "default: the trainer then encodes the caption as curated",
+    )
+    ocr_dir: str = arg(
+        WS.OCR,
+        gate="combine_ocr",
+        help=f"The OCR tree the sidecars are read from, mirroring --dst "
+        f"(default: {WS.OCR}) — where the OCR stage wrote them",
     )
     apply: bool = arg(
         False, help="Copy for real (default: list what would be copied and stop)"

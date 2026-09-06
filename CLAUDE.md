@@ -101,8 +101,11 @@ clauses, commas delimit tags inside one. **Never `split(",")` a caption**; go th
   hand-edit tolerance (blank, `#`, wrong-arity lines skipped) live there. Three sidecars sit on it:
   `variants.py` (`.variants.txt`, `v0` = pristine), `history.py` (`.history.txt`, capped at
   `HISTORY_LIMIT`, sequences never renumbered), `ocr_sidecar.py` (`.ocr.txt`). OCR is not a caption
-  — it names words *in the picture*, so nothing downstream encodes it and it's absent from the
-  contract.
+  — it names words *in the picture*, so no caption stage reads it and the workspace caption never
+  carries it. It reaches the trainer only through Export's `--combine_ocr`
+  (`ocr_sidecar.with_ocr_clause`: the lines attached as the trailing `Japanese text reads as
+  "…", "…"` clause on the *published* caption and every variant line; an existing text clause is
+  replaced, no lines removes it).
 - `correction.py` + `taxonomy.py` / `tag_rules.py` / `tag_groups.py` do Danbooru-KB correction and
   bucket ordering; `index.py` builds `caption_index.json`; `shuffle.py` owns the `@no-artist`
   sentinel and Anima-prefix shuffle.
@@ -182,7 +185,12 @@ builds the SAM3 detector from a `DetectionRequest` (the A/B, review and probe CL
 (`image`/`caption`/`variants`/`mask`/`master`/`index`), each decided against the destination
 (`identical` by byte compare for text, `(size, mtime_ns)` for pixels). It always copies, takes no
 `--from_report`, and `revert_export` restores text it overwrote — an overwritten pixel reports
-`not-undoable`.
+`not-undoable`. `--combine_ocr` (GUI: the "Combine OCR" drawer, `--ocr_dir` inside it) is the one
+knob that makes a row a *render* rather than a copy: a `caption` / `variants` row whose image has a
+`{stem}.ocr.txt` publishes the text with the OCR clause attached, carries `ocr` + `text` in the
+report (`text` re-derived at decide time — a sidecar deleted since the plan publishes the caption
+bare; revert compares against the recorded text), and counts under `stats.combined`. Exporting
+again without the knob takes the clause back. The trainer must `make preprocess-te` after either.
 
 Stages are dry-run by default **from the CLI** and write `report.json`; `--apply` writes for real.
 The GUI always passes it.

@@ -92,7 +92,7 @@ workspace/                                       everything the tools write
   master/{stem}.txt                                revised master (Export publishes it back to image_dataset/)
   masks_sam/ masks_mit/ masks/                     each mask generator's tree, and their merge
   captions/<stage>/report.json  groups/groups.json  ocr/  export/report.json
-post_image_dataset/resized/ masks/               what the trainer reads   ← written only by Export
+post_image_dataset/resized/ masks/               what the trainer reads   ← written only by Export (--combine_ocr attaches ocr/ lines to each published caption)
 models/captioners/anima-tagger-dbv4/            tagger checkpoint (auto-fetched from sorryhyun/anima-tagger)
 models/sam3/  models/pe/  models/mit/  models/ppocr/   SAM3 / PE-Spatial / text-mask / OCR weights
 networks/calibration/sam3_girl_prompt.safetensors  SAM3 subject soft prompt (default `--prompt_embed`)

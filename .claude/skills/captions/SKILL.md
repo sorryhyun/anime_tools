@@ -31,6 +31,10 @@ with `text_clause(lines)`), `compose_caption` always renders it **last**, after 
 clause, and variants / `correct_caption` / `flatten_caption` pass it through verbatim (reading
 order is content). `has_clauses` stays *position*-only (a text sentence binds no subject, so it
 must not read as "already rewritten"); `has_text_clauses` is the other question.
+The producer of a text clause is **Export's `--combine_ocr`** (`ocr_sidecar.with_ocr_clause`): the OCR
+stage writes only `workspace/ocr/**/{stem}.ocr.txt`, and the combine attaches those lines to the
+*published* caption and every `.variants.txt` line at export time — the workspace caption never
+carries it, an export without the knob takes it back, and `make preprocess-te` must follow either.
 
 ## Dropping tag groups (`--caption_drop_groups`, GH #95)
 

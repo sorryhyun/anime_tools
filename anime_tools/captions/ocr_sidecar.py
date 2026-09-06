@@ -9,6 +9,11 @@ A record is ``seq ⇥ box ⇥ score ⇥ text``, in reading order; the text is la
 it may contain tabs. There is no language column — PP-OCRv6 returns a string,
 never a language.
 
+The one place the record meets a caption is :func:`with_ocr_clause`, which
+Export's ``--combine_ocr`` uses to publish the caption with the lines attached
+as a text clause (``Japanese text reads as "…", "…"``): the workspace caption
+is never rewritten, so the combine is a property of the published tree.
+
 Torch-free, stdlib-only and import-light.
 """
 
@@ -23,6 +28,11 @@ from anime_tools.captions._sidecar import (
     sidecar_header,
     sidecar_path,
     write_rows,
+)
+from anime_tools.captions.position_clauses import (
+    compose_caption,
+    parse_caption,
+    text_clause,
 )
 
 OCR_SIDECAR_SUFFIX = ".ocr.txt"
@@ -130,3 +140,20 @@ def write_ocr_for(ocr_dir: Path, rel: Path, lines: Iterable[OcrLine]) -> Path:
     sidecar.parent.mkdir(parents=True, exist_ok=True)
     write_ocr(sidecar, list(lines))
     return sidecar
+
+
+def with_ocr_clause(caption: str, lines: Sequence[OcrLine]) -> str:
+    """``caption`` with ``lines`` attached as its text clause, in reading order.
+
+    Any text clause the caption already carries is replaced, so combining twice
+    says each line once, and combining with no lines *removes* the clause — a
+    re-run over re-cropped pixels that found no text takes the old claim back
+    with it. Position clauses and the flat bag are untouched. An empty caption
+    with lines becomes the clause alone.
+    """
+    parsed = parse_caption(caption)
+    clauses = list(parsed.position_clauses)
+    texts = [line.text for line in lines if line.text]
+    if texts:
+        clauses.append(text_clause(texts))
+    return compose_caption(parsed.flat_tags, clauses)

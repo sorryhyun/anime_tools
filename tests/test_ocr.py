@@ -796,3 +796,38 @@ def test_tally_marks_are_a_count_and_never_a_line():
     assert not is_tally("TTT")  # no 正 at all: skip_en's job, not this one
     assert not keep_line("正T正正", min_chars=0, skip_en=False)
     assert keep_line("正解です", min_chars=0, skip_en=False)
+
+
+# ---- attaching the record to a caption ----------------------------------
+
+
+def test_the_clause_is_attached_after_the_position_clauses():
+    from anime_tools.captions.ocr_sidecar import with_ocr_clause
+
+    got = with_ocr_clause(
+        "1girl, solo. On the left, cat.", [line("大丈夫"), line("本当に")]
+    )
+    assert (
+        got
+        == '1girl, solo. On the left, cat. Japanese text reads as "大丈夫", "本当に".'
+    )
+
+
+def test_combining_again_replaces_the_clause_and_no_lines_removes_it():
+    from anime_tools.captions.ocr_sidecar import with_ocr_clause
+
+    once = with_ocr_clause("1girl", [line("旧")])
+    assert with_ocr_clause(once, [line("新")]) == '1girl. Japanese text reads as "新".'
+    assert with_ocr_clause(once, []) == "1girl"
+    assert with_ocr_clause("", [line("孤")]) == 'Japanese text reads as "孤".'
+
+
+def test_the_attached_line_round_trips_through_the_parser():
+    from anime_tools.captions.ocr_sidecar import with_ocr_clause
+    from anime_tools.captions.position_clauses import parse_caption
+
+    got = with_ocr_clause("1girl, solo", [line('He said "no", really. On the left')])
+    parsed = parse_caption(got)
+    assert parsed.flat_tags == ("1girl", "solo")
+    (text,) = parsed.text_clauses
+    assert text.tags == ('"He said ”no”, really. On the left"',)

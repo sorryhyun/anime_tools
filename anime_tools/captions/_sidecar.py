@@ -60,13 +60,19 @@ def read_rows(path: Path, fields: int) -> list[list[str]]:
     return out
 
 
-def write_rows(path: Path, header: str, rows: Iterable[Sequence[str]]) -> None:
-    """Write ``header`` and one tab-joined line per row, creating the parent dir.
+def render_rows(header: str, rows: Iterable[Sequence[str]]) -> str:
+    """The sidecar's text: ``header`` and one tab-joined line per row.
 
     Fields are joined, not escaped — a caption never contains a tab. The
-    trailing newline is part of the format.
+    trailing newline is part of the format. What :func:`write_rows` writes, for
+    a caller that publishes the text somewhere other than a sidecar of its own.
     """
     lines = [header]
     lines += ["\t".join(row) for row in rows]
+    return "\n".join(lines) + "\n"
+
+
+def write_rows(path: Path, header: str, rows: Iterable[Sequence[str]]) -> None:
+    """Write :func:`render_rows`' text to ``path``, creating the parent dir."""
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    path.write_text(render_rows(header, rows), encoding="utf-8")
