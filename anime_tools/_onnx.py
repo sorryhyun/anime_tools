@@ -58,11 +58,41 @@ def resolve_onnx_device(name: str | None = None) -> str:
     return "cuda" if "CUDAExecutionProvider" in providers else "cpu"
 
 
+CUDA_GPU_MEM_LIMIT_GB = 4.0
+"""Ceiling on one session's CUDA arena, in GiB (``ANIME_TOOLS_ORT_GPU_MEM_GB``
+overrides). See :func:`cuda_provider_options`."""
+
+
+def cuda_provider_options() -> dict[str, Any]:
+    """The CUDA provider's memory policy, the same for every session.
+
+    ORT's defaults are a BFC arena that grows by power-of-two chunks and never
+    shrinks, plus an *exhaustive* cuDNN algorithm search that allocates its own
+    workspace per new input shape. Measured on the AnimeText detector fed each
+    page at its native size (2026-09-06): the arena reached 15 GB over 351 pages
+    and the next process on the card died in ``cublasCreate``. So every session
+    extends its arena by exactly what a request needs, picks its convolution
+    algorithms heuristically, and is capped — the cap is generous for the
+    fixed-shape sessions this package runs (PP-OCRv6 at 1440² sits under 2 GB)
+    and is a hard wall rather than a leak for anything shape-varying.
+    """
+    import os
+
+    gb = float(os.environ.get("ANIME_TOOLS_ORT_GPU_MEM_GB", CUDA_GPU_MEM_LIMIT_GB))
+    return {
+        "arena_extend_strategy": "kSameAsRequested",
+        "cudnn_conv_algo_search": "HEURISTIC",
+        "gpu_mem_limit": int(gb * 1024**3),
+    }
+
+
 def make_session(onnx_path: str | Path, device: str, *, what: str):
     """An ``InferenceSession`` on the GPU when one was asked for and is there.
 
     The CUDA provider is a separate wheel (``onnxruntime-gpu``), so asking for it where
     only the CPU build is installed warns — naming ``what`` fell back — and continues.
+    On the GPU it runs under :func:`cuda_provider_options` — a bounded arena, for
+    every session alike.
 
     ``preload_dlls()`` first, and it is not optional: the CUDA and cuDNN libraries the
     provider links against ship as their own ``nvidia-*`` wheels and nothing else puts
@@ -88,7 +118,10 @@ def make_session(onnx_path: str | Path, device: str, *, what: str):
     if device.startswith("cuda"):
         preload_cuda_libs(ort)
         if "CUDAExecutionProvider" in ort.get_available_providers():
-            providers = ["CUDAExecutionProvider", "CPUExecutionProvider"]
+            providers = [
+                ("CUDAExecutionProvider", cuda_provider_options()),
+                "CPUExecutionProvider",
+            ]
         else:
             print(
                 f"WARNING: onnxruntime CUDAExecutionProvider unavailable — {what} "

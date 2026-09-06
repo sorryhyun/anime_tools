@@ -1,5 +1,11 @@
 """PP-OCRv6 detection and recognition: the only place the two ONNX sessions are built.
 
+:class:`OcrEngine` runs *a* detector through a small protocol (:class:`Detector`) —
+PP-OCRv6's DB head here, or the AnimeText text-block detector
+(:mod:`anime_tools.ocr.animetext`) — and, when it has one, the PP-OCRv6 recognizer
+over the crops. Without a recognizer it is detect-only: every box becomes a line
+with no text, for a re-reader (:mod:`anime_tools.ocr.reread`) to fill.
+
 Both models are fed **BGR**, with the ImageNet mean/std applied in that order (matching
 upstream), and the recognizer is normalized ``(x/255 - 0.5) / 0.5`` and padded, never
 stretched, to the batch's widest aspect ratio. Both sessions are held at a fixed input
@@ -15,7 +21,7 @@ from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Protocol
 
 from anime_tools._onnx import make_session
 from anime_tools.captions.ocr_sidecar import OcrLine
@@ -258,6 +264,21 @@ class TextDetector:
         prob = self.session.run(None, {self.session.get_inputs()[0].name: x})[0][0, 0]
         return self._boxes(prob, bgr.shape[:2], sx, sy, live)
 
+    # ---- the engine's detector protocol ---------------------------------
+
+    def prepare(self, bgr):
+        """:class:`Detector` — :meth:`_preprocess`."""
+        return self._preprocess(bgr)
+
+    def forward_batch(self, prepared: Sequence[tuple]) -> list:
+        """:class:`Detector` — :meth:`probs_batch`."""
+        return self.probs_batch(prepared)
+
+    def boxes(self, raw, prepared: tuple, shape: tuple[int, int]) -> list:
+        """:class:`Detector` — DB's contour pass over one map (:meth:`_boxes`)."""
+        _, sx, sy, live = prepared
+        return self._boxes(raw, shape, sx, sy, live)
+
     def probs_batch(self, prepared: Sequence[tuple]) -> list:
         """The probability map for each prepared image — **forward passes only**.
 
@@ -497,6 +518,20 @@ class TextRecognizer:
 # --------------------------------------------------------------------------
 
 
+NO_TEXT_SCORE = 0.0
+"""The ``score`` of a detect-only line: no recognizer stood behind it."""
+
+
+def _bounds(quad) -> tuple[int, int, int, int]:
+    """The axis-aligned ``(x0, y0, x1, y1)`` of a ``(4, 2)`` quad."""
+    return (
+        int(quad[:, 0].min()),
+        int(quad[:, 1].min()),
+        int(quad[:, 0].max()),
+        int(quad[:, 1].max()),
+    )
+
+
 def crop_quad(bgr, box):
     """The perspective-corrected strip a quad encloses, uprighted if it is tall.
 
@@ -529,12 +564,40 @@ def crop_quad(bgr, box):
     return crop
 
 
+class Detector(Protocol):
+    """What :class:`OcrEngine` asks of a detector, split the way its threads are.
+
+    :meth:`prepare` and :meth:`boxes` are pure CPU and run on the pool;
+    :meth:`forward_batch` is the one call that touches the session and runs on
+    the calling thread. ``boxes`` answers ``(4, 2)`` float quads in image pixels,
+    TL-TR-BR-BL — the shape :func:`crop_quad` and the size filters take — whether
+    the detector found a rotated line (DB) or an axis-aligned block (AnimeText).
+    """
+
+    def prepare(self, bgr) -> Any:
+        """One decoded image → what :meth:`forward_batch` is fed, plus whatever
+        :meth:`boxes` needs to map the result back."""
+
+    def forward_batch(self, prepared: Sequence[Any]) -> list:
+        """The raw head per prepared image, forward passes only."""
+
+    def boxes(self, raw, prepared: Any, shape: tuple[int, int]) -> list:
+        """One image's quads from its raw head; ``shape`` is its ``(h, w)``."""
+
+
 @dataclass
 class OcrEngine:
-    """Detector + recognizer as the one callable a stage needs."""
+    """Detector + recognizer as the one callable a stage needs.
 
-    detector: TextDetector
-    recognizer: TextRecognizer
+    ``recognizer=None`` is the detect-only engine: every box the detector keeps
+    is a line with empty text and :data:`NO_TEXT_SCORE`, in reading order, the
+    content filters skipped (there is no text to filter on). It exists for a
+    re-reader that reads every box itself — the AnimeText detector under the VL
+    reader — and is not a stage on its own.
+    """
+
+    detector: Detector
+    recognizer: TextRecognizer | None
     min_score: float = 0.6
     min_box_px: int = 12
     max_boxes: int = 64
@@ -617,13 +680,28 @@ class OcrEngine:
         live = [i for i, item in enumerate(loaded) if item is not None]
         prepared = [loaded[i][1] for i in live]
 
-        probs = self.detector.probs_batch(prepared)
+        raws = self.detector.forward_batch(prepared)
+        if self.recognizer is None:
+            kept_only: list[list] = [[] for _ in paths]
+            for i, boxes in zip(
+                live,
+                pool.map(
+                    lambda args: self._select(self.detector.boxes(*args)),
+                    [
+                        (raw, m, loaded[i][0].shape[:2])
+                        for i, raw, m in zip(live, raws, prepared, strict=True)
+                    ],
+                ),
+                strict=True,
+            ):
+                kept_only[i] = boxes
+            return [self._lines(kept_only[i], None) for i in range(len(paths))]
         cropped = list(
             pool.map(
                 lambda args: self._crops(*args),
                 [
-                    (loaded[i][0], p, m)
-                    for i, p, m in zip(live, probs, prepared, strict=True)
+                    (loaded[i][0], raw, m)
+                    for i, raw, m in zip(live, raws, prepared, strict=True)
                 ],
             )
         )
@@ -657,20 +735,17 @@ class OcrEngine:
         bgr = cv2.imdecode(data, cv2.IMREAD_COLOR)
         if bgr is None:
             return None
-        return bgr, self.detector._preprocess(bgr)
+        return bgr, self.detector.prepare(bgr)
 
-    def _crops(self, bgr, prob, prepared) -> tuple[list, list]:
-        """One image's kept boxes and their crops, from its probability map.
+    def _crops(self, bgr, raw, prepared) -> tuple[list, list]:
+        """One image's kept boxes and their crops, from its raw head.
 
-        The whole CPU tail of detection in one call — DB's contour pass, the size filters,
-        and the perspective crops — so the pool runs it per image while the session is
-        busy with the next batch.
+        The whole CPU tail of detection in one call — the detector's decode (DB's
+        contour pass), the size filters, and the perspective crops — so the pool runs
+        it per image while the session is busy with the next batch.
         """
-        _, sx, sy, live = prepared
         boxes, crops = [], []
-        for box in self._select(
-            self.detector._boxes(prob, bgr.shape[:2], sx, sy, live)
-        ):
+        for box in self._select(self.detector.boxes(raw, prepared, bgr.shape[:2])):
             crop = crop_quad(bgr, box)
             if crop is not None:
                 boxes.append(box)
@@ -693,26 +768,27 @@ class OcrEngine:
             : self.max_boxes
         ]
 
-    def _lines(self, kept: Sequence, recognized: Sequence[tuple[str, float]]):
-        """One image's surviving lines, numbered in reading order."""
+    def _lines(self, kept: Sequence, recognized: Sequence[tuple[str, float]] | None):
+        """One image's surviving lines, numbered in reading order.
+
+        ``recognized=None`` is the detect-only engine: every kept box is a line
+        with empty text, unfiltered — the re-reader behind it owns the floors.
+        """
+        if recognized is None:
+            empty = [
+                OcrLine(seq=0, box=_bounds(b), score=NO_TEXT_SCORE, text="")
+                for b in kept
+            ]
+            return [
+                OcrLine(seq=i, box=ln.box, score=ln.score, text=ln.text)
+                for i, ln in enumerate(reading_order(empty), 1)
+            ]
         lines: list[OcrLine] = []
         for box, (text, score) in zip(kept, recognized, strict=True):
             text = text.strip()
             if not text or score < self.min_score:
                 continue
-            lines.append(
-                OcrLine(
-                    seq=0,
-                    box=(
-                        int(box[:, 0].min()),
-                        int(box[:, 1].min()),
-                        int(box[:, 0].max()),
-                        int(box[:, 1].max()),
-                    ),
-                    score=score,
-                    text=text,
-                )
-            )
+            lines.append(OcrLine(seq=0, box=_bounds(box), score=score, text=text))
         # Join before filtering: a column of two glyphs is only short until the
         # rest of its balloon is on it, and a merged block sits where neither
         # part did, so reading order is settled afterwards.
@@ -732,6 +808,11 @@ class OcrEngine:
         ]
 
 
+DETECTORS = ("ppocr", "animetext")
+"""``load_ocr(detector=…)``: PP-OCRv6's DB head, or the AnimeText text-block
+detector (:mod:`anime_tools.ocr.animetext`, weights fetched on first use)."""
+
+
 def load_ocr(
     *,
     device: str = "cpu",
@@ -745,11 +826,37 @@ def load_ocr(
     batch_size: int = 8,
     chunk_size: int = 64,
     workers: int = 4,
+    detector: str = "ppocr",
+    det_conf: float | None = None,
+    det_nest: str = "inner",
+    recognizer: bool = True,
 ) -> OcrEngine:
-    """Both halves, on one device. The one entry point a stage calls."""
+    """Both halves, on one device. The one entry point a stage calls.
+
+    ``detector`` picks the head (:data:`DETECTORS`); ``det_conf`` / ``det_nest`` are
+    the AnimeText detector's score floor and nesting policy and are ignored by DB.
+    ``recognizer=False`` builds the detect-only engine (see :class:`OcrEngine`) and
+    loads no PP-OCRv6 recognizer at all.
+    """
+    if detector not in DETECTORS:
+        raise ValueError(f"detector must be one of {list(DETECTORS)}")
+    if detector == "animetext":
+        from anime_tools.ocr.animetext import DEFAULT_CONF, AnimeTextDetector
+
+        det: Detector = AnimeTextDetector.load(
+            device=device,
+            conf=DEFAULT_CONF if det_conf is None else det_conf,
+            nest=det_nest,
+        )
+    else:
+        det = TextDetector.load(device=device, limit_side=limit_side)
     return OcrEngine(
-        detector=TextDetector.load(device=device, limit_side=limit_side),
-        recognizer=TextRecognizer.load(device=device, batch_size=batch_size),
+        detector=det,
+        recognizer=(
+            TextRecognizer.load(device=device, batch_size=batch_size)
+            if recognizer
+            else None
+        ),
         min_score=min_score,
         min_box_px=min_box_px,
         max_boxes=max_boxes,

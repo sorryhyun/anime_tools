@@ -114,6 +114,18 @@ SFX_READER_TOWER_FILE = "tower.safetensors"
 SFX_READER_FILES = (*SFX_READER_ADAPTER_FILES, SFX_READER_TOWER_FILE)
 SFX_READER_DIR = "models/paddleocr_vl_1.6_manga_lora"
 
+# The AnimeText text-block detector: a YOLO12-l trained on deepghs/AnimeText
+# (735k anime / manga pages, one class), the OCR stage's ``--detector
+# animetext``. **Runtime download only, never bundled**: the model card is
+# GPL-3.0 and the dataset CC-BY-NC-SA-4.0 — neither may ship inside this MIT
+# package, the trainer, or a node. ``threshold.json`` carries the card's F1
+# threshold (0.426) for reference; the detector's own default is lower.
+ANIMETEXT_REPO = "deepghs/AnimeText_yolo"
+ANIMETEXT_SUBFOLDER = "yolo12l_animetext"
+ANIMETEXT_ONNX = "model.onnx"
+ANIMETEXT_FILES = (ANIMETEXT_ONNX, "threshold.json")
+ANIMETEXT_DIR = "models/animetext"
+
 # Danbooru tag KB — the ~114k-row classified tag table the correction pass types
 # tags against and the GUI's tag panel reads. A CSV in a GitHub repo, so it
 # rides ``_fetch_http``. Its descriptions are Korean; the English sibling is
@@ -158,6 +170,12 @@ def default_sfx_reader_dir() -> Path:
     """``<home>/models/paddleocr_vl_1.6_manga_lora`` — adapter + fine-tuned
     tower, what :class:`anime_tools.ocr.sfx.SfxReader` loads."""
     return resolve_path(SFX_READER_DIR)
+
+
+def default_animetext_dir() -> Path:
+    """``<home>/models/animetext`` — the AnimeText detector's ONNX, what
+    :class:`anime_tools.ocr.animetext.AnimeTextDetector` loads."""
+    return resolve_path(ANIMETEXT_DIR)
 
 
 def http_timeout() -> float:
@@ -529,6 +547,21 @@ def catalog() -> tuple[Asset, ...]:
             "detector. Needs the base above; both fetched on first use by the OCR "
             "stage's --reader vl (not listed under the stage so PP-OCRv6 alone "
             "stays a 140 MB stage). Trained on Manga109-s (COO).",
+        ),
+        Asset(
+            id="animetext_det",
+            title="AnimeText text-block detector (YOLO12-l)",
+            repo=ANIMETEXT_REPO,
+            subfolder=ANIMETEXT_SUBFOLDER,
+            files=ANIMETEXT_FILES,
+            dest=default_animetext_dir(),
+            used_by="OCR text (--detector animetext; anime_tools.ocr.animetext)",
+            stages=(),
+            notes="106 MB ONNX. One detector for balloon lines and the SFX drawn "
+            "onto the artwork, in place of PP-OCRv6's DB head; pairs with the "
+            "manga VL reader (--reader vl). Fetched on first use, never bundled: "
+            "weights GPL-3.0, training data CC-BY-NC-SA-4.0 — a shipped build "
+            "defaulting to it is a licence call.",
         ),
         Asset(
             id="mit_text",

@@ -18,6 +18,14 @@ runs under ``--reader vl``:
   (``read`` / ``read_iter``) over an engine and a reader, so the stage swaps
   it in without knowing.
 
+Under the AnimeText detector (``--detector animetext``) the engine is
+detect-only: its lines carry **no text**, and the reader is the only reader.
+Such a line lives or dies by its read — a read the guard rejects drops it, and
+the read must pass the same floors a mask component's does — and, with
+``join_cjk``, the block's columns are joined into one line afterwards, the way
+the engine joins PP-OCRv6's. No mask components are read on that path: one
+detector, not three layers.
+
 Measured on the sincos shard (the trainer's ``project/cjk_aware_anima_dit``,
 2026-09-06): the masked-but-no-line floor 23 → 8 pages, manga-ocr best-match
 0.786 → 0.810, hearts back on the speech lines; the regressions are digits
@@ -35,7 +43,8 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from anime_tools.captions.ocr_sidecar import OcrLine
-from anime_tools.ocr._text import keep_line, reading_order
+from anime_tools.ocr._text import join_cjk as _join_cjk
+from anime_tools.ocr._text import keep_line, normalize_line, reading_order
 
 Box = tuple[int, int, int, int]
 ReadBoxes = Callable[[object, Sequence[Box]], list[str | None]]
@@ -120,6 +129,7 @@ def reread_lines(
     comp_max: int = 16,
     min_chars: int = 3,
     skip_en: bool = True,
+    join_cjk: bool = False,
 ) -> list[OcrLine]:
     """One page through the VL reader: the lines re-read, the uncovered mask
     components read, reading order and numbering settled afterwards.
@@ -129,6 +139,12 @@ def reread_lines(
     ``None`` keeps its text and score; a component's read must pass the line
     floors (``min_chars`` / ``skip_en``, the same ones the engine applied) and
     :func:`has_script` to become a line, with :data:`NO_SCORE`.
+
+    A line with **empty text** (a detect-only engine's) is the reader's alone:
+    it is dropped when its read is ``None`` and held to the component floors
+    otherwise. ``join_cjk`` then joins those reader-only lines the way the engine
+    joins PP-OCRv6's columns (:func:`~anime_tools.ocr._text.join_cjk`); lines
+    that arrived with text were joined already and are never re-joined.
     """
     boxes: list[Box] = [tuple(int(v) for v in ln.box) for ln in lines]
     comps: list[Box] = []
@@ -141,22 +157,32 @@ def reread_lines(
     if not boxes and not comps:
         return []
     reads = read_boxes(bgr, boxes + comps)
+
+    def floors(text: str) -> bool:
+        return keep_line(text, min_chars=min_chars, skip_en=skip_en)
+
     out: list[OcrLine] = []
+    fresh: list[OcrLine] = []
     for ln, text in zip(lines, reads[: len(boxes)], strict=True):
+        if not ln.text:
+            if text and has_script(text):
+                fresh.append(OcrLine(seq=0, box=ln.box, score=ln.score, text=text))
+            continue
         if text is None or text == ln.text:
             out.append(ln)
         else:
             out.append(OcrLine(seq=ln.seq, box=ln.box, score=ln.score, text=text))
     seen = list(boxes)
     for box, text in zip(comps, reads[len(boxes) :], strict=True):
-        if not text or not has_script(text):
-            continue
-        if not keep_line(text, min_chars=min_chars, skip_en=skip_en):
-            continue
-        if covered(box, seen):
+        if not text or not has_script(text) or covered(box, seen):
             continue
         seen.append(box)
-        out.append(OcrLine(seq=0, box=box, score=NO_SCORE, text=text))
+        fresh.append(OcrLine(seq=0, box=box, score=NO_SCORE, text=text))
+    if join_cjk:
+        # Join before the floors, the engine's order for PP-OCRv6's columns: a
+        # column of one glyph is short only until the rest of its balloon is on it.
+        fresh = [normalize_line(ln) for ln in _join_cjk(fresh)]
+    out.extend(ln for ln in fresh if floors(ln.text))
     return [
         OcrLine(seq=i, box=ln.box, score=ln.score, text=ln.text)
         for i, ln in enumerate(reading_order(out), 1)
@@ -209,6 +235,9 @@ class RereadEngine:
     comp_max: int = 16
     min_chars: int = 3
     skip_en: bool = True
+    join_cjk: bool = False
+    """Join the reader-only lines' CJK columns (:func:`reread_lines`); on for
+    the detect-only engine, where every line is the reader's."""
 
     def _page(self, path: Path, lines: list[OcrLine]) -> list[OcrLine]:
         mask = None
@@ -240,6 +269,7 @@ class RereadEngine:
             comp_max=self.comp_max,
             min_chars=self.min_chars,
             skip_en=self.skip_en,
+            join_cjk=self.join_cjk,
         )
 
     def read(self, image_path: Path) -> list[OcrLine]:

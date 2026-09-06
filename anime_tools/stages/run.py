@@ -528,6 +528,9 @@ def _vl_engine(req: OcrRequest, engine, resized_dir: Path):
         comp_max=req.comp_max,
         min_chars=req.min_chars,
         skip_en=req.skip_en,
+        # The detect-only engine joined nothing (no text to join on); PP-OCRv6's
+        # lines arrive joined already and are never re-joined.
+        join_cjk=req.join_cjk and req.detect_only,
     )
 
 
@@ -545,7 +548,14 @@ def run_ocr(req: OcrRequest):
     # Not `_device.resolve_device`: its torch probe would cost this run 1.8x for an
     # answer onnxruntime already has.
     device = resolve_onnx_device(req.device)
-    print(f"Loading PP-OCRv6 ({device})...", flush=True)
+    what = (
+        "the AnimeText detector"
+        if req.detect_only
+        else "the AnimeText detector + PP-OCRv6 recognition"
+        if req.detector == "animetext"
+        else "PP-OCRv6"
+    )
+    print(f"Loading {what} ({device})...", flush=True)
     with phase("load ocr"):
         engine = load_ocr(
             device=device,
@@ -557,6 +567,9 @@ def run_ocr(req: OcrRequest):
             max_boxes=req.max_boxes,
             limit_side=req.det_limit_side,
             batch_size=req.batch_size,
+            detector=req.detector,
+            det_conf=req.det_conf,
+            recognizer=not req.detect_only,
         )
 
     if req.reader == "vl":
@@ -582,6 +595,8 @@ def run_ocr(req: OcrRequest):
             "min_box_px": req.min_box_px,
             "max_boxes": req.max_boxes,
             "det_limit_side": req.det_limit_side,
+            "detector": req.detector,
+            "det_conf": req.det_conf,
             "reader": req.reader,
             "mask_dir": str(resolve_path(req.mask_dir)) if req.mask_dir else None,
             "comp_min_side": req.comp_min_side,
