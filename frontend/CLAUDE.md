@@ -2,7 +2,7 @@
 
 Guidance for Claude Code when working in `frontend/` — the source of the GUI's
 single committed bundle. The server half is `anime_tools/gui/`, and the split is
-also how these two files divide: the root `CLAUDE.md` owns the **seam** (what
+also how these two files divide: `anime_tools/gui/CLAUDE.md` owns the **seam** (what
 the server sends, which routes exist, what is bound where), and everything about
 how the browser half is built is here and not repeated there.
 

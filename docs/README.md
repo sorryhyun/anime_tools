@@ -9,9 +9,10 @@ on the thing it describes.
   and the CLI, the knobs, the limits.
 - **Seams** — what this package and the trainer agree on.
 
-The architecture notes for people changing the code are `CLAUDE.md` at the repo root and
-`frontend/CLAUDE.md` for the browser half; `examples/` has one runnable script per feature, API
-beside CLI.
+The architecture notes for people changing the code are `CLAUDE.md` at the repo root (the
+invariants and the map), one `CLAUDE.md` per package under `anime_tools/` (that module's
+architecture), `frontend/CLAUDE.md` for the browser half, and `.claude/skills/` for procedures;
+`examples/` has one runnable script per feature, API beside CLI.
 
 ## Guidelines
 

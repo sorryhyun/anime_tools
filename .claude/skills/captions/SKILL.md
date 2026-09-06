@@ -1,9 +1,9 @@
 ---
 name: captions
-description: Caption pipeline — position-clause grammar (never hand-split a caption),
-make caption-autotag modes, make caption-position (v2 rewrite rules and gates),
-and the preprocess-stage wiring for both. Load before parsing/editing captions or caption code,
-running either target, or touching the caption preprocess stages.
+description: Caption pipeline — position-clause grammar (never hand-split a caption), text
+clauses and quoted lines, autotag modes, position-clause v2 rewrite rules and gates, tag-group
+drops, and how the trainer wraps these stages. Load before parsing/editing captions or caption
+code, running autotag / position / correct, or touching anime_tools/captions/ or stages/.
 ---
 
 # Caption pipeline: grammar, autotag, position clauses
@@ -31,16 +31,18 @@ with `text_clause(lines)`), `compose_caption` always renders it **last**, after 
 clause, and variants / `correct_caption` / `flatten_caption` pass it through verbatim (reading
 order is content). `has_clauses` stays *position*-only (a text sentence binds no subject, so it
 must not read as "already rewritten"); `has_text_clauses` is the other question.
-The producer of a text clause is **Export's `--combine_ocr`** (`ocr_sidecar.with_ocr_clause`): the OCR
+The producer of a text clause is **Export's `--combine_ocr`** (`ocr_sidecar.with_ocr_clause`):
+the OCR
 stage writes only `workspace/ocr/**/{stem}.ocr.txt`, and the combine attaches those lines to the
 *published* caption and every `.variants.txt` line at export time — the workspace caption never
 carries it, an export without the knob takes it back, and `make preprocess-te` must follow either.
 
 ## Dropping tag groups (`--caption_drop_groups`, GH #95)
 
-`make preprocess-captions ARGS="--caption_drop_groups artist,lighting,pose"` (or
-`CAPTION_DROP_GROUPS=…` / `caption_drop_groups` in `configs/preprocess.toml`) strips whole *kinds*
-of tag from every **mirrored** caption — the master under `image_dataset/` is never edited.
+`python -m anime_tools.stages.cli.correct_captions --caption_drop_groups artist,lighting,pose`
+(`CorrectRequest.caption_drop_groups`; the trainer spells it `CAPTION_DROP_GROUPS` /
+`caption_drop_groups` in its `configs/preprocess.toml`) strips whole *kinds* of tag from every
+**revised** caption — the master under `image_dataset/` is never edited.
 Slug table + resolution order in `anime_tools/captions/tag_drop_groups.py`: tag shape (`@`→artist,
 count, rating) → danbooru numeric kind → the KB's `[대분류 > 소분류]` path; anything not a slug is a
 literal path prefix (`"효과/연출 > 조명"`). Unknown-to-KB tags, ratings, the trigger word and `@no-artist`
@@ -49,13 +51,13 @@ LoRAs). Applies inside position clauses too (an emptied clause is removed whole)
 Setting it alone is enough to enable the correction pass. Note it is KB-faithful, so `thighhighs` is
 `accessory`, not `clothing`. CPU-only — no GPU involved.
 
-## Auto-tagging (`make caption-autotag`)
+## Auto-tagging (`python -m anime_tools.stages.cli.autotag_captions`)
 
 Batch Anima Tagger over the dataset, writing `.txt` sidecars into the **revised** tree
-(`workspace/resized/`) — the dataset-wide counterpart to the Dataset tab's per-image autotag button
-(`anime_tools/tagger/cli/autotag.py` is single-image + stdout-only and is *not* a batch path).
-Orchestration in `anime_tools/stages/autotag.py`, thin CLI at
-`anime_tools/stages/cli/autotag_captions.py`. Tags the **resized** image (the pixels training sees)
+(`workspace/resized/`). `anime_tools/tagger/cli/autotag.py` is single-image + stdout-only and is
+*not* a batch path. Orchestration in `anime_tools/stages/autotag.py`, request `AutotagRequest`,
+thin CLI at `anime_tools/stages/cli/autotag_captions.py`; the trainer's `make caption-autotag`
+wraps it. Tags the **resized** image (the pixels training sees)
 and writes beside it; the hand-written master is read (`resolve_caption`'s fallback) and never
 written. What a write replaces is pushed onto `{stem}.history.txt` under `by=autotag`, so no mode
 loses text outright.
@@ -71,21 +73,17 @@ Three `--mode`s:
 
 `--min_confidence` is an extra floor on top of the tagger's per-tag F1 thresholds (0 = leave its
 calibrated decisions alone; the rating slot ignores it). Dry-run by default (`report.json` with
-before/after per image); `ARGS="--apply"` writes and **must** be followed by `make preprocess-te`.
+before/after per image); `--apply` writes (the GUI always passes it) and **must** be followed by
+the trainer's `make preprocess-te`.
 
-Also a **preprocess stage**: `caption_autotag` (GUI Preprocessing tab → 자동 태깅 box, off by default;
-env `CAPTION_AUTOTAG` / `CAPTION_AUTOTAG_MODE` / `CAPTION_AUTOTAG_MIN_CONFIDENCE`,
-CLI `--caption_autotag[_mode|_min_confidence]`) runs inline **right after resize** with `--apply` —
-first in the chain because it *creates* the captions every later caption stage (position clauses →
-correction → TE) reads. Chain order is pinned by a test in `tests/test_preprocess_tasks.py`.
-
-## Position-clause generation (`make caption-position`)
+## Position-clause generation (`python -m anime_tools.stages.cli.position_captions`)
 
 SAM3 `girl` instances → reading order (row-aware, so 2×2 view sheets get `top left`/`bottom right`)
 → mask-blanked crops → Anima Tagger → the **revised** caption rewritten
-(`post_image_dataset/resized/<rel>.txt` — the file the mirror writes and TE encodes;
+(`workspace/resized/<rel>.txt` — the file Export publishes and the trainer's TE encodes;
 the hand-written master under `image_dataset/` is never written, only read as the fallback for a
-not-yet-mirrored image).
+not-yet-mirrored image). Request `PositionRequest`, orchestration in
+`anime_tools/stages/position_captions.py`; the trainer's `make caption-position` wraps it.
 
 **v2 (the default) *moves* a bound tag out of the flat bag into its clause** so each attribute is
 asserted exactly once — the hand-written convention. `--no_rewrite` is the additive v1 arm;
@@ -124,16 +122,19 @@ Four gates run **before** the rewrite, on what may enter a clause at all:
   `--max_novel_tags` slot. `torso only`/`cropped torso` are NOT in the tagger vocabulary —
   don't try to wire them. `--no_framing` is the A side.
 
-Every group set these gates read is **data**, in `configs/clause_vocabulary.yaml` (loaded into
-`ClauseGroups` by `anime_tools/captions/clause_vocabulary.py`, rationale inline, validated against
-the checkpoint's `groups.yaml` at load — an undeclared name is warned about, since it would silently
-disable its rule). Retune a gate there, not in Python; `load_clause_groups(path)` →
-`load_clause_vocabulary(ckpt, clause_groups=…)` runs an alternative set.
+Every group set these gates read is **data**, in
+`anime_tools/captions/data/clause_vocabulary.yaml` (loaded into `ClauseGroups` by
+`anime_tools/captions/clause_vocabulary.py`, rationale inline, validated against the checkpoint's
+`groups.yaml` at load — an undeclared name is warned about, since it would silently disable its
+rule; the trainer's `configs/clause_vocabulary.yaml` overrides the packaged one). Retune a gate
+there, not in Python; `load_clause_groups(path)` → `load_clause_vocabulary(ckpt, clause_groups=…)`
+runs an alternative set.
 
-Comparing two rule sets: `make daemon-run ARGS="anime_tools/stages/cli/ab_position_captions.py
---path_pattern '<glob>'"` proposes each image twice off **one** detect+tag pass
-(`--a_flags`/`--b_flags` take any position_captions flag) and writes contact sheets + `index.html`
-to `post_image_dataset/captions/position_ab/`, only for images where the two differ.
+Comparing two rule sets: `python -m anime_tools.stages.cli.ab_position_captions --path_pattern
+'<glob>'` proposes each image twice off **one** detect+tag pass (`--a_flags`/`--b_flags` take any
+position_captions flag) and writes contact sheets + `index.html` to
+`workspace/reports/position_ab/` (`--out`), only for images where the two differ. It reads the
+**master** caption only, on purpose.
 When reading the diff, check whether a displaced tag was in the **master** caption or a crop
 invention — on the framing A/B all 54 displaced tags were inventions, which flips the verdict.
 
@@ -147,35 +148,31 @@ part boxes skip mask-blanking and carry no identity tags.
 
 ### Apply & re-encode
 
-Dry-run by default (`report.json` + `--crops`); `ARGS="--apply"` writes and **must** be followed by
-`make preprocess-te` — nothing re-encodes on its own (the write does bump the caption mtime,
-so the cache is correctly stale, and the apply pass unlinks the now-stale `.variants.txt` sidecar,
-which would otherwise override `{stem}.txt` at encode time).
+Dry-run by default from the CLI (`report.json` + `--crops`); `--apply` writes and **must** be
+followed by the trainer's `make preprocess-te` — nothing re-encodes on its own (the write does
+bump the caption mtime, so the cache is correctly stale, and the apply pass unlinks the now-stale
+`.variants.txt` sidecar, which would otherwise override `{stem}.txt` at encode time). The GUI
+needs no Apply gate: the replaced text is a history version, and Undo replays the report
+backwards through `replay.apply_one`.
 
-The mirror (`write_corrected_preprocess_captions`) **reads the revised caption first** and corrects
-it in place — the flat bag is reordered around its clauses — reading the master only for an image
-with no revised caption yet, so a later `preprocess-captions` cannot mirror the clause-free master
-over the rewrite (nor drop the tags autotag merged). Once a revised caption exists a master edit no
-longer reaches it: edit the revised one, or delete it to re-mirror.
+The correction pass (`stages/captions.py::write_corrected_preprocess_captions`, `CorrectRequest`)
+**reads the revised caption first** and corrects it in place — the flat bag is reordered around
+its clauses — reading the master only for an image with no revised caption yet, so a later
+correction run cannot mirror the clause-free master over the rewrite (nor drop the tags autotag
+merged). Once a revised caption exists a master edit no longer reaches it: edit the revised one,
+or delete it to re-mirror.
 
-### Preprocess-stage wiring
+### In the trainer
 
-Also wired as a **preprocess stage**: `caption_position_clauses` (off by default in all four
-surfaces — `configs/preprocess.toml` key, env `CAPTION_POSITION_CLAUSES`,
-CLI `--caption_position_clauses`, GUI Preprocessing tab → 캡션 편집 box; CLI flag > env > config,
-and the GUI always exports the env var — so its checkbox **initializes from the config key** and an
-unchecked box persists as `false`, else a GUI run would export `0` over a CLI opt-in).
-With it on, `tasks.py preprocess` runs it inline with `--apply` after the VAE cache and before the
-caption/TE steps — no separate `preprocess-te` needed there, since the chain re-encodes anyway.
-
-**`make preprocess-captions` / `preprocess-te` honour the same knob** (both write-or-read the
-resized caption, so the stage runs before they touch it — the mirror then re-corrects around the
-fresh clauses); with the knob on, `preprocess-te` also **forces the mirror** even with correction
-and variants off, since TE must read `resized/` and the images the rewrite didn't touch still need
-their master caption mirrored there. The "already ran" mark rides on the shared caption-config dict,
-so the full chain still pays the SAM3 load exactly once. Same wiring for `caption_autotag`.
+The trainer wraps all three as **preprocess stages** (`caption_autotag`, off by default, first in
+the chain right after resize because it *creates* the captions every later stage reads;
+`caption_position_clauses`, off by default, after the VAE cache and before the caption/TE steps;
+correction always). Each is a `configs/preprocess.toml` key, an env var and a CLI flag over the
+same `Request`, run in-process with `--apply`; the chain re-encodes TE itself, so no separate
+`preprocess-te` there. That wiring, its precedence rules and its tests live in the trainer repo;
+the seam is `docs/contract.md`.
 
 ## References
 
 The rules, gates and knob table live in `docs/position_captions.md` — read it before retuning a
-rule.
+rule. The module map for `anime_tools/captions/` is `anime_tools/captions/CLAUDE.md`.

@@ -1,6 +1,9 @@
 # CLAUDE.md
 
-Guidance for Claude Code when working in this repository.
+Guidance for Claude Code when working in this repository. This file is the part that applies
+from any directory: what the package is, the commands, the workspace layout, and the invariants
+that bite everywhere. Each package under `anime_tools/` carries its own `CLAUDE.md` with that
+module's architecture, and procedures live in `.claude/skills/`; the map is at the bottom.
 
 ## What this is
 
@@ -31,13 +34,8 @@ python3 scripts/wrap_md.py **/*.md                    # semantic-wrap markdown a
 ```
 
 Python >= 3.13. `[tool.uv] override-dependencies = ["numpy>=2.0"]` overrides sam3's stale `numpy<2`
-pin. `onnx` + `onnxscript` are plain dependencies because the tagger download *builds* its ONNX
-graph (`downloads.py`'s `tagger_onnx` row); they are the exporter's own dependencies and running
-the graph needs neither.
-`onnxruntime` is a plain dependency split by marker — `onnxruntime` on macOS,
-`onnxruntime-gpu` everywhere else — because the two are the same import from two conflicting
-distributions and OCR (unlike the CTD text-mask gate, which falls back to `cv2.dnn`) has no
-fallback.
+pin. `onnx` + `onnxscript` and the marker-split `onnxruntime` are plain dependencies for reasons
+the `model-catalog` skill explains.
 
 `make hooks` points `core.hooksPath` at `scripts/hooks`. Pre-commit formats staged files only
 (`ruff check --fix --exit-zero` + `ruff format`, prettier on `frontend/`, `scripts/wrap_md.py` on
@@ -48,7 +46,7 @@ in the commit too — the hook names them on the way past. Bypass with `--no-ver
 sentence/clause boundaries rather than at the column — a greedy fill re-wraps everything below an
 edited sentence, which is the churn it exists to stop. Fenced code, tables, headings, quotes, link
 definitions and unbreakable tokens (long URLs) are skipped. `tests/test_doc_width.py` asserts the
-fixpoint (`wrap_text(t) == t`), not a width.
+fixpoint (`wrap_text(t) == t`), not a width, over every tracked `.md` — these files included.
 
 CLIs are `python -m` modules: `anime_tools.tagger.cli`, `anime_tools.stages.cli.*`,
 `anime_tools.grouping.cli.*`, `anime_tools.masking.cli.*`, `anime_tools.downloads`. The
@@ -69,348 +67,93 @@ consequences are pinned by tests: the near-twin feature cache needs its `(size, 
 because resize rewrites files under a key that doesn't move, and `resize`'s `min_pixels` skip means
 "invisible to the pipeline", so it names each dropped file rather than counting it.
 
-Caption stages write the **revised** caption under `workspace/resized/` and read it first — the
-correction pass included, which corrects it in place; the hand-written master under
+Caption stages write the **revised** caption under `workspace/resized/` and read it first —
+the correction pass included, which corrects it in place; the hand-written master under
 `image_dataset/` is a read-only fallback for an image that has no revised caption yet.
-Export, the GUI's caption editor and the multiview
-audit's `--apply` (which adds `multiple views` to the master, report holding the before-text) are
-the only writers of `image_dataset/`. Each write pushes the replaced text
-onto `{stem}.history.txt`, which is what makes a run
-safe without an Apply gate: the old version is a badge in the panel and Undo replays the report
-backwards.
+Export, the GUI's caption editor and the multiview audit's `--apply` (which adds `multiple views`
+to the master, report holding the before-text) are the only writers of `image_dataset/`. Each
+write pushes the replaced text onto `{stem}.history.txt`, which is what makes a run safe without
+an Apply gate: the old version is a badge in the panel and Undo replays the report backwards.
 
 `python -m anime_tools.workspace.migrate` moves a pre-workspace tree over. Any `--apply` that
 touches captions must be followed by the trainer's TE re-encode.
 
-## Architecture
+## Invariants
 
-### `captions/` (torch-free)
+Each of these is implemented in one package but bites from any of them.
 
-The single caption grammar: `<flat tag bag>. On the left, …. In the …, ….` — periods delimit
-clauses, commas delimit tags inside one. **Never `split(",")` a caption**; go through
-`position_clauses.parse_caption` / `compose_caption`.
+- **Never `split(",")` a caption.** The grammar `<flat tag bag>. On the left, …. In the …, ….`
+  has one parser, `captions/position_clauses.py` (`parse_caption` / `compose_caption` /
+  `tag_spans`); the browser gets clause structure from the server. `taxonomy.normalize_tag` is
+  the key for every "does the caption already say this?" comparison. Details: the `captions`
+  skill.
+- **Export is the only thing that writes outside the workspace**, and it always copies; every
+  other stage reads `workspace/resized/` and writes under `workspace/`.
+- **The surface is a request object per stage.** Every stage — captions, masking, grouping — is
+  a torch-free dataclass over `anime_tools/_request.py` (`arg(default, help=, group=, gate=,
+  choices=)`, validation in `__post_init__`, parser generated by `Request.parser()`,
+  `to_argv()` / `from_namespace()` inverses), a `run_<stage>(req)` runner, and a one-line CLI
+  shell. `stages/registry.py` lists all eleven, resolved lazily; the GUI form schema and argv
+  come from the same field list. `stages/` spells flags with underscores, `masking/` and
+  `grouping/` with hyphens, and either spelling is an alias. Procedure: the `add-stage` skill.
+- **Dry-run by default from the CLI; `--apply` writes.** Every run leaves `report.json`; the
+  GUI always applies and relies on `{stem}.history.txt` plus `replay.apply_one` (the one
+  drift-guarded write) for Undo.
+- **Torch stays out of the server path.** `captions/`, `gui/`, `contract.py`, `downloads.py`,
+  every `requests.py` and `registry.py` import without torch; model imports live inside runner
+  bodies. `tests/test_boundary.py` and `tests/test_registry_requests.py` pin it.
+- **Weight locations are spelled once, in `downloads.py`**; loaders import their defaults from
+  it. Procedure: the `model-catalog` skill.
+- **Progress is stdout.** `stages/cli/_args.py::make_progress` prints `  [done/total] detail`,
+  which is what the GUI's bar parses and what `_progress.py` forwards to the trainer's daemon
+  under `ANIMA_DAEMON_JOB_DIR`; a stage that prints nothing else has no bar.
+- **Markdown is wrapped at 100 columns** by `scripts/wrap_md.py`; run it on any `.md` you edit.
 
-- `taxonomy.py` is the one tag-*shape* vocabulary (pure stdlib): `normalize_tag` is the key every
-  "does the caption already say this?" comparison uses, so two danbooru spellings of a tag can never
-  read as two tags. `tests/test_tag_taxonomy.py` greps `stages/` for the bare `.lower()` that should
-  be this call. Also `is_count_tag`/`count_of`/`exact_count` (the one count regex) and
-  `SINGLE_COUNT_NAMES`/`is_solo_names`/`solo_multi_indices` (the `softmax_when_solo` predicate).
-- `vocab_io.py` is the one reader of a checkpoint's `vocab.json`.
-- `_sidecar.py` is the one tab-delimited sidecar format (`sidecar_header` / `sidecar_path` /
-  `read_rows` / `write_rows`) — the multi-dot-stem rule (`with_name`, not `with_suffix`) and
-  hand-edit tolerance (blank, `#`, wrong-arity lines skipped) live there. Three sidecars sit on it:
-  `variants.py` (`.variants.txt`, `v0` = pristine), `history.py` (`.history.txt`, capped at
-  `HISTORY_LIMIT`, sequences never renumbered), `ocr_sidecar.py` (`.ocr.txt`). OCR is not a caption
-  — it names words *in the picture*, so no caption stage reads it and the workspace caption never
-  carries it. It reaches the trainer only through Export's `--combine_ocr`
-  (`ocr_sidecar.with_ocr_clause`: the lines attached as the trailing `Japanese text reads as
-  "…", "…"` clause on the *published* caption and every variant line; an existing text clause is
-  replaced, no lines removes it).
-- `correction.py` + `taxonomy.py` / `tag_rules.py` / `tag_groups.py` do Danbooru-KB correction and
-  bucket ordering; `index.py` builds `caption_index.json`; `shuffle.py` owns the `@no-artist`
-  sentinel and Anima-prefix shuffle.
-- Gate/group sets for position clauses are **data** in `captions/data/clause_vocabulary.yaml` —
-  retune there, not in Python.
+## Shared infra (stdlib-level leaves, not trainer imports)
 
-### `tagger/`
-
-`AnimaTagger` = vocab/thresholds/optional sidecar head over the external `animetimm/*.dbv4-full`
-caformer. Checkpoint dir = `config.json`, `vocab.json`, `rules.yaml`, `groups.json`,
-`thresholds.safetensors`, optional `sidecar.safetensors`; GPL backbone weights are fetched at load
-via `_hf.py` under the user's HF token, never vendored.
-
-The backbone runs on timm, or on **onnxruntime** when `<ckpt_dir>/dbv4.onnx` exists —
-the `tagger_onnx` catalog row builds that graph as part of downloading the tagger
-(`python -m anime_tools.tagger.cli.export_onnx` is the same export with knobs), and its presence is
-the whole selection rule (`ANIMA_TAGGER_BACKEND=torch` opts out).
-The upstream repo's own `model.onnx` is
-the wrong graph: its `embedding` output is the 768-d pooled feature, while the sidecar trains on
-the 3072-d `mlp_hidden` from inside timm's `MlpHead`, so `onnx_export.py` exports both outputs
-itself and the sidecar / feature cache / trainer stay untouched. Measured end to end on one CPU:
-0.49 s/img against torch's 1.80 (fp32) and 2.39 (bf16), 7.6e-06 off the fp32 scores. bf16 was
-both slower and less accurate there, so `default_dtype` picks per device.
-
-`data.py::TaggerCheckpoint.from_dir` is the one read of a checkpoint dir. `feature_cache.py` owns
-the dbv4 hidden-state cache (a cache built for another manifest is misaligned row-for-row, so every
-reader checks the stem list in the safetensors metadata). `derive_groups.derive_from_args` +
-`write_merged_groups` are the one groups-derivation path, shared by `--mode derive_groups --apply`
-and `build_vocab --derive_groups`. `tagger/cli/autotag.py` is single-image/stdout only — batch
-tagging is `stages/autotag.py`.
-
-### `stages/`
-
-Caption-master stages and their thin CLIs: `resize.py`, `autotag.py` (modes
-`missing`/`merge`/`overwrite`; only `missing` is non-destructive), `position_captions.py` (SAM3
-instances → reading order → mask-blanked crops → tagger → clause rewrite; see
-`docs/position_captions.md`), `captions.py`, `multiview_audit.py`, `ocr.py`,
-`export_workspace.py`.
-
-**The surface is a request object per stage** (`stages/requests.py`, torch-free): `ResizeRequest`,
-`AutotagRequest`, `PositionRequest`, `CorrectRequest`, `OcrRequest`, `AuditRequest`,
-`ExportRequest`,
-run by `stages/run.py::run_<stage>(req)`, which is the old CLI main minus the parsing (preflight,
-model load, the library call, `report.json`, the printed epilogue). Same base as masking's
-(`anime_tools/_request.py`), with two differences: flags are spelled with underscores
-(`FLAG_SEP = "_"`), and a `store_false` switch names its one flag in `off` metadata
-(`skip_en` is `--keep_en`). **The parser is generated from the class** (`Request.parser()` →
-`_request.build_parser`): every field is declared through `arg(default, help=…, group=…, gate=…,
-choices=…)`, the class docstring is the `--help` description, and every flag with a separator
-takes the other spelling as an alias (`--path_pattern` / `--path-pattern`). The CLIs in `cli/` are
-one-line shells (`build_parser()` = `Request.parser()`, `main()` = `run_<stage>(from_argv())`).
-The SAM3 detection flags are one nested `DetectionRequest` (`GROUP = "detection"`) shared by
-`PositionRequest` and `AuditRequest`; `.options()` on either builds the `PositionCaptionOptions`
-field by field, so an option field with no request field is an error, not a silent default. The
-audit pins `min_instances=2` there rather than exposing it. Validation lives in `__post_init__`
-(autotag mode, `--flatten` vs `--from_report`, the randomize tokenizers, resize tiers); a missing
-input tree is a `FileNotFoundError` the shell turns into `SystemExit`. `stages/__init__.py` exposes
-all fifteen names lazily; `tests/test_registry_requests.py` round-trips every registered stage's
-request through its
-parser and imports the request half torch-poisoned; `tests/test_stage_requests.py` keeps the
-stage-specific pins.
-
-**`stages/registry.py`** is the stage list — `Stage(id, title, request="module:Class",
-run="module:function", module, panel, …)` for all eleven stages, masking and grouping included —
-resolved lazily (`Stage.request_class()`, `Stage.runner()`), so the GUI server and the trainer can
-enumerate stages without importing one, and a driver can go from a stage id to the in-process
-`run_<stage>(req)` call without naming a runner.
-
-`stages/_models.py::load_anima_tagger` caches the tagger per `(checkpoint dir, device)`, so
-autotag followed by position in one process loads it once, and `release_models()` (exported from
-`stages`) empties that cache and SAM3's for a driver that runs stages in-process and then hands the
-GPU to another process (the trainer's daemon job does, before its VAE/TE children);
-`stages/detector.py::build_detect_fn`
-builds the SAM3 detector from a `DetectionRequest` (the A/B, review and probe CLIs share it).
-
-**Export is the only thing that writes outside the workspace.** Six artifact kinds
-(`image`/`caption`/`variants`/`mask`/`master`/`index`), each decided against the destination
-(`identical` by byte compare for text, `(size, mtime_ns)` for pixels). It always copies, takes no
-`--from_report`, and `revert_export` restores text it overwrote — an overwritten pixel reports
-`not-undoable`. `--combine_ocr` (GUI: the "Combine OCR" drawer, `--ocr_dir` inside it) is the one
-knob that makes a row a *render* rather than a copy: a `caption` / `variants` row whose image has a
-`{stem}.ocr.txt` publishes the text with the OCR clause attached, carries `ocr` + `text` in the
-report (`text` re-derived at decide time — a sidecar deleted since the plan publishes the caption
-bare; revert compares against the recorded text), and counts under `stats.combined`. Exporting
-again without the knob takes the clause back. The trainer must `make preprocess-te` after either.
-
-Stages are dry-run by default **from the CLI** and write `report.json`; `--apply` writes for real.
-The GUI always passes it.
-
-Shared scaffolding (`tests/test_registry_requests.py` pins one spelling per shared flag, since the
-GUI fills `--path_pattern` / `--tagger_dir` / `--checkpoint` / `--prompt_embed` from one Settings
-value each):
-
-- `cli/_args.py::make_progress` (the `  [done/total] detail` line the GUI's progress bar parses;
-  under the trainer's daemon the same callback also streams every call to the job's
-  `progress.jsonl` through `_progress.py`),
-  `cli/_report.py`, `replay.run_replay_cli` (reads `from_report` / `path_pattern` / `apply` off the
-  request).
-- `_caption_io.py` — `read_caption`/`write_caption`, the trailing-newline invariant, the
-  `.variants.txt` drop, and `history_by`.
-- `_walk_captions.py` — `resolve_caption`/`iter_captions`: revised caption first, master as
-  read-only fallback. `autotag` walks images rather than captions, so it calls `resolve_caption`
-  itself; `ab_position_captions` deliberately reads the master only.
-- `replay.apply_one` — the one drift-guarded write: `no-proposal` → `missing-caption` →
-  `already-applied` → `drifted` → `would-write`/`written`.
-
-### `grouping/`
-
-`features.Embedder` protocol (`cls[B,D]` f32 L2-normed + `grid16[B,16,16,D]` f16); default embedder
-is PE-Spatial-B16-512 from the vendored tower in `vision/pe.py`. Feature cache at
-`$NEAR_TWIN_CACHE` (default `~/.cache/near_twin/`) is curation-private, keyed by parent-dir hash +
-stem and stamped with `(size, mtime_ns)` + `FEATURE_CACHE_VER`; anything wrong with an entry means
-recompute, never an error. `cli/match_decensored.py` has a different cache shape and they are
-deliberately not unified.
-
-`features.read_tags` is the one caption read on this side (through `parse_caption`, keyed by
-`normalize_tag`). The surface is `GroupRequest` (`grouping/requests.py`, torch-free, hyphenated
-flags) run by `groups.run_groups`, which resolves `--embedder`'s `module:callable` and calls
-`build_groups`; `--source-dir` defaults to `workspace/resized/`. Output `groups.json` is
-`MANIFEST_VERSION = 2`.
-
-### `masking/`
-
-SAM3 subject masks, SAM3/UNet++/ComicTextDetector text masks, merged into 8-bit L
-`{stem}_mask.png` mirroring the source subdir.
-
-**The surface is a request object per stage** (`requests.py`, torch-free): `SamMaskRequest`,
-`MitMaskRequest`, `MergeMasksRequest`, run by `sam.py::run_sam_masks`, `mit.py::run_mit_masks`,
-`merge.py::run_merge_masks`. Each field is one flag of the matching CLI, whose parser is
-generated from the class (`Request.parser()`, hyphenated: `FLAG_SEP = "-"`, with the underscore
-spelling as an alias);
-`to_argv()` / `from_namespace()` come from `anime_tools/_request.py` and are inverses over it
-(`tests/test_registry_requests.py` round-trips every one, and a default argv must read back as a
-default request). Validation lives in `__post_init__`; the CLIs in `cli/` are shells that parse,
-build the request, and turn its `ValueError` into `parser.error`. `load_sam3` caches
-per process on its arguments, so a text-mask pass after a subject-mask pass reuses the model.
-`masking/__init__.py` exposes all six names lazily. Two private cores:
-
-- `_sam3.py` is the **only** place SAM3 is constructed, the one declaration of `--checkpoint` /
-  `--prompt_embed`, and the home of `ground_with_soft_prompt` (a soft prompt *is* the text encoder's
-  output, so the encode is skipped), `prompt_list` (`none`/`off` = no prompts) and `detect_union`.
-  It installs the `np.bool` alias sam3 needs as an import side effect, with sam3 imports deferred
-  into functions so importing it stays torch-free. Two more shims run inside those functions:
-  `stub_edt_kernel` pre-seeds `sam3.model.edt` (the one module that imports triton, which has no
-  macOS build) with a stand-in that refuses to run, and `shim_sam3_for_cpu` redirects the image
-  model's two build-time `"cuda"` literals to CPU when torch has none. Neither fakes `triton`
-  itself: torch guards its own import of it and would take a fake one for real.
-- `_masks.py` owns the mask layout — `plan_mask_jobs`, `write_mask`/`write_ignore_mask`
-  (`detected=1 → alpha=0`), the read side (`mask_name`/`mask_path_for`/`iter_masks`), and
-  `mask_run`, the scaffolding both generators wrap their inner loop in (it reads the walk fields
-  of `MaskWalkRequest` by attribute). It deliberately does **not** import `_sam3`, because
-  `gui/dataset.py` imports `mask_name` and would otherwise drag in that side effect.
-
-The subject-mask CLI takes prompts, not a config: `--prompts` (masked out) / `--focus-prompts` (keep
-only, default `girl`) / `--prompt_embed`. The text-mask CLI is two detectors over one walk, each
-behind its own switch, unioned before the single dilation: `--use-sam` grounds SAM3 on
-`--sam-prompts`, `--use-mit` runs the UNet++ segmenter. They answer different questions (a balloon
-is a shape, a letter is a stroke), neither subsumes the other, and both being off is the one argv
-the stage refuses.
-
-Each switch is a **drawer**: the switch field carries `gate=<its own name>` plus the drawer's
-`group` title, and every knob inside it carries `gate=<the switch>` (`MitMaskRequest`). The GUI
-folds a shut drawer's knobs away and drops them from the argv; the generated parser also stamps the
-argparse group with `contract.GATE_ATTR` for anyone introspecting it directly.
-`tests/test_masking_plan.py` pins the shape.
-
-The three mask directories are **one ⚙ Settings value, not three form fields**: both generators name
-a mask `{stem}_mask.png` at the same relative path, so a shared directory would have the second run
-overwrite the first and leave the merge one tree to union. Each `--mask-dir` is its own tree, all
-three hanging off `MASK_SETTING` (`mask_root`).
-
-### `gui/` (torch-free)
-
-The `anime-tools-gui` web panel. `frontend/CLAUDE.md` owns the browser half; this section is the
-server side of the same seam.
-
-**`stages.py` turns each stage's request dataclass into a form schema and a form payload back
-into the request's argv.** The registry is `stages/registry.py` (re-exported); `schema()` walks
-`_request.args_of(Request)` — the same field list the CLI parser is generated from, so a flag's
-kind, default, help, group and drawer reach the form without argparse in between — and
-`build_argv()` coerces the payload into a namespace, reads it with `Request.from_namespace` (so the
-request's own validation runs server-side, as a 400) and spells it with `to_argv()`. Both happen
-in-process: the request modules are torch-free by test, and building all eleven schemas takes
-~0.1 s, so there is no child interpreter and no cache. Field binding:
-
-| Map | Bound to | Shown? |
-|---|---|---|
-| `ROOT_FIELDS` (`--src`, `--dst`, `--image-dir`, …) | dataset roots | hidden |
-| `SETTING_FIELDS` (`--path_pattern`, `--tagger_dir`, `--checkpoint`, `--prompt_embed`) | Settings stage defaults | hidden |
-| `REPORT_SETTING` / `REPORT_INPUTS` (`--report_dir`, groups' `--out`, Export's `--index`) | `report_root` + the stage's own tail | hidden |
-| `MASK_FIELDS` | `mask_root` + tail | hidden |
-| `PANEL_FIELDS` (Export's `--out`, `--index`) | as above, but a per-run choice | **shown** |
-| `AUTO_FIELDS` (`--device`) | resolved in the child by `_device.resolve_device` | neither shown nor sent |
-| `BASIC_FIELDS` | — | shown; everything else in that stage folds under `advanced (n)` |
-
-Report and mask roots are split per-stage (`report_subpath` / `mask_subpath`) so one stage's
-`--from_report` can't read another's report, and so the two generators don't overwrite each other. A
-blank root means *beside* the relevant dataset root (`_root_beside`). A drawer's gate, a required
-field and an already-hidden field are never folded — the server settles that, not the browser.
-
-Other server pieces:
-
-- `dataset.py` joins the trees (`src`/`dst`/`masks`/`master`/`out`) into the sidebar's image→caption
-  tree by relative path, reads/writes single captions, renders thumbnails. Only `master` and
-  `revised` are writable. An image's captions are a **ladder** (`CAPTION_LADDER`, one `Rung` per
-  caption kind), shipped to the browser as per-row dot flags and as `caption_versions`' ordered
-  list,
-  where a sidecar rung expands into one entry per caption it holds (`v0`, `v1`, `revised@2`…). The
-  sidebar draws one listing in two orderings, `tree` and `groups`; `load_groups` reads
-  `<report_root>/<GROUPS_SUBPATH>` and answers **rels only**, so filters and pending dots mean the
-  same thing in both modes. A missing groups manifest is not an error; an unparseable one is a 400.
-- **The browser never splits a caption**: clause structure and every tag's `[start, end)` come from
-  `/api/dataset/item` and `/api/dataset/parse` via `position_clauses.tag_spans`, which is what lets
-  the editor stay a real `<textarea>` with boxes painted behind it.
-- `proposals.py` is `stages/replay.py` seen from the server: `load_report` / `report_rows` /
-  `apply_one` are imported; an Undo is `apply_one` with the two texts swapped, and Export branches
-  to
-  `revert_export` at the top. `proposals.SHAPES` is `contract.REPLAY_SHAPES`, the same objects the
-  three stage CLIs bind as their `REPLAY_SPEC` (importing a stage CLI would pull torch in);
-  `tests/test_gui_proposals.py` pins the identity.
-- `jobs.py` runs one `python -m` subprocess at a time over SSE. A job is a *sequence* of `Step`s
-  sharing one slot, log and stream, because `preprocess_for()` puts `resize` in front of every stage
-  bound to the `dst` root; a failing step stops the chain. `masks_merge` and the `NO_PREFLIGHT`
-  names
-  sit outside it.
-  A running stage tells the browser nothing but its stdout, so the panel's progress bar and log
-  window are read straight off it — `stages/cli/_args.py::make_progress`'s `  [done/total] detail`
-  and the `── step i/n: label ──` header this module prints in front of each step of a sequence are
-  the two formats parsed there, and a stage printing neither simply has no bar.
-- `tags.py` merges the two Danbooru KB files (base CSV = taxonomy; optional `.en.csv` replaces only
-  the description) for `/api/tags/describe`, cached on both mtimes; a missing KB answers
-  `installed: false` rather than erroring.
-- `nativepick.py` opens the *host's* file chooser (zenity/kdialog/osascript/PowerShell) as a
-  subprocess for `POST /api/pick`. `/api/ls` is the fallback for headless or remote browsers.
-- What the panel may **read** is `dataset.dataset_bases()`: the curation home plus any root the
-  *saved* settings pin outside it (`reachable()`, lexical). What it may **create** is narrower —
-  `owned()`, under the home only — so a typo in an external root is a missing root, not a new empty
-  directory.
-- ⚙ Settings is **three dialogs, not one tabbed one** (`SETTINGS_PANES`): roots, stage defaults +
-  preflight, models. Only the open pane is mounted, so `SettingsOut` carries `null` for the other
-  two.
-- The panel's own chrome is translated (`frontend/src/i18n/`), and so is the dock's navigation —
-  the panel buttons and the stage names on them, keyed by this registry's own ids. Everything else
-  the server owns (a stage's doc and notes, argparse labels and help, the model catalog) ships as it
-  arrives.
-
-### `downloads.py` (torch-free)
-
-The model catalog — one `Asset` per checkpoint (tagger + gated dbv4 backbone + the ONNX graph
-traced from it, SAM3, PE-Spatial, MIT text net, ComicTextDetector, SAM3 subject soft prompt,
-Danbooru tag KB) with repo, files, destination and an offline `installed` probe.
-It is the **single source of truth for weight
-locations**: `vision/pe.py`, `masking/mit.py` and `_sam3`'s flag defaults import
-theirs from here, and `default_ctd_onnx_path()` has no flag at all — a path you could point
-elsewhere is a Download button that writes where the loader doesn't look.
-
-Most rows are HF-hub fetches; the soft prompt, the CTD net and the tag KB go through
-`Asset._fetch_http`. Two rows are `derived` — their downloads are *inputs* that stay in the hub
-cache, and the probe asks for the file `build` writes, so a hub sweep can't turn a built row back
-to "missing". `danbooru_tags_en` builds its CSV from the 45 MB Danbooru wiki mirror;
-`tagger_onnx` traces `dbv4.onnx` out of the gated backbone, which is why it is a build and not a
-download — GPL weights can't be redistributed, so every user exports their own. It reads the
-`tagger` row's `config.json`, so it sits after it in catalog order (`main()` fetches in order).
-`python -m anime_tools.downloads [ID…]` fetches; the GUI's Models pane runs exactly that.
-
-### Smaller pieces
-
-- **`buckets.py`** (torch-free, numpy-free): the free-fit token-band geometry — the **owner**, since
-  2026-09-03: the trainer's `library/datasets/buckets.py` re-exports these names, so
-  `stages/resize.py` and the trainer's `make preprocess-resize` (itself a `ResizeRequest` now)
-  land an image on the same `(W, H)` by construction. `tests/test_resize_images.py` pins the
-  numbers and the `anima_resize_*` PNG text keys; `ResizeRequest.skip` carries the trainer GUI's
-  per-image curation decisions.
-- **`contract.py`** (stdlib-only leaf, pinned by `test_contract_is_torch_free`): the constants both
-  sides of the seam spell — autotag stdio sentinels and modes, tagger checkpoint file sets,
-  `REPLAY_REPORT_NAME`, `GATE_ATTR` (the stamp the generated parser leaves on a drawer's argparse
-  group), `ReplaySpec` + `REPLAY_SHAPES`, `CONTRACT_VERSION`. Anything the GUI server or the
-  trainer needs without importing a stage goes here; the stage re-exports it.
-- **Shared infra** (tiny copies, not trainer imports): `_env.py` (`curation_home()` =
-  `ANIME_TOOLS_HOME` → `ANIMA_HOME` → CWD; `models_dir()`; `workspace_dir()`; `resolve_path`),
-  `_walk.py` (the one image walk — `IMAGE_EXTENSIONS` / `glob_images_pathlib` / `walk_images`),
-  `_json.py` (UTF-8 both ways, `ensure_ascii=False`, `indent=2` — a bare `open()` reads in the
-  platform codepage, which isn't UTF-8 on Windows), `_device.py` (`DEVICE_HELP` for the request
-  fields, `add_device_arg` for the hand-written CLIs, and the one `cuda if available` probe; the
-  flag literal exists once, pinned by `tests/test_registry_requests.py`),
-  `_hf.py` (tests patch this path), `path_filter.py` (the one `path_pattern` implementation),
-  `_onnx.py` (the one ORT provider choice — `resolve_onnx_device` + `make_session`, shared by OCR
-  and the tagger's exported backbone; CPU and CUDA only, never CoreML),
-  `_progress.py` (stdlib: with `ANIMA_DAEMON_JOB_DIR` set, `step()` appends the daemon's own
-  `{"ev": "step", "global_step", "total_steps", "detail"}` line to `<job_dir>/progress.jsonl` and
-  `phase(name)` brackets a model load with a 30 s heartbeat so the daemon's stall watchdog does
-  not kill a quiet SAM3/tagger/OCR/embedder load; every loader and progress callback goes through
-  it, and without the variable it is a no-op).
+- **`contract.py`** (pinned torch-free): the constants both sides of the seam spell — autotag
+  stdio sentinels and modes, tagger checkpoint file sets, `REPLAY_REPORT_NAME`, `GATE_ATTR` (the
+  stamp the generated parser leaves on a drawer's argparse group), `ReplaySpec` + `REPLAY_SHAPES`,
+  `CONTRACT_VERSION`. Anything the GUI server or the trainer needs without importing a stage goes
+  here; the stage re-exports it.
+- **`buckets.py`** (torch-free, numpy-free): the free-fit token-band geometry — the **owner**
+  since 2026-09-03: the trainer's `library/datasets/buckets.py` re-exports these names, so
+  `stages/resize.py` and the trainer's `make preprocess-resize` land an image on the same
+  `(W, H)` by construction. `tests/test_resize_images.py` pins the numbers and the
+  `anima_resize_*` PNG text keys.
+- `_env.py` (`curation_home()` = `ANIME_TOOLS_HOME` → `ANIMA_HOME` → CWD; `models_dir()`;
+  `workspace_dir()`; `resolve_path`), `_walk.py` (the one image walk — `IMAGE_EXTENSIONS` /
+  `glob_images_pathlib` / `walk_images`), `_json.py` (UTF-8 both ways, `ensure_ascii=False`,
+  `indent=2` — a bare `open()` reads in the platform codepage, which isn't UTF-8 on Windows),
+  `_device.py` (`DEVICE_HELP` for the request fields, `add_device_arg` for the hand-written
+  CLIs, and the one `cuda if available` probe; the flag literal exists once), `_hf.py` (tests
+  patch this path), `path_filter.py` (the one `path_pattern` implementation), `_onnx.py` (the one
+  ORT provider choice, shared by OCR and the tagger's exported backbone; CPU and CUDA only, never
+  CoreML), `_progress.py` (with `ANIMA_DAEMON_JOB_DIR` set, `step()` appends to the daemon's
+  `progress.jsonl` and `phase(name)` brackets a model load with a 30 s heartbeat; without the
+  variable it is a no-op).
 - **`comfyui/anima_tagger/`** (not installed — `packages.find` only includes `anime_tools*`): the
-  ComfyUI node. Imports `AnimaTagger` plus `ensure_tagger_checkpoint` and the `dbv4_meta` constants
-  from the installed package and vendors nothing, so the gated-backbone fetch happens in the loader
-  node rather than mid-predict. What stays local is the ComfyUI shell.
+  ComfyUI node, importing `AnimaTagger` from the installed package and vendoring nothing.
 - **`design/`** (not installed, no runtime role): the GUI's design system as a published Claude
-  Design canvas. Every value on the boards is lifted from `frontend/src/styles.css` — a number that
-  drifts from the source is a bug. `boards/<Name>.html` + `canvas.json`, built by `design/build.py`;
-  see `design/README.md`. Edits made in the published editor do **not** flow back.
+  Design canvas; every value is lifted from `frontend/src/styles.css`, and edits made in the
+  published editor do **not** flow back. See `design/README.md`.
 
-## Working on captions
+## Map
 
-Load the `captions` skill (`.claude/skills/captions/`) before parsing/editing captions or touching
-`captions/` / `stages/` code — it carries the grammar rules, autotag modes, and the position-clause
-move rules/gates in detail. Docs: `docs/anima_tagger.md`, `docs/position_captions.md`,
-`docs/multiview_audit.md`.
+| Working on | Read first |
+|---|---|
+| `anime_tools/captions/` — grammar, sidecars, correction, clause rewrite | `anime_tools/captions/CLAUDE.md` + the `captions` skill; `docs/position_captions.md` |
+| `anime_tools/stages/` — the seven caption stages, requests, registry, replay, Export | `anime_tools/stages/CLAUDE.md`; `docs/multiview_audit.md` |
+| `anime_tools/tagger/` — checkpoint, backends, feature cache, calibration | `anime_tools/tagger/CLAUDE.md`; `docs/anima_tagger.md` |
+| `anime_tools/masking/` — SAM3 construction, mask layout, drawers | `anime_tools/masking/CLAUDE.md`; `docs/masking.md` |
+| `anime_tools/grouping/` — embedders, feature cache, `groups.json` | `anime_tools/grouping/CLAUDE.md`; `docs/grouping.md` |
+| `anime_tools/gui/` — schema/argv binding, dataset ladder, jobs, settings | `anime_tools/gui/CLAUDE.md` |
+| `frontend/` — the Solid browser half | `frontend/CLAUDE.md` |
+| `anime_tools/ocr/` + `stages/ocr.py` — PP-OCRv6 over the resized tree | `anime_tools/stages/CLAUDE.md`; the sidecar rule in the `captions` skill |
+| `anime_tools/downloads.py` — adding or moving a weight | the `model-catalog` skill |
+| A new stage, a renamed flag, a GUI knob | the `add-stage` skill |
+| A version bump, the installer, `release.yml` | the `release` skill |
+| Tests in `tests/` | the nested file of the package under test; `test_registry_requests` and `test_boundary` span all of them |
+
+A nested `CLAUDE.md` loads when you read a file in its directory; a skill loads when you ask for
+it. If a task touches a package only through `tests/` or `docs/`, open the nested file yourself.
