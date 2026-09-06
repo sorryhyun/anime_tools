@@ -1,7 +1,10 @@
 """Export a checkpoint's dbv4 backbone to ``<ckpt_dir>/dbv4.onnx``.
 
-    uv sync --group export     # onnx + onnxscript, the exporter's own dependencies
     python -m anime_tools.tagger.cli.export_onnx
+
+``python -m anime_tools.downloads tagger_onnx`` (and the GUI's Models pane) runs this
+same export, so what this CLI adds is the knobs: another checkpoint, another opset, a
+rebuild, ``--verify``.
 
 Once the file is there every :class:`~anime_tools.tagger.tagger.AnimaTagger` on that
 checkpoint runs on onnxruntime instead of timm — autotag, position clauses, the
@@ -24,7 +27,11 @@ import torch
 
 from anime_tools._env import resolve_path
 from anime_tools.tagger.dbv4_meta import DEFAULT_TAGGER_DIR, dbv4_onnx_path
-from anime_tools.tagger.onnx_export import DEFAULT_OPSET, export_for_checkpoint
+from anime_tools.tagger.onnx_export import (
+    DEFAULT_OPSET,
+    export_for_checkpoint,
+    quiet_exporter_logs,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -107,15 +114,9 @@ def _verify(ckpt_dir: Path, image_path: Path) -> None:
         )
 
 
-# The exporter's optimiser logs every rewritten node and folded initializer at INFO
-# — several thousand lines for one caformer, around the four that say what happened.
-NOISY_LOGGERS = ("onnxscript", "onnx_ir", "onnx")
-
-
 def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(message)s")
-    for name in NOISY_LOGGERS:
-        logging.getLogger(name).setLevel(logging.WARNING)
+    quiet_exporter_logs()
     args = parse_args()
     ckpt_dir = Path(resolve_path(args.ckpt_dir))
     if not (ckpt_dir / "config.json").is_file():
@@ -138,9 +139,8 @@ def main() -> None:
             out = export_for_checkpoint(ckpt_dir, opset=args.opset, overwrite=True)
         except ImportError as exc:
             raise SystemExit(
-                f"{exc}\nThe exporter needs onnx + onnxscript, which are not in the "
-                "default sync (running the exported graph does not need them): "
-                "`uv sync --group export`"
+                f"{exc}\nThe exporter traces through onnx + onnxscript, both plain "
+                "dependencies of this package: `uv sync`"
             ) from exc
         logger.info(
             "wrote %s (%.0f MB) in %.0f s",

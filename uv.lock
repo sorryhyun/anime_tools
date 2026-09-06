@@ -52,8 +52,10 @@ dependencies = [
     { name = "huggingface-hub" },
     { name = "matplotlib" },
     { name = "numpy" },
+    { name = "onnx" },
     { name = "onnxruntime", marker = "sys_platform == 'darwin'" },
     { name = "onnxruntime-gpu", marker = "sys_platform != 'darwin'" },
+    { name = "onnxscript" },
     { name = "opencv-python" },
     { name = "pillow" },
     { name = "psutil" },
@@ -85,10 +87,6 @@ dev = [
     { name = "pytest-xdist" },
     { name = "ruff" },
 ]
-export = [
-    { name = "onnx" },
-    { name = "onnxscript" },
-]
 
 [package.metadata]
 requires-dist = [
@@ -98,8 +96,10 @@ requires-dist = [
     { name = "huggingface-hub", specifier = ">=0.30" },
     { name = "matplotlib" },
     { name = "numpy", specifier = ">=2.0" },
+    { name = "onnx", specifier = ">=1.17" },
     { name = "onnxruntime", marker = "sys_platform == 'darwin'", specifier = ">=1.21" },
     { name = "onnxruntime-gpu", marker = "sys_platform != 'darwin'", specifier = ">=1.21" },
+    { name = "onnxscript", specifier = ">=0.5" },
     { name = "opencv-python", specifier = ">=4.11" },
     { name = "pillow" },
     { name = "psutil" },
@@ -128,10 +128,6 @@ dev = [
     { name = "pytest", specifier = ">=8" },
     { name = "pytest-xdist" },
     { name = "ruff" },
-]
-export = [
-    { name = "onnx", specifier = ">=1.17" },
-    { name = "onnxscript", specifier = ">=0.5" },
 ]
 
 [[package]]

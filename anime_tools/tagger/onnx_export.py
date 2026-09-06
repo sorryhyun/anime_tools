@@ -16,9 +16,10 @@ What comes out is one file with the same contract as
 * outputs ``probs`` ``[batch, n_classes]`` (sigmoid, not logits) and ``hidden``
   ``[batch, d_hidden]``.
 
-torch, timm and the ``export`` dependency group are needed *here*; running the
-result needs only onnxruntime. The weights are gated and GPL-3.0, so the file is
-never redistributed — every user exports their own.
+torch, timm, onnx and onnxscript are needed *here*; running the result needs only
+onnxruntime. The weights are gated and GPL-3.0, so the file is never redistributed
+— every user exports their own, which is what ``downloads.py``'s ``tagger_onnx``
+row does on the way past.
 """
 
 from __future__ import annotations
@@ -40,10 +41,22 @@ from anime_tools.tagger.dbv4_meta import (
 logger = logging.getLogger(__name__)
 
 DEFAULT_OPSET = 18
+
+NOISY_LOGGERS = ("onnxscript", "onnx_ir", "onnx")
+"""The exporter's optimiser logs every rewritten node and folded initializer at
+INFO — several thousand lines for one caformer, around the four that say what
+happened. Both callers (the CLI and the ``tagger_onnx`` catalog row) mute them."""
+
 MAX_EXPORT_BATCH = 256
 """Upper bound declared for the dynamic batch dimension. torch.export wants a
 *range*, not "anything"; nothing here feeds the backbone more than a handful of
 crops at a time, and the bound is only a promise to the shape solver."""
+
+
+def quiet_exporter_logs() -> None:
+    """Hold :data:`NOISY_LOGGERS` at WARNING for the duration of the process."""
+    for name in NOISY_LOGGERS:
+        logging.getLogger(name).setLevel(logging.WARNING)
 
 
 class _ExportWrapper(nn.Module):
@@ -86,6 +99,10 @@ def export_dbv4_onnx(
     """
     out_path = Path(out_path)
     out_path.parent.mkdir(parents=True, exist_ok=True)
+    # Through a .part: the graph's mere presence is the backend selection rule, so
+    # a half-written file from an interrupted export would be picked up as real.
+    part = out_path.with_name(out_path.name + ".part")
+    part.unlink(missing_ok=True)
 
     backend = Dbv4Backend(
         repo=repo,
@@ -106,7 +123,7 @@ def export_dbv4_onnx(
     torch.onnx.export(
         wrapper,
         (example,),
-        str(out_path),
+        str(part),
         dynamo=True,
         # One file, not a graph plus a sidecar blob: `dbv4.onnx` alone is what the
         # backend probes for, and a half-copied pair would pass that probe and then
@@ -117,6 +134,7 @@ def export_dbv4_onnx(
         output_names=["probs", "hidden"],
         dynamic_shapes={"pixel_values": {0: batch}},
     )
+    part.replace(out_path)
     return out_path
 
 

@@ -20,8 +20,9 @@ missing; the backbone repo follows the checkpoint's
 the torch-free `anime_tools/tagger/dbv4_meta.py` are the single source of truth
 for repo and file set (`tagger.py` re-exports them; the ComfyUI node and
 `anime_tools/downloads.py` — the catalog behind the GUI's Models rows — track
-them). `python -m anime_tools.downloads tagger tagger_backbone`, what ⚙
-Settings → **Models** runs, pre-fetches both halves.
+them). `python -m anime_tools.downloads tagger tagger_backbone tagger_onnx`,
+what ⚙ Settings → **Models** runs, pre-fetches both halves and traces the ONNX
+graph the third row builds out of them.
 
 Every runtime entry point (position captions, batch autotag, the GUI autotag
 server, DirectEdit) goes through `ensure_tagger_checkpoint`, which also runs
@@ -117,7 +118,7 @@ is the standard middle ground — softens the long-tail without overshoot.
 | `dbv4_meta.py` | Torch-free facts about the backbone and our checkpoint: repo ids, required/optional file sets, `DEFAULT_TAGGER_DIR`. Shared by the loader, the ComfyUI node and `downloads.py`. |
 | `dbv4_backend.py` | Backbone loader + `align_vocab` (the single vocab join point) + `SidecarHead` (our linear head over the backbone's hidden state) + `default_dtype` (bf16 on CUDA, fp32 elsewhere). |
 | `dbv4_onnx.py` | `Dbv4OnnxBackend` — the same backbone on onnxruntime, used automatically when `<ckpt_dir>/dbv4.onnx` exists. |
-| `onnx_export.py` | `export_dbv4_onnx` / `export_for_checkpoint` — builds that graph (torch + timm + the `export` dependency group; a one-time local step). |
+| `onnx_export.py` | `export_dbv4_onnx` / `export_for_checkpoint` — builds that graph (torch + timm + onnx/onnxscript; a one-time local step the tagger download runs). |
 | `feature_cache.py` | The dbv4 hidden-state cache: `dbv4_cache_path` / `dbv4_cache_stems` / `load_dbv4_cache` (the stem list rides in the safetensors metadata — a cache built for another manifest is misaligned row-for-row, so every reader checks it) + `multi_hot_from_manifest`. |
 | `data.py` | `TaggerCheckpoint.from_dir(path, require=…, backend=…)` — the one read of a checkpoint dir (`config.json` / `vocab.json` / `dataset.json`, the shared "run `--mode build_vocab` first" exit, `idx_to_name`) — and `TaggerManifest`. |
 | `readback.py` | Read-It-Back tag-adherence instrument. |
@@ -306,13 +307,19 @@ spaces, and joins with `, `.
 The backbone runs on timm by default and on **onnxruntime** as soon as an
 exported graph sits beside the checkpoint. Nothing downstream of the score vector
 changes — the sidecar, the thresholds, the groups and the slot order are the same
-code either way — so the choice is purely speed:
+code either way — so the choice is purely speed, and the graph is built for you:
+`downloads.py`'s `tagger_onnx` row *is* the export, so fetching the tagger leaves
+the checkpoint dir already on onnxruntime.
 
 ```bash
-uv sync --group export                        # onnx + onnxscript, exporter only
+python -m anime_tools.downloads tagger_onnx   # → models/captioners/…/dbv4.onnx
 python -m anime_tools.tagger.cli.export_onnx \
-    --verify image_dataset/001.webp           # → models/captioners/…/dbv4.onnx
+    --verify image_dataset/001.webp           # the same export, with knobs
 ```
+
+The CLI is what you want for another `--ckpt_dir`, another `--opset`, an
+`--overwrite` rebuild, or `--verify`; the catalog row is the one-liner that runs
+once and is then `installed` in the GUI's Models pane.
 
 Measured on caformer_b36 at 384px, batch 1, one Apple CPU — end to end through
 `predict`, not just the forward pass:
@@ -330,8 +337,9 @@ path — torch emulates it there — which is why `default_dtype` now picks per
 device instead of always asking for bf16.
 
 The graph is never shipped: the dbv4 weights are gated and GPL-3.0, so every user
-exports their own, and `dbv4.onnx` is absent from every file set in
-`contract.py`. Its *presence* is the whole selection rule (`backend="auto"`);
+exports their own — which is why the download is a *build* row and why
+`dbv4.onnx` is absent from every file set in `contract.py`. Its *presence* is the whole selection
+rule (`backend="auto"`);
 `ANIMA_TAGGER_BACKEND=torch` opts back out without deleting a 539 MB file, and
 `backend="onnx"` fails loudly rather than falling back, for a bench run that means
 to measure the graph.

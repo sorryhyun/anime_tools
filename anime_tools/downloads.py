@@ -26,6 +26,7 @@ from anime_tools._env import models_dir, resolve_path
 from anime_tools.captions.correction import TAG_CSV_EN_NAME, TAG_CSV_NAME
 from anime_tools.tagger.dbv4_meta import (
     DBV4_BACKBONE_FILES,
+    DBV4_ONNX_NAME,
     DBV4_OPTIONAL_FILES,
     DBV4_REQUIRED_FILES,
     DEFAULT_TAGGER_DIR,
@@ -305,6 +306,31 @@ def _build_english_tag_csv(dest: Path, log: Callable[[str], None]) -> None:
     build(dest / TAG_CSV_NAME, dest / TAG_CSV_EN_NAME, revision=None, log=log)
 
 
+def _export_dbv4_onnx(dest: Path, log: Callable[[str], None]) -> None:
+    """``tagger_onnx``'s post-fetch step: build ``<ckpt_dir>/dbv4.onnx``.
+
+    The backbone files the row just fetched are the export's *input*, read out of
+    the hub cache by ``config.json['dbv4']['repo']`` — so this has to run after the
+    ``tagger`` row, which is what puts that config there.
+    """
+    # Checked before the import, which is what pulls torch in: a missing
+    # checkpoint should answer in milliseconds.
+    if not (dest / "config.json").is_file():
+        raise FileNotFoundError(
+            f"no tagger checkpoint at {dest} to export against — "
+            "`python -m anime_tools.downloads tagger` first"
+        )
+    from anime_tools.tagger.onnx_export import (
+        export_for_checkpoint,
+        quiet_exporter_logs,
+    )
+
+    quiet_exporter_logs()
+    log(f"  tracing the backbone into {dest / DBV4_ONNX_NAME} (a few minutes)")
+    out = export_for_checkpoint(dest, overwrite=True)
+    log(f"    ok  {out}  ({_size(out.stat().st_size)})")
+
+
 def catalog() -> tuple[Asset, ...]:
     """The full catalog, rebuilt per call: the home moves with
     ``ANIME_TOOLS_HOME`` and the backbone repo follows the installed
@@ -334,6 +360,26 @@ def catalog() -> tuple[Asset, ...]:
             stages=("autotag", "position", "audit"),
             gated=f"https://huggingface.co/{backbone}",
             notes="GPL-3.0 and never vendored; the terms auto-approve.",
+        ),
+        Asset(
+            id="tagger_onnx",
+            title="Anima Tagger ONNX graph",
+            repo=backbone,
+            files=DBV4_BACKBONE_FILES,
+            derived=(DBV4_ONNX_NAME,),
+            build=_export_dbv4_onnx,
+            dest=tagger_dir,
+            used_by="speed only: Autotag captions · Position captions · Multiview audit",
+            # No stage ids on purpose. The stage bar's warning promises "the
+            # first Run fetches them itself", and nothing auto-builds this one —
+            # without it the three stages run on timm, slower and identical.
+            stages=(),
+            gated=f"https://huggingface.co/{backbone}",
+            notes="Built here, never downloaded: the backbone is GPL-3.0 and "
+            "gated, so every user traces their own 539 MB graph (a few minutes, "
+            "once). Its presence makes the tagger run on onnxruntime, ~3.7x "
+            "faster than timm; ANIMA_TAGGER_BACKEND=torch opts back out without "
+            "deleting it.",
         ),
         Asset(
             id="sam3",

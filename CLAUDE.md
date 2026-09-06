@@ -31,8 +31,9 @@ python3 scripts/wrap_md.py **/*.md                    # semantic-wrap markdown a
 ```
 
 Python >= 3.13. `[tool.uv] override-dependencies = ["numpy>=2.0"]` overrides sam3's stale `numpy<2`
-pin. The `export` dependency group (`uv sync --group export`) is `onnx` + `onnxscript` — needed
-only to *build* the tagger's ONNX graph, never to run it.
+pin. `onnx` + `onnxscript` are plain dependencies because the tagger download *builds* its ONNX
+graph (`downloads.py`'s `tagger_onnx` row); they are the exporter's own dependencies and running
+the graph needs neither.
 `onnxruntime` is a plain dependency split by marker — `onnxruntime` on macOS,
 `onnxruntime-gpu` everywhere else — because the two are the same import from two conflicting
 distributions and OCR (unlike the CTD text-mask gate, which falls back to `cv2.dnn`) has no
@@ -116,8 +117,10 @@ caformer. Checkpoint dir = `config.json`, `vocab.json`, `rules.yaml`, `groups.js
 via `_hf.py` under the user's HF token, never vendored.
 
 The backbone runs on timm, or on **onnxruntime** when `<ckpt_dir>/dbv4.onnx` exists —
-`python -m anime_tools.tagger.cli.export_onnx` builds that graph and its presence is the whole
-selection rule (`ANIMA_TAGGER_BACKEND=torch` opts out). The upstream repo's own `model.onnx` is
+the `tagger_onnx` catalog row builds that graph as part of downloading the tagger
+(`python -m anime_tools.tagger.cli.export_onnx` is the same export with knobs), and its presence is
+the whole selection rule (`ANIMA_TAGGER_BACKEND=torch` opts out).
+The upstream repo's own `model.onnx` is
 the wrong graph: its `embedding` output is the 768-d pooled feature, while the sidecar trains on
 the 3072-d `mlp_hidden` from inside timm's `MlpHead`, so `onnx_export.py` exports both outputs
 itself and the sidecar / feature cache / trainer stay untouched. Measured end to end on one CPU:
@@ -343,18 +346,22 @@ Other server pieces:
 
 ### `downloads.py` (torch-free)
 
-The model catalog — one `Asset` per checkpoint (tagger + gated dbv4 backbone, SAM3, PE-Spatial, MIT
-text net, ComicTextDetector, SAM3 subject soft prompt, Danbooru tag KB) with repo, files,
-destination and an offline `installed` probe. It is the **single source of truth for weight
+The model catalog — one `Asset` per checkpoint (tagger + gated dbv4 backbone + the ONNX graph
+traced from it, SAM3, PE-Spatial, MIT text net, ComicTextDetector, SAM3 subject soft prompt,
+Danbooru tag KB) with repo, files, destination and an offline `installed` probe.
+It is the **single source of truth for weight
 locations**: `vision/pe.py`, `masking/mit.py` and `_sam3`'s flag defaults import
 theirs from here, and `default_ctd_onnx_path()` has no flag at all — a path you could point
 elsewhere is a Download button that writes where the loader doesn't look.
 
 Most rows are HF-hub fetches; the soft prompt, the CTD net and the tag KB go through
-`Asset._fetch_http`. `danbooru_tags_en` is the one `derived` row: it *builds* its CSV from the
-Danbooru wiki mirror, so its probe asks for the file it writes and the 45 MB parquet stays in the
-hub
-cache. `python -m anime_tools.downloads [ID…]` fetches; the GUI's Models pane runs exactly that.
+`Asset._fetch_http`. Two rows are `derived` — their downloads are *inputs* that stay in the hub
+cache, and the probe asks for the file `build` writes, so a hub sweep can't turn a built row back
+to "missing". `danbooru_tags_en` builds its CSV from the 45 MB Danbooru wiki mirror;
+`tagger_onnx` traces `dbv4.onnx` out of the gated backbone, which is why it is a build and not a
+download — GPL weights can't be redistributed, so every user exports their own. It reads the
+`tagger` row's `config.json`, so it sits after it in catalog order (`main()` fetches in order).
+`python -m anime_tools.downloads [ID…]` fetches; the GUI's Models pane runs exactly that.
 
 ### Smaller pieces
 
