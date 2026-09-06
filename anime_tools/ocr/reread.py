@@ -236,8 +236,8 @@ class RereadEngine:
     min_chars: int = 3
     skip_en: bool = True
     join_cjk: bool = False
-    """Join the reader-only lines' CJK columns (:func:`reread_lines`); on for
-    the detect-only engine, where every line is the reader's."""
+    """Join the reader-only lines' CJK columns (:func:`reread_lines`). Off in
+    the OCR stage: over the AnimeText detector's boxes it measured a loss."""
 
     def _page(self, path: Path, lines: list[OcrLine]) -> list[OcrLine]:
         mask = None

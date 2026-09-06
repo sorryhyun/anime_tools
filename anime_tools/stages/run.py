@@ -528,9 +528,11 @@ def _vl_engine(req: OcrRequest, engine, resized_dir: Path):
         comp_max=req.comp_max,
         min_chars=req.min_chars,
         skip_en=req.skip_en,
-        # The detect-only engine joined nothing (no text to join on); PP-OCRv6's
-        # lines arrive joined already and are never re-joined.
-        join_cjk=req.join_cjk and req.detect_only,
+        # Never joined here. PP-OCRv6's lines arrive joined already; the AnimeText
+        # detector's boxes are blocks and columns the nesting pass settled, and
+        # joining them measured a loss (sincos, 2026-09-06: manga-ocr best-match
+        # 0.844 → 0.803 over 95 joins — SFX beside a balloon gets pulled in).
+        join_cjk=False,
     )
 
 

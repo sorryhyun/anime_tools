@@ -704,7 +704,8 @@ class OcrRequest(StageRequest):
         "--no_join_cjk",
         help="Record each CJK box on its own line. Joined by default: a balloon of "
         "vertical Japanese is detected as one box per column, and the columns are "
-        "one sentence",
+        "one sentence. Inert under --detector animetext with --reader vl: its boxes "
+        "are blocks already, and joining them loses SFX into the balloons",
     )
     min_box_px: int = arg(
         12,
