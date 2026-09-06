@@ -12,11 +12,12 @@ book split; COO test exact 81.7 %, doujin SFX gate 38 / 71 vs 2 stock —
 card). It reads ``♡`` / ``ー`` / small kana natively, vertical or horizontal,
 so it needs no symbol patching.
 
-What it is not: a page reader. Feed it the crops another detector (PP-OCRv6's
-DB head, VL Spotting, the MIT text mask's components) has already boxed;
-:meth:`SfxReader.read_boxes` cuts the padded crops for you. Batch by area:
-a 1.9 B-parameter model at ~0.25 s per crop is ten times PP-OCRv6's wall,
-which is why it is slotted by kind rather than swapped in.
+What it is not: a page reader. Feed it the crops a detector has already
+boxed — the AnimeText text-block detector (:mod:`anime_tools.ocr.animetext`,
+the OCR stage's default since 2026-09-06: balloon lines and the SFX on the
+artwork alike) or PP-OCRv6's DB head; :meth:`SfxReader.read_boxes` cuts the
+padded crops for you. Batch by area: a 1.9 B-parameter model at ~0.25 s per
+crop is ten times PP-OCRv6's wall.
 
 **The decode guard is part of the reader**, not an option. An autoregressive
 decoder on a two-glyph crop runs away on ~4 % of inputs (``びく♡`` →
