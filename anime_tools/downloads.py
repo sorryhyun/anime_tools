@@ -82,6 +82,38 @@ PPOCR_REC_REPO = "PaddlePaddle/PP-OCRv6_medium_rec_onnx"
 PPOCR_FILES = ("inference.onnx", "inference.yml")
 PPOCR_DIR = "models/ppocr"
 
+# PaddleOCR-VL-1.6 — the 0.9 B VLM base the SFX reader is fine-tuned from
+# (Apache-2.0; ERNIE LM + NaViT tower). A flat checkpoint dir, so the remote
+# modeling files ride along with the weights. `anime_tools.ocr.sfx` reads it.
+VL16_BASE_REPO = "PaddlePaddle/PaddleOCR-VL-1.6"
+VL16_BASE_FILES = (
+    "config.json",
+    "generation_config.json",
+    "model.safetensors",
+    "added_tokens.json",
+    "special_tokens_map.json",
+    "tokenizer.json",
+    "tokenizer.model",
+    "tokenizer_config.json",
+    "chat_template.jinja",
+    "preprocessor_config.json",
+    "processor_config.json",
+    "configuration_paddleocr_vl.py",
+    "image_processing_paddleocr_vl.py",
+    "modeling_paddleocr_vl.py",
+    "processing_paddleocr_vl.py",
+)
+VL16_BASE_DIR = "models/paddleocr_vl_1.6"
+
+# The manga SFX reader: a peft LoRA on the base's language model plus its
+# fully fine-tuned vision tower, trained on Manga109-s / COO (attribution and
+# citations on the model card). Weights only — no Manga109-s image ships.
+SFX_READER_REPO = "sorryhyun/paddleocr-vl-1.6-manga-lora"
+SFX_READER_ADAPTER_FILES = ("adapter_config.json", "adapter_model.safetensors")
+SFX_READER_TOWER_FILE = "tower.safetensors"
+SFX_READER_FILES = (*SFX_READER_ADAPTER_FILES, SFX_READER_TOWER_FILE)
+SFX_READER_DIR = "models/paddleocr_vl_1.6_manga_lora"
+
 # Danbooru tag KB — the ~114k-row classified tag table the correction pass types
 # tags against and the GUI's tag panel reads. A CSV in a GitHub repo, so it
 # rides ``_fetch_http``. Its descriptions are Korean; the English sibling is
@@ -115,6 +147,17 @@ def default_ppocr_det_dir() -> Path:
 def default_ppocr_rec_dir() -> Path:
     """``<home>/models/ppocr/rec`` — the recognizer's half of the same."""
     return resolve_path(PPOCR_DIR) / "rec"
+
+
+def default_vl16_base_dir() -> Path:
+    """``<home>/models/paddleocr_vl_1.6`` — the SFX reader's base checkpoint."""
+    return resolve_path(VL16_BASE_DIR)
+
+
+def default_sfx_reader_dir() -> Path:
+    """``<home>/models/paddleocr_vl_1.6_manga_lora`` — adapter + fine-tuned
+    tower, what :class:`anime_tools.ocr.sfx.SfxReader` loads."""
+    return resolve_path(SFX_READER_DIR)
 
 
 def http_timeout() -> float:
@@ -460,6 +503,30 @@ def catalog() -> tuple[Asset, ...]:
             stages=("ocr",),
             notes="77 MB. English, Chinese and Japanese: its dictionary is "
             "both kana plus 15,565 han characters, and no hangul.",
+        ),
+        Asset(
+            id="vl16_base",
+            title="PaddleOCR-VL-1.6 base",
+            repo=VL16_BASE_REPO,
+            files=VL16_BASE_FILES,
+            dest=default_vl16_base_dir(),
+            used_by="the manga SFX reader (anime_tools.ocr.sfx)",
+            stages=(),
+            notes="1.9 GB, Apache-2.0. The VLM the SFX reader below is a "
+            "fine-tune of; the reader loads this and merges the row below "
+            "onto it.",
+        ),
+        Asset(
+            id="sfx_reader",
+            title="Manga SFX reader (VL-1.6 LoRA + tower)",
+            repo=SFX_READER_REPO,
+            files=SFX_READER_FILES,
+            dest=default_sfx_reader_dir(),
+            used_by="the manga SFX reader (anime_tools.ocr.sfx)",
+            stages=(),
+            notes="0.9 GB (adapter 24 MB + fine-tuned vision tower). Reads "
+            "hand-lettered onomatopoeia PP-OCRv6 garbles; a crop reader, not a "
+            "detector. Needs the base above. Trained on Manga109-s (COO).",
         ),
         Asset(
             id="mit_text",

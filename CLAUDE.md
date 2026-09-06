@@ -149,7 +149,7 @@ Each of these is implemented in one package but bites from any of them.
 | `anime_tools/grouping/` — embedders, feature cache, `groups.json` | `anime_tools/grouping/CLAUDE.md`; `docs/grouping.md` |
 | `anime_tools/gui/` — schema/argv binding, dataset ladder, jobs, settings | `anime_tools/gui/CLAUDE.md` |
 | `frontend/` — the Solid browser half | `frontend/CLAUDE.md` |
-| `anime_tools/ocr/` + `stages/ocr.py` — PP-OCRv6 over the resized tree | `anime_tools/stages/CLAUDE.md`; the sidecar rule in the `captions` skill |
+| `anime_tools/ocr/` + `stages/ocr.py` — PP-OCRv6 over the resized tree; `ocr/sfx.py` the manga SFX crop reader (fine-tuned PaddleOCR-VL-1.6, decode guard built in) | `anime_tools/stages/CLAUDE.md`; the sidecar rule in the `captions` skill; `ocr/sfx.py`'s module doc |
 | `anime_tools/downloads.py` — adding or moving a weight | the `model-catalog` skill |
 | A new stage, a renamed flag, a GUI knob | the `add-stage` skill |
 | A version bump, the installer, `release.yml` | the `release` skill |

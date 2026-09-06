@@ -6,6 +6,10 @@ order. A run answers only *what does the picture say*, never what language: PP-O
 one model over fifty languages and returns a bare string, so what a line is written in
 is read off the string itself in :mod:`anime_tools.ocr._text`, which also joins a
 balloon's columns and applies the ``min_chars`` / ``skip_en`` floors.
+
+The manga SFX reader — a fine-tuned PaddleOCR-VL-1.6 that reads the hand-lettered
+onomatopoeia PP-OCRv6 garbles — is :mod:`anime_tools.ocr.sfx` (``SfxReader``), imported
+explicitly because it pulls torch; it reads crops another detector boxed, never pages.
 """
 
 # `resolve_onnx_device` is not OCR's own: the tagger's exported backbone asks the
