@@ -156,6 +156,7 @@ CASES: dict[str, Request] = {
         max_boxes=16,
         det_limit_side=960,
         batch_size=4,
+        detector="ppocr",
         reader="vl",
         mask_dir="m",
         comp_min_side=24,

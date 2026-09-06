@@ -190,18 +190,25 @@ def test_the_engine_wrapper_rereads_each_page_the_engine_yields(tmp_path: Path):
 # ---- the request ----------------------------------------------------------
 
 
-def test_the_request_defaults_to_ppocr_and_round_trips_the_vl_flags():
-    assert OcrRequest().reader == "ppocr"
+def test_the_request_defaults_to_vl_and_round_trips_the_vl_flags():
+    assert OcrRequest().reader == "vl"
+    assert OcrRequest(reader="ppocr").to_argv()[:2] == ["--reader", "ppocr"]
+    # --mask_dir is PP-OCRv6's mask-component layer, so it rides --detector ppocr.
     req = OcrRequest(
-        reader="vl", mask_dir="m", comp_min_side=24, comp_max=4, vl_batch_size=2
+        detector="ppocr",
+        reader="vl",
+        mask_dir="m",
+        comp_min_side=24,
+        comp_max=4,
+        vl_batch_size=2,
     )
     argv = req.to_argv()
-    assert "--reader" in argv and "vl" in argv and "--mask_dir" in argv
+    assert "--reader" not in argv and "--mask_dir" in argv
     assert OcrRequest.from_argv(OcrRequest.parser(), argv) == req
 
 
 def test_mask_dir_needs_the_vl_reader():
     with pytest.raises(ValueError, match="--reader vl"):
-        OcrRequest(mask_dir="m")
+        OcrRequest(detector="ppocr", reader="ppocr", mask_dir="m")
     with pytest.raises(ValueError, match="--reader"):
         OcrRequest(reader="tesseract")

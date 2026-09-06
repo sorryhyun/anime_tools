@@ -17,8 +17,10 @@ that holds two or more others, keeping the columns, since a block read matches
 no balloon line; ``outer`` keeps the block; ``raw`` keeps both. A block box is
 multi-column, which PP-OCRv6's line recognizer garbles, so this detector pairs
 with the manga VL reader (:mod:`anime_tools.ocr.sfx`) — the OCR stage's
-``--detector animetext --reader vl``. ``--reader ppocr`` on its boxes is
-allowed, not a default.
+``--detector animetext --reader vl``, **the stage's defaults since 2026-09-06**
+(PP-OCRv6 retired to the explicit ``--detector ppocr --reader ppocr`` pair).
+``--reader ppocr`` on its boxes is allowed, not a default (measured: floor 26,
+hand-SFX 4 / 99 on the sincos shard).
 
 Weights are a catalog row (``animetext_det``, :mod:`anime_tools.downloads`),
 fetched on first use and **never bundled**: the model card is GPL-3.0 and the

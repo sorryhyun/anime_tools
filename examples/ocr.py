@@ -4,9 +4,13 @@
     python examples/ocr.py --home ~/data --apply      # write workspace/ocr/**/{stem}.ocr.txt
     python examples/ocr.py --image page.png           # one image, straight through the engine
 
-PP-OCRv6 (``python -m anime_tools.downloads ppocr_det ppocr_rec``) runs on
-onnxruntime, not torch. OCR is not a caption: nothing downstream encodes it, so
-the stage reads and writes no caption and needs no re-encode afterwards.
+The stage's default is the AnimeText text-block detector (ONNX, fetched on
+first use) with every box read by the manga VL reader (torch, fetched on first
+use); ``--detector ppocr --reader ppocr`` is PP-OCRv6 alone (``python -m
+anime_tools.downloads ppocr_det ppocr_rec``) on onnxruntime, not torch — what
+the ``--image`` path below runs through ``load_ocr()``. OCR is not a caption:
+nothing downstream encodes it, so the stage reads and writes no caption and
+needs no re-encode afterwards.
 """
 
 from __future__ import annotations

@@ -1,13 +1,17 @@
-"""Batch OCR: image → PP-OCRv6 → a text sidecar in the OCR tree.
+"""Batch OCR: image → text detector → reader → a text sidecar in the OCR tree.
 
 Walks the resized tree and writes what each picture says into ``{stem}.ocr.txt``
 under :data:`anime_tools.workspace.OCR`, mirroring its layout: every recognized
 line with box and confidence (:mod:`anime_tools.captions.ocr_sidecar`).
 
 It reads no caption and writes no caption, so it sits outside the caption ladder
-and invalidates no TE cache. The reader is an argument: PP-OCRv6 alone, or
-(``--reader vl``) PP-OCRv6's lines re-read by the manga VL reader plus the text
-mask's uncovered components (:mod:`anime_tools.ocr.reread`). **Dry-run is the default** (the caller passes
+and invalidates no TE cache. The detector and the reader are arguments; the
+defaults (since 2026-09-06) are the AnimeText text-block detector
+(:mod:`anime_tools.ocr.animetext`) with every box read by the manga VL reader
+(:mod:`anime_tools.ocr.reread`). ``--detector ppocr --reader ppocr`` is the
+retired torch-free pair, PP-OCRv6 alone; ``--detector ppocr --reader vl`` is
+PP-OCRv6's lines re-read by the VL reader plus the text mask's uncovered
+components (``--mask_dir``). **Dry-run is the default** (the caller passes
 ``apply``), and a dry run reports every line it would have written.
 """
 

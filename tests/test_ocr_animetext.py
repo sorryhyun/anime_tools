@@ -398,16 +398,22 @@ def test_load_ocr_refuses_an_unknown_detector():
 # ---- the request ----------------------------------------------------------
 
 
-def test_the_request_defaults_to_ppocr_and_round_trips_the_detector():
+def test_the_request_defaults_to_animetext_and_round_trips_the_detector():
+    # D3 (2026-09-06): the AnimeText detector + the VL reader are the defaults;
+    # PP-OCRv6 stays as the explicit torch-free pair.
     req = OcrRequest()
-    assert req.detector == "ppocr" and req.det_conf == 0.25 and not req.detect_only
-    req = OcrRequest(detector="animetext", reader="vl", det_conf=0.426)
-    assert req.detect_only
+    assert req.detector == "animetext" and req.det_conf == 0.25 and req.detect_only
+    assert "--detector" not in req.to_argv()
+    req = OcrRequest(detector="ppocr", reader="ppocr")
+    assert not req.detect_only
     argv = req.to_argv()
-    assert argv[:2] == ["--detector", "animetext"] and "--det_conf" in argv
+    assert argv[:2] == ["--detector", "ppocr"] and "--reader" in argv
     assert OcrRequest.from_argv(OcrRequest.parser(), argv) == req
+    req = OcrRequest(det_conf=0.426)
+    assert "--det_conf" in req.to_argv()
+    assert OcrRequest.from_argv(OcrRequest.parser(), req.to_argv()) == req
     # PP-OCRv6 recognition on the block boxes is allowed, not detect-only.
-    assert not OcrRequest(detector="animetext").detect_only
+    assert not OcrRequest(detector="animetext", reader="ppocr").detect_only
 
 
 def test_the_request_refuses_the_mask_layer_under_animetext_and_bad_values():

@@ -76,12 +76,14 @@ OCR_DRAWER = "Combine OCR"
 """Export's drawer: the text-clause combine and the tree it reads."""
 
 OCR_READERS = ("ppocr", "vl")
-"""``--reader``: PP-OCRv6 alone, or every line re-read by the manga VL reader
-(:mod:`anime_tools.ocr.reread`)."""
+"""``--reader``: the manga VL reader over every detected box (the default,
+:mod:`anime_tools.ocr.reread`), or PP-OCRv6's line recognizer alone."""
 
 OCR_DETECTORS = ("ppocr", "animetext")
-"""``--detector``: PP-OCRv6's DB line detector, or the AnimeText text-block
-detector (:mod:`anime_tools.ocr.animetext`)."""
+"""``--detector``: the AnimeText text-block detector (the default,
+:mod:`anime_tools.ocr.animetext`), or PP-OCRv6's DB line detector. PP-OCRv6
+was the default until 2026-09-06 (the trainer's ``plan_det.md`` D3); it stays
+as the torch-free ``--detector ppocr --reader ppocr`` pair."""
 
 DETECTOR = "Detector"
 """The OCR stage's group for the ``--detector`` knobs."""
@@ -723,13 +725,14 @@ class OcrRequest(StageRequest):
         "quadratically",
     )
     detector: str = arg(
-        "ppocr",
+        "animetext",
         choices=OCR_DETECTORS,
-        help="ppocr: PP-OCRv6's DB line detector (ONNX, 62 MB). animetext: the "
-        "AnimeText text-block detector (YOLO12-l, ONNX, 106 MB fetched on first "
-        "use; GPL-3.0 weights, CC-BY-NC-SA data) — finds balloon lines and the "
-        "hand-lettered SFX on the artwork alike, replacing the mask components; "
-        "its boxes are blocks, so use it with --reader vl",
+        help="animetext (default): the AnimeText text-block detector (YOLO12-l, "
+        "ONNX, 106 MB fetched on first use; GPL-3.0 weights, CC-BY-NC-SA data) — "
+        "finds balloon lines and the hand-lettered SFX on the artwork alike, "
+        "replacing the mask components; its boxes are blocks, read by --reader vl. "
+        "ppocr: PP-OCRv6's DB line detector (ONNX, 62 MB), retired as a default "
+        "2026-09-06 — the torch-free pair with --reader ppocr",
         group=DETECTOR,
     )
     det_conf: float = arg(
@@ -741,13 +744,16 @@ class OcrRequest(StageRequest):
     )
     batch_size: int = arg(8, help="Line crops recognized per forward pass")
     reader: str = arg(
-        "ppocr",
+        "vl",
         choices=OCR_READERS,
-        help="ppocr: PP-OCRv6 alone (ONNX, fast). vl: every line PP-OCRv6 found is "
-        "re-read by the manga VL reader (PaddleOCR-VL-1.6 + the SFX fine-tune; "
-        "torch, ~0.25 s per line on a GPU, weights fetched on first use) — hearts, "
-        "small kana and hand-lettered SFX read right; a read the decode guard rejects "
-        "keeps the PP-OCRv6 text",
+        help="vl (default): every detected box is read by the manga VL reader "
+        "(PaddleOCR-VL-1.6 + the SFX fine-tune; torch, ~0.25 s per line on a GPU, "
+        "weights fetched on first use) — hearts, small kana and hand-lettered SFX "
+        "read right. ppocr: PP-OCRv6's line recognizer alone (ONNX, fast, "
+        "torch-free), retired as a default 2026-09-06; it garbles the block "
+        "boxes of --detector animetext, so pair it with --detector ppocr. Under "
+        "--detector ppocr --reader vl a read the decode guard rejects keeps the "
+        "PP-OCRv6 text",
         group=VL_READER,
     )
     mask_dir: str | None = arg(
@@ -800,7 +806,8 @@ class OcrRequest(StageRequest):
     @property
     def detect_only(self) -> bool:
         """Whether the engine loads no PP-OCRv6 recognizer: the AnimeText
-        detector under the VL reader, where the reader reads every box."""
+        detector under the VL reader (the defaults), where the reader reads
+        every box."""
         return self.detector == "animetext" and self.reader == "vl"
 
 
