@@ -14,14 +14,17 @@ fields) still reads, with ``det`` as ``0.0``.
 
 The one place the record meets a caption is :func:`with_ocr_clause`, which
 Export's ``--combine_ocr`` uses to publish the caption with the lines attached
-as text clauses — speech as ``Japanese text reads as "…", "…"`` and the sound
-effects, one per sound, as ``Japanese SFX reads as "…"``
-(:mod:`anime_tools.captions.ocr_sfx`). Only lines the detector was sure of
-take part (``det`` at or above :data:`DEFAULT_MIN_DET`; an unscored line —
-``det`` ``0.0``, a mask component or a pre-``det`` record — is not held to
-it): the sidecar keeps every line for a person to look at, the caption gets
-the ones worth training on. The workspace caption is never rewritten, so the
-combine is a property of the published tree.
+as text clauses — speech, one per line said, as ``Japanese text reads as "…",
+"…"`` and the sound effects, one per sound, as ``Japanese SFX reads as "…"``
+(:mod:`anime_tools.captions.ocr_sfx`). Two floors decide which lines take
+part (:func:`usable_lines`): the detector must have been sure of the box
+(``det`` at or above :data:`DEFAULT_MIN_DET`; an unscored line — ``det``
+``0.0``, a mask component or a pre-``det`` record — is not held to it), and
+the glyphs must be big enough to be worth a caption at all
+(:attr:`OcrLine.glyph_px` at or above :data:`DEFAULT_MIN_GLYPH`). The sidecar
+keeps every line for a person to look at, the caption gets the ones worth
+training on. The workspace caption is never rewritten, so the combine is a
+property of the published tree.
 
 Torch-free, stdlib-only and import-light.
 """
@@ -37,7 +40,7 @@ from anime_tools.captions._sidecar import (
     sidecar_path,
     write_rows,
 )
-from anime_tools.captions.ocr_sfx import dedupe_sfx, split_lines
+from anime_tools.captions.ocr_sfx import dedupe_sfx, dedupe_speech, split_lines
 from anime_tools.captions.position_clauses import (
     compose_caption,
     parse_caption,
@@ -52,6 +55,17 @@ DEFAULT_MIN_DET = 0.5
 (:func:`usable_lines`). Below it the AnimeText boxes are mostly a nested
 fragment of a neighbour or a texture the reader turned into kana (sincos,
 2026-09-07: 231 of the 752 two-glyph reads sat under it)."""
+DEFAULT_MIN_GLYPH = 16.0
+"""The glyph size, in the read image's own pixels, a line needs to reach a
+published caption (:attr:`OcrLine.glyph_px`, :func:`usable_lines`). Below it
+the box is too small to hold what was read: either the reader filled a
+thumbnail-sized box with kana it cannot have seen (sincos, 2026-09-07: a
+39x22 box read as four glyphs — 14.6 px each — over a ``HAKU`` shop sign), or
+the read is right and the text is a 14 px watermark, credit line or narration
+strip that no model trained at this resolution can render. Unlike the det
+floor this holds every line, scored or not: the box is always real. It costs
+4.7% of the det-passing lines on the sincos corpus, and the 13–16 px band it
+takes is where the reads visibly stop being text."""
 LEGACY_OCR_FIELDS = 4
 """``seq ⇥ box ⇥ score ⇥ text``: the record before the detector's ``det`` column
 (2026-09-07). Read, never written."""
@@ -83,6 +97,21 @@ class OcrLine:
     @property
     def height(self) -> int:
         return self.box[3] - self.box[1]
+
+    @property
+    def glyph_px(self) -> float:
+        """How big one glyph of ``text`` is, in the read image's pixels: the
+        side of the square each character gets when the box is shared out
+        between them, ``sqrt(width * height / len(text))``.
+
+        CJK glyphs are square and set on a fixed pitch, so this is the em of
+        the line whichever way it runs — a 19x38 vertical ``ん♡`` and a 38x19
+        horizontal one both answer 19. It reads the *claimed* length, which is
+        the point: a box too small for the glyphs the reader put in it is a
+        misread, and a box only just big enough is text too fine to train on.
+        An empty line answers ``0.0``."""
+        n = len(self.text.strip())
+        return (self.width * self.height / n) ** 0.5 if n else 0.0
 
     def as_row(self) -> tuple[str, str, str, str]:
         """The record as the sidecar spells it; ``score`` is rounded to three
@@ -198,38 +227,55 @@ def write_ocr_for(ocr_dir: Path, rel: Path, lines: Iterable[OcrLine]) -> Path:
 
 
 def usable_lines(
-    lines: Iterable[OcrLine], *, min_det: float = DEFAULT_MIN_DET
+    lines: Iterable[OcrLine],
+    *,
+    min_det: float = DEFAULT_MIN_DET,
+    min_glyph: float = DEFAULT_MIN_GLYPH,
 ) -> list[OcrLine]:
-    """The lines a caption may carry: non-empty text, and a detector confidence
+    """The lines a caption may carry: non-empty text, glyphs of at least
+    ``min_glyph`` pixels (:attr:`OcrLine.glyph_px`), and a detector confidence
     of at least ``min_det`` — unless the line was never scored (``det`` exactly
     ``0.0``: a text-mask component, or a record from before the column
-    existed), which the floor cannot judge and lets through."""
-    return [ln for ln in lines if ln.text and (ln.det == 0.0 or ln.det >= min_det)]
+    existed), which that floor cannot judge and lets through. The glyph floor
+    has no such exemption: every record carries a box."""
+    return [
+        ln
+        for ln in lines
+        if ln.text and (ln.det == 0.0 or ln.det >= min_det) and ln.glyph_px >= min_glyph
+    ]
 
 
 def with_ocr_clause(
-    caption: str, lines: Sequence[OcrLine], *, min_det: float = DEFAULT_MIN_DET
+    caption: str,
+    lines: Sequence[OcrLine],
+    *,
+    min_det: float = DEFAULT_MIN_DET,
+    min_glyph: float = DEFAULT_MIN_GLYPH,
 ) -> str:
     """``caption`` with ``lines`` attached as its text clauses, in reading order.
 
     The lines that pass :func:`usable_lines` are split into speech and sound
-    effects by :func:`~anime_tools.captions.ocr_sfx.split_lines`; speech
-    becomes ``Japanese text reads as "…", "…"`` and the SFX — deduplicated to
-    one per sound by :func:`~anime_tools.captions.ocr_sfx.dedupe_sfx`, since a
-    page of ``ぱん, ぱん, ぱんぱん`` is one sound, not three lines — become
-    ``Japanese SFX reads as "…"``. Any text clause the caption already carries
-    is replaced, so combining twice says each line once, and combining with no
-    usable lines *removes* the clauses — a re-run over re-cropped pixels that
-    found no text takes the old claim back with it. Position clauses and the
-    flat bag are untouched. An empty caption with lines becomes the clauses
-    alone.
+    effects by :func:`~anime_tools.captions.ocr_sfx.split_lines`. Each kind is
+    then deduplicated on its own key — speech to one per line actually said
+    (:func:`~anime_tools.captions.ocr_sfx.dedupe_speech`, since a page read as
+    ``はあ`` seven times is not seven lines of dialogue) and SFX to one per
+    sound (:func:`~anime_tools.captions.ocr_sfx.dedupe_sfx`, since ``ぱん, ぱん,
+    ぱんぱん`` is one sound) — and becomes ``Japanese text reads as "…", "…"``
+    and ``Japanese SFX reads as "…"``. Any text clause the caption already
+    carries is replaced, so combining twice says each line once, and combining
+    with no usable lines *removes* the clauses — a re-run over re-cropped
+    pixels that found no text takes the old claim back with it. Position
+    clauses and the flat bag are untouched. An empty caption with lines becomes
+    the clauses alone.
     """
     parsed = parse_caption(caption)
     clauses = list(parsed.position_clauses)
-    texts = [ln.text for ln in usable_lines(lines, min_det=min_det)]
+    texts = [
+        ln.text for ln in usable_lines(lines, min_det=min_det, min_glyph=min_glyph)
+    ]
     speech, sfx = split_lines(texts)
     if speech:
-        clauses.append(text_clause(speech))
+        clauses.append(text_clause(dedupe_speech(speech)))
     if sfx:
         clauses.append(text_clause(dedupe_sfx(sfx), sfx=True))
     return compose_caption(parsed.flat_tags, clauses)

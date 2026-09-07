@@ -23,13 +23,22 @@ stripped):
 4. katakana-only up to 4 kana (``ウズ``), or a sokuon-final up to 4 kana
    (``きゅっ``) → SFX; everything else → speech.
 
-The SFX clause is also **deduplicated** (:func:`dedupe_sfx`, 2026-09-06 —
-"쥬포 쥬포쥬포 는 빼도 될듯"): a page's SFX lines collapse to one per
-:func:`sfx_key` — the kana core minus sokuon / long-vowel marks, folded to
-its minimal repeating unit — keeping the first in reading order, so
-``じゅぽ, じゅぽ, じゅぽじゅぽ`` and ``ぱん♡, ぱん♡, ぱんッ`` each become one
-line. Speech lines are never deduplicated (a repeated line of dialogue is
-content).
+Both clauses are **deduplicated**, by a key each kind deserves.
+
+The SFX clause collapses by sound (:func:`dedupe_sfx`, 2026-09-06 — "쥬포
+쥬포쥬포 는 빼도 될듯"): a page's SFX lines become one per :func:`sfx_key` —
+the kana core minus sokuon / long-vowel marks, folded to its minimal
+repeating unit — keeping the first in reading order, so ``じゅぽ, じゅぽ,
+じゅぽじゅぽ`` and ``ぱん♡, ぱん♡, ぱんッ`` each become one line.
+
+The speech clause collapses by **exact text** (:func:`dedupe_speech`,
+2026-09-07 — the user's call on the merge sheet): a page of panting is read
+as ``はあ`` seven times and the caption said it seven times (12971620; 6.5%
+of the speech lines on the sincos corpus repeat a neighbour verbatim), which
+teaches a count nobody meant. Speech does *not* take the SFX key — that key
+folds ``はっ`` and ``はー`` together and ``んっ♡`` into ``ん``, and two
+different words of dialogue are two lines however alike they sound. Only the
+same string twice is one line.
 
 Known misses (sincos, 2026-09-05): a reader that turns ``ぱ`` into ``は``
 (``はんぱん``) lands on rule 2; a voiced-initial 6-kana garble
@@ -155,6 +164,24 @@ def dedupe_sfx(lines: list[str]) -> list[str]:
     ]
 
 
+def speech_groups(lines: list[str]) -> list[int]:
+    """For each line, the index of the first line with the same text once
+    surrounding whitespace is off (itself when it is the first) — the speech
+    counterpart of :func:`sfx_groups`, on a key that folds nothing."""
+    first: dict[str, int] = {}
+    return [first.setdefault(ln.strip(), i) for i, ln in enumerate(lines)]
+
+
+def dedupe_speech(lines: list[str]) -> list[str]:
+    """``lines`` minus every later repeat of a line already said verbatim,
+    order kept (``はあ, はあ, いいわよ, はあ`` → ``はあ, いいわよ``)."""
+    return [
+        ln
+        for i, (ln, g) in enumerate(zip(lines, speech_groups(lines), strict=True))
+        if g == i
+    ]
+
+
 def _repeated(core: str) -> bool:
     return any(
         core[:k] * 2 == core[: 2 * k]
@@ -211,9 +238,11 @@ __all__ = [
     "VOCAL_INITIAL",
     "VOICED_INITIAL",
     "dedupe_sfx",
+    "dedupe_speech",
     "kana_core",
     "line_kind",
     "sfx_groups",
     "sfx_key",
+    "speech_groups",
     "split_lines",
 ]

@@ -26,7 +26,11 @@ or touching this package**. This file is the module map. Docs: `docs/position_ca
   carries it. It reaches the trainer only through Export's `--combine_ocr`
   (`ocr_sidecar.with_ocr_clause`: the lines attached as the trailing `Japanese text reads as
   "…", "…"` clause on the *published* caption and every variant line; an existing text clause is
-  replaced, no lines removes it).
+  replaced, no lines removes it). Two floors say which lines get there — `DEFAULT_MIN_DET` on the
+  detector's box confidence and `DEFAULT_MIN_GLYPH` on `OcrLine.glyph_px` (`sqrt(w*h/len(text))`,
+  the em of the line: a box too small for the glyphs read from it, or text too fine to render) —
+  and each kind is deduplicated on its own key (`ocr_sfx.dedupe_speech`, exact text;
+  `ocr_sfx.dedupe_sfx`, one per sound).
 - `correction.py` + `taxonomy.py` / `tag_rules.py` / `tag_groups.py` do Danbooru-KB correction and
   bucket ordering; `tag_drop_groups.py` is `--caption_drop_groups`; `index.py` builds
   `caption_index.json`; `shuffle.py` owns the `@no-artist` sentinel and Anima-prefix shuffle;

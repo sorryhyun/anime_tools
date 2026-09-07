@@ -244,8 +244,8 @@ def ocr(ws, tmp_path):
         ocr_dir,
         Path("a.txt"),
         [
-            OcrLine(seq=1, box=(0, 0, 10, 10), score=0.9, text="大丈夫"),
-            OcrLine(seq=2, box=(0, 20, 10, 30), score=0.9, text="本当に"),
+            OcrLine(seq=1, box=(0, 0, 120, 40), score=0.9, text="大丈夫"),
+            OcrLine(seq=2, box=(0, 60, 120, 100), score=0.9, text="本当に"),
         ],
     )
     return ExportPaths(**{**vars(ws), "ocr": ocr_dir})
@@ -322,7 +322,7 @@ def test_revert_checks_a_combined_row_against_what_it_recorded(ocr):
 
     rows, _ = run_export(ocr, apply=True)
     write_ocr_for(
-        ocr.ocr, Path("a.txt"), [OcrLine(seq=1, box=(0, 0, 1, 1), score=1, text="別")]
+        ocr.ocr, Path("a.txt"), [OcrLine(seq=1, box=(0, 0, 40, 40), score=1, text="別")]
     )
     _, stats = revert_export(rows, apply=True)
     assert stats.skipped.get("drifted", 0) == 0

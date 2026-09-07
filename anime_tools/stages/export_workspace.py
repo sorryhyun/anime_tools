@@ -23,7 +23,7 @@ With ``combine_ocr`` (:attr:`ExportPaths.ocr` set) the ``caption`` and
 ``variants`` rows of an image that has a ``{stem}.ocr.txt`` are *rendered*
 rather than copied: the OCR'd lines ride along as a trailing text clause
 (:func:`~anime_tools.captions.ocr_sidecar.with_ocr_clause`) on the caption and
-on every variant line. The workspace files stay as curated, so the combine is a
+on every variant line, held to the det and glyph floors the paths carry. The workspace files stay as curated, so the combine is a
 property of the published tree, taken back by exporting without it. Such a row
 carries the sidecar it read (``ocr``) and the text it publishes (``text``); the
 text is re-derived from disk whenever the row is decided, and a revert compares
@@ -46,6 +46,7 @@ from anime_tools._walk import walk_images
 from anime_tools.captions._sidecar import render_rows, sidecar_header
 from anime_tools.captions.ocr_sidecar import (
     DEFAULT_MIN_DET,
+    DEFAULT_MIN_GLYPH,
     ocr_sidecar_path,
     read_ocr,
     with_ocr_clause,
@@ -89,6 +90,9 @@ class ExportPaths:
     ocr_min_det: float = DEFAULT_MIN_DET
     """The detector confidence a sidecar line needs to reach the published
     caption (``--ocr_min_det``); the sidecar itself keeps every line."""
+    ocr_min_glyph: float = DEFAULT_MIN_GLYPH
+    """The glyph size, in the read image's pixels, a sidecar line needs to
+    reach the published caption (``--ocr_min_glyph``)."""
 
 
 @dataclass
@@ -106,8 +110,11 @@ class ExportRow:
     ocr: str = ""
     """The OCR sidecar a combined row read, or empty for a verbatim copy."""
     ocr_min_det: float = DEFAULT_MIN_DET
-    """The floor the combine held the sidecar's lines to — on the row, so a
+    """The det floor the combine held the sidecar's lines to — on the row, so a
     replay of the report publishes what the plan showed."""
+    ocr_min_glyph: float = DEFAULT_MIN_GLYPH
+    """The glyph floor the combine held the sidecar's lines to; on the row for
+    the same reason as ``ocr_min_det``."""
     text: str = ""
     """What a combined row publishes — the source with the text clause attached.
     Empty for a verbatim copy, whose bytes are the source's."""
@@ -144,13 +151,18 @@ class ExportStats:
         }
 
 
-def _combine(kind: str, src: Path, lines, *, min_det: float) -> str:
+def _combine(kind: str, src: Path, lines, *, min_det: float, min_glyph: float) -> str:
     """The text a combined row publishes: the caption, or every variant line,
-    with the OCR clauses attached (the lines at or above ``min_det``)."""
+    with the OCR clauses attached (the lines that clear both floors)."""
     if kind == "caption":
-        return with_ocr_clause(src.read_text(encoding="utf-8"), lines, min_det=min_det)
+        return with_ocr_clause(
+            src.read_text(encoding="utf-8"),
+            lines,
+            min_det=min_det,
+            min_glyph=min_glyph,
+        )
     rows = [
-        (label, with_ocr_clause(text, lines, min_det=min_det))
+        (label, with_ocr_clause(text, lines, min_det=min_det, min_glyph=min_glyph))
         for label, text in read_variants_sidecar(src)
     ]
     return render_rows(sidecar_header("variants"), rows)
@@ -162,7 +174,11 @@ def _derive(row: ExportRow) -> None:
     no text clause — the OCR pass deletes it when it finds nothing."""
     if row.combined:
         row.text = _combine(
-            row.kind, Path(row.src), read_ocr(Path(row.ocr)), min_det=row.ocr_min_det
+            row.kind,
+            Path(row.src),
+            read_ocr(Path(row.ocr)),
+            min_det=row.ocr_min_det,
+            min_glyph=row.ocr_min_glyph,
         )
 
 
@@ -218,6 +234,7 @@ def _row(
     *,
     ocr: Path | None = None,
     min_det: float = DEFAULT_MIN_DET,
+    min_glyph: float = DEFAULT_MIN_GLYPH,
 ) -> ExportRow:
     """One row, decided. ``ocr`` (the image's sidecar, when combining) marks it
     combined only if the sidecar exists — an image with no text publishes its
@@ -231,6 +248,7 @@ def _row(
             dst=str(dst),
             ocr=str(ocr) if combined else "",
             ocr_min_det=min_det,
+            ocr_min_glyph=min_glyph,
         )
     )
 
@@ -270,6 +288,7 @@ def plan_export(
                     out_image.with_suffix(".txt"),
                     ocr=ocr,
                     min_det=paths.ocr_min_det,
+                    min_glyph=paths.ocr_min_glyph,
                 )
             )
 
@@ -283,6 +302,7 @@ def plan_export(
                     variants_sidecar_path(out_image),
                     ocr=ocr,
                     min_det=paths.ocr_min_det,
+                    min_glyph=paths.ocr_min_glyph,
                 )
             )
 

@@ -56,7 +56,8 @@ review and probe CLIs share it).
 `--from_report`, and `revert_export` restores text it overwrote — an overwritten pixel reports
 `not-undoable`. `--combine_ocr` (GUI: the "Combine OCR" drawer, `--ocr_dir` inside it) is the one
 knob that makes a row a *render* rather than a copy: a `caption` / `variants` row whose image has a
-`{stem}.ocr.txt` publishes the text with the OCR clause attached, carries `ocr` + `text` in the
+`{stem}.ocr.txt` publishes the text with the OCR clauses attached (the lines held to `--ocr_min_det`
+and `--ocr_min_glyph`, both recorded on the row), carries `ocr` + `text` in the
 report (`text` re-derived at decide time — a sidecar deleted since the plan publishes the caption
 bare; revert compares against the recorded text), and counts under `stats.combined`. Exporting
 again without the knob takes the clause back. The trainer must `make preprocess-te` after either.

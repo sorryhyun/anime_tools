@@ -28,7 +28,7 @@ def line(
     *,
     seq: int = 1,
     score: float = 0.95,
-    box=(0, 0, 40, 20),
+    box=(0, 0, 400, 40),
     det: float = 0.0,
 ):
     return OcrLine(seq=seq, box=box, score=score, text=text, det=det)
@@ -46,8 +46,8 @@ def test_the_sidecar_round_trips_through_a_tab_and_a_multi_dot_stem(tmp_path: Pa
     assert read_ocr(p) == lines
     # seq ⇥ box ⇥ det ⇥ score ⇥ text
     assert p.read_text(encoding="utf-8").splitlines()[1:] == [
-        "1\t0,0,40,20\t0.875\t0.950\tこん\tにちは",
-        "2\t0,0,40,20\t0.000\t0.500\tSALE",
+        "1\t0,0,400,40\t0.875\t0.950\tこん\tにちは",
+        "2\t0,0,400,40\t0.000\t0.500\tSALE",
     ]
 
 
@@ -458,6 +458,65 @@ def test_sfx_lines_get_their_own_clause_one_per_sound():
     assert with_ocr_clause(
         "1girl", [line("ガク", det=0.9), line("ガク", seq=2, det=0.9)]
     ) == ('1girl. Japanese SFX reads as "ガク".')
+
+
+def test_the_speech_clause_says_a_repeated_line_once():
+    from anime_tools.captions.ocr_sidecar import with_ocr_clause
+
+    # 12971620: a page of panting, read as はあ seven times over.
+    lines = [
+        line("はあ", seq=1, det=0.9),
+        line("はあ", seq=2, det=0.9),
+        line("バットの使い方", seq=3, det=0.9),
+        line("はあ", seq=4, det=0.9),
+        line("はぁ", seq=5, det=0.9),
+    ]
+    assert with_ocr_clause("1girl", lines) == (
+        '1girl. Japanese text reads as "はあ", "バットの使い方", "はぁ".'
+    )
+
+
+def test_speech_folds_nothing_the_sfx_key_would():
+    from anime_tools.captions.ocr_sfx import dedupe_speech, dedupe_sfx
+
+    # the SFX key would make these one sound; as dialogue they are three lines
+    said = ["はっ", "はー", "はっ"]
+    assert dedupe_speech(said) == ["はっ", "はー"]
+    assert dedupe_sfx(said) == ["はっ"]
+
+
+def test_the_glyph_floor_drops_a_box_too_small_for_what_was_read():
+    from anime_tools.captions.ocr_sidecar import (
+        DEFAULT_MIN_GLYPH,
+        usable_lines,
+        with_ocr_clause,
+    )
+
+    assert DEFAULT_MIN_GLYPH == 16.0
+    # 13442495: a 39x22 shop sign read as four glyphs — 14.6 px each.
+    sign = line("タンKロ", box=(784, 771, 823, 793), det=0.62)
+    assert round(sign.glyph_px, 1) == 14.6
+    # the same box with two glyphs in it is 20.7 px and stays
+    short = line("ん♡", seq=2, box=(0, 0, 39, 22), det=0.62)
+    # a 15 px narration strip: read correctly, too fine to train on
+    strip = line("気さくな妹の友達", seq=3, box=(0, 0, 102, 16), det=0.65)
+    assert usable_lines([sign, short, strip]) == [short]
+    assert with_ocr_clause("1girl", [sign, short, strip]) == (
+        '1girl. Japanese text reads as "ん♡".'
+    )
+    # the floor is a parameter, and 0 attaches everything
+    assert with_ocr_clause("1girl", [sign, strip], min_glyph=0) == (
+        '1girl. Japanese text reads as "気さくな妹の友達". Japanese SFX reads as "タンKロ".'
+    )
+
+
+def test_the_glyph_floor_holds_unscored_lines_too():
+    from anime_tools.captions.ocr_sidecar import usable_lines
+
+    # the det floor exempts an unscored line; the glyph floor cannot — its box
+    # is as real as any other's.
+    tiny = line("契約日", box=(0, 0, 26, 17), det=0.0)
+    assert usable_lines([tiny]) == []
 
 
 def test_the_det_floor_keeps_low_boxes_out_of_the_caption_but_not_unscored_lines():

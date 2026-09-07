@@ -881,7 +881,9 @@ class ExportRequest(DatasetRequest):
         help="Attach each image's OCR'd lines to the caption it publishes, as "
         "trailing clauses on the revised caption and on every line of its "
         '.variants.txt: speech as `Japanese text reads as "…", "…"`, sound '
-        'effects (one per sound) as `Japanese SFX reads as "…"`. The workspace '
+        'effects (one per sound) as `Japanese SFX reads as "…"`; each line is '
+        "said once — a repeat of the same speech verbatim, or of the same "
+        "sound, is dropped. The workspace "
         "copies stay as they are; an image with no {stem}.ocr.txt publishes "
         "unchanged. Off by default: the trainer then encodes the caption as "
         "curated",
@@ -894,6 +896,17 @@ class ExportRequest(DatasetRequest):
         "det column) is at least this. The sidecar keeps every line for "
         "inspection; below 0.5 a box is mostly a nested fragment of its "
         "neighbour or a texture read as kana. 0 attaches everything",
+    )
+    ocr_min_glyph: float = arg(
+        16.0,
+        gate="combine_ocr",
+        group=OCR_DRAWER,
+        help="Attach only the lines whose glyphs are at least this many pixels "
+        "across in the resized image — the box's area shared out between the "
+        "characters read from it, sqrt(w*h/len). Below 16 the box is too small "
+        "to hold what was read (a shop sign read as four kana in 39x22), or it "
+        "is a watermark, credit line or narration strip too fine to train on. "
+        "0 attaches everything",
     )
     ocr_dir: str = arg(
         WS.OCR,
