@@ -195,12 +195,13 @@ def test_the_protocol_halves_agree_with_detect():
     page = np.zeros((640, 640, 3), np.uint8)
     prepared = det.prepare(page)
     raw = det.forward_batch([prepared])[0]
-    quads = det.boxes(raw, prepared, page.shape[:2])
-    assert len(quads) == 1 and quads[0].shape == (4, 2)
-    assert [int(v) for v in (quads[0][:, 0].min(), quads[0][:, 1].min())] == [
-        240,
-        240,
-    ]
+    pairs = det.boxes(raw, prepared, page.shape[:2])
+    assert len(pairs) == 1
+    quad, score = pairs[0]
+    assert quad.shape == (4, 2)
+    assert [int(v) for v in (quad[:, 0].min(), quad[:, 1].min())] == [240, 240]
+    # the pair's score is the same one detect_scored reports
+    assert score == pytest.approx(det.detect_scored(page)[0][4])
 
 
 # ---- the detect-only engine -----------------------------------------------
@@ -219,7 +220,11 @@ class _Fake:
         return list(prepared)
 
     def boxes(self, raw, prepared, shape):
-        return [animetext.as_quad(b) for b in self.by_height.get(raw, [])]
+        # (quad, score) pairs: the score is the box's own, kept as ``det``
+        return [
+            (animetext.as_quad(b), 0.5 + 0.01 * k)
+            for k, b in enumerate(self.by_height.get(raw, []))
+        ]
 
 
 def test_the_engine_emits_every_box_as_an_empty_line_in_reading_order(
@@ -243,6 +248,9 @@ def test_the_engine_emits_every_box_as_an_empty_line_in_reading_order(
     ]
     assert all(ln.text == "" and ln.score == NO_TEXT_SCORE for ln in pages[0])
     assert [ln.seq for ln in pages[0]] == [1, 2]
+    # the detector's confidence rides on each line, following its box through
+    # the reorder (the second box was scored 0.51 and now reads first)
+    assert [ln.det for ln in pages[0]] == pytest.approx([0.51, 0.50])
 
 
 def test_the_engine_still_applies_the_size_filters(tmp_path: Path):
@@ -407,3 +415,13 @@ def test_every_gpu_session_gets_the_bounded_arena(monkeypatch, tmp_path):
     seen.clear()
     _onnx.make_session(tmp_path / "m.onnx", "cpu", what="x")
     assert seen["providers"] == ["CPUExecutionProvider"]
+
+
+def test_the_detector_answers_scored_pairs_and_the_stage_floor_admits_two_glyphs():
+    from anime_tools.stages.requests import OcrRequest
+
+    fake = _Fake({100: [(1, 2, 3, 4)]})
+    ((quad, score),) = fake.boxes(100, None, (100, 100))
+    assert quad.shape == (4, 2) and score == pytest.approx(0.5)
+    # ドン / ゴゴ are SFX, not screentone: the default floor keeps them
+    assert OcrRequest().min_chars == 2

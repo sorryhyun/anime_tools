@@ -649,6 +649,7 @@ def test_the_ocr_sidecar_reaches_the_panel_without_being_a_caption_version(clien
     assert it["ocr"][0] == {
         "seq": 1,
         "box": [10, 20, 300, 60],
+        "det": 0.0,  # a pre-det record: the detector's score was never kept
         "score": 0.971,
         "text": "こんにちは",
     }

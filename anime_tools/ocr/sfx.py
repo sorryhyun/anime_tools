@@ -36,7 +36,7 @@ from __future__ import annotations
 import re
 import unicodedata
 from collections import defaultdict
-from collections.abc import Sequence
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -124,6 +124,32 @@ def guard(text: str, width: int, height: int) -> str | None:
     if sum(1 for ch in read if not ch.isspace()) > length_cap(width, height):
         return None
     return read
+
+
+def token_confidence(
+    tail: Sequence[int], step_probs: Sequence[float], skip: Iterable[int]
+) -> tuple[list[int], float]:
+    """The generated ids up to the first end-of-text / pad and the mean of
+    their greedy probabilities.
+
+    ``tail`` is one row's generated ids in step order; ``step_probs[i]`` is the
+    probability the decoder put on the token it chose at step ``i`` (the
+    softmax maximum under greedy decoding). The mean runs over the kept tokens
+    only — the stop token is not part of the read — and an empty decode is
+    ``0.0``, since nothing was read to be sure of.
+    """
+    stop = set(skip)
+    ids: list[int] = []
+    for t in tail:
+        if t in stop:
+            break
+        ids.append(int(t))
+    if not ids:
+        return ids, 0.0
+    probs = [float(p) for p in step_probs[: len(ids)]]
+    if not probs:
+        return ids, 0.0
+    return ids, sum(probs) / len(probs)
 
 
 def pad_box(
@@ -244,18 +270,37 @@ class SfxReader:
             tokenize=False,
         )
 
-    def read_raw(self, crops: Sequence) -> list[str]:
-        """Every crop's raw decode (BGR ``uint8`` arrays in, strings out), in
-        input order. Unguarded — :meth:`read` is the one to call."""
+    def read_raw_scored(self, crops: Sequence) -> list[tuple[str, float]]:
+        """Every crop's raw decode with its confidence (BGR ``uint8`` arrays
+        in, ``(text, confidence)`` out), in input order. Unguarded —
+        :meth:`read_scored` is the one to call.
+
+        The confidence is the mean, over the tokens the reader emitted, of the
+        probability it put on each (:func:`token_confidence`): a logits
+        processor records the greedy maximum at every step, so nothing but a
+        ``(batch,)`` vector per step is held — never the vocabulary-wide scores
+        ``output_scores`` would keep.
+        """
         import torch
         from PIL import Image
+        from transformers import LogitsProcessor, LogitsProcessorList
+
+        class _Greedy(LogitsProcessor):
+            """Records ``max softmax`` per step; changes nothing."""
+
+            def __init__(self) -> None:
+                self.probs: list = []
+
+            def __call__(self, input_ids, scores):
+                self.probs.append(scores.float().log_softmax(-1).max(-1).values.exp())
+                return scores
 
         if not crops:
             return []
         order = sorted(
             range(len(crops)), key=lambda i: crops[i].shape[0] * crops[i].shape[1]
         )
-        out = [""] * len(crops)
+        out: list[tuple[str, float]] = [("", 0.0)] * len(crops)
         tok = self.processor.tokenizer
         skip = {tok.eos_token_id, tok.pad_token_id}
         prompt = self._prompt()
@@ -273,43 +318,70 @@ class SfxReader:
                 },
             ).to(self.device)
             n = inputs["input_ids"].shape[-1]
+            recorder = _Greedy()
             with torch.inference_mode():
                 gen = self.model.generate(
                     **inputs,
                     max_new_tokens=MAX_NEW_TOKENS,
                     do_sample=False,
                     use_cache=True,
+                    logits_processor=LogitsProcessorList([recorder]),
                 )
-            for i, row in zip(idx, gen, strict=True):
-                ids = [t for t in row[n:].tolist() if t not in skip]
-                out[i] = tok.decode(ids).strip()
+            steps = (
+                torch.stack(recorder.probs, 1).cpu().tolist()
+                if recorder.probs
+                else [[] for _ in idx]
+            )
+            for i, row, probs in zip(idx, gen, steps, strict=True):
+                ids, conf = token_confidence(row[n:].tolist(), probs, skip)
+                out[i] = (tok.decode(ids).strip(), conf)
+        return out
+
+    def read_raw(self, crops: Sequence) -> list[str]:
+        """Every crop's raw decode, the text alone — :meth:`read_raw_scored`
+        minus the confidence."""
+        return [text for text, _ in self.read_raw_scored(crops)]
+
+    def read_scored(self, crops: Sequence) -> list[tuple[str, float] | None]:
+        """:meth:`read_raw_scored` through :func:`guard`: ``(text, confidence)``
+        per crop, or ``None`` for a crop the decoder ran away on."""
+        raws = self.read_raw_scored(crops)
+        out: list[tuple[str, float] | None] = []
+        for (raw, conf), c in zip(raws, crops, strict=True):
+            text = guard(raw, int(c.shape[1]), int(c.shape[0]))
+            out.append(None if text is None else (text, conf))
         return out
 
     def read(self, crops: Sequence) -> list[str | None]:
-        """:meth:`read_raw` through :func:`guard`: a string per crop, or ``None``
+        """:meth:`read_scored`, the text alone: a string per crop, or ``None``
         for a crop the decoder ran away on."""
-        raws = self.read_raw(crops)
-        return [
-            guard(raw, int(c.shape[1]), int(c.shape[0]))
-            for raw, c in zip(raws, crops, strict=True)
-        ]
+        return [None if r is None else r[0] for r in self.read_scored(crops)]
 
-    def read_boxes(
+    def read_boxes_scored(
         self, bgr, boxes: Sequence[Sequence[int]], pad: float = CROP_PAD
-    ) -> list[str | None]:
-        """One page, many boxes: :func:`crop_box` each, :meth:`read` them all.
-        An empty box reads as ``None``."""
+    ) -> list[tuple[str, float] | None]:
+        """One page, many boxes: :func:`crop_box` each, :meth:`read_scored`
+        them all. An empty box reads as ``None``. What
+        :class:`~anime_tools.ocr.reread.RereadEngine` calls."""
         crops, owners = [], []
         for i, box in enumerate(boxes):
             crop = crop_box(bgr, box, pad)
             if crop is not None and crop.size:
                 crops.append(crop)
                 owners.append(i)
-        reads = self.read(crops)
-        out: list[str | None] = [None] * len(boxes)
+        reads = self.read_scored(crops)
+        out: list[tuple[str, float] | None] = [None] * len(boxes)
         for i, r in zip(owners, reads, strict=True):
             out[i] = r
         return out
+
+    def read_boxes(
+        self, bgr, boxes: Sequence[Sequence[int]], pad: float = CROP_PAD
+    ) -> list[str | None]:
+        """:meth:`read_boxes_scored`, the text alone."""
+        return [
+            None if r is None else r[0] for r in self.read_boxes_scored(bgr, boxes, pad)
+        ]
 
 
 __all__ = [
@@ -324,4 +396,5 @@ __all__ = [
     "length_cap",
     "normalize_read",
     "pad_box",
+    "token_confidence",
 ]

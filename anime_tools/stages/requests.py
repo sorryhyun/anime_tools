@@ -658,7 +658,8 @@ class OcrRequest(StageRequest):
     One detector for balloon lines *and* the SFX drawn onto the artwork; a box's
     read is the line, so a read the decode guard rejects drops its box. With
     ``--mask_dir`` the text mask's components no box covers are read too, as lines
-    of their own (score ``0.000``).
+    of their own (``det`` ``0.000``). Every line carries the detector's box
+    confidence (``det``) and the reader's mean token confidence (``score``).
 
     Dry-run by default: a dry run emits ``report.json`` carrying every line it would
     have written, and ``--apply`` writes the sidecars and nothing else.
@@ -672,9 +673,10 @@ class OcrRequest(StageRequest):
     )
     path_pattern: str = arg("*", help=PATTERN_HELP.format(root="--dst"))
     min_chars: int = arg(
-        3,
-        help="Drop a read shorter than this many non-space characters — one or "
-        "two glyphs is a misread screentone far more often than it is a word",
+        2,
+        help="Drop a read shorter than this many non-space characters — a lone "
+        "glyph is a misread screentone far more often than it is a word, while "
+        "two is already an SFX (ドン, ゴゴ)",
     )
     skip_en: bool = _off(
         True,

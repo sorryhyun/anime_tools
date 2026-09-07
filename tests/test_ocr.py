@@ -23,8 +23,15 @@ from anime_tools.captions.ocr_sidecar import (
 from anime_tools.stages.ocr import number_lines, run_ocr
 
 
-def line(text: str, *, seq: int = 1, score: float = 0.95, box=(0, 0, 40, 20)):
-    return OcrLine(seq=seq, box=box, score=score, text=text)
+def line(
+    text: str,
+    *,
+    seq: int = 1,
+    score: float = 0.95,
+    box=(0, 0, 40, 20),
+    det: float = 0.0,
+):
+    return OcrLine(seq=seq, box=box, score=score, text=text, det=det)
 
 
 # ---- the sidecar ------------------------------------------------------
@@ -33,10 +40,27 @@ def line(text: str, *, seq: int = 1, score: float = 0.95, box=(0, 0, 40, 20)):
 def test_the_sidecar_round_trips_through_a_tab_and_a_multi_dot_stem(tmp_path: Path):
     assert ocr_sidecar_path(Path("a/b.c.txt")).name == "b.c" + OCR_SIDECAR_SUFFIX
     # A tab inside the text is why the text field is last.
-    lines = [line("こん\tにちは"), line("SALE", seq=2)]
+    lines = [line("こん\tにちは", det=0.875), line("SALE", seq=2, score=0.5)]
     p = write_ocr_for(tmp_path, Path("a.b.txt"), lines)
     assert p.name == "a.b" + OCR_SIDECAR_SUFFIX
     assert read_ocr(p) == lines
+    # seq ⇥ box ⇥ det ⇥ score ⇥ text
+    assert p.read_text(encoding="utf-8").splitlines()[1:] == [
+        "1\t0,0,40,20\t0.875\t0.950\tこん\tにちは",
+        "2\t0,0,40,20\t0.000\t0.500\tSALE",
+    ]
+
+
+def test_a_legacy_four_field_record_reads_with_no_detector_score(tmp_path: Path):
+    p = tmp_path / "a.ocr.txt"
+    p.write_text(
+        "# header\n1\t0,0,10,10\t0.000\tヒキィ\n2\t0,20,10,30\t0.000\tこん\tにちは\n",
+        encoding="utf-8",
+    )
+    assert read_ocr(p) == [
+        line("ヒキィ", box=(0, 0, 10, 10), score=0.0),
+        line("こん\tにちは", seq=2, box=(0, 20, 10, 30), score=0.0),
+    ]
 
 
 def test_the_sidecar_mirrors_the_resized_tree_and_digs_its_own_subdir(tmp_path: Path):
@@ -64,7 +88,8 @@ def test_a_damaged_record_costs_its_line_and_never_the_run(tmp_path: Path):
         "two\t0,0,10,10\t0.9\tbad seq\n"
         "3\tnot,a,box,x\t0.9\tbad box\n"
         "4\t0,0,10,10\tNaN-ish\tbad score\n"
-        "5\t0,0,10,10\n",
+        "5\t0,0,10,10\n"
+        "6\t0,0,10,10\tNaN-ish\t0.9\tbad det\n",
         encoding="utf-8",
     )
     assert [ln.text for ln in read_ocr(p)] == ["kept"]

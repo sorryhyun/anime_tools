@@ -27,8 +27,10 @@ and joining those measured a loss (sincos, 2026-09-06: manga-ocr best-match
 Measured on the sincos shard (the trainer's ``project/cjk_aware_anima_dit``,
 2026-09-06): the masked-but-no-line floor 23 → 8 pages, manga-ocr best-match
 0.786 → 0.810, hearts back on the speech lines; the regressions are digits
-(``91`` → ``9``) and two-glyph crops. A VL line has no recognizer confidence,
-so its ``score`` is :data:`NO_SCORE`.
+(``91`` → ``9``) and two-glyph crops. A VL line's ``score`` is the reader's
+mean greedy token probability (:meth:`~anime_tools.ocr.sfx.SfxReader.read_boxes_scored`);
+a reader answering bare strings leaves :data:`NO_SCORE`. The detector's box
+confidence rides through as ``det`` (a mask component has none).
 
 Torch-free to import; cv2 loads inside the two functions that need it.
 """
@@ -44,13 +46,15 @@ from anime_tools.captions.ocr_sidecar import OcrLine
 from anime_tools.ocr._text import keep_line, reading_order
 
 Box = tuple[int, int, int, int]
-ReadBoxes = Callable[[object, Sequence[Box]], list[str | None]]
-"""``(bgr, boxes) → texts``: :meth:`~anime_tools.ocr.sfx.SfxReader.read_boxes`,
-``None`` for a read the guard rejected."""
+Read = str | tuple[str, float] | None
+"""One crop's read: the text with the reader's confidence, a bare text (no
+confidence — :data:`NO_SCORE`), or ``None`` for a read the guard rejected."""
+ReadBoxes = Callable[[object, Sequence[Box]], list[Read]]
+"""``(bgr, boxes) → reads``: :meth:`~anime_tools.ocr.sfx.SfxReader.read_boxes_scored`."""
 
 NO_SCORE = 0.0
-"""The ``score`` of a VL-read line: no recognizer stood behind it, and
-``0.000`` in the sidecar says so."""
+"""The ``score`` (or ``det``) of a line nothing stood behind — a read with no
+confidence, a box no detector scored — and ``0.000`` in the sidecar says so."""
 
 CLOSE_FRAC = 0.025
 """Closing kernel as a fraction of the page width: merges the glyphs of one
@@ -134,10 +138,13 @@ def reread_lines(
     the components), so the reader batches the page. A box lives or dies by its
     read: ``None`` (the guard rejected it) drops it, and a text must carry a
     letter (:func:`has_script`) and pass the line floors (``min_chars`` /
-    ``skip_en``) to become a line, with :data:`NO_SCORE`. Whatever text a line
-    arrived with is not consulted — the engine hands over none.
+    ``skip_en``) to become a line. The reader's confidence is the line's
+    ``score`` (:data:`NO_SCORE` for a bare-string read); the detector's ``det``
+    is kept on its line, and a component has none. Whatever text a line arrived
+    with is not consulted — the engine hands over none.
     """
     boxes: list[Box] = [tuple(int(v) for v in ln.box) for ln in lines]
+    dets: list[float] = [float(ln.det) for ln in lines]
     comps: list[Box] = []
     if mask is not None and comp_max > 0:
         comps = [
@@ -147,7 +154,7 @@ def reread_lines(
         ][:comp_max]
     if not boxes and not comps:
         return []
-    reads = read_boxes(bgr, boxes + comps)
+    reads = [split_read(r) for r in read_boxes(bgr, boxes + comps)]
 
     def keeps(text: str | None) -> bool:
         return (
@@ -157,20 +164,31 @@ def reread_lines(
         )
 
     out: list[OcrLine] = [
-        OcrLine(seq=0, box=box, score=NO_SCORE, text=text)
-        for box, text in zip(boxes, reads[: len(boxes)], strict=True)
+        OcrLine(seq=0, box=box, score=conf, text=text, det=det)
+        for box, det, (text, conf) in zip(boxes, dets, reads[: len(boxes)], strict=True)
         if keeps(text)
     ]
     seen = list(boxes)
-    for box, text in zip(comps, reads[len(boxes) :], strict=True):
+    for box, (text, conf) in zip(comps, reads[len(boxes) :], strict=True):
         if not keeps(text) or covered(box, seen):
             continue
         seen.append(box)
-        out.append(OcrLine(seq=0, box=box, score=NO_SCORE, text=text))
+        out.append(OcrLine(seq=0, box=box, score=conf, text=text, det=NO_SCORE))
     return [
-        OcrLine(seq=i, box=ln.box, score=ln.score, text=ln.text)
+        OcrLine(seq=i, box=ln.box, score=ln.score, text=ln.text, det=ln.det)
         for i, ln in enumerate(reading_order(out), 1)
     ]
+
+
+def split_read(read: Read) -> tuple[str | None, float]:
+    """A :data:`Read` as ``(text, confidence)``: a bare string carries
+    :data:`NO_SCORE`, ``None`` stays ``None``."""
+    if read is None:
+        return None, NO_SCORE
+    if isinstance(read, str):
+        return read, NO_SCORE
+    text, conf = read
+    return text, float(conf)
 
 
 def mask_for(mask_dir: Path, rel: Path) -> Path | None:
@@ -217,7 +235,7 @@ class RereadEngine:
     masks: Path | None = None
     comp_min_side: int = 32
     comp_max: int = 16
-    min_chars: int = 3
+    min_chars: int = 2
     skip_en: bool = True
 
     def _page(self, path: Path, lines: list[OcrLine]) -> list[OcrLine]:
@@ -263,6 +281,7 @@ class RereadEngine:
 
 __all__ = [
     "NO_SCORE",
+    "Read",
     "RereadEngine",
     "covered",
     "has_script",
@@ -270,4 +289,5 @@ __all__ = [
     "mask_for",
     "overlap",
     "reread_lines",
+    "split_read",
 ]

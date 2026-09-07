@@ -521,7 +521,7 @@ def _vl_engine(req: OcrRequest, engine, resized_dir: Path):
         raise FileNotFoundError(f"--mask_dir {mask_dir} is not a directory")
     return RereadEngine(
         engine=engine,
-        read_boxes=reader.read_boxes,
+        read_boxes=reader.read_boxes_scored,
         resized_dir=resized_dir,
         masks=mask_dir,
         comp_min_side=req.comp_min_side,

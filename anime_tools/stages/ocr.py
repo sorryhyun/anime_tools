@@ -70,7 +70,7 @@ def number_lines(lines: Sequence[OcrLine]) -> tuple[OcrLine, ...]:
     came from.
     """
     return tuple(
-        OcrLine(seq=i, box=ln.box, score=ln.score, text=ln.text)
+        OcrLine(seq=i, box=ln.box, score=ln.score, text=ln.text, det=ln.det)
         for i, ln in enumerate(lines, 1)
     )
 

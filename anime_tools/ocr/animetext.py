@@ -237,11 +237,11 @@ class AnimeTextDetector:
         return [self.session.run(None, {name: x})[0][0] for x, _ in prepared]
 
     def boxes(self, raw, prepared: tuple, shape: tuple[int, int]) -> list:
-        """One image's boxes from its head, as quads, nesting settled — the
-        CPU tail, pool-safe. ``shape`` is the image's ``(h, w)``."""
+        """One image's boxes from its head, as ``(quad, score)`` pairs, nesting
+        settled — the CPU tail, pool-safe. ``shape`` is the image's ``(h, w)``."""
         _, r = prepared
         scored = decode(raw, r, shape[1], shape[0], conf=self.conf, nms=self.nms)
-        return [as_quad(b) for b in denest(scored, self.nest)]
+        return [(as_quad(b), float(b[4])) for b in denest(scored, self.nest)]
 
     # ---- the plain calls ---------------------------------------------
 

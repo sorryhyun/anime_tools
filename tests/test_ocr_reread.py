@@ -59,6 +59,19 @@ def test_a_read_is_the_line_and_a_rejected_one_drops_the_box():
     ]
 
 
+def test_a_scored_read_keeps_its_confidence_and_the_box_keeps_its_det():
+    lines = [
+        OcrLine(seq=1, box=(10, 10, 40, 120), score=0.0, text="", det=0.81),
+        OcrLine(seq=2, box=(100, 10, 130, 120), score=0.0, text="", det=0.42),
+    ]
+    reads = [("ぱんぱん", 0.97), "どきどき"]  # a scored read and a bare one
+    out = reread.reread_lines(page(), lines, lambda b, x: reads)
+    assert [(ln.text, ln.score, ln.det) for ln in out] == [
+        ("どきどき", reread.NO_SCORE, 0.42),  # right column first
+        ("ぱんぱん", 0.97, 0.81),
+    ]
+
+
 def test_a_read_must_clear_the_floors_and_carry_a_letter():
     lines = [line("", (b, 10, b + 30, 120), score=0.0) for b in (10, 60, 110, 160)]
     reads = ["♡", "12", "OK", "ぱんぱん"]

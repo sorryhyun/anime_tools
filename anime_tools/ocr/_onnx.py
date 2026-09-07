@@ -47,7 +47,8 @@ def _cv2_single_threaded() -> Iterator[None]:
 
 
 NO_TEXT_SCORE = 0.0
-"""The ``score`` of a detect-only line: no recognizer stood behind it."""
+"""The ``score`` of a detect-only line: no recognizer stood behind it. Its
+``det`` is the detector's own confidence in the box."""
 
 
 def _bounds(quad) -> tuple[int, int, int, int]:
@@ -96,8 +97,10 @@ class Detector(Protocol):
 
     :meth:`prepare` and :meth:`boxes` are pure CPU and run on the pool;
     :meth:`forward_batch` is the one call that touches the session and runs on
-    the calling thread. ``boxes`` answers ``(4, 2)`` float quads in image pixels,
-    TL-TR-BR-BL — the shape :func:`crop_quad` and the size filters take.
+    the calling thread. ``boxes`` answers ``(quad, score)`` pairs: a ``(4, 2)``
+    float quad in image pixels, TL-TR-BR-BL — the shape :func:`crop_quad` and
+    the size filters take — and the detector's confidence in it, which the line
+    keeps as ``det``.
     """
 
     def prepare(self, bgr) -> Any:
@@ -108,15 +111,17 @@ class Detector(Protocol):
         """The raw head per prepared image, forward passes only."""
 
     def boxes(self, raw, prepared: Any, shape: tuple[int, int]) -> list:
-        """One image's quads from its raw head; ``shape`` is its ``(h, w)``."""
+        """One image's ``(quad, score)`` pairs from its raw head; ``shape`` is
+        its ``(h, w)``."""
 
 
 @dataclass
 class OcrEngine:
     """A detector as the one callable a stage needs — detect-only.
 
-    Every box the detector keeps is a line with empty text and
-    :data:`NO_TEXT_SCORE`, in reading order; there is no text to filter on, so
+    Every box the detector keeps is a line with empty text, :data:`NO_TEXT_SCORE`
+    and the detector's confidence as ``det``, in reading order; there is no text
+    to filter on, so
     the content floors belong to the re-reader behind it
     (:class:`~anime_tools.ocr.reread.RereadEngine`). Not a stage on its own.
     """
@@ -226,31 +231,35 @@ class OcrEngine:
         return bgr, self.detector.prepare(bgr)
 
     def _select(self, boxes: Sequence) -> list:
-        """The boxes worth reading: big enough, and the largest few.
+        """The ``(quad, score)`` pairs worth reading: big enough, and the largest
+        few.
 
         A box under ``min_box_px`` never becomes a crop, and ``max_boxes`` caps
         what a screentone misread as a wall of text costs the reader.
         """
 
-        def extent(b) -> tuple[float, float]:
-            return b[:, 0].max() - b[:, 0].min(), b[:, 1].max() - b[:, 1].min()
+        def extent(pair) -> tuple[float, float]:
+            q = pair[0]
+            return q[:, 0].max() - q[:, 0].min(), q[:, 1].max() - q[:, 1].min()
 
-        big = [b for b in boxes if max(extent(b)) >= self.min_box_px]
-        return sorted(big, key=lambda b: extent(b)[0] * extent(b)[1], reverse=True)[
+        big = [p for p in boxes if max(extent(p)) >= self.min_box_px]
+        return sorted(big, key=lambda p: extent(p)[0] * extent(p)[1], reverse=True)[
             : self.max_boxes
         ]
 
     def _lines(self, kept: Sequence) -> list[OcrLine]:
-        """One image's boxes as empty lines, numbered in reading order.
+        """One image's ``(quad, score)`` pairs as empty lines, numbered in
+        reading order.
 
         Numbered only once the order is final, so a sidecar's sequence reads
         top-to-bottom rather than recording detection order.
         """
         empty = [
-            OcrLine(seq=0, box=_bounds(b), score=NO_TEXT_SCORE, text="") for b in kept
+            OcrLine(seq=0, box=_bounds(q), score=NO_TEXT_SCORE, text="", det=float(s))
+            for q, s in kept
         ]
         return [
-            OcrLine(seq=i, box=ln.box, score=ln.score, text=ln.text)
+            OcrLine(seq=i, box=ln.box, score=ln.score, text=ln.text, det=ln.det)
             for i, ln in enumerate(reading_order(empty), 1)
         ]
 

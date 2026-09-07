@@ -116,3 +116,15 @@ def test_the_reader_rows_land_where_the_loader_looks(home):
 def test_load_without_weights_names_the_row(home):
     with pytest.raises(sfx.SfxWeightsMissing, match="vl16_base"):
         sfx.SfxReader.load(fetch=False)
+
+
+def test_token_confidence_averages_the_kept_tokens_and_stops_at_eos():
+    ids, conf = sfx.token_confidence(
+        [5, 6, 7, 2, 0, 0], [0.9, 0.5, 0.7, 0.99, 1.0, 1.0], {2, 0}
+    )
+    assert ids == [5, 6, 7]
+    assert conf == pytest.approx(0.7)
+    # an empty decode is sure of nothing
+    assert sfx.token_confidence([2, 0], [0.99, 1.0], {2, 0}) == ([], 0.0)
+    # a decode the step recorder never saw (no steps) is 0.0, not an error
+    assert sfx.token_confidence([5, 6], [], {2, 0}) == ([5, 6], 0.0)
