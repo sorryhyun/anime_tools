@@ -98,8 +98,6 @@ const ko: Dict = {
     /** {0} is how many lines were recognized. */
     count: (n: number) => `${n}줄`,
     readOnly: "OCR 스테이지가 생성함",
-    scoreHint:
-      "인식기의 글자당 평균 확신도. 세로쓰기 일본어는 눕혀서 읽히므로 점수가 낮게 나옵니다",
     boxHint: "이미지 안에서의 좌측 상단 좌표(픽셀)",
   },
   caption: {
@@ -189,6 +187,8 @@ const ko: Dict = {
     download: "받기",
     redownload: "다시 받기",
     downloadingRow: "받는 중…",
+    downloadPack: "팩 받기",
+    redownloadPack: "팩 다시 받기",
     gated: "승인 필요 — 위 토큰과 같은 계정으로 {0}.",
     gatedLink: "약관에 동의",
   },

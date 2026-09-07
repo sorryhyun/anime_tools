@@ -2,7 +2,7 @@ import { For, Show } from "solid-js";
 import { slots, t } from "../i18n";
 import type { SettingsOut } from "../config";
 import type { HelpArea } from "../layout";
-import type { Info, JobStatus, ModelAsset, ModelCatalog } from "../types";
+import type { Info, JobStatus, ModelAsset, ModelCatalog, ModelPack } from "../types";
 import { HelpToggle } from "./HelpToggle";
 import { SettingsShell } from "./SettingsShell";
 import { StatusLine } from "./StatusLine";
@@ -33,6 +33,9 @@ export function SettingsModels(props: {
   const inFlight = (m: ModelAsset) =>
     props.downloading &&
     (props.downloadIds.length ? props.downloadIds.includes(m.id) : !m.installed);
+  /** The rows under one pack header, in the order the catalog sent them. The
+      server already left out packs with no rows, so every header has some. */
+  const rowsOf = (p: ModelPack) => (props.models?.models ?? []).filter((m) => m.pack === p.id);
 
   /** The token field is emptied on every close, OK or not: a secret does not
       stay in a hidden dialog. */
@@ -74,13 +77,31 @@ export function SettingsModels(props: {
           {t().settings.modelsHelp}
         </p>
       </Show>
-      <div class="models">
-        <For each={props.models?.models}>
-          {(m) => (
-            <ModelRow m={m} busy={props.busy} active={inFlight(m)} onDownload={props.onDownload} />
-          )}
-        </For>
-      </div>
+      <For each={props.models?.packs}>
+        {(p) => (
+          <div class="pack">
+            <PackHead
+              p={p}
+              rows={rowsOf(p)}
+              busy={props.busy}
+              active={rowsOf(p).some(inFlight)}
+              onDownload={props.onDownload}
+            />
+            <div class="models">
+              <For each={rowsOf(p)}>
+                {(m) => (
+                  <ModelRow
+                    m={m}
+                    busy={props.busy}
+                    active={inFlight(m)}
+                    onDownload={props.onDownload}
+                  />
+                )}
+              </For>
+            </div>
+          </div>
+        )}
+      </For>
       <div class="dlbar">
         <button
           type="button"
@@ -101,6 +122,42 @@ export function SettingsModels(props: {
         </Show>
       </div>
     </SettingsShell>
+  );
+}
+
+/** A pack's header: its title and description as the server wrote them, and
+    the one button that pulls every row under it. The button says "Download"
+    while any row is missing and "Re-download" once none is, and it hands
+    `onDownload` the row ids — never the pack id — so what the dialog then
+    reports (`downloadIds`) lights the same rows a per-row click would. */
+function PackHead(props: {
+  p: ModelPack;
+  rows: ModelAsset[];
+  busy: boolean;
+  active: boolean;
+  onDownload: (ids: string[]) => void;
+}) {
+  const complete = () => props.rows.every((m) => m.installed);
+  return (
+    <div class="packhead">
+      <div class="mi">
+        <b>{props.p.title}</b>
+        <Show when={props.p.description}>
+          <span class="dim wrap">{props.p.description}</span>
+        </Show>
+      </div>
+      <button
+        type="button"
+        disabled={props.busy || !props.rows.length}
+        onClick={() => props.onDownload(props.rows.map((m) => m.id))}
+      >
+        {props.active
+          ? t().settings.downloadingRow
+          : complete()
+            ? t().settings.redownloadPack
+            : t().settings.downloadPack}
+      </button>
+    </div>
   );
 }
 

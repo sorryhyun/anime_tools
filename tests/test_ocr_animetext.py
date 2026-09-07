@@ -1,7 +1,7 @@
 """The AnimeText text-block detector (``anime_tools.ocr.animetext``) without
 its weights: the head decode and NMS, the nesting policy, the letterbox, the
-engine's detect-only path over a fake detector, the reread seam on lines that
-carry no text, the catalog row, the request, and the bounded CUDA arena every
+engine's detect-only path over a fake detector, the reread seam over its
+empty lines, the catalog row, the request, and the bounded CUDA arena every
 ONNX session gets. Nothing here loads a model."""
 
 from __future__ import annotations
@@ -222,7 +222,7 @@ class _Fake:
         return [animetext.as_quad(b) for b in self.by_height.get(raw, [])]
 
 
-def test_a_detect_only_engine_emits_every_box_as_an_empty_line_in_reading_order(
+def test_the_engine_emits_every_box_as_an_empty_line_in_reading_order(
     tmp_path: Path,
 ):
     from PIL import Image
@@ -233,7 +233,6 @@ def test_a_detect_only_engine_emits_every_box_as_an_empty_line_in_reading_order(
         Image.new("RGB", size, "white").save(tmp_path / name)
     engine = OcrEngine(
         detector=_Fake({300: [(10, 10, 40, 200), (100, 10, 130, 200)], 100: []}),
-        recognizer=None,
         min_box_px=12,
     )
     pages = engine.read_many([tmp_path / "a.png", tmp_path / "b.png"])
@@ -246,7 +245,7 @@ def test_a_detect_only_engine_emits_every_box_as_an_empty_line_in_reading_order(
     assert [ln.seq for ln in pages[0]] == [1, 2]
 
 
-def test_the_detect_only_engine_still_applies_the_size_filters(tmp_path: Path):
+def test_the_engine_still_applies_the_size_filters(tmp_path: Path):
     from PIL import Image
 
     from anime_tools.ocr._onnx import OcrEngine
@@ -254,7 +253,6 @@ def test_the_detect_only_engine_still_applies_the_size_filters(tmp_path: Path):
     Image.new("RGB", (300, 200), "white").save(tmp_path / "a.png")
     engine = OcrEngine(
         detector=_Fake({200: [(0, 0, 5, 5), (10, 10, 40, 100), (50, 10, 90, 100)]}),
-        recognizer=None,
         min_box_px=12,
         max_boxes=1,
     )
@@ -291,73 +289,6 @@ def test_an_empty_line_lives_by_its_read():
     assert out[0].seq == 1
 
 
-def test_a_line_with_text_still_keeps_it_when_the_read_fails():
-    kept = OcrLine(seq=1, box=(10, 10, 40, 200), score=0.9, text="はんぱん")
-    out = reread.reread_lines(
-        _page(), [kept, _empty((60, 10, 90, 200))], lambda b, x: [None, None]
-    )
-    assert [ln.text for ln in out] == ["はんぱん"]
-
-
-def test_join_cjk_joins_the_reader_only_columns_of_one_balloon():
-    cols = [_empty((110, 20, 130, 120)), _empty((80, 20, 100, 120))]
-    far = _empty((200, 300, 220, 380))
-    texts = ["おはよ", "う", "ばん"]
-
-    def read_boxes(bgr, boxes):
-        return texts[: len(boxes)]
-
-    joined = reread.reread_lines(
-        _page(), cols + [far], read_boxes, min_chars=2, join_cjk=True
-    )
-    # columns read right to left: the far column first, then the joined balloon
-    assert [ln.text for ln in joined] == ["ばん", "おはよ う"]
-    assert joined[1].box == (80, 20, 130, 120)
-    apart = reread.reread_lines(
-        _page(), cols + [far], read_boxes, min_chars=1, join_cjk=False
-    )
-    assert [ln.text for ln in apart] == ["ばん", "おはよ", "う"]
-    # without the join the one-glyph column falls to the floor
-    floored = reread.reread_lines(_page(), cols + [far], read_boxes, min_chars=2)
-    assert [ln.text for ln in floored] == ["ばん", "おはよ"]
-
-
-def test_join_cjk_never_touches_a_line_that_arrived_with_text():
-    cols = [
-        OcrLine(seq=1, box=(110, 20, 130, 120), score=0.9, text="おはよ"),
-        OcrLine(seq=2, box=(80, 20, 100, 120), score=0.9, text="う"),
-    ]
-    out = reread.reread_lines(
-        _page(), cols, lambda b, x: [None, None], min_chars=1, join_cjk=True
-    )
-    assert [ln.text for ln in out] == ["おはよ", "う"]
-
-
-def test_the_engine_wrapper_carries_join_cjk(tmp_path: Path):
-    from PIL import Image
-
-    dst = tmp_path / "resized"
-    dst.mkdir()
-    Image.new("RGB", (300, 400), "white").save(dst / "a.png")
-
-    class Engine:
-        def read(self, p):
-            return [_empty((110, 20, 130, 120)), _empty((80, 20, 100, 120))]
-
-        def read_iter(self, paths):
-            for p in paths:
-                yield self.read(p)
-
-    eng = reread.RereadEngine(
-        engine=Engine(),
-        read_boxes=lambda b, boxes: ["おはよ", "う"],
-        resized_dir=dst,
-        min_chars=1,
-        join_cjk=True,
-    )
-    assert [ln.text for ln in eng.read(dst / "a.png")] == ["おはよ う"]
-
-
 # ---- the catalog row and the loader ----------------------------------------
 
 
@@ -368,13 +299,20 @@ def home(tmp_path, monkeypatch):
     return tmp_path
 
 
-def test_the_row_lands_where_the_loader_looks_and_warns_no_stage(home):
+def test_the_row_lands_where_the_loader_looks_and_names_the_stage(home):
     row = DL.by_id()["animetext_det"]
     assert row.dest == DL.default_animetext_dir() == home / "models" / "animetext"
     assert row.subfolder == "yolo12l_animetext"
     assert DL.ANIMETEXT_ONNX in row.files and "threshold.json" in row.files
-    # Fetched on first use by --detector animetext, not a stage requirement.
-    assert row.stages == ()
+    # The stage's one detector, so the stage bar warns before a run; the VL
+    # reader's two rows are the stage's too, and all three sit in the ocr pack.
+    assert row.stages == ("ocr",) and row.pack == "ocr"
+    assert {a.id for a in DL.by_pack()["ocr"]} == {
+        "animetext_det",
+        "vl16_base",
+        "sfx_reader",
+    }
+    assert all(a.stages == ("ocr",) for a in DL.by_pack()["ocr"])
     assert "GPL" in row.notes
 
 
@@ -387,42 +325,49 @@ def test_load_without_weights_names_the_row(home):
         animetext.AnimeTextDetector.load(nest="middle", fetch=False)
 
 
-def test_load_ocr_refuses_an_unknown_detector():
-    from anime_tools.ocr import DETECTORS, load_ocr
+def test_load_ocr_builds_the_detect_only_engine_over_the_animetext_detector(
+    home, monkeypatch
+):
+    """The one entry point: no detector or recognizer to choose any more."""
+    from anime_tools.ocr import OcrEngine, load_ocr
 
-    assert DETECTORS == ("ppocr", "animetext")
-    with pytest.raises(ValueError, match="detector"):
-        load_ocr(detector="craft")
+    built = {}
+
+    def fake_load(cls, model_dir=None, *, device, conf, nest, **_):
+        built.update(device=device, conf=conf, nest=nest)
+        return cls(session=object())
+
+    monkeypatch.setattr(animetext.AnimeTextDetector, "load", classmethod(fake_load))
+    engine = load_ocr(device="cpu", det_conf=0.4, max_boxes=8)
+    assert isinstance(engine, OcrEngine) and engine.max_boxes == 8
+    assert built == {"device": "cpu", "conf": 0.4, "nest": "inner"}
+    assert not hasattr(engine, "recognizer")
+    load_ocr(device="cpu")
+    assert built["conf"] == animetext.DEFAULT_CONF
 
 
 # ---- the request ----------------------------------------------------------
 
 
-def test_the_request_defaults_to_animetext_and_round_trips_the_detector():
-    # D3 (2026-09-06): the AnimeText detector + the VL reader are the defaults;
-    # PP-OCRv6 stays as the explicit torch-free pair.
+def test_the_request_has_one_path_and_round_trips_its_knobs():
+    # PP-OCRv6 was retired 2026-09-07: no detector / reader / join / score-floor /
+    # recognizer-batch / detector-side flags; the AnimeText detector's score
+    # floor is the one detector knob.
     req = OcrRequest()
-    assert req.detector == "animetext" and req.det_conf == 0.25 and req.detect_only
-    assert "--detector" not in req.to_argv()
-    req = OcrRequest(detector="ppocr", reader="ppocr")
-    assert not req.detect_only
-    argv = req.to_argv()
-    assert argv[:2] == ["--detector", "ppocr"] and "--reader" in argv
-    assert OcrRequest.from_argv(OcrRequest.parser(), argv) == req
-    req = OcrRequest(det_conf=0.426)
-    assert "--det_conf" in req.to_argv()
+    assert req.det_conf == 0.25
+    assert "--det_conf" not in req.to_argv()
+    for gone in ("detector", "reader", "min_score", "batch_size", "det_limit_side"):
+        assert not hasattr(req, gone), gone
+    req = OcrRequest(det_conf=0.426, mask_dir="m", max_boxes=8)
+    assert "--det_conf" in req.to_argv() and "--mask_dir" in req.to_argv()
     assert OcrRequest.from_argv(OcrRequest.parser(), req.to_argv()) == req
-    # PP-OCRv6 recognition on the block boxes is allowed, not detect-only.
-    assert not OcrRequest(detector="animetext", reader="ppocr").detect_only
 
 
-def test_the_request_refuses_the_mask_layer_under_animetext_and_bad_values():
-    with pytest.raises(ValueError, match="--mask_dir"):
-        OcrRequest(detector="animetext", reader="vl", mask_dir="m")
-    with pytest.raises(ValueError, match="--detector"):
-        OcrRequest(detector="craft")
+def test_the_request_refuses_bad_values():
     with pytest.raises(ValueError, match="--det_conf"):
         OcrRequest(det_conf=1.5)
+    with pytest.raises(ValueError, match="--min_chars"):
+        OcrRequest(min_chars=-1)
 
 
 # ---- the bounded CUDA arena -----------------------------------------------

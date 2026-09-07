@@ -1,26 +1,24 @@
 """AnimeText text-block detection: ``deepghs/AnimeText_yolo`` in front of a reader.
 
-PP-OCRv6's DB head (:class:`anime_tools.ocr._onnx.TextDetector`) finds balloon
-lines and misses most of what is drawn onto the artwork; the OCR stage grew two
-more layers behind it (VL Spotting, the text mask's components) to reach the
-sound effects. This module is the one detector that replaces all three: a
-YOLO12 trained on AnimeText (735k anime / manga pages, one class,
-``text_block``), run from its ONNX export on onnxruntime. Measured on the
-sincos shard (the trainer's ``project/cjk_aware_anima_dit``, 2026-09-06): every
-one of PP-OCRv6's 237 lines covered, 98 % of the hand-labelled SFX boxed, the
-masked-but-no-box floor 38 → 3 pages, 26 ms a page on the CUDA provider.
+The OCR stage's one detector: a YOLO12 trained on AnimeText (735k anime / manga
+pages, one class, ``text_block``), run from its ONNX export on onnxruntime. It
+finds balloon lines and the sound effects drawn onto the artwork alike, so the
+extra layers the stage once needed to reach the SFX (VL Spotting, the text
+mask's components) are optional at most. Measured on the sincos shard (the
+trainer's ``project/cjk_aware_anima_dit``, 2026-09-06): every one of the
+previous line detector's 237 lines covered, 98 % of the hand-labelled SFX boxed,
+the masked-but-no-box floor 38 → 3 pages, 26 ms a page on the CUDA provider.
+The line-detector-plus-CTC-recognizer stack it replaced was retired outright
+2026-09-07.
 
 What it emits is an **axis-aligned box per text block**, not a line quad. A
 vertical balloon comes back as the block *and* each of its columns — nested
 boxes — and :func:`denest` settles that: ``inner`` (the default) drops a box
 that holds two or more others, keeping the columns, since a block read matches
 no balloon line; ``outer`` keeps the block; ``raw`` keeps both. A block box is
-multi-column, which PP-OCRv6's line recognizer garbles, so this detector pairs
-with the manga VL reader (:mod:`anime_tools.ocr.sfx`) — the OCR stage's
-``--detector animetext --reader vl``, **the stage's defaults since 2026-09-06**
-(PP-OCRv6 retired to the explicit ``--detector ppocr --reader ppocr`` pair).
-``--reader ppocr`` on its boxes is allowed, not a default (measured: floor 26,
-hand-SFX 4 / 99 on the sincos shard).
+multi-column, which only a reader that sees the whole crop reads right, so the
+detector pairs with the manga VL reader (:mod:`anime_tools.ocr.sfx`) through
+:mod:`anime_tools.ocr.reread` — the OCR stage's only path.
 
 Weights are a catalog row (``animetext_det``, :mod:`anime_tools.downloads`),
 fetched on first use and **never bundled**: the model card is GPL-3.0 and the
@@ -162,9 +160,9 @@ def denest(boxes: Sequence, policy: str = "inner", th: float = NEST_TH) -> list:
 
 
 def as_quad(box: Sequence[int]):
-    """An axis-aligned box as the ``(4, 2)`` TL-TR-BR-BL quad the engine's crop
-    and size filters take — what :class:`~anime_tools.ocr._onnx.TextDetector`
-    emits, so both detectors speak one shape downstream."""
+    """An axis-aligned box as the ``(4, 2)`` TL-TR-BR-BL quad the engine's size
+    filters and :func:`~anime_tools.ocr._onnx.crop_quad` take — the
+    :class:`~anime_tools.ocr._onnx.Detector` protocol's one box shape."""
     import numpy as np
 
     x0, y0, x1, y1 = (float(v) for v in box[:4])
@@ -187,8 +185,8 @@ class AnimeTextDetector:
     """YOLO12 text blocks: a page in, axis-aligned boxes out.
 
     Speaks the engine's detector protocol (:meth:`prepare` / :meth:`forward_batch`
-    / :meth:`boxes`) so :class:`~anime_tools.ocr._onnx.OcrEngine` runs it in
-    the DB detector's place, one image per forward at one canvas shape.
+    / :meth:`boxes`) so :class:`~anime_tools.ocr._onnx.OcrEngine` runs it one
+    image per forward at one canvas shape.
     """
 
     session: Any

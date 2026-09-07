@@ -887,12 +887,25 @@ def test_model_catalog_and_download_job(client, monkeypatch):
     """The Settings rows come from the download catalog, and Download starts a
     normal job sharing the one slot."""
     c, home = client
+    from anime_tools import downloads as DL
+
     body = c.get("/api/models").json()
     assert body["models_dir"] == str(home / "models")
     rows = {m["id"]: m for m in body["models"]}
     assert not rows["sam3"]["installed"]
     assert rows["sam3"]["location"] == str(home / "models" / "sam3")
     assert rows["tagger_backbone"]["gated"].startswith("https://huggingface.co/")
+    # The rows are grouped under packs: PACKS order, only packs that have rows,
+    # and every model names one of them.
+    assert [p["id"] for p in body["packs"]] == list(DL.by_pack())
+    assert body["packs"][0] == {
+        "id": "tagger",
+        "title": DL.PACK_BY_ID["tagger"].title,
+        "description": DL.PACK_BY_ID["tagger"].description,
+    }
+    pack_ids = {p["id"] for p in body["packs"]}
+    assert all(m["pack"] in pack_ids for m in body["models"])
+    assert rows["sam3"]["pack"] == "masking"
 
     assert c.post("/api/models/download", json={"ids": ["nope"]}).status_code == 404
 
@@ -907,6 +920,12 @@ def test_model_catalog_and_download_job(client, monkeypatch):
     job = _await_job(c, c.post("/api/models/download", json={"ids": ["mit_text"]}))
     assert job["argv"][1:] == ["-m", "anime_tools.downloads", "mit_text"]
     assert job["state"] in ("done", "failed")
+
+    # A pack id is expanded to its rows before the job is named, so the job
+    # name and argv stay row-level.
+    job = _await_job(c, c.post("/api/models/download", json={"ids": ["text_mask"]}))
+    assert job["argv"][1:] == ["-m", "anime_tools.downloads", "mit_text", "ctd_onnx"]
+    assert job["stage"] == "download:mit_text,ctd_onnx"
 
 
 # -- startup: the schema build is off the critical path --------------------

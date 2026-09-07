@@ -100,7 +100,6 @@ const ja: Dict = {
     /** {0} is how many lines were recognized. */
     count: (n: number) => `${n}行`,
     readOnly: "OCR ステージが生成",
-    scoreHint: "認識器の文字あたり平均信頼度。縦書き日本語は横向きに読まれるため低くなります",
     boxHint: "画像内の左上座標（ピクセル）",
   },
   caption: {
@@ -192,6 +191,8 @@ const ja: Dict = {
     download: "ダウンロード",
     redownload: "再ダウンロード",
     downloadingRow: "ダウンロード中…",
+    downloadPack: "パックをダウンロード",
+    redownloadPack: "パックを再ダウンロード",
     gated: "承認制 — 上のトークンと同じアカウントで{0}してください。",
     gatedLink: "利用規約に同意",
   },

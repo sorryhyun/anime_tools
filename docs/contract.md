@@ -30,10 +30,9 @@ destination, so re-exporting an unchanged dataset is a walk and a stat apiece.
 The OCR stage that fills that tree runs the AnimeText text-block detector
 (`anime_tools.ocr.animetext`, ONNX weights fetched on first use) with every box
 read by the manga VL reader (`anime_tools.ocr.sfx`, torch, weights fetched on
-first use) by default (since 2026-09-06); `--detector ppocr` is PP-OCRv6's DB
-head, with `--reader ppocr` the torch-free pair and with `--reader vl` its lines
-re-read plus, under `--mask_dir`, the text mask's uncovered components as lines
-of their own (score `0.000`).
+first use) — the one path; under `--mask_dir` the text mask's uncovered
+components are read too, as lines of their own (score `0.000`). PP-OCRv6 det/rec
+was retired 2026-09-07 with no fallback pair.
 `--combine_ocr` (default off; `--ocr_dir` names the OCR tree, `workspace/ocr`)
 publishes the revised caption and every `.variants.txt` line with the image's
 OCR'd lines attached as a trailing text clause (§3) — a render, not a copy;

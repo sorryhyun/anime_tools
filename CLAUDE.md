@@ -9,7 +9,8 @@ module's architecture, and procedures live in `.claude/skills/`; the map is at t
 
 `anime_tools` is the dataset-curation half split out of the `anima_lora` trainer: caption grammar +
 correction, the Anima Tagger (dbv4), position clauses, multiview audit, PE-Spatial grouping,
-SAM3/MIT masking, PP-OCRv6 text recognition, and a web GUI over all of it. It is consumed as a git
+SAM3/MIT masking, OCR (AnimeText detector + manga VL reader), and a web GUI over all of it.
+It is consumed as a git
 dependency (no PyPI).
 
 **The dependency direction is one-way: the trainer imports this package, never the reverse.**
@@ -149,7 +150,7 @@ Each of these is implemented in one package but bites from any of them.
 | `anime_tools/grouping/` — embedders, feature cache, `groups.json` | `anime_tools/grouping/CLAUDE.md`; `docs/grouping.md` |
 | `anime_tools/gui/` — schema/argv binding, dataset ladder, jobs, settings | `anime_tools/gui/CLAUDE.md` |
 | `frontend/` — the Solid browser half | `frontend/CLAUDE.md` |
-| `anime_tools/ocr/` + `stages/ocr.py` — PP-OCRv6 over the resized tree; `ocr/sfx.py` the manga SFX crop reader (fine-tuned PaddleOCR-VL-1.6, decode guard built in) | `anime_tools/stages/CLAUDE.md`; the sidecar rule in the `captions` skill; `ocr/sfx.py`'s module doc |
+| `anime_tools/ocr/` + `stages/ocr.py` — the AnimeText text-block detector over the resized tree, every box read by `ocr/sfx.py`, the manga VL crop reader (fine-tuned PaddleOCR-VL-1.6, decode guard built in) | `anime_tools/stages/CLAUDE.md`; the sidecar rule in the `captions` skill; `ocr/sfx.py`'s module doc |
 | `anime_tools/downloads.py` — adding or moving a weight | the `model-catalog` skill |
 | A new stage, a renamed flag, a GUI knob | the `add-stage` skill |
 | A version bump, the installer, `release.yml` | the `release` skill |

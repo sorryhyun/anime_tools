@@ -203,16 +203,95 @@ def test_gated_rows_carry_their_accept_terms_url(home):
             assert a.gated == f"https://huggingface.co/{a.repo}"
 
 
-def test_cli_rejects_an_unknown_id(home, capsys):
+def test_cli_rejects_an_unknown_id_naming_both_vocabularies(home, capsys):
     assert DL.main(["nope"]) == 2
-    assert "unknown model id: nope" in capsys.readouterr().err
+    err = capsys.readouterr().err
+    assert "unknown model or pack id 'nope'" in err
+    assert "rows: tagger," in err and "packs: tagger, tags," in err
 
 
-def test_cli_list_reports_every_row(home, capsys):
+def test_cli_list_reports_every_row_under_its_pack_header(home, capsys):
     assert DL.main(["--list"]) == 0
     out = capsys.readouterr().out
     for a in DL.catalog():
         assert a.id in out and a.repo in out
+    headers = [ln for ln in out.splitlines() if ln.startswith("[")]
+    assert headers == [
+        f"[{p.id}] {p.title} — {p.description}"
+        for p in DL.PACKS
+        if p.id in DL.by_pack()
+    ]
+    # rows sit under their own header, in catalog order
+    lines = out.splitlines()
+    ocr = lines.index(next(h for h in headers if h.startswith("[ocr]")))
+    assert [ln.split()[1] for ln in lines[ocr + 1 : ocr + 4]] == [
+        "vl16_base",
+        "sfx_reader",
+        "animetext_det",
+    ]
+
+
+# ---- packs -------------------------------------------------------------
+
+
+def test_every_row_names_a_pack_and_every_pack_is_known():
+    assert DL.PACK_BY_ID == {p.id: p for p in DL.PACKS}
+    for a in DL.catalog():
+        assert a.pack in DL.PACK_BY_ID, a.id
+    # The GUI hides a pack by id, so the vocabulary is pinned.
+    assert [p.id for p in DL.PACKS] == [
+        "tagger",
+        "tags",
+        "masking",
+        "text_mask",
+        "ocr",
+        "grouping",
+    ]
+    assert DL.by_id()["danbooru_tags"].pack == "tags"
+
+
+def test_by_pack_keeps_pack_order_and_catalog_order_and_covers_every_row():
+    packed = DL.by_pack()
+    assert list(packed) == [p.id for p in DL.PACKS if p.id in packed]
+    seen = [a.id for rows in packed.values() for a in rows]
+    assert sorted(seen) == sorted(a.id for a in DL.catalog())
+    order = [a.id for a in DL.catalog()]
+    for rows in packed.values():
+        ids = [a.id for a in rows]
+        assert ids == sorted(ids, key=order.index)
+    # a filtered row set narrows the packs; an empty pack is left out
+    only = DL.by_pack(tuple(a for a in DL.catalog() if a.pack == "ocr"))
+    assert list(only) == ["ocr"]
+    assert DL.by_pack(()) == {}
+
+
+def test_expand_accepts_rows_and_packs_and_raises_on_unknown():
+    assert DL.expand(["ocr"]) == ["vl16_base", "sfx_reader", "animetext_det"]
+    # deduped and re-sorted into catalog order whatever the argument order
+    assert DL.expand(["soft_prompt", "pe_spatial", "sam3", "masking"]) == [
+        "sam3",
+        "pe_spatial",
+        "soft_prompt",
+    ]
+    # `tagger` is both a row and a pack: the pack wins, so the plain word on
+    # the command line installs the whole tagger, not just its checkpoint.
+    assert DL.expand(["tagger"]) == ["tagger", "tagger_backbone", "tagger_onnx"]
+    assert DL.expand([]) == []
+    with pytest.raises(KeyError, match="unknown model or pack id 'craft'"):
+        DL.expand(["craft"])
+
+
+def test_cli_accepts_a_pack_id(home, monkeypatch):
+    fetched: list[str] = []
+    monkeypatch.setattr(
+        DL.Asset, "fetch", lambda self, log=DL._say: fetched.append(self.id)
+    )
+    assert DL.main(["text_mask"]) == 0
+    assert fetched == ["mit_text", "ctd_onnx"]
+
+
+def test_the_pack_is_in_the_serialized_row(home):
+    assert DL.by_id()["sam3"].to_dict()["pack"] == "masking"
 
 
 def test_cli_downloads_only_what_is_missing(home, monkeypatch, capsys):

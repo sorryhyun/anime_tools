@@ -1,7 +1,7 @@
-"""The VL pass over a page (``anime_tools.ocr.reread``), weights-free: the
-re-read replaces or keeps each line, the mask's uncovered components become
-lines, reading order is settled afterwards, and the request carries the flags.
-Nothing here loads a model — ``read_boxes`` is a fake."""
+"""The VL pass over a page (``anime_tools.ocr.reread``), weights-free: each
+box's read is its line and a rejected read drops the box, the mask's uncovered
+components become lines, reading order is settled afterwards, and the request
+carries the flags. Nothing here loads a model — ``read_boxes`` is a fake."""
 
 from __future__ import annotations
 
@@ -39,10 +39,10 @@ def test_the_module_is_torch_free():
 # ---- the re-read -------------------------------------------------------
 
 
-def test_a_read_replaces_the_text_and_a_rejected_one_keeps_it():
+def test_a_read_is_the_line_and_a_rejected_one_drops_the_box():
     lines = [
-        line("はんぱん", (10, 10, 40, 120)),
-        line("ぐくぐく", (100, 10, 130, 120), seq=2),
+        line("", (10, 10, 40, 120), score=0.0),
+        line("", (100, 10, 130, 120), seq=2, score=0.0),
     ]
     seen = {}
 
@@ -52,11 +52,24 @@ def test_a_read_replaces_the_text_and_a_rejected_one_keeps_it():
 
     out = reread.reread_lines(page(), lines, read_boxes)
     assert seen["boxes"] == [(10, 10, 40, 120), (100, 10, 130, 120)]
-    # right-to-left reading order: the box at x=100 reads first
+    # the rejected box is gone, not kept with empty text; the read carries no
+    # recognizer confidence
     assert [(ln.seq, ln.text, ln.score) for ln in out] == [
-        (1, "ぐくぐく", 0.9),
-        (2, "ぱんぱん", 0.9),
+        (1, "ぱんぱん", reread.NO_SCORE),
     ]
+
+
+def test_a_read_must_clear_the_floors_and_carry_a_letter():
+    lines = [line("", (b, 10, b + 30, 120), score=0.0) for b in (10, 60, 110, 160)]
+    reads = ["♡", "12", "OK", "ぱんぱん"]
+    out = reread.reread_lines(page(), lines, lambda b, x: reads, min_chars=3)
+    # a decoration, a letterless read and an ASCII-only read all drop
+    assert [ln.text for ln in out] == ["ぱんぱん"]
+    kept = reread.reread_lines(
+        page(), lines, lambda b, x: reads, min_chars=1, skip_en=False
+    )
+    # the floors off, ASCII stays; a read with no letter in it never does
+    assert sorted(ln.text for ln in kept) == ["OK", "ぱんぱん"]
 
 
 def test_an_empty_page_calls_no_reader():
@@ -92,10 +105,10 @@ def test_a_full_page_component_is_not_a_line():
 
 
 def test_uncovered_components_become_lines_with_no_score_and_the_floors_apply():
-    lines = [line("こんにちは", (20, 20, 60, 200))]
+    lines = [line("", (20, 20, 60, 200), score=0.0)]  # the detector's box
     m = _mask(
         text_boxes=[
-            (20, 20, 60, 200),  # covered by the line
+            (20, 20, 60, 200),  # covered by the detector's box
             (200, 40, 240, 160),  # a real SFX
             (100, 300, 160, 340),  # reads as a lone heart
             (200, 300, 260, 340),  # reads as one glyph, under min_chars
@@ -116,9 +129,11 @@ def test_uncovered_components_become_lines_with_no_score_and_the_floors_apply():
     out = reread.reread_lines(
         page(), lines, read_boxes, mask=m, comp_min_side=16, min_chars=2
     )
+    # the covered component is read once (through the detector's box), and a
+    # detector box and a mask component are lines of the same kind
     assert [(ln.text, ln.score, ln.box) for ln in out] == [
         ("ぱんぱん", reread.NO_SCORE, (200, 40, 240, 160)),
-        ("こんにちは", 0.9, (20, 20, 60, 200)),
+        ("こんにちは", reread.NO_SCORE, (20, 20, 60, 200)),
     ]
 
 
@@ -190,25 +205,11 @@ def test_the_engine_wrapper_rereads_each_page_the_engine_yields(tmp_path: Path):
 # ---- the request ----------------------------------------------------------
 
 
-def test_the_request_defaults_to_vl_and_round_trips_the_vl_flags():
-    assert OcrRequest().reader == "vl"
-    assert OcrRequest(reader="ppocr").to_argv()[:2] == ["--reader", "ppocr"]
-    # --mask_dir is PP-OCRv6's mask-component layer, so it rides --detector ppocr.
-    req = OcrRequest(
-        detector="ppocr",
-        reader="vl",
-        mask_dir="m",
-        comp_min_side=24,
-        comp_max=4,
-        vl_batch_size=2,
-    )
+def test_the_request_round_trips_the_vl_flags():
+    req = OcrRequest(mask_dir="m", comp_min_side=24, comp_max=4, vl_batch_size=2)
     argv = req.to_argv()
-    assert "--reader" not in argv and "--mask_dir" in argv
+    assert "--mask_dir" in argv and "--vl_batch_size" in argv
     assert OcrRequest.from_argv(OcrRequest.parser(), argv) == req
-
-
-def test_mask_dir_needs_the_vl_reader():
-    with pytest.raises(ValueError, match="--reader vl"):
-        OcrRequest(detector="ppocr", reader="ppocr", mask_dir="m")
-    with pytest.raises(ValueError, match="--reader"):
-        OcrRequest(reader="tesseract")
+    # There is one reader and one detector: neither is a flag any more.
+    assert "--reader" not in argv and "--detector" not in argv
+    assert not hasattr(OcrRequest(), "reader") and not hasattr(OcrRequest(), "detector")

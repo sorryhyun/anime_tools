@@ -5,14 +5,14 @@ under :data:`anime_tools.workspace.OCR`, mirroring its layout: every recognized
 line with box and confidence (:mod:`anime_tools.captions.ocr_sidecar`).
 
 It reads no caption and writes no caption, so it sits outside the caption ladder
-and invalidates no TE cache. The detector and the reader are arguments; the
-defaults (since 2026-09-06) are the AnimeText text-block detector
-(:mod:`anime_tools.ocr.animetext`) with every box read by the manga VL reader
-(:mod:`anime_tools.ocr.reread`). ``--detector ppocr --reader ppocr`` is the
-retired torch-free pair, PP-OCRv6 alone; ``--detector ppocr --reader vl`` is
-PP-OCRv6's lines re-read by the VL reader plus the text mask's uncovered
-components (``--mask_dir``). **Dry-run is the default** (the caller passes
-``apply``), and a dry run reports every line it would have written.
+and invalidates no TE cache. The reader is an argument; what the stage runner
+(``run.py::run_ocr``) hands it is the one path the package has: the AnimeText
+text-block detector (:mod:`anime_tools.ocr.animetext`, detect-only) with every
+box read by the manga VL reader through :class:`anime_tools.ocr.reread.RereadEngine`,
+plus, under ``--mask_dir``, the text mask's uncovered components. The PP-OCRv6
+det/rec pair that preceded it was retired 2026-09-07 with no fallback. **Dry-run
+is the default** (the caller passes ``apply``), and a dry run reports every line
+it would have written.
 """
 
 from __future__ import annotations
@@ -65,9 +65,9 @@ class OcrStats:
 def number_lines(lines: Sequence[OcrLine]) -> tuple[OcrLine, ...]:
     """The lines, numbered from 1 in the order they arrived.
 
-    The stage filters nothing: the score floor, the CJK join and the
-    ``min_chars`` / ``skip_en`` drops all belong to the reader
-    (:mod:`anime_tools.ocr._text`), which knows the pixels each line came from.
+    The stage filters nothing: the ``min_chars`` / ``skip_en`` floors belong to
+    the reader (:mod:`anime_tools.ocr._text`), which knows the pixels each line
+    came from.
     """
     return tuple(
         OcrLine(seq=i, box=ln.box, score=ln.score, text=ln.text)

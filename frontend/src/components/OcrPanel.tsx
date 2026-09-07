@@ -23,15 +23,8 @@ export function OcrPanel(props: { lines: OcrLine[] }) {
                 <tr>
                   <td class="dim seq">{line.seq}</td>
                   <td class="text">{line.text}</td>
-                  {/* A vertical Japanese column comes back sideways and scores
-                      low, which is what the stage's --min_score filters on.
-                      Warn-coloured below 0.8. */}
-                  <td
-                    classList={{ dim: true, score: true, low: line.score < 0.8 }}
-                    title={t().ocr.scoreHint}
-                  >
-                    {line.score.toFixed(2)}
-                  </td>
+                  {/* No score column: the VL reader answers text, not a
+                      confidence, so the sidecar's score is always 0.000. */}
                   <td class="dim box mono" title={t().ocr.boxHint}>
                     {line.box[0]},{line.box[1]}
                   </td>

@@ -502,10 +502,10 @@ def run_correct(req: CorrectRequest):
 
 
 def _vl_engine(req: OcrRequest, engine, resized_dir: Path):
-    """The ``--reader vl`` engine: PP-OCRv6's lines re-read by the manga VL
-    reader, the text mask's uncovered components read too
+    """The engine's boxes read by the manga VL reader, the text mask's uncovered
+    components read too when ``--mask_dir`` names one
     (:class:`anime_tools.ocr.reread.RereadEngine`). Torch lives here, not in
-    :func:`run_ocr`: the ONNX path never probes it."""
+    :func:`run_ocr`: the ONNX detector never probes it."""
     # The VL reader runs on torch; its device is torch's answer, not
     # onnxruntime's (a CUDA-less torch beside a CUDA onnxruntime is possible).
     from anime_tools._device import resolve_device
@@ -528,54 +528,36 @@ def _vl_engine(req: OcrRequest, engine, resized_dir: Path):
         comp_max=req.comp_max,
         min_chars=req.min_chars,
         skip_en=req.skip_en,
-        # Never joined here. PP-OCRv6's lines arrive joined already; the AnimeText
-        # detector's boxes are blocks and columns the nesting pass settled, and
-        # joining them measured a loss (sincos, 2026-09-06: manga-ocr best-match
-        # 0.844 → 0.803 over 95 joins — SFX beside a balloon gets pulled in).
-        join_cjk=False,
     )
 
 
 def run_ocr(req: OcrRequest):
     """Read the text in every resized image and (with ``apply``) write the
-    ``{stem}.ocr.txt`` sidecars. Returns ``(rows, stats)``."""
+    ``{stem}.ocr.txt`` sidecars. Returns ``(rows, stats)``.
+
+    One path: the AnimeText detector boxes every page (detect-only, ONNX), the
+    manga VL reader reads every box (torch), and what came back is the sidecar.
+    """
     resized_dir = _resized(req.dst)
     ocr_dir = resolve_path(req.ocr_dir)
     report_dir = resolve_path(req.report_dir)
 
-    # Deferred: onnxruntime is the heaviest thing this stage touches.
+    # Deferred: onnxruntime is the heaviest thing the detector touches.
     from anime_tools.ocr import load_ocr, resolve_onnx_device
     from anime_tools.stages.ocr import run_ocr as read_tree
 
     # Not `_device.resolve_device`: its torch probe would cost this run 1.8x for an
     # answer onnxruntime already has.
     device = resolve_onnx_device(req.device)
-    what = (
-        "the AnimeText detector"
-        if req.detect_only
-        else "the AnimeText detector + PP-OCRv6 recognition"
-        if req.detector == "animetext"
-        else "PP-OCRv6"
-    )
-    print(f"Loading {what} ({device})...", flush=True)
+    print(f"Loading the AnimeText detector ({device})...", flush=True)
     with phase("load ocr"):
         engine = load_ocr(
             device=device,
-            min_score=req.min_score,
-            min_chars=req.min_chars,
-            skip_en=req.skip_en,
-            join_cjk=req.join_cjk,
             min_box_px=req.min_box_px,
             max_boxes=req.max_boxes,
-            limit_side=req.det_limit_side,
-            batch_size=req.batch_size,
-            detector=req.detector,
             det_conf=req.det_conf,
-            recognizer=not req.detect_only,
         )
-
-    if req.reader == "vl":
-        engine = _vl_engine(req, engine, resized_dir)
+    engine = _vl_engine(req, engine, resized_dir)
 
     rows, stats = read_tree(
         resized_dir=resized_dir,
@@ -590,16 +572,12 @@ def run_ocr(req: OcrRequest):
     report_path = write_stage_report(
         report_dir,
         {
-            "min_score": req.min_score,
             "min_chars": req.min_chars,
             "skip_en": bool(req.skip_en),
-            "join_cjk": bool(req.join_cjk),
             "min_box_px": req.min_box_px,
             "max_boxes": req.max_boxes,
-            "det_limit_side": req.det_limit_side,
-            "detector": req.detector,
             "det_conf": req.det_conf,
-            "reader": req.reader,
+            "vl_batch_size": req.vl_batch_size,
             "mask_dir": str(resolve_path(req.mask_dir)) if req.mask_dir else None,
             "comp_min_side": req.comp_min_side,
             "comp_max": req.comp_max,

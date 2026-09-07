@@ -6,7 +6,7 @@ A record names words that are in the picture, not a caption, so it lives in
 read or rewritten, so it needs no Apply gate and invalidates no TE cache.
 
 A record is ``seq ⇥ box ⇥ score ⇥ text``, in reading order; the text is last so
-it may contain tabs. There is no language column — PP-OCRv6 returns a string,
+it may contain tabs. There is no language column — the reader returns a string,
 never a language.
 
 The one place the record meets a caption is :func:`with_ocr_clause`, which

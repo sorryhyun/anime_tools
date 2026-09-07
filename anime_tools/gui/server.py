@@ -352,21 +352,30 @@ def create_app(
     @app.get("/api/models")
     def list_models() -> dict[str, Any]:
         """The download catalog, re-probed per request: a job may have just
-        installed one."""
+        installed one. ``packs`` is the display grouping (:data:`DL.PACKS`
+        order, only packs with rows); each model names its pack."""
+        rows = DL.catalog()
+        packed = DL.by_pack(rows)
         return {
-            "models": [a.to_dict() for a in DL.catalog()],
+            "packs": [
+                {"id": p.id, "title": p.title, "description": p.description}
+                for p in DL.PACKS
+                if p.id in packed
+            ],
+            "models": [a.to_dict() for a in rows],
             "models_dir": str(models_dir()),
         }
 
     @app.post("/api/models/download")
     async def download_models(request: Request) -> dict[str, Any]:
         """Fetch weights as a normal job, so a large pull cannot run under a
-        stage. Empty ``ids`` means every missing model."""
+        stage. Empty ``ids`` means every missing model; a pack id stands for
+        its rows, expanded here so the job name stays row-level."""
         body = await request.json()
-        ids = [str(i) for i in (body.get("ids") or [])]
-        unknown = [i for i in ids if i not in DL.by_id()]
-        if unknown:
-            raise HTTPException(404, f"unknown model: {', '.join(unknown)}")
+        try:
+            ids = DL.expand([str(i) for i in (body.get("ids") or [])])
+        except KeyError as e:
+            raise HTTPException(404, f"unknown model: {e.args[0]}") from e
         try:
             job = mgr.start(
                 f"download:{','.join(ids) or 'missing'}",

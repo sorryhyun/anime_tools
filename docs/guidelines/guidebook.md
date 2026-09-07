@@ -179,17 +179,19 @@ it signed in as the same account.
 
 Nothing has to be pre-fetched: **every stage fetches what it needs on first use.** The
 **Models & weights** dialog (☰ → *Models & weights*) lists one row per checkpoint — what it is
-for, whether it is installed, where it lands — with a **Download** button per row and
-**Download all N missing**. A download runs as an ordinary job, one at a time, sharing the slot
-with the stages. The buttons only move the wait, and any gated-repo refusal, to a moment you
+for, whether it is installed, where it lands — grouped under **packs**, the sets that install
+together: *Tagger*, *Danbooru tag DB*, *Masking*, *Text masking (MIT)*, *OCR*, *Grouping*. Each
+pack header has a **Download pack** button, each row its own **Download**, and the bar at the
+bottom **Download all N missing**. A download runs as an ordinary job, one at a time, sharing the
+slot with the stages. The buttons only move the wait, and any gated-repo refusal, to a moment you
 picked.
 
 From the terminal:
 
 ```bash
-python -m anime_tools.downloads --list        # every row: installed / MISSING, repo, destination
+python -m anime_tools.downloads --list        # every row under its pack: installed / MISSING, repo, destination
 python -m anime_tools.downloads               # fetch every missing one
-python -m anime_tools.downloads sam3 tagger   # fetch by id
+python -m anime_tools.downloads sam3 ocr      # fetch by row id or pack id
 ```
 
 Weights land under `<home>/models/` (`ANIME_TOOLS_MODELS` overrides), except the SAM3 subject
@@ -381,14 +383,16 @@ default; a weak finding has only the geometry behind it, so review its sheet fir
 
 ### 7.6 OCR text
 
-**Reads** resized images. **Writes** `workspace/ocr/<rel>.ocr.txt`. **Model**: PP-OCRv6
-detection + recognition (English, Chinese, Japanese; no hangul).
+**Reads** resized images. **Writes** `workspace/ocr/<rel>.ocr.txt`. **Models**: the
+AnimeText text-block detector (finds balloon lines and the sound effects drawn onto the
+artwork) and the manga VL reader (reads every box — Japanese, Chinese, English; hearts, small
+kana and hand-lettered sfx included). Both are the *OCR* pack in Models & weights.
 
-Records the words *in the picture* — dialogue, signs, sound effects — one line each with its
-confidence and position. It is **not a caption**: nothing downstream encodes it, no caption is
-read or written, and no re-encode is needed afterwards. The image panel shows the lines. By
-default ASCII-only lines are dropped (page numbers, URLs) and vertical Japanese columns are
-joined into one line per balloon.
+Records the words *in the picture* — dialogue, signs, sound effects — one line per text block
+with its position. It is **not a caption**: nothing downstream encodes it, no caption is read or
+written, and no re-encode is needed afterwards. The image panel shows the lines. By default
+ASCII-only lines are dropped (page numbers, URLs); a balloon is one block, so its columns arrive
+as one line.
 
 ### 7.7 Build groups
 

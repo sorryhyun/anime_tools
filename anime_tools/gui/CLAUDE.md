@@ -71,8 +71,10 @@ field and an already-hidden field are never folded — the server settles that, 
 - ⚙ Settings is **three dialogs, not one tabbed one** (`SETTINGS_PANES` in `settings.py`): roots,
   stage defaults + preflight, models. Only the open pane is mounted, so `SettingsOut` carries
   `null` for the other two. The Models pane runs `python -m anime_tools.downloads` (the
-  `model-catalog`
-  skill).
+  `model-catalog` skill): `/api/models` answers `{packs: [{id, title, description}], models:
+  [Asset.to_dict()…], models_dir}` — `packs` in `PACKS` order, only packs that have rows, each
+  model carrying its `pack` — and `POST /api/models/download {ids}` takes row *or* pack ids,
+  expanding a pack before the job is named so the job stays `download:<row ids>`.
 - The panel's own chrome is translated (`frontend/src/i18n/`), and so is the dock's navigation —
   the panel buttons and the stage names on them, keyed by the registry's own ids. Everything else
   the server owns (a stage's doc and notes, argparse labels and help, the model catalog) ships as it

@@ -134,8 +134,6 @@ main { grid-column:2; grid-row:2; display:grid; grid-template-rows:auto minmax(0
 .ocrlines tr:first-child td { border-top:0 }
 .ocrlines .seq { width:2ch; text-align:right; padding-right:8px }
 .ocrlines .text { color:var(--fg); word-break:break-word; padding-right:8px }
-.ocrlines .score { width:4ch; text-align:right; padding-right:8px }
-.ocrlines .score.low { color:var(--warn) }
 .ocrlines .box { width:11ch; text-align:right; white-space:nowrap }
 .card { border:1px solid var(--line); border-radius:7px; padding:10px 12px; background:var(--panel) }
 .card.sel { border-color:var(--accent) }
@@ -347,6 +345,10 @@ dialog h3 { margin:0 0 10px }
 .err { color:var(--err) }
 /* Settings > Models: one row per downloadable checkpoint. The panel around it
    is the scroller. */
+.pack + .pack { margin-top:12px }
+.packhead { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:10px; align-items:center; padding:2px 0 6px }
+.packhead .mi { display:flex; flex-direction:column; gap:2px; min-width:0 }
+.packhead .mi > span.wrap { white-space:normal }
 .models { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:6px }
 .modelrow { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:10px; align-items:center; border:1px solid var(--line); border-radius:6px; padding:8px 10px }
 /* The notes wrap; only the identity lines (repo -> location, used_by) stay on

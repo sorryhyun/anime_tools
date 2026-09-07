@@ -4,11 +4,10 @@ Caption-master stages and their thin CLIs: `resize.py`, `autotag.py` (modes
 `missing`/`merge`/`overwrite`; only `missing` is non-destructive), `position_captions.py` (SAM3
 instances → reading order → mask-blanked crops → tagger → clause rewrite; see
 `docs/position_captions.md`), `captions.py` (correction + mirror), `multiview_audit.py`
-(`docs/multiview_audit.md`), `ocr.py` (default `--detector animetext --reader vl` since 2026-09-06:
-the AnimeText text-block detector, detect-only, every box read by the manga VL reader through
-`anime_tools.ocr.reread.RereadEngine`; `--detector ppocr` is PP-OCRv6's DB head — `--reader ppocr`
-with it is the torch-free pair, `--reader vl` re-reads its lines and reads `--mask_dir` components
-as `0.000`-score lines; torch lives in `run.py::_vl_engine`, never in `run_ocr`),
+(`docs/multiview_audit.md`), `ocr.py` (one path: the AnimeText
+text-block detector, detect-only, every box read by the manga VL reader through
+`anime_tools.ocr.reread.RereadEngine`, plus the optional `--mask_dir` components as `0.000`-score
+lines; torch lives in `run.py::_vl_engine`, never in the ONNX detector load),
 `export_workspace.py`. Adding one is the `add-stage`
 skill; the caption grammar these stages write is the `captions` skill.
 

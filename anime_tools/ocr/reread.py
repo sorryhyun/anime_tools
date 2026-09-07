@@ -1,36 +1,34 @@
-"""The VL pass over a page: every PP-OCRv6 line re-read by the manga reader,
-plus what the text mask boxed that no detector did.
+"""The VL pass over a page: every detected box read by the manga reader, plus
+what the text mask boxed that no detector did.
 
-:mod:`anime_tools.ocr._onnx` finds and reads the lines; :mod:`anime_tools.ocr.sfx`
-reads a crop better — hearts, small kana, hand-lettered onomatopoeia — but
-detects nothing. This module is the seam between them, and what the OCR stage
-runs under ``--reader vl``:
+:mod:`anime_tools.ocr._onnx` finds the boxes and reads nothing;
+:mod:`anime_tools.ocr.sfx` reads a crop — hearts, small kana, hand-lettered
+onomatopoeia — but detects nothing. This module is the seam between them, and
+what the OCR stage runs:
 
-* :func:`reread_lines` — one page in, one page out. Each line's box is cut with
-  the reader's padding and re-read; a read that passes the decode guard replaces
-  the text, a rejected one leaves the PP-OCRv6 text alone (the guard is inside
-  :meth:`~anime_tools.ocr.sfx.SfxReader.read`). With a text mask (the MIT
-  ``{stem}_mask.png`` :mod:`anime_tools.masking` writes) its connected
-  components that no line already covers become crops too, and a read that
-  passes the guard and the line floors becomes a line of its own. Reading order
-  is settled afterwards, since a new line may sit anywhere.
+* :func:`reread_lines` — one page in, one page out. Each box is cut with the
+  reader's padding and read; the read *is* the line, so a read the decode guard
+  rejects (``None``, the guard is inside :meth:`~anime_tools.ocr.sfx.SfxReader.read`)
+  drops its box, and a read that passes must still clear the line floors
+  (``min_chars`` / ``skip_en``) and carry a letter (:func:`has_script`). With a
+  text mask (the MIT ``{stem}_mask.png`` :mod:`anime_tools.masking` writes) its
+  connected components that no box already covers become crops too, held to the
+  same floors. Reading order is settled afterwards, since a component may sit
+  anywhere.
 * :class:`RereadEngine` — the :class:`~anime_tools.ocr._onnx.OcrEngine` shape
-  (``read`` / ``read_iter``) over an engine and a reader, so the stage swaps
-  it in without knowing.
+  (``read`` / ``read_iter``) over an engine and a reader, so the stage runs it
+  without knowing.
 
-Under the AnimeText detector (``--detector animetext``) the engine is
-detect-only: its lines carry **no text**, and the reader is the only reader.
-Such a line lives or dies by its read — a read the guard rejects drops it, and
-the read must pass the same floors a mask component's does — and, with
-``join_cjk``, the block's columns are joined into one line afterwards, the way
-the engine joins PP-OCRv6's. No mask components are read on that path: one
-detector, not three layers.
+The boxes are never joined: the AnimeText detector answers a balloon as a block
+and its columns (nesting settled by :func:`~anime_tools.ocr.animetext.denest`),
+and joining those measured a loss (sincos, 2026-09-06: manga-ocr best-match
+0.844 → 0.803 over 95 joins — SFX beside a balloon gets pulled in).
 
 Measured on the sincos shard (the trainer's ``project/cjk_aware_anima_dit``,
 2026-09-06): the masked-but-no-line floor 23 → 8 pages, manga-ocr best-match
 0.786 → 0.810, hearts back on the speech lines; the regressions are digits
-(``91`` → ``9``) and two-glyph crops. A VL-only line — a mask component — has
-no recognizer confidence, so its ``score`` is :data:`NO_SCORE`.
+(``91`` → ``9``) and two-glyph crops. A VL line has no recognizer confidence,
+so its ``score`` is :data:`NO_SCORE`.
 
 Torch-free to import; cv2 loads inside the two functions that need it.
 """
@@ -43,8 +41,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from anime_tools.captions.ocr_sidecar import OcrLine
-from anime_tools.ocr._text import join_cjk as _join_cjk
-from anime_tools.ocr._text import keep_line, normalize_line, reading_order
+from anime_tools.ocr._text import keep_line, reading_order
 
 Box = tuple[int, int, int, int]
 ReadBoxes = Callable[[object, Sequence[Box]], list[str | None]]
@@ -52,8 +49,8 @@ ReadBoxes = Callable[[object, Sequence[Box]], list[str | None]]
 ``None`` for a read the guard rejected."""
 
 NO_SCORE = 0.0
-"""The ``score`` of a line only the VL reader produced: no recognizer stood
-behind it, and ``0.000`` in the sidecar says so."""
+"""The ``score`` of a VL-read line: no recognizer stood behind it, and
+``0.000`` in the sidecar says so."""
 
 CLOSE_FRAC = 0.025
 """Closing kernel as a fraction of the page width: merges the glyphs of one
@@ -129,22 +126,16 @@ def reread_lines(
     comp_max: int = 16,
     min_chars: int = 3,
     skip_en: bool = True,
-    join_cjk: bool = False,
 ) -> list[OcrLine]:
-    """One page through the VL reader: the lines re-read, the uncovered mask
-    components read, reading order and numbering settled afterwards.
+    """One page through the VL reader: the detected boxes read, the uncovered
+    mask components read, reading order and numbering settled afterwards.
 
     ``read_boxes`` is called once with every crop (the lines' boxes first, then
-    the components), so the reader batches the page. A line whose read is
-    ``None`` keeps its text and score; a component's read must pass the line
-    floors (``min_chars`` / ``skip_en``, the same ones the engine applied) and
-    :func:`has_script` to become a line, with :data:`NO_SCORE`.
-
-    A line with **empty text** (a detect-only engine's) is the reader's alone:
-    it is dropped when its read is ``None`` and held to the component floors
-    otherwise. ``join_cjk`` then joins those reader-only lines the way the engine
-    joins PP-OCRv6's columns (:func:`~anime_tools.ocr._text.join_cjk`); lines
-    that arrived with text were joined already and are never re-joined.
+    the components), so the reader batches the page. A box lives or dies by its
+    read: ``None`` (the guard rejected it) drops it, and a text must carry a
+    letter (:func:`has_script`) and pass the line floors (``min_chars`` /
+    ``skip_en``) to become a line, with :data:`NO_SCORE`. Whatever text a line
+    arrived with is not consulted — the engine hands over none.
     """
     boxes: list[Box] = [tuple(int(v) for v in ln.box) for ln in lines]
     comps: list[Box] = []
@@ -158,31 +149,24 @@ def reread_lines(
         return []
     reads = read_boxes(bgr, boxes + comps)
 
-    def floors(text: str) -> bool:
-        return keep_line(text, min_chars=min_chars, skip_en=skip_en)
+    def keeps(text: str | None) -> bool:
+        return (
+            bool(text)
+            and has_script(text)
+            and keep_line(text, min_chars=min_chars, skip_en=skip_en)
+        )
 
-    out: list[OcrLine] = []
-    fresh: list[OcrLine] = []
-    for ln, text in zip(lines, reads[: len(boxes)], strict=True):
-        if not ln.text:
-            if text and has_script(text):
-                fresh.append(OcrLine(seq=0, box=ln.box, score=ln.score, text=text))
-            continue
-        if text is None or text == ln.text:
-            out.append(ln)
-        else:
-            out.append(OcrLine(seq=ln.seq, box=ln.box, score=ln.score, text=text))
+    out: list[OcrLine] = [
+        OcrLine(seq=0, box=box, score=NO_SCORE, text=text)
+        for box, text in zip(boxes, reads[: len(boxes)], strict=True)
+        if keeps(text)
+    ]
     seen = list(boxes)
     for box, text in zip(comps, reads[len(boxes) :], strict=True):
-        if not text or not has_script(text) or covered(box, seen):
+        if not keeps(text) or covered(box, seen):
             continue
         seen.append(box)
-        fresh.append(OcrLine(seq=0, box=box, score=NO_SCORE, text=text))
-    if join_cjk:
-        # Join before the floors, the engine's order for PP-OCRv6's columns: a
-        # column of one glyph is short only until the rest of its balloon is on it.
-        fresh = [normalize_line(ln) for ln in _join_cjk(fresh)]
-    out.extend(ln for ln in fresh if floors(ln.text))
+        out.append(OcrLine(seq=0, box=box, score=NO_SCORE, text=text))
     return [
         OcrLine(seq=i, box=ln.box, score=ln.score, text=ln.text)
         for i, ln in enumerate(reading_order(out), 1)
@@ -220,7 +204,7 @@ def _read_mask(path: Path):
 class RereadEngine:
     """An :class:`~anime_tools.ocr._onnx.OcrEngine` with the VL pass behind it.
 
-    ``read`` / ``read_iter`` answer what the engine's do, each page then run
+    ``read`` / ``read_iter`` answer the engine's boxes, each page then run
     through :func:`reread_lines`. The page is decoded a second time here (the
     engine keeps no pixels past its chunk); against a 1.9 B-parameter read per
     crop that is noise. ``masks`` is the mask tree, resolved per image against
@@ -235,9 +219,6 @@ class RereadEngine:
     comp_max: int = 16
     min_chars: int = 3
     skip_en: bool = True
-    join_cjk: bool = False
-    """Join the reader-only lines' CJK columns (:func:`reread_lines`). Off in
-    the OCR stage: over the AnimeText detector's boxes it measured a loss."""
 
     def _page(self, path: Path, lines: list[OcrLine]) -> list[OcrLine]:
         mask = None
@@ -269,7 +250,6 @@ class RereadEngine:
             comp_max=self.comp_max,
             min_chars=self.min_chars,
             skip_en=self.skip_en,
-            join_cjk=self.join_cjk,
         )
 
     def read(self, image_path: Path) -> list[OcrLine]:

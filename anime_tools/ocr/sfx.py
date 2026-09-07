@@ -1,9 +1,10 @@
 """A manga SFX reader: PaddleOCR-VL-1.6 fine-tuned on hand-lettered onomatopoeia.
 
-PP-OCRv6 (:mod:`anime_tools.ocr._onnx`) reads balloon speech and misses the
-sound effects drawn onto the artwork — ``ぱんぱん``, ``びくっ``, ``ばるん`` come
-back as ``はんぱん`` / ``でくv`` / nothing. :class:`SfxReader` is the third reader
-for exactly those lines: a crop in, a string out, no detection. It is the
+A line recognizer trained on print reads balloon speech and misses the sound
+effects drawn onto the artwork — ``ぱんぱん``, ``びくっ``, ``ばるん`` came back
+as ``はんぱん`` / ``でくv`` / nothing from the CTC stack this package retired.
+:class:`SfxReader` is the reader for those lines and the speech alike: a crop
+in, a string out, no detection. It is the
 PaddleOCR-VL-1.6 base with a LoRA on the language model **and a fully
 fine-tuned vision tower**, trained on the Manga109-s COO onomatopoeia
 polygons plus a 1 : 1 replay of the ``<text>`` speech boxes (official COO
@@ -14,10 +15,9 @@ so it needs no symbol patching.
 
 What it is not: a page reader. Feed it the crops a detector has already
 boxed — the AnimeText text-block detector (:mod:`anime_tools.ocr.animetext`,
-the OCR stage's default since 2026-09-06: balloon lines and the SFX on the
-artwork alike) or PP-OCRv6's DB head; :meth:`SfxReader.read_boxes` cuts the
-padded crops for you. Batch by area: a 1.9 B-parameter model at ~0.25 s per
-crop is ten times PP-OCRv6's wall.
+the OCR stage's detector: balloon lines and the SFX on the artwork alike);
+:meth:`SfxReader.read_boxes` cuts the padded crops for you. Batch by area: a
+1.9 B-parameter model at ~0.25 s per crop is the run's whole wall.
 
 **The decode guard is part of the reader**, not an option. An autoregressive
 decoder on a two-glyph crop runs away on ~4 % of inputs (``びく♡`` →
@@ -104,8 +104,7 @@ def normalize_read(text: str) -> str:
     """The raw decode as a record: NFKC-stable glyphs, the emoji heart
     (``❤`` + variation selector) folded to ``♥``, VL's LaTeX wrapping of a
     measurement (``\\( 156 \\, cm \\)``) stripped, whitespace runs collapsed to
-    one space (the column boundary :data:`anime_tools.ocr._text.JOIN_SEP`
-    keeps)."""
+    one space (a column boundary stays a space, so a list stays a list)."""
     text = text.replace("\ufe0f", "").replace("❤", "♥")
     text = _LATEX_RE.sub("", text)
     text = unicodedata.normalize("NFC", text)

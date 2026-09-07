@@ -107,8 +107,10 @@ def test_the_reader_rows_land_where_the_loader_looks(home):
         DL.SFX_READER_TOWER_FILE,
     }
     assert "model.safetensors" in DL.VL16_BASE_FILES
-    # No stage depends on the reader yet: the stage bar must not warn for it.
-    assert by["vl16_base"].stages == () and by["sfx_reader"].stages == ()
+    # The OCR stage reads every box with it (2026-09-07, no other reader), so
+    # the stage bar warns for both rows before a run; both sit in the ocr pack.
+    assert by["vl16_base"].stages == ("ocr",) and by["sfx_reader"].stages == ("ocr",)
+    assert by["vl16_base"].pack == by["sfx_reader"].pack == "ocr"
 
 
 def test_load_without_weights_names_the_row(home):

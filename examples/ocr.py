@@ -4,13 +4,13 @@
     python examples/ocr.py --home ~/data --apply      # write workspace/ocr/**/{stem}.ocr.txt
     python examples/ocr.py --image page.png           # one image, straight through the engine
 
-The stage's default is the AnimeText text-block detector (ONNX, fetched on
-first use) with every box read by the manga VL reader (torch, fetched on first
-use); ``--detector ppocr --reader ppocr`` is PP-OCRv6 alone (``python -m
-anime_tools.downloads ppocr_det ppocr_rec``) on onnxruntime, not torch — what
-the ``--image`` path below runs through ``load_ocr()``. OCR is not a caption:
-nothing downstream encodes it, so the stage reads and writes no caption and
-needs no re-encode afterwards.
+The stage is the AnimeText text-block detector (ONNX, fetched on first use)
+with every box read by the manga VL reader (torch, fetched on first use;
+``python -m anime_tools.downloads ocr`` pre-fetches the pack). The ``--image``
+path below runs the detector alone through ``load_ocr()`` — boxes only, no
+text, which is what the reader is then handed. OCR is not a caption: nothing
+downstream encodes it, so the stage reads and writes no caption and needs no
+re-encode afterwards.
 """
 
 from __future__ import annotations
@@ -36,20 +36,16 @@ def main() -> None:
         # --- the engine by itself ------------------------------------------
         from anime_tools.ocr import load_ocr, resolve_onnx_device
 
-        engine = load_ocr(device=resolve_onnx_device(), skip_en=not args.keep_en)
-        for line in engine.read(Path(args.image)):  # OcrLine, in reading order
+        engine = load_ocr(device=resolve_onnx_device())
+        for line in engine.read(Path(args.image)):  # empty OcrLine per text block
             x0, y0, x1, y1 = line.box
-            print(
-                f"{line.seq:3d} ({x0},{y0})-({x1},{y1}) {line.score:.2f}  {line.text}"
-            )
+            print(f"{line.seq:3d} ({x0},{y0})-({x1},{y1})")
         return
 
     # --- the stage ----------------------------------------------------------
     from anime_tools.stages import OcrRequest, run_ocr
 
-    req = OcrRequest(
-        min_score=0.6, min_chars=3, skip_en=not args.keep_en, apply=args.apply
-    )
+    req = OcrRequest(min_chars=3, skip_en=not args.keep_en, apply=args.apply)
     print("$ python -m anime_tools.stages.cli.ocr_captions", *req.to_argv())
     _rows, _stats = run_ocr(req)
 

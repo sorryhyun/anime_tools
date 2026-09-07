@@ -75,21 +75,12 @@ DETECTION = "detection"
 OCR_DRAWER = "Combine OCR"
 """Export's drawer: the text-clause combine and the tree it reads."""
 
-OCR_READERS = ("ppocr", "vl")
-"""``--reader``: the manga VL reader over every detected box (the default,
-:mod:`anime_tools.ocr.reread`), or PP-OCRv6's line recognizer alone."""
-
-OCR_DETECTORS = ("ppocr", "animetext")
-"""``--detector``: the AnimeText text-block detector (the default,
-:mod:`anime_tools.ocr.animetext`), or PP-OCRv6's DB line detector. PP-OCRv6
-was the default until 2026-09-06 (the trainer's ``plan_det.md`` D3); it stays
-as the torch-free ``--detector ppocr --reader ppocr`` pair."""
-
 DETECTOR = "Detector"
-"""The OCR stage's group for the ``--detector`` knobs."""
+"""The OCR stage's group for the text-block detector's knobs."""
 
 VL_READER = "VL reader"
-"""The OCR stage's group for the ``--reader vl`` knobs."""
+"""The OCR stage's group for the manga VL reader and the optional text-mask
+components it reads."""
 
 
 def _csv(default: tuple[str, ...], **meta) -> tuple[str, ...]:
@@ -654,25 +645,20 @@ class CorrectRequest(StageRequest):
 
 @dataclass(frozen=True, kw_only=True)
 class OcrRequest(StageRequest):
-    """Read the text in each image with PP-OCRv6 and record what it says.
+    """Read the text in each image and record what it says.
 
-    Walks the resized tree, detects and recognizes every text line, and writes
-    ``{stem}.ocr.txt`` into the OCR tree, mirroring the resized layout. No caption is
-    read or written, and no TE re-encode is needed afterwards.
+    Walks the resized tree, boxes every text block with the AnimeText detector
+    (``anime_tools.ocr.animetext``, YOLO12 on onnxruntime; 106 MB fetched on first
+    use, GPL-3.0 weights — never bundled), reads every box with the manga VL reader
+    (``anime_tools.ocr.sfx``, PaddleOCR-VL-1.6 fine-tuned on hand-lettered SFX; torch,
+    ~2.8 GB fetched on first use) and writes ``{stem}.ocr.txt`` into the OCR tree,
+    mirroring the resized layout. No caption is read or written, and no TE
+    re-encode is needed afterwards.
 
-    ``--reader vl`` runs the manga VL reader (``anime_tools.ocr.sfx``, PaddleOCR-VL-1.6
-    fine-tuned on hand-lettered SFX; torch, ~2.8 GB fetched on first use) over every
-    line PP-OCRv6 found — hearts, small kana and onomatopoeia come back, a read the
-    decode guard rejects keeps the PP-OCRv6 text — and, with ``--mask_dir``, reads the
-    text-mask components no detector boxed as lines of their own (score 0.000).
-
-    ``--detector animetext`` swaps PP-OCRv6's line detector for the AnimeText
-    text-block detector (``anime_tools.ocr.animetext``, YOLO12 on onnxruntime; 106 MB
-    fetched on first use, GPL-3.0 weights — never bundled): balloon lines *and* the
-    SFX drawn onto the artwork, one detector in place of the mask components. Its
-    boxes are blocks, which only the VL reader reads whole, so pair it with
-    ``--reader vl`` (PP-OCRv6's recognizer is then not loaded at all); ``--mask_dir``
-    is refused under it.
+    One detector for balloon lines *and* the SFX drawn onto the artwork; a box's
+    read is the line, so a read the decode guard rejects drops its box. With
+    ``--mask_dir`` the text mask's components no box covers are read too, as lines
+    of their own (score ``0.000``).
 
     Dry-run by default: a dry run emits ``report.json`` carrying every line it would
     have written, and ``--apply`` writes the sidecars and nothing else.
@@ -685,15 +671,10 @@ class OcrRequest(StageRequest):
         f"(default: {WS.OCR})",
     )
     path_pattern: str = arg("*", help=PATTERN_HELP.format(root="--dst"))
-    min_score: float = arg(
-        0.6,
-        help="Drop a recognized line below this mean per-character confidence (0-1)",
-    )
     min_chars: int = arg(
         3,
-        help="Drop a line shorter than this many non-space characters, after the "
-        "CJK join — one or two glyphs is a misread screentone far more often than "
-        "it is a word",
+        help="Drop a read shorter than this many non-space characters — one or "
+        "two glyphs is a misread screentone far more often than it is a word",
     )
     skip_en: bool = _off(
         True,
@@ -701,67 +682,32 @@ class OcrRequest(StageRequest):
         help="Keep ASCII-only lines. Dropped by default: on a scanned comic they are "
         "the page number, the URL and the romaji sfx, never the dialogue",
     )
-    join_cjk: bool = _off(
-        True,
-        "--no_join_cjk",
-        help="Record each CJK box on its own line. Joined by default: a balloon of "
-        "vertical Japanese is detected as one box per column, and the columns are "
-        "one sentence. Inert under --detector animetext with --reader vl: its boxes "
-        "are blocks already, and joining them loses SFX into the balloons",
+    det_conf: float = arg(
+        0.25,
+        help="Keep a detected box scored at least this (0-1). The model card's F1 "
+        "threshold is 0.426; 0.25 boxes ~15%% more, nearly all real text on a "
+        "manga page",
+        group=DETECTOR,
     )
     min_box_px: int = arg(
         12,
         help="Ignore a detected box whose longest side is under this many pixels — "
         "screentone and hatching, not text",
+        group=DETECTOR,
     )
     max_boxes: int = arg(
         64,
-        help="Recognize at most this many boxes per image, largest first, so one "
+        help="Read at most this many boxes per image, largest first, so one "
         "misread texture cannot cost a thousand crops",
-    )
-    det_limit_side: int = arg(
-        1440,
-        help="Longest side the detector sees; larger finds smaller text and costs "
-        "quadratically",
-    )
-    detector: str = arg(
-        "animetext",
-        choices=OCR_DETECTORS,
-        help="animetext (default): the AnimeText text-block detector (YOLO12-l, "
-        "ONNX, 106 MB fetched on first use; GPL-3.0 weights, CC-BY-NC-SA data) — "
-        "finds balloon lines and the hand-lettered SFX on the artwork alike, "
-        "replacing the mask components; its boxes are blocks, read by --reader vl. "
-        "ppocr: PP-OCRv6's DB line detector (ONNX, 62 MB), retired as a default "
-        "2026-09-06 — the torch-free pair with --reader ppocr",
         group=DETECTOR,
     )
-    det_conf: float = arg(
-        0.25,
-        help="With --detector animetext: keep a box scored at least this (0-1). "
-        "The model card's F1 threshold is 0.426; 0.25 boxes ~15%% more, nearly "
-        "all real text on a manga page",
-        group=DETECTOR,
-    )
-    batch_size: int = arg(8, help="Line crops recognized per forward pass")
-    reader: str = arg(
-        "vl",
-        choices=OCR_READERS,
-        help="vl (default): every detected box is read by the manga VL reader "
-        "(PaddleOCR-VL-1.6 + the SFX fine-tune; torch, ~0.25 s per line on a GPU, "
-        "weights fetched on first use) — hearts, small kana and hand-lettered SFX "
-        "read right. ppocr: PP-OCRv6's line recognizer alone (ONNX, fast, "
-        "torch-free), retired as a default 2026-09-06; it garbles the block "
-        "boxes of --detector animetext, so pair it with --detector ppocr. Under "
-        "--detector ppocr --reader vl a read the decode guard rejects keeps the "
-        "PP-OCRv6 text",
-        group=VL_READER,
-    )
+    vl_batch_size: int = arg(16, help="Crops per VL forward pass", group=VL_READER)
     mask_dir: str | None = arg(
         None,
-        help="With --reader vl: the text-mask tree (`make mask`'s {stem}_mask.png, "
-        f"mirroring --dst; usually {WS.MASKS}). Its text components no line covers "
-        "are read too and become lines of their own with score 0.000 — the SFX "
-        "drawn onto the artwork that no detector boxes",
+        help="Optional: the text-mask tree (`make mask`'s {stem}_mask.png, "
+        f"mirroring --dst; usually {WS.MASKS}). Its text components no box covers "
+        "are read too and become lines of their own with score 0.000 — lettering "
+        "the detector missed",
         group=VL_READER,
     )
     comp_min_side: int = arg(
@@ -776,9 +722,6 @@ class OcrRequest(StageRequest):
         "largest first",
         group=VL_READER,
     )
-    vl_batch_size: int = arg(
-        16, help="With --reader vl: crops per VL forward pass", group=VL_READER
-    )
     apply: bool = arg(
         False, help="Write the sidecars (default: dry run). Touches no caption"
     )
@@ -786,29 +729,10 @@ class OcrRequest(StageRequest):
     device: str | None = arg(None, help=DEVICE_HELP)
 
     def __post_init__(self) -> None:
-        if self.reader not in OCR_READERS:
-            raise ValueError(f"--reader must be one of {list(OCR_READERS)}")
-        if self.detector not in OCR_DETECTORS:
-            raise ValueError(f"--detector must be one of {list(OCR_DETECTORS)}")
-        if self.mask_dir and self.reader != "vl":
-            raise ValueError(
-                "--mask_dir reads the text-mask components with the VL reader; "
-                "pass --reader vl with it"
-            )
-        if self.mask_dir and self.detector == "animetext":
-            raise ValueError(
-                "--mask_dir is the mask-component layer PP-OCRv6's detector needs; "
-                "--detector animetext boxes that text itself — drop --mask_dir"
-            )
         if not 0.0 <= self.det_conf <= 1.0:
             raise ValueError("--det_conf must be within 0-1")
-
-    @property
-    def detect_only(self) -> bool:
-        """Whether the engine loads no PP-OCRv6 recognizer: the AnimeText
-        detector under the VL reader (the defaults), where the reader reads
-        every box."""
-        return self.detector == "animetext" and self.reader == "vl"
+        if self.min_chars < 0:
+            raise ValueError("--min_chars must be 0 or more")
 
 
 def _res(value) -> tuple[int, ...] | None:

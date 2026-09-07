@@ -1,8 +1,9 @@
 """ONNX Runtime sessions — the one provider choice, shared by every stage on ORT.
 
-Two model families here run on onnxruntime rather than torch: PP-OCRv6 and the
-CTD gate (:mod:`anime_tools.ocr._onnx`), and the dbv4 tagger backbone once
-``<ckpt>/dbv4.onnx`` has been exported (:mod:`anime_tools.tagger.dbv4_onnx`).
+Two model families here run on onnxruntime rather than torch: the AnimeText
+text-block detector (:mod:`anime_tools.ocr.animetext`) and the CTD gate, and the
+dbv4 tagger backbone once ``<ckpt>/dbv4.onnx`` has been exported
+(:mod:`anime_tools.tagger.dbv4_onnx`).
 Both ask the same two questions — *is there a GPU provider* and *which providers
 does this session get* — so both are answered here, once.
 
@@ -39,7 +40,8 @@ def resolve_onnx_device(name: str | None = None) -> str:
     ``torch.cuda.is_available()``, and for a stage that runs on onnxruntime that probe
     is not free: it imports torch and initialises CUDA, and torch's context then
     time-shares the device with ORT's for the life of the process. Measured on
-    PP-OCRv6 over 160 images, 23 ms each against 40 — the probe cost 1.8x the run.
+    the OCR detector over 160 images, 23 ms each against 40 — the probe cost 1.8x
+    the run.
 
     So the runtime that will do the work is the one asked. A disagreement with
     :func:`make_session` is impossible, since both read the same provider list after
@@ -73,7 +75,7 @@ def cuda_provider_options() -> dict[str, Any]:
     and the next process on the card died in ``cublasCreate``. So every session
     extends its arena by exactly what a request needs, picks its convolution
     algorithms heuristically, and is capped — the cap is generous for the
-    fixed-shape sessions this package runs (PP-OCRv6 at 1440² sits under 2 GB)
+    fixed-shape sessions this package runs (a 1440² detector canvas sits under 2 GB)
     and is a hard wall rather than a leak for anything shape-varying.
     """
     import os

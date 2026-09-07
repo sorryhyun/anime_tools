@@ -98,7 +98,6 @@ const zh: Dict = {
     /** {0} is how many lines were recognized. */
     count: (n: number) => `${n} 行`,
     readOnly: "由 OCR 阶段生成",
-    scoreHint: "识别器的平均逐字置信度；竖排日文会被横向读取，因此分数偏低",
     boxHint: "在图像中的左上角坐标（像素）",
   },
   caption: {
@@ -184,6 +183,8 @@ const zh: Dict = {
     download: "下载",
     redownload: "重新下载",
     downloadingRow: "下载中…",
+    downloadPack: "下载整包",
+    redownloadPack: "重新下载整包",
     gated: "需要授权 — 请用与上面令牌相同的账号{0}。",
     gatedLink: "接受条款",
   },

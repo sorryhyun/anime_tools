@@ -156,9 +156,21 @@ export interface ModelAsset {
   /** Accept-the-terms URL when the repo is gated; "" when it is public. */
   gated: string;
   notes: string;
+  /** Which `ModelCatalog.packs` entry the row installs under (a `Pack.id`). */
+  pack: string;
+}
+
+/** One group of rows that install together — the header a Download-pack button
+    sits on. Server text (`downloads.PACKS`), rendered as it arrives. */
+export interface ModelPack {
+  id: string;
+  title: string;
+  description: string;
 }
 
 export interface ModelCatalog {
+  /** `PACKS` order, only packs that have rows. */
+  packs: ModelPack[];
   models: ModelAsset[];
   models_dir: string;
 }
@@ -395,10 +407,10 @@ export interface ImageInfo {
 }
 
 /** One line the OCR stage read out of the image, from `{stem}.ocr.txt`. Not a
-    caption: `box` is the axis-aligned bound of the detector's quad and `score`
-    the recognizer's mean per-character confidence. The model returns a string
-    and never a language, so there is no language field. Generated, so the panel
-    renders it read-only. */
+    caption: `box` is the detector's text-block box and `score` is `0` — the VL
+    reader answers text, not a confidence. The model returns a string and never
+    a language, so there is no language field. Generated, so the panel renders
+    it read-only. */
 export interface OcrLine {
   seq: number;
   box: [number, number, number, number];

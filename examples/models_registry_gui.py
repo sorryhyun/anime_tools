@@ -54,8 +54,8 @@ def main() -> None:
     print("\n" + parser.format_usage().strip())
 
     # argv ⇄ request is a round trip; a default reads back as a default.
-    req = ocr.from_argv(parser, ["--keep_en", "--min_score", "0.7"])
-    print("request:", req.skip_en, req.min_score, "→ argv:", req.to_argv())
+    req = ocr.from_argv(parser, ["--keep_en", "--det_conf", "0.4"])
+    print("request:", req.skip_en, req.det_conf, "→ argv:", req.to_argv())
     assert ocr.from_argv(parser, req.to_argv()) == req
 
     # --- running a stage from another program ----------------------------------

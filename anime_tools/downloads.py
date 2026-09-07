@@ -73,15 +73,6 @@ CTD_ONNX_DIR = "models/mit"
 CTD_ONNX_FILENAME = "comictextdetector.pt.onnx"
 CTD_ONNX_URL = f"https://github.com/{CTD_GH_REPO}/releases/download/{CTD_ONNX_RELEASE}"
 
-# PP-OCRv6 — text detection + recognition, the official ONNX mirrors of the
-# Paddle inference models; `inference.yml` beside each graph supplies the
-# recognizer's dictionary and the detector's DB thresholds. Neither has a flag:
-# `anime_tools.ocr._onnx` reads these paths.
-PPOCR_DET_REPO = "PaddlePaddle/PP-OCRv6_medium_det_onnx"
-PPOCR_REC_REPO = "PaddlePaddle/PP-OCRv6_medium_rec_onnx"
-PPOCR_FILES = ("inference.onnx", "inference.yml")
-PPOCR_DIR = "models/ppocr"
-
 # PaddleOCR-VL-1.6 — the 0.9 B VLM base the SFX reader is fine-tuned from
 # (Apache-2.0; ERNIE LM + NaViT tower). A flat checkpoint dir, so the remote
 # modeling files ride along with the weights. `anime_tools.ocr.sfx` reads it.
@@ -115,8 +106,8 @@ SFX_READER_FILES = (*SFX_READER_ADAPTER_FILES, SFX_READER_TOWER_FILE)
 SFX_READER_DIR = "models/paddleocr_vl_1.6_manga_lora"
 
 # The AnimeText text-block detector: a YOLO12-l trained on deepghs/AnimeText
-# (735k anime / manga pages, one class), the OCR stage's ``--detector
-# animetext``. **Runtime download only, never bundled**: the model card is
+# (735k anime / manga pages, one class), the OCR stage's one detector.
+# **Runtime download only, never bundled**: the model card is
 # GPL-3.0 and the dataset CC-BY-NC-SA-4.0 — neither may ship inside this MIT
 # package, the trainer, or a node. ``threshold.json`` carries the card's F1
 # threshold (0.426) for reference; the detector's own default is lower.
@@ -150,17 +141,6 @@ def default_ctd_onnx_path() -> Path:
     return resolve_path(CTD_ONNX_DIR) / CTD_ONNX_FILENAME
 
 
-def default_ppocr_det_dir() -> Path:
-    """``<home>/models/ppocr/det`` — where the OCR detector is read from and
-    what the ``ppocr_det`` row writes."""
-    return resolve_path(PPOCR_DIR) / "det"
-
-
-def default_ppocr_rec_dir() -> Path:
-    """``<home>/models/ppocr/rec`` — the recognizer's half of the same."""
-    return resolve_path(PPOCR_DIR) / "rec"
-
-
 def default_vl16_base_dir() -> Path:
     """``<home>/models/paddleocr_vl_1.6`` — the SFX reader's base checkpoint."""
     return resolve_path(VL16_BASE_DIR)
@@ -192,6 +172,54 @@ def _size(n: int) -> str:
 
 
 @dataclass(frozen=True)
+class Pack:
+    """A group of rows that install together — what a Download button on a
+    Models pane is a button *for*. Every :class:`Asset` names one."""
+
+    id: str
+    title: str
+    description: str = ""
+
+
+PACKS: tuple[Pack, ...] = (
+    Pack(
+        "tagger",
+        "Tagger",
+        "The Anima Tagger: its checkpoint, the gated dbv4 backbone, and the "
+        "ONNX graph traced from it.",
+    ),
+    Pack(
+        "tags",
+        "Danbooru tag DB",
+        "The ~114k-row tag table caption correction types against, and its "
+        "English descriptions.",
+    ),
+    Pack(
+        "masking",
+        "Masking",
+        "SAM3 subject masks, and the subject soft prompt the position stages "
+        "detect with.",
+    ),
+    Pack(
+        "text_mask",
+        "Text masking (MIT)",
+        "The UNet++ manga text segmenter and its ComicTextDetector gate.",
+    ),
+    Pack(
+        "ocr",
+        "OCR",
+        "The AnimeText text-block detector and the manga VL reader "
+        "(PaddleOCR-VL-1.6 base + the SFX fine-tune).",
+    ),
+    Pack("grouping", "Grouping", "PE-Spatial-B16-512, the near-twin grouping tower."),
+)
+"""Display order. A row's :attr:`Asset.pack` is one of these ids; the CLI and
+both GUIs accept a pack id wherever they accept a row id."""
+
+PACK_BY_ID: dict[str, Pack] = {p.id: p for p in PACKS}
+
+
+@dataclass(frozen=True)
 class Asset:
     """One downloadable model, resolved against the current curation home."""
 
@@ -204,6 +232,10 @@ class Asset:
     """Which stages stop working without it."""
     stages: tuple[str, ...] = ()
     """The same, as GUI stage ids, so the stage bar can warn before a run."""
+    pack: str = ""
+    """Which :data:`PACKS` entry this row installs under. Every catalog row
+    names one (pinned by test); the default only spares a caller building a
+    row of its own."""
     dest: Path | None = None
     """Directory the files are flattened into; ``None`` = the HF hub cache."""
     url: str = ""
@@ -253,6 +285,7 @@ class Asset:
             "files": list(self.files),
             "used_by": self.used_by,
             "stages": list(self.stages),
+            "pack": self.pack,
             "location": self.location,
             "installed": not missing,
             "missing": missing,
@@ -401,6 +434,7 @@ def catalog() -> tuple[Asset, ...]:
     return (
         Asset(
             id="tagger",
+            pack="tagger",
             title="Anima Tagger checkpoint",
             repo=TAGGER_HF_REPO,
             subfolder=TAGGER_HF_SUBFOLDER,
@@ -414,6 +448,7 @@ def catalog() -> tuple[Asset, ...]:
         ),
         Asset(
             id="tagger_backbone",
+            pack="tagger",
             title="dbv4 tagger backbone",
             repo=backbone,
             files=DBV4_BACKBONE_FILES,
@@ -424,6 +459,7 @@ def catalog() -> tuple[Asset, ...]:
         ),
         Asset(
             id="tagger_onnx",
+            pack="tagger",
             title="Anima Tagger ONNX graph",
             repo=backbone,
             files=DBV4_BACKBONE_FILES,
@@ -444,6 +480,7 @@ def catalog() -> tuple[Asset, ...]:
         ),
         Asset(
             id="sam3",
+            pack="masking",
             title="SAM 3",
             repo=SAM3_REPO,
             files=(SAM3_FILENAME,),
@@ -455,6 +492,7 @@ def catalog() -> tuple[Asset, ...]:
         ),
         Asset(
             id="pe_spatial",
+            pack="grouping",
             title="PE-Spatial-B16-512",
             repo=PE_SPATIAL_REPO,
             files=(PE_SPATIAL_FILENAME,),
@@ -464,6 +502,7 @@ def catalog() -> tuple[Asset, ...]:
         ),
         Asset(
             id="soft_prompt",
+            pack="masking",
             title="SAM3 subject soft prompt",
             repo=SOFT_PROMPT_GH_REPO,
             url=SOFT_PROMPT_URL,
@@ -476,6 +515,7 @@ def catalog() -> tuple[Asset, ...]:
         ),
         Asset(
             id="danbooru_tags",
+            pack="tags",
             title="Danbooru tag KB",
             repo=DANBOORU_TAGS_GH_REPO,
             url=DANBOORU_TAGS_URL,
@@ -488,6 +528,7 @@ def catalog() -> tuple[Asset, ...]:
         ),
         Asset(
             id="danbooru_tags_en",
+            pack="tags",
             title="Danbooru tag descriptions (English)",
             repo=DANBOORU_WIKI_REPO,
             repo_type="dataset",
@@ -502,69 +543,51 @@ def catalog() -> tuple[Asset, ...]:
             "joins stays in the hub cache.",
         ),
         Asset(
-            id="ppocr_det",
-            title="PP-OCRv6 text detection",
-            repo=PPOCR_DET_REPO,
-            files=PPOCR_FILES,
-            dest=default_ppocr_det_dir(),
-            used_by="OCR text",
-            stages=("ocr",),
-            notes="62 MB. Finds the text lines the recognizer below reads.",
-        ),
-        Asset(
-            id="ppocr_rec",
-            title="PP-OCRv6 text recognition",
-            repo=PPOCR_REC_REPO,
-            files=PPOCR_FILES,
-            dest=default_ppocr_rec_dir(),
-            used_by="OCR text",
-            stages=("ocr",),
-            notes="77 MB. English, Chinese and Japanese: its dictionary is "
-            "both kana plus 15,565 han characters, and no hangul.",
-        ),
-        Asset(
             id="vl16_base",
+            pack="ocr",
             title="PaddleOCR-VL-1.6 base",
             repo=VL16_BASE_REPO,
             files=VL16_BASE_FILES,
             dest=default_vl16_base_dir(),
-            used_by="the manga SFX reader (anime_tools.ocr.sfx; OCR --reader vl)",
-            stages=(),
+            used_by="OCR text (the manga VL reader's base; anime_tools.ocr.sfx)",
+            stages=("ocr",),
             notes="1.9 GB, Apache-2.0. The VLM the SFX reader below is a "
             "fine-tune of; the reader loads this and merges the row below "
             "onto it.",
         ),
         Asset(
             id="sfx_reader",
+            pack="ocr",
             title="Manga SFX reader (VL-1.6 LoRA + tower)",
             repo=SFX_READER_REPO,
             files=SFX_READER_FILES,
             dest=default_sfx_reader_dir(),
-            used_by="the manga SFX reader (anime_tools.ocr.sfx; OCR --reader vl)",
-            stages=(),
-            notes="0.9 GB (adapter 24 MB + fine-tuned vision tower). Reads "
-            "hand-lettered onomatopoeia PP-OCRv6 garbles; a crop reader, not a "
-            "detector. Needs the base above; both fetched on first use by the OCR "
-            "stage's --reader vl (not listed under the stage so PP-OCRv6 alone "
-            "stays a 140 MB stage). Trained on Manga109-s (COO).",
+            used_by="OCR text (the manga VL reader; anime_tools.ocr.sfx)",
+            stages=("ocr",),
+            notes="0.9 GB (adapter 24 MB + fine-tuned vision tower). Reads every "
+            "box the detector finds — balloon speech, hearts, small kana and the "
+            "hand-lettered onomatopoeia a print recognizer garbles; a crop reader, "
+            "not a detector. Needs the base above; both fetched on first use. "
+            "Trained on Manga109-s (COO).",
         ),
         Asset(
             id="animetext_det",
+            pack="ocr",
             title="AnimeText text-block detector (YOLO12-l)",
             repo=ANIMETEXT_REPO,
             subfolder=ANIMETEXT_SUBFOLDER,
             files=ANIMETEXT_FILES,
             dest=default_animetext_dir(),
-            used_by="OCR text (--detector animetext; anime_tools.ocr.animetext)",
-            stages=(),
+            used_by="OCR text (the text-block detector; anime_tools.ocr.animetext)",
+            stages=("ocr",),
             notes="106 MB ONNX. One detector for balloon lines and the SFX drawn "
-            "onto the artwork, in place of PP-OCRv6's DB head; pairs with the "
-            "manga VL reader (--reader vl). Fetched on first use, never bundled: "
-            "weights GPL-3.0, training data CC-BY-NC-SA-4.0 — a shipped build "
-            "defaulting to it is a licence call.",
+            "onto the artwork; every box it finds is read by the manga VL reader. "
+            "Fetched on first use, never bundled: weights GPL-3.0, training data "
+            "CC-BY-NC-SA-4.0 — a shipped build defaulting to it is a licence call.",
         ),
         Asset(
             id="mit_text",
+            pack="text_mask",
             title="Manga text segmentation",
             repo=MIT_TEXT_REPO,
             files=(MIT_TEXT_FILENAME,),
@@ -573,6 +596,7 @@ def catalog() -> tuple[Asset, ...]:
         ),
         Asset(
             id="ctd_onnx",
+            pack="text_mask",
             title="ComicTextDetector text-block head",
             repo=CTD_GH_REPO,
             url=CTD_ONNX_URL,
@@ -590,21 +614,63 @@ def by_id() -> dict[str, Asset]:
     return {a.id: a for a in catalog()}
 
 
+def by_pack(rows: tuple[Asset, ...] | None = None) -> dict[str, tuple[Asset, ...]]:
+    """Rows bucketed by pack, in :data:`PACKS` order, catalog order inside each;
+    a pack with no rows is left out. ``rows`` defaults to the catalog."""
+    rows = catalog() if rows is None else rows
+    out: dict[str, tuple[Asset, ...]] = {}
+    for pack in PACKS:
+        picked = tuple(a for a in rows if a.pack == pack.id)
+        if picked:
+            out[pack.id] = picked
+    return out
+
+
+def expand(names: list[str] | tuple[str, ...]) -> list[str]:
+    """Row ids and/or pack ids → row ids, catalog order, deduped.
+
+    Raises ``KeyError`` naming the first token that is neither, so a typo fails
+    loudly rather than downloading nothing.
+    """
+    assets = by_id()
+    packed = by_pack()
+    picked: list[str] = []
+    for name in names:
+        if name in packed:
+            ids = [a.id for a in packed[name]]
+        elif name in assets:
+            ids = [name]
+        else:
+            raise KeyError(
+                f"unknown model or pack id {name!r} — rows: {', '.join(assets)}; "
+                f"packs: {', '.join(packed)}"
+            )
+        picked.extend(i for i in ids if i not in picked)
+    order = list(assets)
+    return sorted(picked, key=order.index)
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="python -m anime_tools.downloads",
         description="Pre-fetch the model weights the stages need. With no ID, "
         "downloads everything that is missing; with IDs, re-fetches exactly "
-        "those (a repair). Every loader still auto-fetches on first use — this "
-        "only moves the wait somewhere you chose.",
+        "those (a repair). An ID is a row (`sam3`) or a pack (`ocr` — every row "
+        "that installs under it). Every loader still auto-fetches on first use — "
+        "this only moves the wait somewhere you chose.",
     )
     p.add_argument(
         "ids",
         nargs="*",
         metavar="ID",
-        help="Model ids to fetch (default: every missing one)",
+        help="Row or pack ids to fetch (default: every missing row); "
+        f"packs: {', '.join(p.id for p in PACKS)}",
     )
-    p.add_argument("--list", action="store_true", help="Show the catalog and exit")
+    p.add_argument(
+        "--list",
+        action="store_true",
+        help="Show the catalog, grouped by pack, and exit",
+    )
     return p
 
 
@@ -613,20 +679,21 @@ def main(argv: list[str] | None = None) -> int:
     assets = by_id()
 
     if args.list:
-        for a in catalog():
-            mark = "installed" if a.installed else "MISSING  "
-            print(f"{mark}  {a.id:<16} {a.repo:<48} → {a.location}")
+        for pack_id, rows in by_pack().items():
+            pack = PACK_BY_ID[pack_id]
+            print(f"[{pack.id}] {pack.title} — {pack.description}")
+            for a in rows:
+                mark = "installed" if a.installed else "MISSING  "
+                print(f"  {mark}  {a.id:<16} {a.repo:<48} → {a.location}")
         return 0
 
-    unknown = [i for i in args.ids if i not in assets]
-    if unknown:
-        print(
-            f"unknown model id: {', '.join(unknown)}  (known: {', '.join(assets)})",
-            file=sys.stderr,
-        )
+    try:
+        ids = expand(args.ids)
+    except KeyError as e:
+        print(e.args[0], file=sys.stderr)
         return 2
 
-    picked = [assets[i] for i in args.ids] or [a for a in catalog() if not a.installed]
+    picked = [assets[i] for i in ids] or [a for a in catalog() if not a.installed]
     if not picked:
         print("every model is already installed.")
         return 0
