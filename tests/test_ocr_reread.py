@@ -78,6 +78,10 @@ def test_a_read_must_clear_the_floors_and_carry_a_letter():
     out = reread.reread_lines(page(), lines, lambda b, x: reads, min_chars=3)
     # a decoration, a letterless read and an ASCII-only read all drop
     assert [ln.text for ln in out] == ["ぱんぱん"]
+    # kana that only modify a neighbour are not a letter either
+    for marks in ("ーーー", "ー・・・ッ", "っっっ", "ー…"):
+        assert not reread.has_script(marks)
+    assert reread.has_script("ぐっ") and reread.has_script("ー…ん")
     kept = reread.reread_lines(
         page(), lines, lambda b, x: reads, min_chars=1, skip_en=False
     )

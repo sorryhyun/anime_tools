@@ -61,13 +61,54 @@ def test_the_guard_rejects_empty_runaway_and_overlong_reads():
 
 
 def test_the_guard_normalises_what_it_keeps():
-    # Emoji heart + variation selector → ♥; whitespace runs → one space (the
-    # JOIN_SEP boundary); VL's LaTeX measurement wrapping stripped.
-    assert sfx.guard("びく❤️", 40, 120) == "びく♥"
+    # Every heart → ♡ (the emoji + variation selector, the solid ♥ the reader
+    # also emits); whitespace runs → one space (the JOIN_SEP boundary); VL's
+    # LaTeX measurement wrapping stripped.
+    assert sfx.guard("びく❤️", 40, 120) == "びく♡"
+    assert sfx.guard("あ・・・っ♥", 40, 160) == "あ…っ♡"
     assert sfx.guard("ぱんッ\n\nぱんッ", 80, 120) == "ぱんッ ぱんッ"
     assert sfx.guard("身長: \\( 156 \\, cm \\)", 300, 40) == "身長: 156 cm"
     # A native ♡ is kept as read — the reader emits it itself.
     assert sfx.guard("ぱん♡", 40, 120) == "ぱん♡"
+
+
+@pytest.mark.parametrize(
+    ("raw", "norm"),
+    [
+        ("はひ・・・・・・", "はひ…"),
+        ("え...な...ない......", "え…な…ない…"),
+        ("結ばれた二人は......♡", "結ばれた二人は…♡"),
+        ("もう‥‥だめ", "もう…だめ"),
+        ("1.5倍", "1.5倍"),  # one dot is not an ellipsis
+        ("赤・青", "赤・青"),  # nor is one middle dot
+    ],
+)
+def test_every_dot_run_is_one_ellipsis(raw, norm):
+    assert sfx.normalize_read(raw) == norm
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        # The two sincos blocks the first guard threw away (2026-09-07): the
+        # dots held the trigram ``...`` four times over.
+        "結ばれた二人は甘いロゾけを交わすんです......",
+        "ふ...ぉ...フゥ......♡これから孕むまで毎日使ってやるからな♡",
+        "はひ・・・・・・っ",
+        "...あ............いや...寝たフリだな...これ.........",
+    ],
+)
+def test_a_pause_is_not_a_runaway(text):
+    assert not sfx.is_runaway(text)
+    assert sfx.guard(text, 130, 300) is not None
+
+
+def test_a_hundred_dots_alone_collapse_to_one():
+    # No longer a runaway — but no letter either, so ``has_script`` drops it.
+    from anime_tools.ocr.reread import has_script
+
+    read = sfx.guard("・" * 100, 60, 60)
+    assert read == sfx.ELLIPSIS and not has_script(read)
 
 
 # ---- the crop geometry --------------------------------------------------

@@ -152,10 +152,19 @@ def drop_nested(lines: Sequence[OcrLine]) -> list[OcrLine]:
     return out
 
 
+KANA_MARKS = frozenset("ーっッゝゞヽヾ")
+"""Kana that only modify a neighbour — the long-vowel bar, the sokuon, the
+iteration marks. Unicode files them as letters, but ``ー・・・ッ`` or ``っっっ``
+has no syllable in it: it is the reader filling a box of motion lines."""
+
+
 def has_script(text: str) -> bool:
     """Whether a read carries a letter at all — ``♡`` or ``…`` alone is a
-    decoration the mask caught, not a line."""
-    return any(unicodedata.category(ch).startswith("L") for ch in text)
+    decoration the mask caught, not a line, and a string of
+    :data:`KANA_MARKS` alone (``ーーー``, ``ー・・・ッ``) is not one either."""
+    return any(
+        unicodedata.category(ch).startswith("L") and ch not in KANA_MARKS for ch in text
+    )
 
 
 def reread_lines(
@@ -324,6 +333,7 @@ class RereadEngine:
 
 
 __all__ = [
+    "KANA_MARKS",
     "NESTED_CONTAINMENT",
     "NO_SCORE",
     "Read",

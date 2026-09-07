@@ -26,6 +26,14 @@ length cap tied to the crop's area — and a read that fails comes back as
 ``None`` rather than as junk. :func:`is_runaway` / :func:`length_cap` are
 torch-free so the rule is testable on strings alone.
 
+The guard sees the read in :func:`normalize_read`'s form, and the repetition
+test is **ellipsis-blind**: the reader spells an ellipsis as ``......`` or
+``・・・・・・`` (never ``…``), and six dots hold the trigram ``...`` four times
+over, so the test as first shipped took every dialogue line of nine characters
+or more that paused twice — 94 lines on 64 of the 859 sincos pages (2026-09-07),
+the longest speech on each page. A dot run is now one ``…`` before anything
+counts it.
+
 Weights are two catalog rows (:mod:`anime_tools.downloads`): ``vl16_base``
 (the Apache-2.0 base, 1.9 GB) and ``sfx_reader`` (adapter 24 MB + tower
 878 MB). :meth:`SfxReader.load` fetches what is missing.
@@ -65,6 +73,14 @@ MIN_GLYPH_PX = 16
 floor): the length cap is how many of them fit in the crop's area."""
 
 _LATEX_RE = re.compile(r"\\[(),]|\\\s")
+_ELLIPSIS_RE = re.compile(r"[.．・…‥]{2,}")
+"""A run of two or more dots of any kind — ASCII, fullwidth, the katakana
+middle dot the reader uses for ``…``, or ``…`` / ``‥`` themselves. One
+ellipsis, however it was drawn or decoded."""
+ELLIPSIS = "…"
+HEART_FOLD = str.maketrans({"♥": "♡", "❤": "♡"})
+"""The reader emits ``♥`` and ``♡`` for the same drawn heart (sincos records:
+332 vs 889); a caption says one glyph, and it is the one the artists draw."""
 
 
 def is_runaway(text: str, *, ngram_repeats: int = 3, run: int = 8) -> bool:
@@ -72,9 +88,12 @@ def is_runaway(text: str, *, ngram_repeats: int = 3, run: int = 8) -> bool:
 
     A glyph run of ``run`` or more, or (from nine characters on) any 3-gram
     occurring ``ngram_repeats`` or more times. ``ぱんぱん`` (one repeat) and
-    ``おおおん`` pass — a doubled unit *is* an onomatopoeia.
+    ``おおおん`` pass — a doubled unit *is* an onomatopoeia. Every dot run is
+    one ``…`` first, so ``え...な...ない......`` is a pause and not a repeat; a
+    hundred dots alone collapse to one and are then no letter at all
+    (:func:`~anime_tools.ocr.reread.has_script`).
     """
-    t = "".join(text.split())
+    t = _ELLIPSIS_RE.sub(ELLIPSIS, "".join(text.split()))
     if re.search(rf"(.)\1{{{run - 1},}}", t):
         return True
     if len(t) >= 9:
@@ -101,13 +120,19 @@ def length_cap(width: int, height: int) -> int:
 
 
 def normalize_read(text: str) -> str:
-    """The raw decode as a record: NFKC-stable glyphs, the emoji heart
-    (``❤`` + variation selector) folded to ``♥``, VL's LaTeX wrapping of a
+    """The raw decode as a record: NFC-stable glyphs, every heart (``♥``, the
+    emoji ``❤`` + variation selector) folded to ``♡``, every dot run
+    (``......``, ``・・・・・・``, ``‥``) to one ``…``, VL's LaTeX wrapping of a
     measurement (``\\( 156 \\, cm \\)``) stripped, whitespace runs collapsed to
-    one space (a column boundary stays a space, so a list stays a list)."""
-    text = text.replace("\ufe0f", "").replace("❤", "♥")
+    one space (a column boundary stays a space, so a list stays a list).
+
+    The folds are what make a line comparable: the speech clause dedupes on
+    exact text (:func:`~anime_tools.captions.ocr_sfx.dedupe_speech`), and
+    ``あ・・・っ♥`` beside ``あ・・・っ♡`` was two lines of the same word."""
+    text = text.replace("\ufe0f", "").translate(HEART_FOLD)
     text = _LATEX_RE.sub("", text)
     text = unicodedata.normalize("NFC", text)
+    text = _ELLIPSIS_RE.sub(ELLIPSIS, text)
     return " ".join(text.split())
 
 
@@ -386,6 +411,8 @@ class SfxReader:
 
 __all__ = [
     "CROP_PAD",
+    "ELLIPSIS",
+    "HEART_FOLD",
     "MAX_NEW_TOKENS",
     "PROMPT",
     "SfxReader",
