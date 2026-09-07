@@ -83,6 +83,15 @@ bench = ["scipy>=1.12"]
 
 [tool.uv]
 default-groups = ["dev"]
+# A torch index passed at sync time (`--index https://download.pytorch.org/whl/cpu`,
+# what CI and the standalone Windows install use) becomes the FIRST index, and uv's
+# default first-index-wins rule then pins every package that index happens to mirror
+# to whatever version it carries -- even packages that have nothing to do with torch.
+# The pytorch mirror stops at iopath 0.1.9 while sam3 needs >=0.1.10 (on PyPI), so the
+# default strategy resolves iopath to a dead end instead of falling through. Both
+# indexes are equally trusted here; consider versions from all of them (matches the
+# trainer's [tool.uv] setting).
+index-strategy = "unsafe-best-match"
 # sam3 pins numpy>=1.26,<2, but its tree is numpy-2 clean -- the pin is stale, not a real
 # constraint. The only suspect usage is three `np.bool` calls in
 # sam3/agent/helpers/visualizer.py, and numpy 2.0 restored `np.bool` as an alias for
