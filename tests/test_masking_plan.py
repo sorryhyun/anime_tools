@@ -119,23 +119,22 @@ def test_iter_masks_keys_by_relative_dir(tree):
     ]
 
 
-def test_the_merge_reads_exactly_what_the_two_generators_write():
-    """Each generator writes its own tree (both name a mask ``{stem}_mask.png``
-    at the same relative path), and the merge's default inputs are exactly those
-    two outputs, unioned into the ``masks`` root.
+def test_the_merge_reads_exactly_what_the_generator_writes():
+    """The generator writes its own tree, never the ``masks`` root, and the
+    merge's default input is exactly that tree, unioned into the ``masks``
+    root — so a hand-made tree listed beside it cannot overwrite a SAM3 mask
+    at the same relative path.
     """
     from anime_tools import workspace as WS
-    from anime_tools.masking.cli import generate_masks, generate_masks_mit, merge_masks
+    from anime_tools.masking.cli import generate_masks, merge_masks
 
     def default(module, dest):
         return next(a.default for a in module.build_parser()._actions if a.dest == dest)
 
     sam = default(generate_masks, "mask_dir")
-    mit = default(generate_masks_mit, "mask_dir")
-    assert sam != mit, "the two generators would overwrite each other"
-    assert default(merge_masks, "mask_dirs") == [sam, mit]
+    assert default(merge_masks, "mask_dirs") == [sam]
     assert default(merge_masks, "output_dir") == WS.MASKS
-    assert WS.MASKS not in (sam, mit), "a generator writes the merged root"
+    assert WS.MASKS != sam, "the generator writes the merged root"
 
 
 # ---- the run scaffolding -----------------------------------------------
@@ -225,85 +224,31 @@ def test_a_gated_group_names_its_switch_where_the_gui_reads_it():
     """A drawer is a field's ``gate`` metadata naming the switch (the switch
     names itself). The GUI form reads it off the schema; the generated parser
     also stamps the argparse group with ``GATE_ATTR`` for anyone introspecting.
+    Export's *Combine OCR* drawer is the one carrier since the MIT text-mask
+    stage (two detector drawers) left the package.
     """
     from anime_tools._request import args_of
     from anime_tools.gui import stages as S
-    from anime_tools.masking.requests import MitMaskRequest
+    from anime_tools.stages.requests import ExportRequest
 
-    args = {a.name: a for a in args_of(MitMaskRequest)}
+    args = {a.name: a for a in args_of(ExportRequest)}
     # The gate names itself; everything else in the drawer names the gate, and
     # takes the gate's group.
-    assert args["use_sam"].gate == "use_sam" and args["use_sam"].group == "SAM3 prompts"
-    assert args["sam_prompts"].gate == "use_sam"
-    assert args["sam_prompts"].group == args["use_sam"].group
-    assert args["use_sam"].negate == "--no-use-sam"
+    assert args["combine_ocr"].gate == "combine_ocr"
+    assert args["combine_ocr"].group == "Combine OCR"
+    assert args["ocr_dir"].gate == "combine_ocr"
+    assert args["ocr_dir"].group == args["combine_ocr"].group
+    assert args["combine_ocr"].negate == "--no-combine_ocr"
 
-    fields = {f["dest"]: f for f in S.schema(S.BY_ID["masks_mit"])["fields"]}
-    assert fields["use_sam"]["gate"] == "use_sam"
-    assert fields["checkpoint"]["gate"] == "use_sam"
-    assert fields["dilate"]["gate"] is None
+    fields = {f["dest"]: f for f in S.schema(S.BY_ID["export"])["fields"]}
+    assert fields["combine_ocr"]["gate"] == "combine_ocr"
+    assert fields["ocr_dir"]["gate"] == "combine_ocr"
+    assert fields["apply"]["gate"] is None
 
-    parser = MitMaskRequest.parser()
+    parser = ExportRequest.parser()
     stamped = {
         getattr(g, S.GATE_ATTR): g.title
         for g in parser._action_groups
         if getattr(g, S.GATE_ATTR, None)
     }
-    assert stamped == {"use_sam": "SAM3 prompts", "use_mit": "MIT text segmentation"}
-
-
-def test_the_text_stage_runs_two_detectors_behind_two_switches():
-    """One drawer per detector, with each detector's own knobs inside it."""
-    from anime_tools.masking.cli import generate_masks_mit as mit
-
-    parser = mit.build_parser()
-    gated = {
-        a.dest
-        for g in parser._action_groups
-        for a in g._group_actions
-        if getattr(g, "gui_gate", None)
-    }
-    by_gate: dict[str, set[str]] = {}
-    for g in parser._action_groups:
-        gate = getattr(g, "gui_gate", None)
-        if gate:
-            by_gate[gate] = {a.dest for a in g._group_actions}
-
-    assert by_gate["use_sam"] == {
-        "use_sam",
-        "sam_prompts",
-        "sam_threshold",
-        "checkpoint",
-    }
-    assert by_gate["use_mit"] == {"use_mit", "model_path", "text_threshold", "ctd_gate"}
-    # The walk, the dilation and the output tree belong to neither detector.
-    assert not gated & {"image_dir", "mask_dir", "dilate", "recursive", "path_pattern"}
-
-    args = parser.parse_args(["--image-dir", "i"])
-    # The segmenter is on by default; SAM3 is opt-in, with its one prompt
-    # already typed into the drawer.
-    assert (args.use_mit, args.ctd_gate) == (True, True)
-    assert args.use_sam is False
-    assert mit.prompt_list(args.sam_prompts) == ("speech bubble",)
-
-
-def test_the_text_stage_refuses_a_run_with_no_detector():
-    """Both drawers shut is refused, not a walk that writes nothing."""
-    from anime_tools.masking.cli import generate_masks_mit as mit
-
-    parser = mit.build_parser()
-
-    def check(argv):
-        return mit.detectors(parser, parser.parse_args(["--image-dir", "i", *argv]))
-
-    assert check([]) == (True, ())
-    assert check(["--use-sam"]) == (True, ("speech bubble",))
-    assert check(["--no-use-mit", "--use-sam", "--sam-prompts", "text,sign"]) == (
-        False,
-        ("text", "sign"),
-    )
-    with pytest.raises(SystemExit):
-        check(["--no-use-mit"])
-    # `none` is how a prompt field says "none of them".
-    with pytest.raises(SystemExit):
-        check(["--use-sam", "--sam-prompts", "none"])
+    assert stamped == {"combine_ocr": "Combine OCR"}

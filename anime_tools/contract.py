@@ -17,7 +17,7 @@ from __future__ import annotations
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 
-CONTRACT_VERSION = 1
+CONTRACT_VERSION = 2
 """Bumped on any incompatible change to a name in this module or a stage's flags."""
 
 # --- resident autotag worker (``tagger/cli/autotag_server.py``) ---------------

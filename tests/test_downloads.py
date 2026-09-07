@@ -56,8 +56,8 @@ def test_destinations_follow_the_curation_home(home):
     # Not under models/: the soft prompt lands on the path --prompt_embed resolves.
     assert by["soft_prompt"].dest == home / "networks" / "calibration"
     # Hub-cache assets have no path under models/ to keep in sync.
-    assert by["tagger_backbone"].dest is None and by["mit_text"].dest is None
-    assert by["mit_text"].location == "Hugging Face cache"
+    assert by["tagger_backbone"].dest is None
+    assert by["tagger_backbone"].location == "Hugging Face cache"
 
 
 def test_a_present_file_flips_the_row_to_installed(home):
@@ -94,14 +94,6 @@ def test_rows_land_where_the_loaders_look():
     # Same for the soft prompt: the --prompt_embed default is the row's file.
     embed = DL.resolve_path(pc.build_parser().parse_args([]).prompt_embed)
     assert embed == by["soft_prompt"].dest / DL.SOFT_PROMPT_FILENAME
-
-    # The CTD gate has no flag: the row and the loader are the same call.
-    from anime_tools.masking import mit
-    from anime_tools.masking.cli import generate_masks_mit as mit_cli
-
-    assert mit.default_ctd_onnx_path is DL.default_ctd_onnx_path
-    assert "ctd_onnx" not in {a.dest for a in mit_cli.build_parser()._actions}
-    assert DL.default_ctd_onnx_path() == by["ctd_onnx"].dest / DL.CTD_ONNX_FILENAME
 
 
 def test_the_tag_kb_lands_where_correction_looks_for_it(home):
@@ -243,7 +235,6 @@ def test_every_row_names_a_pack_and_every_pack_is_known():
         "tagger",
         "tags",
         "masking",
-        "text_mask",
         "ocr",
         "grouping",
     ]
@@ -286,8 +277,8 @@ def test_cli_accepts_a_pack_id(home, monkeypatch):
     monkeypatch.setattr(
         DL.Asset, "fetch", lambda self, log=DL._say: fetched.append(self.id)
     )
-    assert DL.main(["text_mask"]) == 0
-    assert fetched == ["mit_text", "ctd_onnx"]
+    assert DL.main(["masking"]) == 0
+    assert fetched == ["sam3", "soft_prompt"]
 
 
 def test_the_pack_is_in_the_serialized_row(home):

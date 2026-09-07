@@ -177,21 +177,6 @@ STAGES: tuple[Stage, ...] = (
         short="Subject",
     ),
     Stage(
-        id="masks_mit",
-        title="Text masks",
-        request=f"{_MASKING}:MitMaskRequest",
-        run="anime_tools.masking.mit:run_mit_masks",
-        module="anime_tools.masking.cli.generate_masks_mit",
-        panel="Masks",
-        extra="masking",
-        short="Text",
-        notes=(
-            "Two detectors, each behind its own switch: SAM3 on a prompt "
-            "(balloons) and the UNet++ segmenter (lettering). Their masks are "
-            "unioned."
-        ),
-    ),
-    Stage(
         id="masks_merge",
         title="Merge masks",
         request=f"{_MASKING}:MergeMasksRequest",

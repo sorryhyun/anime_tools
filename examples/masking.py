@@ -1,17 +1,19 @@
-"""Training masks: SAM3 subject masks, text masks, and their merge.
+"""Training masks: SAM3 subject masks and their merge.
 
-    python examples/masking.py --home ~/data           # print the three requests
+    python examples/masking.py --home ~/data           # print the two requests
     python examples/masking.py --home ~/data --run     # generate + merge
 
-Three request objects in ``anime_tools.masking``, each a CLI
-(``python -m anime_tools.masking.cli.{generate_masks,generate_masks_mit,merge_masks}``,
-hyphenated flags). A mask is an 8-bit L PNG named ``{stem}_mask.png`` at the
-image's relative path under the mask dir: 255 keeps a pixel in the loss, 0
-ignores it. Each generator writes its **own** tree (``workspace/masks_sam/``,
-``workspace/masks_mit/``) because both name the file identically; the merge
-takes the pixel-wise minimum into ``workspace/masks/``, which Export publishes.
+Two request objects in ``anime_tools.masking``, each a CLI
+(``python -m anime_tools.masking.cli.{generate_masks,merge_masks}``, hyphenated
+flags). A mask is an 8-bit L PNG named ``{stem}_mask.png`` at the image's
+relative path under the mask dir: 255 keeps a pixel in the loss, 0 ignores it.
+The generator writes its **own** tree (``workspace/masks_sam/``), never the
+``masks`` root, so a hand-made tree listed beside it at merge time cannot
+overwrite a SAM3 mask at the same relative path; the merge takes the pixel-wise
+minimum into ``workspace/masks/``, which Export publishes.
 
-Weights: ``python -m anime_tools.downloads sam3 soft_prompt mit_text ctd_onnx``.
+Weights: ``python -m anime_tools.downloads sam3 soft_prompt`` (or the ``masking``
+pack).
 """
 
 from __future__ import annotations
@@ -30,11 +32,12 @@ def main() -> None:
     if args.home:
         os.environ["ANIME_TOOLS_HOME"] = str(Path(args.home).expanduser().resolve())
 
-    from anime_tools.masking import MergeMasksRequest, MitMaskRequest, SamMaskRequest
+    from anime_tools.masking import MergeMasksRequest, SamMaskRequest
 
     # --- subject masks -------------------------------------------------------
     # focus_prompts = keep ONLY these (default: the subject, served by a learned
-    # soft prompt); prompts = mask OUT these. Both: focus minus ignore.
+    # soft prompt); prompts = mask OUT these. Both: focus minus ignore. Balloons
+    # and lettering are ordinary ignore prompts here (`speech bubble`, `text`).
     sam = SamMaskRequest(
         image_dir=args.image_dir,
         recursive=True,
@@ -43,29 +46,14 @@ def main() -> None:
         dilate=5,
     )
     print("$ python -m anime_tools.masking.cli.generate_masks", *sam.to_argv())
-
-    # --- text masks: two detectors behind two switches -------------------------
-    # use_mit: the UNet++ stroke segmenter (lettering, gated by a
-    # comictextdetector text-block net); use_sam: SAM3 on sam_prompts (balloons —
-    # a shape, not a stroke). Both off is the one request the stage refuses.
-    mit = MitMaskRequest(
-        image_dir=args.image_dir,
-        recursive=True,
-        use_mit=True,
-        text_threshold=0.8,
-        use_sam=True,
-        sam_prompts=("speech bubble", "sign"),
-        dilate=3,
-    )
-    print("$ python -m anime_tools.masking.cli.generate_masks_mit", *mit.to_argv())
     try:
-        MitMaskRequest(image_dir=args.image_dir, use_mit=False, use_sam=False)
+        SamMaskRequest(image_dir=args.image_dir, focus_prompts=(), prompts=())
     except ValueError as e:
         print("  refused:", e)
 
     # --- merge ---------------------------------------------------------------
-    # Positional inputs default to the two generators' trees; a missing one is
-    # skipped, so running one generator is a valid half of this.
+    # The positional input defaults to the generator's tree; a missing one is
+    # skipped, and a second tree (hand-painted masks) is simply listed beside it.
     merge = MergeMasksRequest()
     print("$ python -m anime_tools.masking.cli.merge_masks", *merge.to_argv())
 
@@ -85,10 +73,9 @@ def main() -> None:
     if not args.run:
         return
 
-    from anime_tools.masking import run_merge_masks, run_mit_masks, run_sam_masks
+    from anime_tools.masking import run_merge_masks, run_sam_masks
 
-    run_sam_masks(sam)  # load_sam3 is cached per process on its arguments,
-    run_mit_masks(mit)  # so the text pass reuses the subject pass's model
+    run_sam_masks(sam)
     n = run_merge_masks(merge)
     print(f"\n{n} merged mask(s):")
     from PIL import Image

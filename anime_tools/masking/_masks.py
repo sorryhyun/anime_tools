@@ -146,7 +146,7 @@ class MaskRun:
 
 @contextmanager
 def mask_run(args: Any, *, desc: str = "Generating masks") -> Iterator[MaskRun]:
-    """The scaffolding both generators wrap their inner loop in.
+    """The scaffolding a generator wraps its inner loop in.
 
     ``args`` is anything carrying the walk attributes of
     ``masking.requests.MaskWalkRequest`` (``image_dir`` / ``mask_dir`` / ``recursive`` /

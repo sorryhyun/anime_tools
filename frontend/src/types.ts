@@ -30,9 +30,9 @@ export interface Field {
       `groups/groups.json`): bound server-side, so hidden here too. Export's
       caption index *reads* a file under that root through the same binding. */
   report: string | null;
-  /** This generator's own tail(s) under the Settings `mask_root` (`masks_sam`,
-      `masks_mit`): bound and hidden the same way. A list on the merge, which
-      names both generators' trees in one flag. */
+  /** This generator's own tail(s) under the Settings `mask_root` (`masks_sam`):
+      bound and hidden the same way. A list on the merge, which names its input
+      trees in one flag. */
   mask: string | string[] | null;
   /** Auto-detected by the stage (`--device`): never shown, never sent. */
   auto: boolean;

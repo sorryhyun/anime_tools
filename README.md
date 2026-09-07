@@ -11,7 +11,7 @@ caption master and sidecars, split out so it can be used on datasets bound for
 | `anime_tools.tagger` | **Anima Tagger** — a vocab/threshold/sidecar head over the external `animetimm/*.dbv4-full` caformer tagger, emitting Anima-format tags (`rating, count, characters, copyrights, @artists, generals`). CLIs: `python -m anime_tools.tagger.cli --mode …`, `…cli.autotag`, `…cli.autotag_server`, `…cli.train_sidecar` |
 | `anime_tools.stages` | Caption stages: batch **autotag**, **position clauses** (SAM3 crops → tagger → v2 rewrite), correction + variants mirror, **multiview audit** |
 | `anime_tools.grouping` | Near-twin / same-concept **grouping** on PE-Spatial-B16-512 features (`anime_tools.vision.pe`, weights fetched from the Hub) → `groups.json`; decensor match tools. CLI: `python -m anime_tools.grouping.cli.build_groups --source-dir …` |
-| `anime_tools.masking` | Training masks: SAM3 subject masks, MIT / ComicTextDetector text masks, merge. CLIs: `python -m anime_tools.masking.cli.{generate_masks,generate_masks_mit,merge_masks}` |
+| `anime_tools.masking` | Training masks: SAM3 subject masks (balloons / lettering as ignore prompts), merge. CLIs: `python -m anime_tools.masking.cli.{generate_masks,merge_masks}` |
 
 ## Install
 
@@ -90,11 +90,11 @@ image_dataset/**/{stem}.png + {stem}.txt        caption master   ← hand-writte
 workspace/                                       everything the tools write
   resized/{stem}.{png,txt,variants.txt}            resized image, revised caption, shuffle / dropout variants
   master/{stem}.txt                                revised master (Export publishes it back to image_dataset/)
-  masks_sam/ masks_mit/ masks/                     each mask generator's tree, and their merge
+  masks_sam/ masks/                                the SAM3 generator's tree, and the merge
   captions/<stage>/report.json  groups/groups.json  ocr/  export/report.json
 post_image_dataset/resized/ masks/               what the trainer reads   ← written only by Export (--combine_ocr attaches ocr/ lines to each published caption)
 models/captioners/anima-tagger-dbv4/            tagger checkpoint (auto-fetched from sorryhyun/anima-tagger)
-models/sam3/  models/pe/  models/mit/  models/animetext/  SAM3 / PE-Spatial / text-mask / OCR text-block detector
+models/sam3/  models/pe/  models/animetext/       SAM3 / PE-Spatial / OCR text-block detector
 models/paddleocr_vl_1.6*/                             the manga VL reader (VL-1.6 base + LoRA/tower)
 networks/calibration/sam3_girl_prompt.safetensors  SAM3 subject soft prompt (default `--prompt_embed`)
 ```

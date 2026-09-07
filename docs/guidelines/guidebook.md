@@ -134,8 +134,8 @@ for that server.
     resized/<rel>.history.txt       what that caption used to say, one line per version
     resized/<rel>.variants.txt      shuffle / dropout variants, v0 = pristine
     ocr/<rel>.ocr.txt               words in the picture (OCR); not a caption
-    masks_sam/  masks_mit/          each mask generator's own tree
-    masks/<rel>/{stem}_mask.png     the merge of the two — what Export publishes
+    masks_sam/                      the SAM3 mask generator's own tree
+    masks/<rel>/{stem}_mask.png     the merge — what Export publishes
     captions/<stage>/report.json    what each run did, and how to undo it
     groups/groups.json              the grouping manifest
   post_image_dataset/             OUTPUT — written only by Export; the tree the trainer reads
@@ -180,7 +180,7 @@ it signed in as the same account.
 Nothing has to be pre-fetched: **every stage fetches what it needs on first use.** The
 **Models & weights** dialog (☰ → *Models & weights*) lists one row per checkpoint — what it is
 for, whether it is installed, where it lands — grouped under **packs**, the sets that install
-together: *Tagger*, *Danbooru tag DB*, *Masking*, *Text masking (MIT)*, *OCR*, *Grouping*. Each
+together: *Tagger*, *Danbooru tag DB*, *Masking*, *OCR*, *Grouping*. Each
 pack header has a **Download pack** button, each row its own **Download**, and the bar at the
 bottom **Download all N missing**. A download runs as an ordinary job, one at a time, sharing the
 slot with the stages. The buttons only move the wait, and any gated-repo refusal, to a moment you
@@ -408,24 +408,22 @@ overrides) and stamped with the file's size and mtime, so a re-resize recomputes
 images that changed. Tighten or loosen the clustering with the two match thresholds on the
 form. See [`docs/grouping.md`](../grouping.md).
 
-### 7.8 Masks: Subject, Text, Merge
+### 7.8 Masks: Subject, Merge
 
-**Read** resized images. **Write** `workspace/masks_sam/`, `workspace/masks_mit/`, and their
-merge under `workspace/masks/` — 8-bit `{stem}_mask.png` mirroring the source subfolder.
-**Models**: SAM 3 for both generators; the manga text segmenter and the ComicTextDetector gate
-for Text.
+**Read** resized images. **Write** `workspace/masks_sam/` and its merge under
+`workspace/masks/` — 8-bit `{stem}_mask.png` mirroring the source subfolder. **Model**: SAM 3.
 
 - **Subject** keeps the subject and masks out the background: by default it grounds SAM3 on the
-  learned subject prompt. Prompts to mask *out* (`speech bubble,text`) can be added.
-- **Text** masks lettering and balloons with two detectors, each behind its own switch — SAM3 on
-  a prompt (a balloon is a shape) and the UNet++ segmenter (a letter is a stroke) — unioned
-  before one dilation. Both off is the one form the stage refuses.
-- **Merge** takes the pixel-wise minimum of the two trees into `workspace/masks/`, the tree the
-  sidebar shows as *mask* / *overlay* and Export publishes. A missing input tree is skipped, so
-  running one generator is a valid half.
+  learned subject prompt. Prompts to mask *out* (`speech bubble,text`) can be added — balloons
+  and lettering are ordinary ignore prompts here. (The separate *Text* stage, a UNet++ segmenter
+  behind a ComicTextDetector gate, was removed in 0.5: nobody used it.)
+- **Merge** takes the pixel-wise minimum of its input trees into `workspace/masks/`, the tree the
+  sidebar shows as *mask* / *overlay* and Export publishes. The default input is the generator's
+  tree; a missing input is skipped, and a hand-painted tree can be listed beside it.
 
-The three directories are one setting, not three fields, because both generators name a mask
-identically and would overwrite each other in a shared tree. Masks always write; regenerate to
+The two directories are one setting, not two fields, because a second tree merged in beside
+the generator's would name a mask identically and overwrite it in a shared tree. Masks always write;
+regenerate to
 change one. See [`docs/masking.md`](../masking.md).
 
 ### 7.9 Export workspace
@@ -480,7 +478,6 @@ stages spell flags with underscores (`--path_pattern`), grouping and masking wit
 | OCR | `anime_tools.stages.cli.ocr_captions` | dry run → `report.json` |
 | Groups | `anime_tools.grouping.cli.build_groups` | always writes `groups.json` |
 | Subject masks | `anime_tools.masking.cli.generate_masks` | always writes |
-| Text masks | `anime_tools.masking.cli.generate_masks_mit` | always writes |
 | Merge masks | `anime_tools.masking.cli.merge_masks` | always writes |
 | Export | `anime_tools.stages.cli.export_workspace` | dry run → `report.json` |
 

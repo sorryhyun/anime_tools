@@ -5,9 +5,8 @@
       workspace/                      everything the tools produce
         master/<rel>.txt                revised master
         resized/<rel>.{png,txt,variants.txt}
-        masks_sam/<rel>/{stem}_mask.png  each generator's own tree
-        masks_mit/<rel>/{stem}_mask.png
-        masks/<rel>/{stem}_mask.png      the merge of them
+        masks_sam/<rel>/{stem}_mask.png  the SAM3 generator's own tree
+        masks/<rel>/{stem}_mask.png      the merge
         captions/<stage>/report.json    the diffs
         groups/groups.json
         export/report.json              the export ledger
@@ -83,14 +82,13 @@ touching a caption.
 """
 
 MASKS_SAM = f"{WORKSPACE}/masks_sam"
-MASKS_MIT = f"{WORKSPACE}/masks_mit"
-"""Each mask generator's own output tree, and ``merge_masks``' two inputs.
+"""The SAM3 generator's own output tree, and ``merge_masks``' default input.
 
-Not roots, and separate from :data:`MASKS`: both generators name a mask
-``{stem}_mask.png`` under the same relative path, so a shared directory would
-have the second run overwrite the first. :data:`MASKS` holds the merge (a
-pixel-wise minimum over the two trees, i.e. the union of what they mask) and is
-the root the sidebar joins and Export publishes.
+Not a root, and separate from :data:`MASKS`: any second tree merged in beside it
+names a mask ``{stem}_mask.png`` under the same relative path, so sharing the
+root would have the second run overwrite the first. :data:`MASKS` holds the
+merge (a pixel-wise minimum over the inputs, i.e. the union of what they mask)
+and is the root the sidebar joins and Export publishes.
 """
 
 LEGACY_ROOTS: dict[str, str] = {

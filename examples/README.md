@@ -21,7 +21,7 @@ throwaway one (`_sandbox.py`). Weights are fetched on first use; to fetch them u
 | `position_clauses.py` | Position clauses (SAM3 + tagger), `--flatten`, `--from_report` replay; the multiview audit | `stages.PositionRequest` / `AuditRequest` with a nested `DetectionRequest`, `run_position`, `run_audit` | `python -m anime_tools.stages.cli.{position_captions,audit_multiview}` | Curate → Position / Audit |
 | `ocr.py` | OCR (AnimeText detector + manga VL reader) → `{stem}.ocr.txt` | `stages.OcrRequest`, `run_ocr`; `ocr.load_ocr().read()`; `captions.ocr_sidecar.read_ocr` | `python -m anime_tools.stages.cli.ocr_captions` | OCR |
 | `grouping.py` | Near-twin grouping on PE-Spatial → `groups.json`; custom embedders | `grouping.GroupRequest`, `run_groups` | `python -m anime_tools.grouping.cli.build_groups` | Groups; sidebar *groups* ordering |
-| `masking.py` | SAM3 subject masks, MIT / SAM3 text masks, merge; where a mask lives | `masking.SamMaskRequest` / `MitMaskRequest` / `MergeMasksRequest`, `run_*_masks`, `_masks.mask_path_for` | `python -m anime_tools.masking.cli.{generate_masks,generate_masks_mit,merge_masks}` | Masks → Subject / Text / Merge |
+| `masking.py` | SAM3 subject masks, merge; where a mask lives | `masking.SamMaskRequest` / `MergeMasksRequest`, `run_*_masks`, `_masks.mask_path_for` | `python -m anime_tools.masking.cli.{generate_masks,merge_masks}` | Masks → Subject / Merge |
 
 ## The one pattern
 

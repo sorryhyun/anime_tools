@@ -9,7 +9,7 @@ loader's default path, or touching the GUI Models pane.
 # The model catalog
 
 `anime_tools/downloads.py` (torch-free) is one `Asset` per checkpoint: the tagger + gated dbv4
-backbone + the ONNX graph traced from it, SAM3, PE-Spatial, the MIT text net, ComicTextDetector,
+backbone + the ONNX graph traced from it, SAM3, PE-Spatial,
 the SAM3 subject soft prompt, the OCR trio (AnimeText detector, PaddleOCR-VL-1.6 base, the manga
 SFX reader), the Danbooru tag KB and its English build. Each row carries repo, files, destination,
 `used_by` / `stages`, a `pack`, and an offline `installed` probe.
@@ -18,13 +18,10 @@ GUI's Models pane runs exactly that. `tests/test_downloads.py` pins the behaviou
 
 ## The one rule
 
-**It is the single source of truth for weight locations.** `vision/pe.py`, `masking/mit.py`,
+**It is the single source of truth for weight locations.** `vision/pe.py`,
 `masking/_sam3.py`'s flag defaults, `ocr/animetext.py` and `ocr/sfx.py` import theirs from here
-(`default_pe_spatial_path`, `default_ctd_onnx_path`, `default_animetext_dir`,
-`default_sfx_reader_dir`,
-…), and
-`default_ctd_onnx_path()` has no flag at all. A path you could point elsewhere is a Download
-button that writes where the loader doesn't look;
+(`default_pe_spatial_path`, `default_animetext_dir`, `default_sfx_reader_dir`, …). A path you
+could point elsewhere is a Download button that writes where the loader doesn't look;
 `test_rows_land_where_the_loaders_look` is the guard. Destinations hang off `models_dir()`
 (`_env.py`), which follows the curation home.
 
@@ -33,7 +30,7 @@ button that writes where the loader doesn't look;
 - **HF-hub rows** (most): `repo` + `files` (+ `subfolder`, `repo_type`), fetched through `_hf.py`
   under the user's token. `gated="<accept-terms url>"` marks a row whose repo needs a click; the
   GUI shows the link.
-- **Plain-HTTPS rows** (`url=`): the soft prompt, the CTD net, the tag KB go through
+- **Plain-HTTPS rows** (`url=`): the soft prompt, the tag KB go through
   `Asset._fetch_http`, with the recovery text on failure.
 - **Derived rows** (`derived=(<input row ids>,)` + `build=callable`): the downloads are *inputs*
   that stay in the hub cache, and the probe asks for the file `build` writes, so a hub sweep can't
@@ -46,7 +43,7 @@ button that writes where the loader doesn't look;
 ## Packs
 
 `PACKS` (a tuple of `Pack(id, title, description)`, display order) is the vocabulary a Download
-button is a button *for*: `tagger`, `tags`, `masking`, `text_mask`, `ocr`, `grouping`. **Every
+button is a button *for*: `tagger`, `tags`, `masking`, `ocr`, `grouping`. **Every
 row names exactly one** via `Asset.pack` (pinned by
 `test_every_row_names_a_pack_and_every_pack_is_known`;
 the id list itself is pinned too, because the trainer hides packs by id — its Models panel shows

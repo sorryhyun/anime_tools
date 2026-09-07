@@ -59,20 +59,6 @@ SOFT_PROMPT_URL = (
     f"https://raw.githubusercontent.com/{SOFT_PROMPT_GH_REPO}/main/{SOFT_PROMPT_DIR}"
 )
 
-# MIT text-mask net; its loader reads it straight out of the hub cache, so
-# there is no path under models/ to keep in sync.
-MIT_TEXT_REPO = "a-b-c-x-y-z/Manga-Text-Segmentation-2025"
-MIT_TEXT_FILENAME = "model.pth"
-
-# ComicTextDetector — the text-BLOCK head the MIT stage gates its UNet++ mask
-# on (``--ctd-gate``). A manga-image-translator release asset, so it rides
-# ``_fetch_http``. The stage has no flag for it: this is the one path it reads.
-CTD_GH_REPO = "zyddnys/manga-image-translator"
-CTD_ONNX_RELEASE = "beta-0.3"
-CTD_ONNX_DIR = "models/mit"
-CTD_ONNX_FILENAME = "comictextdetector.pt.onnx"
-CTD_ONNX_URL = f"https://github.com/{CTD_GH_REPO}/releases/download/{CTD_ONNX_RELEASE}"
-
 # PaddleOCR-VL-1.6 — the 0.9 B VLM base the SFX reader is fine-tuned from
 # (Apache-2.0; ERNIE LM + NaViT tower). A flat checkpoint dir, so the remote
 # modeling files ride along with the weights. `anime_tools.ocr.sfx` reads it.
@@ -135,12 +121,6 @@ def default_pe_spatial_path() -> Path:
     return models_dir() / "pe" / PE_SPATIAL_FILENAME
 
 
-def default_ctd_onnx_path() -> Path:
-    """``<home>/models/mit/comictextdetector.pt.onnx`` — where ``--ctd-gate``
-    looks and what the catalog row writes; there is no flag for it."""
-    return resolve_path(CTD_ONNX_DIR) / CTD_ONNX_FILENAME
-
-
 def default_vl16_base_dir() -> Path:
     """``<home>/models/paddleocr_vl_1.6`` — the SFX reader's base checkpoint."""
     return resolve_path(VL16_BASE_DIR)
@@ -199,11 +179,6 @@ PACKS: tuple[Pack, ...] = (
         "Masking",
         "SAM3 subject masks, and the subject soft prompt the position stages "
         "detect with.",
-    ),
-    Pack(
-        "text_mask",
-        "Text masking (MIT)",
-        "The UNet++ manga text segmenter and its ComicTextDetector gate.",
     ),
     Pack(
         "ocr",
@@ -584,28 +559,6 @@ def catalog() -> tuple[Asset, ...]:
             "onto the artwork; every box it finds is read by the manga VL reader. "
             "Fetched on first use, never bundled: weights GPL-3.0, training data "
             "CC-BY-NC-SA-4.0 — a shipped build defaulting to it is a licence call.",
-        ),
-        Asset(
-            id="mit_text",
-            pack="text_mask",
-            title="Manga text segmentation",
-            repo=MIT_TEXT_REPO,
-            files=(MIT_TEXT_FILENAME,),
-            used_by="MIT text masks",
-            stages=("masks_mit",),
-        ),
-        Asset(
-            id="ctd_onnx",
-            pack="text_mask",
-            title="ComicTextDetector text-block head",
-            repo=CTD_GH_REPO,
-            url=CTD_ONNX_URL,
-            files=(CTD_ONNX_FILENAME,),
-            dest=default_ctd_onnx_path().parent,
-            used_by="MIT text masks (the --ctd-gate precision pass)",
-            stages=("masks_mit",),
-            notes="95 MB. Without it --ctd-gate degrades to raw UNet++ masks, "
-            "which false-positive on decorative line art.",
         ),
     )
 

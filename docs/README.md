@@ -31,7 +31,7 @@ architecture), `frontend/CLAUDE.md` for the browser half, and `.claude/skills/` 
 | [position_captions.md](position_captions.md) | Position captions — the clause grammar, the four gates and five move rules, SAM3 detection, knobs and skip reasons |
 | [multiview_audit.md](multiview_audit.md) | Multiview audit — finding untagged `multiple views` in the caption master |
 | [grouping.md](grouping.md) | Near-twin grouping — PE-Spatial features, `groups.json`, the feature cache, custom embedders, decensor match tools |
-| [masking.md](masking.md) | Training masks — SAM3 subject masks, SAM3 / MIT / ComicTextDetector text masks, merge, where a mask lives |
+| [masking.md](masking.md) | Training masks — SAM3 subject masks, merge, where a mask lives |
 
 ## Seams
 

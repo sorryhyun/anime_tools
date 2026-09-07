@@ -8,11 +8,7 @@ import pytest
 
 from anime_tools import workspace as WS
 from anime_tools.masking._sam3 import SUBJECT_PROMPT, prompt_list
-from anime_tools.masking.requests import (
-    MergeMasksRequest,
-    MitMaskRequest,
-    SamMaskRequest,
-)
+from anime_tools.masking.requests import MergeMasksRequest, SamMaskRequest
 from anime_tools.stages.instance_detection import DEFAULT_SUBJECT_PROMPT_EMBED
 
 
@@ -26,30 +22,18 @@ def test_a_default_argv_names_only_what_changed():
         "--focus-prompts",
         "none",
     ]
-    assert MitMaskRequest(image_dir="i", ctd_gate=False).to_argv() == [
-        "--image-dir",
-        "i",
-        "--no-ctd-gate",
-    ]
     assert MergeMasksRequest(mask_dirs=("a",)).to_argv() == ["a"]
 
 
-def test_the_generators_default_to_their_own_trees():
+def test_the_generator_defaults_to_its_own_tree():
     assert SamMaskRequest(image_dir="i").mask_dir == WS.MASKS_SAM
-    assert MitMaskRequest(image_dir="i").mask_dir == WS.MASKS_MIT
-    assert MergeMasksRequest().mask_dirs == (WS.MASKS_SAM, WS.MASKS_MIT)
+    assert MergeMasksRequest().mask_dirs == (WS.MASKS_SAM,)
     assert MergeMasksRequest().output_dir == WS.MASKS
 
 
 def test_a_request_refuses_a_run_that_would_detect_nothing():
     with pytest.raises(ValueError, match="nothing to mask"):
         SamMaskRequest(image_dir="i", focus_prompts=())
-    with pytest.raises(ValueError, match="nothing to detect"):
-        MitMaskRequest(image_dir="i", use_mit=False)
-    with pytest.raises(ValueError, match="no --sam-prompts"):
-        MitMaskRequest(image_dir="i", use_sam=True, sam_prompts=())
-    # Shut, the SAM drawer's prompts are inert.
-    assert MitMaskRequest(image_dir="i", sam_prompts=()).active_sam_prompts == ()
 
 
 def test_the_sam3_mask_stage_defaults_to_the_phrase_its_soft_prompt_encodes():

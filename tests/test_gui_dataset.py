@@ -596,7 +596,7 @@ def test_the_mask_root_setting_moves_both_generators_and_the_merge(client):
     assert SV.mask_root(settings, roots) == "elsewhere"
 
     got = {}
-    for sid in ("masks_sam", "masks_mit", "masks_merge"):
+    for sid in ("masks_sam", "masks_merge"):
         argv = S.build_argv(
             S.schema(S.BY_ID[sid]),
             {},
@@ -605,8 +605,7 @@ def test_the_mask_root_setting_moves_both_generators_and_the_merge(client):
         )
         got[sid] = [a for a in argv if a.startswith("elsewhere")]
     assert got["masks_sam"] == ["elsewhere/masks_sam"]
-    assert got["masks_mit"] == ["elsewhere/masks_mit"]
-    assert got["masks_merge"] == ["elsewhere/masks_sam", "elsewhere/masks_mit"]
+    assert got["masks_merge"] == ["elsewhere/masks_sam"]
 
 
 def test_a_missing_manifest_is_not_an_error(client):

@@ -21,11 +21,7 @@ import pytest
 from anime_tools._request import Request, args_of
 from anime_tools.downloads import DEFAULT_SAM3_CHECKPOINT
 from anime_tools.grouping.requests import GroupRequest
-from anime_tools.masking.requests import (
-    MergeMasksRequest,
-    MitMaskRequest,
-    SamMaskRequest,
-)
+from anime_tools.masking.requests import MergeMasksRequest, SamMaskRequest
 from anime_tools.stages.instance_detection import DEFAULT_SUBJECT_PROMPT_EMBED
 from anime_tools.stages.registry import BY_ID, STAGES, Stage
 from anime_tools.stages.requests import (
@@ -191,18 +187,6 @@ CASES: dict[str, Request] = {
         path_pattern="a/*",
         device="cpu",
     ),
-    "masks_mit": MitMaskRequest(
-        image_dir="i",
-        use_sam=True,
-        sam_prompts=("sign",),
-        sam_threshold=0.3,
-        use_mit=False,
-        model_path="net.pth",
-        text_threshold=0.5,
-        ctd_gate=False,
-        dilate=1,
-        recursive=True,
-    ),
     "masks_merge": MergeMasksRequest(mask_dirs=("x", "y"), output_dir="o"),
     "export": ExportRequest(
         src="s",
@@ -221,7 +205,6 @@ CASES: dict[str, Request] = {
 REQUIRED: dict[str, list[str]] = {
     "correct": ["--src", "s", "--dst", "d"],
     "masks_sam": ["--image-dir", "i"],
-    "masks_mit": ["--image-dir", "i"],
 }
 """The stages that require a root rather than defaulting it: the shortest
 argv their parser accepts."""
@@ -416,14 +399,9 @@ def test_shared_flags_keep_one_spelling(parsers, dest, flags, default):
 )
 def test_the_sam3_stages_share_the_catalog_flags(parsers, dest, flags, default):
     """The two ⚙ Settings model values reach every SAM3 stage, masking's
-    hyphenated CLIs included, under one spelling and one default. The text
-    stage takes ``--checkpoint`` alone: ``--prompt_embed`` stands in for the
-    subject phrase only."""
+    hyphenated CLI included, under one spelling and one default."""
     carriers = {s.id for s in STAGES if dest in parsers[s.id]}
-    expected = {"position", "audit", "masks_sam"} | (
-        {"masks_mit"} if dest == "checkpoint" else set()
-    )
-    assert carriers == expected
+    assert carriers == {"position", "audit", "masks_sam"}
     for stage_id in carriers:
         action = parsers[stage_id][dest]
         assert tuple(action.option_strings) == flags, stage_id

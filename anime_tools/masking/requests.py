@@ -1,8 +1,8 @@
-"""The three mask stages as request objects — the surface the CLIs, the GUI and
+"""The two mask stages as request objects — the surface the CLIs, the GUI and
 the trainer share.
 
 Torch-free: run one through :func:`anime_tools.masking.run_sam_masks` /
-:func:`run_mit_masks` / :func:`run_merge_masks`, which import the models, or
+:func:`run_merge_masks`, which import the models, or
 hand ``to_argv()`` to a subprocess. Every field is a flag of the matching CLI,
 whose parser is generated from the class (:meth:`Request.parser`): the help,
 the default and the drawer a flag sits in are written here, once. Flags are
@@ -26,17 +26,11 @@ from anime_tools.masking._sam3 import (
 )
 
 __all__ = [
-    "DEFAULT_SAM_PROMPTS",
     "MaskWalkRequest",
     "MergeMasksRequest",
-    "MitMaskRequest",
     "SamMaskRequest",
     "prompts_flag",
 ]
-
-DEFAULT_SAM_PROMPTS = ("speech bubble",)
-"""What the text stage's ``--use-sam`` means by *text* until told otherwise: a balloon
-is a closed shape, and its interior is as untrainable as the lettering in it."""
 
 WALK_HELP = (
     "Walk subfolders under --image-dir. Mask output mirrors the source "
@@ -62,24 +56,24 @@ def _prompts(default: tuple[str, ...], **meta) -> tuple[str, ...]:
 
 
 def _mask_dir(default: str) -> str:
-    """This generator's own tree, never the merged ``masks`` root: both name a mask
-    ``{stem}_mask.png`` at the same relative path, so a shared directory would have
-    the second run overwrite the first."""
+    """The generator's own tree, never the merged ``masks`` root: a hand-made tree
+    merged in beside it names a mask ``{stem}_mask.png`` at the same relative path,
+    so sharing the root would have the second run overwrite the first."""
     return arg(
         default,
         help=f"Output mask directory for this generator alone (default: {default}); "
-        "`merge_masks` unions it with the other's into the masks root",
+        "`merge_masks` unions it with any other tree into the masks root",
     )
 
 
 @dataclass(frozen=True, kw_only=True)
 class MaskWalkRequest(Request):
-    """What both generators share: the walk ``_masks.mask_run`` reads by attribute."""
+    """The walk ``_masks.mask_run`` reads by attribute — kept apart from the SAM3
+    knobs so another generator can wrap the same loop."""
 
     image_dir: str = arg(help="Image directory")
     mask_dir: str
-    """This generator's own tree, never the merged ``masks`` root: both name a mask
-    ``{stem}_mask.png`` at the same relative path."""
+    """The generator's own tree, never the merged ``masks`` root."""
     force: bool = arg(False, help="Regenerate existing masks")
     workers: int = arg(4, help="I/O workers for loading/saving (default: 4)")
     recursive: bool = arg(False, help=WALK_HELP)
@@ -129,85 +123,6 @@ class SamMaskRequest(MaskWalkRequest):
             raise ValueError("nothing to mask: pass --prompts and/or --focus-prompts")
 
 
-SAM_DRAWER = "SAM3 prompts"
-MIT_DRAWER = "MIT text segmentation"
-
-
-@dataclass(frozen=True, kw_only=True)
-class MitMaskRequest(MaskWalkRequest):
-    """Text masks, written to ``workspace/masks_mit/``: SAM3 prompts, a per-stroke
-    UNet++, or both.
-
-    ``--use-sam`` grounds SAM3 on ``--sam-prompts``; ``--use-mit`` runs the UNet++ text
-    segmenter behind comictextdetector's text-block gate (``--ctd-gate``). A balloon is
-    a shape and a letter is a stroke, so neither switch subsumes the other and both off
-    is the one argv the stage refuses. The two are unioned before the single dilation.
-    """
-
-    mask_dir: str = _mask_dir(WS.MASKS_MIT)
-    use_sam: bool = arg(
-        False,
-        gate="use_sam",
-        group=SAM_DRAWER,
-        help="Ground SAM3 on --sam-prompts and mask what it finds. Off by default: it "
-        "is a second set of weights to load, and it answers a different question "
-        "than the segmenter below — turn it on for balloons, which are a shape "
-        "rather than a stroke",
-    )
-    sam_prompts: tuple[str, ...] = _prompts(
-        DEFAULT_SAM_PROMPTS,
-        gate="use_sam",
-        help="Comma-separated SAM3 text prompts for the regions to mask OUT (default "
-        f"`{prompts_flag(DEFAULT_SAM_PROMPTS)}`; e.g. `speech bubble,sign,"
-        "watermark`). Same polarity as `generate_masks --prompts`: everything named "
-        "here is ignored in the loss",
-    )
-    sam_threshold: float = arg(
-        0.5, gate="use_sam", help="SAM3 confidence floor for a detection (default: 0.5)"
-    )
-    checkpoint: str = arg(DEFAULT_SAM3_CHECKPOINT, gate="use_sam", help=CHECKPOINT_HELP)
-    use_mit: bool = arg(
-        True,
-        gate="use_mit",
-        group=MIT_DRAWER,
-        help="Run the UNet++ text segmenter — the stroke-accurate half, and the only "
-        "one that finds lettering outside a balloon",
-    )
-    model_path: str | None = arg(
-        None,
-        gate="use_mit",
-        help="Path to model.pth (downloads from HuggingFace if not specified)",
-    )
-    text_threshold: float = arg(
-        0.8, gate="use_mit", help="Text segmentation threshold (default: 0.8)"
-    )
-    ctd_gate: bool = arg(
-        True,
-        gate="use_mit",
-        help="keep only mask components overlapping a comictextdetector text block "
-        "— drops UNet++ false positives on halos/decorative line art (--no-ctd-gate "
-        "= raw UNet++ masks, restores pre-2026-07 behavior). The net is the download "
-        "catalog's `ctd_onnx` row; a missing one warns and leaves the masks ungated",
-    )
-    """Keep only UNet++ components overlapping a comictextdetector text block."""
-    dilate: int = arg(
-        3, help="Mask dilation in pixels, applied once to the union (default: 3)"
-    )
-
-    @property
-    def active_sam_prompts(self) -> tuple[str, ...]:
-        """The prompts SAM3 is grounded on: none while the drawer is shut."""
-        return self.sam_prompts if self.use_sam else ()
-
-    def __post_init__(self) -> None:
-        if self.use_sam and not self.sam_prompts:
-            raise ValueError(
-                "--use-sam with no --sam-prompts: nothing for SAM3 to ground on"
-            )
-        if not self.use_mit and not self.active_sam_prompts:
-            raise ValueError("nothing to detect: pass --use-mit and/or --use-sam")
-
-
 @dataclass(frozen=True, kw_only=True)
 class MergeMasksRequest(Request):
     """Merge masks from multiple sources by taking the pixel-wise minimum (union of
@@ -215,18 +130,19 @@ class MergeMasksRequest(Request):
 
     Keys merges by ``(rel_dir, name)``, so masks at the same relative path across
     inputs collide; the nested layout is preserved under ``--output-dir``. A missing
-    input directory is skipped, not an error — running only one generator is a valid
-    half of this.
+    input directory is skipped, not an error — the default input is the one
+    generator's tree, and a second tree (hand-painted masks, another tool's
+    output) is simply listed beside it.
     """
 
     mask_dirs: tuple[str, ...] = field(
-        default=(WS.MASKS_SAM, WS.MASKS_MIT),
+        default=(WS.MASKS_SAM,),
         metadata={
             POSITIONAL: True,
             READ: tuple,
             WRITE: list,
-            HELP: "Input mask directories to merge (default: the two generators' "
-            f"own trees, {WS.MASKS_SAM} {WS.MASKS_MIT})",
+            HELP: "Input mask directories to merge (default: the SAM3 generator's "
+            f"own tree, {WS.MASKS_SAM}; list a hand-made tree beside it)",
         },
     )
     output_dir: str = arg(

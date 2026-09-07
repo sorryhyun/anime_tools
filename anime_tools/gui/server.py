@@ -132,10 +132,10 @@ def report_root(settings: Mapping[str, Any], roots: D.Roots) -> str:
 
 
 def mask_root(settings: Mapping[str, Any], roots: D.Roots) -> str:
-    """Where each generator's *own* mask tree lands, home-relative — the root only;
-    each generator appends its own tail (``S.Field.mask``), because two generators
-    sharing a ``--mask-dir`` would overwrite each other's ``{stem}_mask.png`` at
-    the same relative path and leave ``merge_masks`` one tree to union.
+    """Where the generator's *own* mask tree lands, home-relative — the root only;
+    the generator appends its own tail (``S.Field.mask``), so a second tree merged
+    in beside it cannot overwrite its ``{stem}_mask.png`` at the same relative
+    path.
 
     Blank means *beside the* ``masks`` *root* (:func:`_root_beside`).
     """

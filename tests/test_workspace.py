@@ -111,7 +111,6 @@ def test_every_pixel_reading_stage_is_bound_to_the_resized_tree():
         "correct",
         "audit",
         "masks_sam",
-        "masks_mit",
         "groups",
     }
     for stage_id in pixel_stages:

@@ -110,19 +110,18 @@ MASK_SETTING = "mask_root"
 """The directory each mask generator's own tree lands under, in
 :data:`SETTINGS_KEY`.
 
-Only the root is the setting; each generator keeps its own tail
-(:func:`mask_subpath`). Both spell the flag ``--mask-dir``, so a shared value
-would have them write ``{stem}_mask.png`` over each other at the same relative
-path and leave ``merge_masks`` one tree to union instead of two. Blank means
-beside the ``masks`` root.
+Only the root is the setting; the generator keeps its own tail
+(:func:`mask_subpath`) rather than writing into the ``masks`` root, so a second
+tree merged in beside it (a hand-painted one, another tool's) cannot overwrite
+its ``{stem}_mask.png`` at the same relative path. Blank means beside the
+``masks`` root.
 """
 
 MASK_FIELDS: dict[str, str] = {
     # stage id → the dest naming a mask tree under :data:`MASK_SETTING`.
     "masks_sam": "mask_dir",
-    "masks_mit": "mask_dir",
-    # The merge *reads* both generators' trees, so it moves with them; its tail
-    # is a list because the flag is.
+    # The merge *reads* the generator's tree, so it moves with it; its tail is a
+    # list because the flag is.
     "masks_merge": "mask_dirs",
 }
 
@@ -199,11 +198,6 @@ BASIC_FIELDS: dict[str, frozenset[str]] = {
     "masks_sam": frozenset(
         {"prompts", "focus_prompts", "threshold", "dilate", "force"}
     ),
-    # The two detector switches are gates, so they stay whatever this says (see
-    # :attr:`Field.advanced`); named anyway so the row is the whole basic form.
-    "masks_mit": frozenset(
-        {"use_sam", "sam_prompts", "use_mit", "ctd_gate", "dilate", "force"}
-    ),
 }
 """Which of each stage's own knobs the form shows before Advanced is on."""
 
@@ -222,16 +216,15 @@ ROOT_FIELDS: dict[str, dict[str, str]] = {
     "position": {"src": "src", "dst": "dst"},
     "correct": {"src": "src", "dst": "dst"},
     "audit": {"src": "src", "dst": "dst"},
-    # OCR, grouping and the two mask generators read the *resized* tree: one
+    # OCR, grouping and the mask generator read the *resized* tree: one
     # geometry for the whole pipeline. A mask cut from master pixels lands off the
     # subject for a ratio-clamped image. OCR binds no `src` — it reads no caption
     # and its sidecars go to their own tree.
     "ocr": {"dst": "dst"},
     "groups": {"source_dir": "dst"},
     "masks_sam": {"image_dir": "dst"},
-    "masks_mit": {"image_dir": "dst"},
-    # Only the *merged* output is the masks root; each generator's --mask-dir
-    # is an intermediate that has to differ from it, so it stays on the form.
+    # Only the *merged* output is the masks root; the generator's --mask-dir is
+    # an intermediate that has to differ from it, so it stays on the form.
     "masks_merge": {"output_dir": "masks"},
     # Runs the pipeline backwards: reads the workspace trees and writes ``src``
     # (a revised master) and ``out`` (everything else).
@@ -329,7 +322,7 @@ class Field:
     by :func:`build_argv` as ``<root>/<report>``."""
     mask: str | list[str] | None = None
     """This stage's own tail(s) under the :data:`MASK_SETTING` root, bound and
-    hidden like :attr:`report`. A list for the merge, which names both generators'
+    hidden like :attr:`report`. A list for the merge, which names its input
     trees in one flag."""
     auto: bool = False
     """In :data:`AUTO_FIELDS`: never shown, never sent, always auto-detected."""

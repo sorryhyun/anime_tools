@@ -135,7 +135,7 @@ def test_settings_fill_the_bound_stage_defaults():
 def test_device_is_never_on_the_form_or_the_argv():
     """``--device`` is resolved in the child, since this process is torch-free."""
     required = {"mask_dir": "m", "out": "g.json"}
-    for stage_id in ("autotag", "position", "masks_sam", "masks_mit", "groups"):
+    for stage_id in ("autotag", "position", "masks_sam", "groups"):
         _, sc = _stage(stage_id)
         device = next(f for f in sc["fields"] if f["dest"] == "device")
         assert device["auto"] is True
@@ -156,7 +156,6 @@ def test_scoped_stages_are_the_ones_taking_a_pattern():
         "audit",
         "ocr",
         "masks_sam",
-        "masks_mit",
         # Export narrows the same way.
         "export",
     }
@@ -169,53 +168,35 @@ def test_required_field_is_enforced():
 
 
 def test_boolean_optional_action_and_positional_list():
-    _, sc = _stage("masks_mit")
+    # A True-default switch turned off is spelled as its negation.
+    _, sc = _stage("resize")
+    argv = S.build_argv(sc, {"recursive": False}, roots={"src": "i", "dst": "d"})
+    assert argv == ["--src", "i", "--dst", "d", "--no-recursive"]
     # --image-dir is bound to `dst` (the mask is cut from the pixels the loader
-    # rescales it onto); --mask-dir to the mask root plus this generator's tail.
-    argv = S.build_argv(sc, {"ctd_gate": False}, roots={"dst": "d"}, mask_root="ws")
-    assert argv == ["--image-dir", "d", "--mask-dir", "ws/masks_mit", "--no-ctd-gate"]
+    # rescales it onto); --mask-dir to the mask root plus the generator's tail.
+    _, sc = _stage("masks_sam")
+    argv = S.build_argv(sc, {"force": True}, roots={"dst": "d"}, mask_root="ws")
+    assert argv == ["--image-dir", "d", "--mask-dir", "ws/masks_sam", "--force"]
     # A positional list binds the same way, one joined tail per input.
     _, sc = _stage("masks_merge")
     argv = S.build_argv(sc, {}, roots={"masks": "o"}, mask_root="ws")
-    assert argv == ["--output-dir", "o", "ws/masks_sam", "ws/masks_mit"]
+    assert argv == ["--output-dir", "o", "ws/masks_sam"]
 
 
 def test_a_shut_drawer_sends_none_of_its_knobs():
-    """Two detectors behind two checkboxes: a knob under a shut switch never
-    reaches the argv."""
-    _, sc = _stage("masks_mit")
-    roots, settings = {"dst": "d"}, {"checkpoint": "sam3.pt"}
-    bound = ["--image-dir", "d", "--mask-dir", "ws/masks_mit"]
+    """A knob under a shut switch never reaches the argv: Export's ``ocr_dir``
+    rides only when ``combine_ocr`` is on."""
+    _, sc = _stage("export")
+    roots = {"src": "s", "dst": "d", "masks": "m", "master": "mm", "out": "o"}
+    bound = S.build_argv(sc, {}, roots=roots)
+    assert "--ocr_dir" not in bound and "--combine_ocr" not in bound
 
-    # SAM3 is opt-in, so its prompt and its checkpoint stay off the argv...
-    argv = S.build_argv(
-        sc, {"sam_prompts": "text"}, roots=roots, settings=settings, mask_root="ws"
-    )
+    # Shut, the drawer's knob stays off the argv...
+    argv = S.build_argv(sc, {"ocr_dir": "elsewhere"}, roots=roots)
     assert argv == bound
-    # ...and both arrive the moment the drawer opens.
-    argv = S.build_argv(
-        sc,
-        {"use_sam": True, "sam_prompts": "text"},
-        roots=roots,
-        settings=settings,
-        mask_root="ws",
-    )
-    assert argv == [
-        *bound,
-        "--use-sam",
-        "--sam-prompts",
-        "text",
-        "--checkpoint",
-        "sam3.pt",
-    ]
-    # The other switch folds away the gate its own drawer holds.
-    argv = S.build_argv(
-        sc,
-        {"use_mit": False, "ctd_gate": False, "use_sam": True},
-        roots=roots,
-        mask_root="ws",
-    )
-    assert argv == [*bound, "--use-sam", "--no-use-mit"]
+    # ...and arrives the moment the drawer opens.
+    argv = S.build_argv(sc, {"combine_ocr": True, "ocr_dir": "elsewhere"}, roots=roots)
+    assert argv == [*bound, "--combine_ocr", "--ocr_dir", "elsewhere"]
 
 
 def test_export_destinations_are_bound_and_on_the_panel():
@@ -267,8 +248,8 @@ def test_advanced_folds_the_research_parameters_and_never_the_form_itself():
         f["advanced"] for f in sc["fields"] if f["setting"] or f["root"] or f["report"]
     )
 
-    # The two detector switches are gates: a folded gate is a drawer you cannot open.
-    _, sc = _stage("masks_mit")
+    # A switch is a gate: a folded gate is a drawer you cannot open.
+    _, sc = _stage("export")
     for f in sc["fields"]:
         if f["gate"] == f["dest"] or f["required"]:
             assert f["advanced"] is False, f["dest"]
@@ -682,11 +663,10 @@ def test_only_resized_tree_stages_get_the_preflight():
         "audit",
         "ocr",
         "masks_sam",
-        "masks_mit",
         "groups",
     }
     assert got["resize"] is None  # never its own preflight
-    # Unions two mask trees; never opens an image.
+    # Unions mask trees; never opens an image.
     assert got["masks_merge"] is None
 
 
@@ -917,15 +897,17 @@ def test_model_catalog_and_download_job(client, monkeypatch):
     # HF_HUB_OFFLINE keeps the test off the wire; it fails fast, which is enough
     # to see the child ran.
     monkeypatch.setenv("HF_HUB_OFFLINE", "1")
-    job = _await_job(c, c.post("/api/models/download", json={"ids": ["mit_text"]}))
-    assert job["argv"][1:] == ["-m", "anime_tools.downloads", "mit_text"]
+    job = _await_job(
+        c, c.post("/api/models/download", json={"ids": ["tagger_backbone"]})
+    )
+    assert job["argv"][1:] == ["-m", "anime_tools.downloads", "tagger_backbone"]
     assert job["state"] in ("done", "failed")
 
     # A pack id is expanded to its rows before the job is named, so the job
     # name and argv stay row-level.
-    job = _await_job(c, c.post("/api/models/download", json={"ids": ["text_mask"]}))
-    assert job["argv"][1:] == ["-m", "anime_tools.downloads", "mit_text", "ctd_onnx"]
-    assert job["stage"] == "download:mit_text,ctd_onnx"
+    job = _await_job(c, c.post("/api/models/download", json={"ids": ["masking"]}))
+    assert job["argv"][1:] == ["-m", "anime_tools.downloads", "sam3", "soft_prompt"]
+    assert job["stage"] == "download:sam3,soft_prompt"
 
 
 # -- startup: the schema build is off the critical path --------------------

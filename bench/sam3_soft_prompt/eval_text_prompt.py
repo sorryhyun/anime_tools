@@ -1,7 +1,8 @@
 """Score SAM3 prompts (text or learned) against MIT labels on the text holdout.
 
-Recall and FP/img are box-level (IoU ≥ 0.5 against the CTD-block targets from
-`build_text_targets.py`); the pixel view is reported alongside, since the real
+Recall and FP/img are box-level (IoU ≥ 0.5 against the CTD-block targets under
+`results/`, built once by the retired `build_text_targets.py` against the MIT
+text-mask stage, which left the package with it); the pixel view is reported alongside, since the real
 consumer is a training-ignore mask. Every prompt is scored at several floors,
 so the readout is a curve rather than one operating point. A spec ending in
 ``.safetensors`` is a soft prompt; anything else is text.
