@@ -878,11 +878,22 @@ class ExportRequest(DatasetRequest):
         False,
         gate="combine_ocr",
         group=OCR_DRAWER,
-        help="Attach each image's OCR'd lines to the caption it publishes, as a "
-        'trailing `Japanese text reads as "…", "…"` clause on the revised '
-        "caption and on every line of its .variants.txt. The workspace copies stay "
-        "as they are; an image with no {stem}.ocr.txt publishes unchanged. Off by "
-        "default: the trainer then encodes the caption as curated",
+        help="Attach each image's OCR'd lines to the caption it publishes, as "
+        "trailing clauses on the revised caption and on every line of its "
+        '.variants.txt: speech as `Japanese text reads as "…", "…"`, sound '
+        'effects (one per sound) as `Japanese SFX reads as "…"`. The workspace '
+        "copies stay as they are; an image with no {stem}.ocr.txt publishes "
+        "unchanged. Off by default: the trainer then encodes the caption as "
+        "curated",
+    )
+    ocr_min_det: float = arg(
+        0.5,
+        gate="combine_ocr",
+        group=OCR_DRAWER,
+        help="Attach only the lines whose detector box confidence (the sidecar's "
+        "det column) is at least this. The sidecar keeps every line for "
+        "inspection; below 0.5 a box is mostly a nested fragment of its "
+        "neighbour or a texture read as kana. 0 attaches everything",
     )
     ocr_dir: str = arg(
         WS.OCR,

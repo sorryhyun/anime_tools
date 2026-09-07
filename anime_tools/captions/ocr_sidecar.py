@@ -14,8 +14,14 @@ fields) still reads, with ``det`` as ``0.0``.
 
 The one place the record meets a caption is :func:`with_ocr_clause`, which
 Export's ``--combine_ocr`` uses to publish the caption with the lines attached
-as a text clause (``Japanese text reads as "…", "…"``): the workspace caption
-is never rewritten, so the combine is a property of the published tree.
+as text clauses — speech as ``Japanese text reads as "…", "…"`` and the sound
+effects, one per sound, as ``Japanese SFX reads as "…"``
+(:mod:`anime_tools.captions.ocr_sfx`). Only lines the detector was sure of
+take part (``det`` at or above :data:`DEFAULT_MIN_DET`; an unscored line —
+``det`` ``0.0``, a mask component or a pre-``det`` record — is not held to
+it): the sidecar keeps every line for a person to look at, the caption gets
+the ones worth training on. The workspace caption is never rewritten, so the
+combine is a property of the published tree.
 
 Torch-free, stdlib-only and import-light.
 """
@@ -31,6 +37,7 @@ from anime_tools.captions._sidecar import (
     sidecar_path,
     write_rows,
 )
+from anime_tools.captions.ocr_sfx import dedupe_sfx, split_lines
 from anime_tools.captions.position_clauses import (
     compose_caption,
     parse_caption,
@@ -40,6 +47,11 @@ from anime_tools.captions.position_clauses import (
 OCR_SIDECAR_SUFFIX = ".ocr.txt"
 OCR_FIELDS = 5
 """``seq ⇥ box ⇥ det ⇥ score ⇥ text`` — and the text may hold tabs, being last."""
+DEFAULT_MIN_DET = 0.5
+"""The detector confidence a line needs to reach a published caption
+(:func:`usable_lines`). Below it the AnimeText boxes are mostly a nested
+fragment of a neighbour or a texture the reader turned into kana (sincos,
+2026-09-07: 231 of the 752 two-glyph reads sat under it)."""
 LEGACY_OCR_FIELDS = 4
 """``seq ⇥ box ⇥ score ⇥ text``: the record before the detector's ``det`` column
 (2026-09-07). Read, never written."""
@@ -185,18 +197,39 @@ def write_ocr_for(ocr_dir: Path, rel: Path, lines: Iterable[OcrLine]) -> Path:
     return sidecar
 
 
-def with_ocr_clause(caption: str, lines: Sequence[OcrLine]) -> str:
-    """``caption`` with ``lines`` attached as its text clause, in reading order.
+def usable_lines(
+    lines: Iterable[OcrLine], *, min_det: float = DEFAULT_MIN_DET
+) -> list[OcrLine]:
+    """The lines a caption may carry: non-empty text, and a detector confidence
+    of at least ``min_det`` — unless the line was never scored (``det`` exactly
+    ``0.0``: a text-mask component, or a record from before the column
+    existed), which the floor cannot judge and lets through."""
+    return [ln for ln in lines if ln.text and (ln.det == 0.0 or ln.det >= min_det)]
 
-    Any text clause the caption already carries is replaced, so combining twice
-    says each line once, and combining with no lines *removes* the clause — a
-    re-run over re-cropped pixels that found no text takes the old claim back
-    with it. Position clauses and the flat bag are untouched. An empty caption
-    with lines becomes the clause alone.
+
+def with_ocr_clause(
+    caption: str, lines: Sequence[OcrLine], *, min_det: float = DEFAULT_MIN_DET
+) -> str:
+    """``caption`` with ``lines`` attached as its text clauses, in reading order.
+
+    The lines that pass :func:`usable_lines` are split into speech and sound
+    effects by :func:`~anime_tools.captions.ocr_sfx.split_lines`; speech
+    becomes ``Japanese text reads as "…", "…"`` and the SFX — deduplicated to
+    one per sound by :func:`~anime_tools.captions.ocr_sfx.dedupe_sfx`, since a
+    page of ``ぱん, ぱん, ぱんぱん`` is one sound, not three lines — become
+    ``Japanese SFX reads as "…"``. Any text clause the caption already carries
+    is replaced, so combining twice says each line once, and combining with no
+    usable lines *removes* the clauses — a re-run over re-cropped pixels that
+    found no text takes the old claim back with it. Position clauses and the
+    flat bag are untouched. An empty caption with lines becomes the clauses
+    alone.
     """
     parsed = parse_caption(caption)
     clauses = list(parsed.position_clauses)
-    texts = [line.text for line in lines if line.text]
-    if texts:
-        clauses.append(text_clause(texts))
+    texts = [ln.text for ln in usable_lines(lines, min_det=min_det)]
+    speech, sfx = split_lines(texts)
+    if speech:
+        clauses.append(text_clause(speech))
+    if sfx:
+        clauses.append(text_clause(dedupe_sfx(sfx), sfx=True))
     return compose_caption(parsed.flat_tags, clauses)

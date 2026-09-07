@@ -22,7 +22,15 @@ what the OCR stage runs:
 The boxes are never joined: the AnimeText detector answers a balloon as a block
 and its columns (nesting settled by :func:`~anime_tools.ocr.animetext.denest`),
 and joining those measured a loss (sincos, 2026-09-06: manga-ocr best-match
-0.844 → 0.803 over 95 joins — SFX beside a balloon gets pulled in).
+0.844 → 0.803 over 95 joins — SFX beside a balloon gets pulled in). What
+``denest`` leaves is the *single* nesting — the detector seeing ``ぱん♡`` whole
+and ``ぱん`` again inside it, or a balloon block with one of its lines — and
+that is settled here, after the reads: a line whose box sits inside another
+line's box (:data:`NESTED_CONTAINMENT`) is dropped, but only once the outer
+read survived the guard, so a runaway on the block never costs its line
+(:func:`drop_nested`; sincos 2026-09-07: 83 such pairs on 52 pages, the two
+reads a wash against the hand labels — 29 / 25 / 29 — and 5 pairs where only
+the inner read lived).
 
 Measured on the sincos shard (the trainer's ``project/cjk_aware_anima_dit``,
 2026-09-06): the masked-but-no-line floor 23 → 8 pages, manga-ocr best-match
@@ -55,6 +63,11 @@ ReadBoxes = Callable[[object, Sequence[Box]], list[Read]]
 NO_SCORE = 0.0
 """The ``score`` (or ``det``) of a line nothing stood behind — a read with no
 confidence, a box no detector scored — and ``0.000`` in the sidecar says so."""
+
+NESTED_CONTAINMENT = 0.85
+"""A kept line's box at least this far inside another kept line's box is the
+same text read twice (:func:`drop_nested`) — the detector's block-and-line
+doubling, :data:`~anime_tools.ocr.animetext.NEST_TH`."""
 
 CLOSE_FRAC = 0.025
 """Closing kernel as a fraction of the page width: merges the glyphs of one
@@ -114,6 +127,31 @@ def mask_components(
     return sorted(boxes, key=lambda b: (b[2] - b[0]) * (b[3] - b[1]), reverse=True)
 
 
+def drop_nested(lines: Sequence[OcrLine]) -> list[OcrLine]:
+    """``lines`` minus every one whose box sits at least
+    :data:`NESTED_CONTAINMENT` inside a *larger* line's box, order kept.
+
+    Both lines are reads that survived, so the outer one already says what
+    the inner one says (``ぱん♡`` over ``ぱん``, a balloon over one of its
+    lines); the inner is the detector doubling it. Equal boxes are left alone.
+    """
+
+    def area(b: Box) -> int:
+        return (b[2] - b[0]) * (b[3] - b[1])
+
+    out = []
+    for ln in lines:
+        inside = any(
+            o is not ln
+            and area(o.box) > area(ln.box)
+            and overlap(ln.box, o.box)[1] >= NESTED_CONTAINMENT
+            for o in lines
+        )
+        if not inside:
+            out.append(ln)
+    return out
+
+
 def has_script(text: str) -> bool:
     """Whether a read carries a letter at all — ``♡`` or ``…`` alone is a
     decoration the mask caught, not a line."""
@@ -128,7 +166,7 @@ def reread_lines(
     mask=None,
     comp_min_side: int = 32,
     comp_max: int = 16,
-    min_chars: int = 3,
+    min_chars: int = 2,
     skip_en: bool = True,
 ) -> list[OcrLine]:
     """One page through the VL reader: the detected boxes read, the uncovered
@@ -138,10 +176,12 @@ def reread_lines(
     the components), so the reader batches the page. A box lives or dies by its
     read: ``None`` (the guard rejected it) drops it, and a text must carry a
     letter (:func:`has_script`) and pass the line floors (``min_chars`` /
-    ``skip_en``) to become a line. The reader's confidence is the line's
-    ``score`` (:data:`NO_SCORE` for a bare-string read); the detector's ``det``
-    is kept on its line, and a component has none. Whatever text a line arrived
-    with is not consulted — the engine hands over none.
+    ``skip_en``) to become a line, and a line read inside another surviving
+    line is the same text twice and drops (:func:`drop_nested`). The reader's
+    confidence is the line's ``score`` (:data:`NO_SCORE` for a bare-string
+    read); the detector's ``det`` is kept on its line, and a component has
+    none. Whatever text a line arrived with is not consulted — the engine hands
+    over none.
     """
     boxes: list[Box] = [tuple(int(v) for v in ln.box) for ln in lines]
     dets: list[float] = [float(ln.det) for ln in lines]
@@ -163,11 +203,15 @@ def reread_lines(
             and keep_line(text, min_chars=min_chars, skip_en=skip_en)
         )
 
-    out: list[OcrLine] = [
-        OcrLine(seq=0, box=box, score=conf, text=text, det=det)
-        for box, det, (text, conf) in zip(boxes, dets, reads[: len(boxes)], strict=True)
-        if keeps(text)
-    ]
+    out: list[OcrLine] = drop_nested(
+        [
+            OcrLine(seq=0, box=box, score=conf, text=text, det=det)
+            for box, det, (text, conf) in zip(
+                boxes, dets, reads[: len(boxes)], strict=True
+            )
+            if keeps(text)
+        ]
+    )
     seen = list(boxes)
     for box, (text, conf) in zip(comps, reads[len(boxes) :], strict=True):
         if not keeps(text) or covered(box, seen):
@@ -280,10 +324,12 @@ class RereadEngine:
 
 
 __all__ = [
+    "NESTED_CONTAINMENT",
     "NO_SCORE",
     "Read",
     "RereadEngine",
     "covered",
+    "drop_nested",
     "has_script",
     "mask_components",
     "mask_for",

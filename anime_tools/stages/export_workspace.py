@@ -44,7 +44,12 @@ from pathlib import Path
 
 from anime_tools._walk import walk_images
 from anime_tools.captions._sidecar import render_rows, sidecar_header
-from anime_tools.captions.ocr_sidecar import ocr_sidecar_path, read_ocr, with_ocr_clause
+from anime_tools.captions.ocr_sidecar import (
+    DEFAULT_MIN_DET,
+    ocr_sidecar_path,
+    read_ocr,
+    with_ocr_clause,
+)
 from anime_tools.captions.variants import (
     read_variants_sidecar,
     variants_sidecar_path,
@@ -81,6 +86,9 @@ class ExportPaths:
     ocr: Path | None = None
     """The OCR tree to combine from, or ``None`` to publish captions as they
     are. Set by ``--combine_ocr``; mirrors ``resized``."""
+    ocr_min_det: float = DEFAULT_MIN_DET
+    """The detector confidence a sidecar line needs to reach the published
+    caption (``--ocr_min_det``); the sidecar itself keeps every line."""
 
 
 @dataclass
@@ -97,6 +105,9 @@ class ExportRow:
     Empty for a pixel kind, and for a destination that did not exist."""
     ocr: str = ""
     """The OCR sidecar a combined row read, or empty for a verbatim copy."""
+    ocr_min_det: float = DEFAULT_MIN_DET
+    """The floor the combine held the sidecar's lines to — on the row, so a
+    replay of the report publishes what the plan showed."""
     text: str = ""
     """What a combined row publishes — the source with the text clause attached.
     Empty for a verbatim copy, whose bytes are the source's."""
@@ -133,13 +144,13 @@ class ExportStats:
         }
 
 
-def _combine(kind: str, src: Path, lines) -> str:
+def _combine(kind: str, src: Path, lines, *, min_det: float) -> str:
     """The text a combined row publishes: the caption, or every variant line,
-    with the OCR clause attached."""
+    with the OCR clauses attached (the lines at or above ``min_det``)."""
     if kind == "caption":
-        return with_ocr_clause(src.read_text(encoding="utf-8"), lines)
+        return with_ocr_clause(src.read_text(encoding="utf-8"), lines, min_det=min_det)
     rows = [
-        (label, with_ocr_clause(text, lines))
+        (label, with_ocr_clause(text, lines, min_det=min_det))
         for label, text in read_variants_sidecar(src)
     ]
     return render_rows(sidecar_header("variants"), rows)
@@ -150,7 +161,9 @@ def _derive(row: ExportRow) -> None:
     are on disk now. A sidecar that has gone away publishes the caption with
     no text clause — the OCR pass deletes it when it finds nothing."""
     if row.combined:
-        row.text = _combine(row.kind, Path(row.src), read_ocr(Path(row.ocr)))
+        row.text = _combine(
+            row.kind, Path(row.src), read_ocr(Path(row.ocr)), min_det=row.ocr_min_det
+        )
 
 
 def _published(row: ExportRow) -> bytes:
@@ -198,7 +211,13 @@ def _decide(row: ExportRow) -> ExportRow:
 
 
 def _row(
-    rel: Path, kind: str, src: Path, dst: Path, *, ocr: Path | None = None
+    rel: Path,
+    kind: str,
+    src: Path,
+    dst: Path,
+    *,
+    ocr: Path | None = None,
+    min_det: float = DEFAULT_MIN_DET,
 ) -> ExportRow:
     """One row, decided. ``ocr`` (the image's sidecar, when combining) marks it
     combined only if the sidecar exists — an image with no text publishes its
@@ -211,6 +230,7 @@ def _row(
             src=str(src),
             dst=str(dst),
             ocr=str(ocr) if combined else "",
+            ocr_min_det=min_det,
         )
     )
 
@@ -243,7 +263,14 @@ def plan_export(
         caption = image.with_suffix(".txt")
         if caption.is_file():
             rows.append(
-                _row(rel, "caption", caption, out_image.with_suffix(".txt"), ocr=ocr)
+                _row(
+                    rel,
+                    "caption",
+                    caption,
+                    out_image.with_suffix(".txt"),
+                    ocr=ocr,
+                    min_det=paths.ocr_min_det,
+                )
             )
 
         variants = variants_sidecar_path(caption)
@@ -255,6 +282,7 @@ def plan_export(
                     variants,
                     variants_sidecar_path(out_image),
                     ocr=ocr,
+                    min_det=paths.ocr_min_det,
                 )
             )
 

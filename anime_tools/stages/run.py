@@ -709,6 +709,7 @@ def run_export(req: ExportRequest):
         src=resolve_path(req.src),
         out=resolve_path(req.out),
         ocr=resolve_path(req.ocr_dir) if req.combine_ocr else None,
+        ocr_min_det=req.ocr_min_det,
     )
     if not paths.resized.is_dir():
         raise FileNotFoundError(
@@ -727,6 +728,7 @@ def run_export(req: ExportRequest):
             "out": str(paths.out),
             "combine_ocr": req.combine_ocr,
             "ocr_dir": str(paths.ocr) if paths.ocr is not None else None,
+            "ocr_min_det": req.ocr_min_det,
             "stats": stats.to_dict(),
             "rows": [r.to_dict() for r in rows],
         },

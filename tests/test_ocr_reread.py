@@ -226,3 +226,26 @@ def test_the_request_round_trips_the_vl_flags():
     # There is one reader and one detector: neither is a flag any more.
     assert "--reader" not in argv and "--detector" not in argv
     assert not hasattr(OcrRequest(), "reader") and not hasattr(OcrRequest(), "detector")
+
+
+def test_a_line_read_inside_another_surviving_line_is_the_same_text_twice():
+    outer, inner = (1075, 267, 1207, 531), (1123, 285, 1196, 436)  # sincos/13799323
+    lines = [line("", outer, score=0.0), line("", inner, seq=2, score=0.0)]
+    out = reread.reread_lines(page(600, 1300), lines, lambda b, x: ["ぱん~", "ぱん"])
+    assert [(ln.box, ln.text) for ln in out] == [(outer, "ぱん~")]
+    # but only when the outer read lived: a runaway on the block keeps its line
+    out = reread.reread_lines(page(600, 1300), lines, lambda b, x: [None, "ぱん"])
+    assert [(ln.box, ln.text) for ln in out] == [(inner, "ぱん")]
+    # side-by-side columns (no containment) are untouched
+    cols = [
+        line("", (10, 10, 40, 120), score=0.0),
+        line("", (60, 10, 90, 120), seq=2, score=0.0),
+    ]
+    out = reread.reread_lines(page(), cols, lambda b, x: ["ぱんぱん", "どきどき"])
+    assert len(out) == 2
+
+
+def test_the_export_request_carries_the_det_floor():
+    from anime_tools.stages.requests import ExportRequest
+
+    assert ExportRequest().ocr_min_det == 0.5

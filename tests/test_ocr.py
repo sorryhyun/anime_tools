@@ -438,3 +438,49 @@ def test_the_attached_line_round_trips_through_the_parser():
     assert parsed.flat_tags == ("1girl", "solo")
     (text,) = parsed.text_clauses
     assert text.tags == ('"He said ”no”, really. On the left"',)
+
+
+def test_sfx_lines_get_their_own_clause_one_per_sound():
+    from anime_tools.captions.ocr_sidecar import with_ocr_clause
+
+    lines = [
+        line("いいわよモデルになってあげる", det=0.9),
+        line("パシャ", seq=2, det=0.9),
+        line("パシャ", seq=3, det=0.9),
+        line("ぱんぱん", seq=4, det=0.9),
+        line("ぴちょっ", seq=5, det=0.9),
+    ]
+    assert with_ocr_clause("1girl", lines) == (
+        '1girl. Japanese text reads as "いいわよモデルになってあげる". '
+        'Japanese SFX reads as "パシャ", "ぱんぱん", "ぴちょっ".'
+    )
+    # a page of nothing but one sound is one SFX clause and no text clause
+    assert with_ocr_clause(
+        "1girl", [line("ガク", det=0.9), line("ガク", seq=2, det=0.9)]
+    ) == ('1girl. Japanese SFX reads as "ガク".')
+
+
+def test_the_det_floor_keeps_low_boxes_out_of_the_caption_but_not_unscored_lines():
+    from anime_tools.captions.ocr_sidecar import (
+        DEFAULT_MIN_DET,
+        usable_lines,
+        with_ocr_clause,
+    )
+
+    assert DEFAULT_MIN_DET == 0.5
+    sure = line("大丈夫", det=0.91)
+    shaky = line("シャ", seq=2, det=0.38)  # the nested fragment the detector doubled
+    unscored = line("本当に", seq=3, det=0.0)  # a mask component, or a pre-det record
+    assert usable_lines([sure, shaky, unscored]) == [sure, unscored]
+    assert with_ocr_clause("1girl", [sure, shaky, unscored]) == (
+        '1girl. Japanese text reads as "大丈夫", "本当に".'
+    )
+    # the floor is a parameter: 0 attaches everything, 0.95 attaches only the unscored
+    assert with_ocr_clause("1girl", [sure, shaky], min_det=0) == (
+        '1girl. Japanese text reads as "大丈夫". Japanese SFX reads as "シャ".'
+    )
+    assert with_ocr_clause("1girl", [sure, shaky, unscored], min_det=0.95) == (
+        '1girl. Japanese text reads as "本当に".'
+    )
+    # every usable line gone → the clause goes too
+    assert with_ocr_clause('1girl. Japanese text reads as "旧".', [shaky]) == "1girl"
