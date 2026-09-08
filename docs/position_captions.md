@@ -354,6 +354,44 @@ Two read-only review tools sheet the same pass (see the code map):
 `ab_position_captions.py` proposes each image **twice** off one detect+tag pass;
 `review_position_captions.py` sheets an already-applied run against disk.
 
+### `--multiview_audit` — the audit phase that runs first
+
+`single-subject` is this stage's largest skip reason by far, and some unknown
+fraction of it is mis-tagged: a sheet that *is* several views of one character
+but was never tagged `multiple views` claims `1girl`, so it is rejected here and
+never looked at. The [multiview audit](multiview_audit.md) is exactly that
+complement, and `--multiview_audit` runs it as **phase 1 of this stage**:
+
+```bash
+make caption-position ARGS="--multiview_audit report"           # audit, tag nothing
+make caption-position ARGS="--multiview_audit apply --apply"    # audit, tag, then sweep
+```
+
+| mode | phase 1 | phase 2 |
+|---|---|---|
+| `off` (default) | nothing | its own population only |
+| `report` | findings + contact sheets, tags nothing | its own population only |
+| `apply` | also promotes every finding the gate admits | its population **plus** the promoted images |
+
+**Before, not after.** `is_candidate` gates on the tag, so writing `multiple
+views` is what moves an image out of `single-subject` — and the same tag is what
+`is_repeated_subject_layout` reads, arming the `view_invariant` gate that keeps
+the writer from binding one girl's name per view. An audit run afterwards would
+need a second position pass to collect either effect.
+
+The phase reuses the already-resident SAM3 + tagger and detects under this
+stage's own detector with `min_instances` pinned to 2; its report and sheets land
+under `<report_dir>/audit/`. Findings reach phase 2 **in memory**, so the tag
+lands in the revised caption together with the clauses — the standalone audit
+stage writes the master instead, which revised-first reads right past. The
+promotion map is built whether or not `--apply` was passed, so the dry-run report
+is the plan an apply would carry out. `summary.multiview_audit` records the
+phase; `promoted` is what it handed over and `promoted_written` the tail phase 2
+could not turn into clauses and wrote for the tag alone.
+
+`--multiview_audit` needs the model pass: it is refused with `--flatten` and
+`--from_report`, both of which are text-only.
+
 ### `--from_report` — apply a dry run without re-running the models
 
 `images[].caption_path` is the destination and `images[].proposed` is the exact
@@ -414,7 +452,7 @@ that mirror even with correction and variants off.
 
 | Reason | What it means |
 |---|---|
-| `single-subject` | Not a candidate: one subject, no layout tag |
+| `single-subject` | Not a candidate: one subject, no layout tag — the population `--multiview_audit` sweeps |
 | `already-has-clauses` | Hand-written clauses — left alone |
 | `too-few-instances` | Detection undershot even after the retry (and the part fallback, if enabled) |
 | `count-mismatch` | Detection disagrees with the girls…girls+boys range, or busts the koma ceiling |

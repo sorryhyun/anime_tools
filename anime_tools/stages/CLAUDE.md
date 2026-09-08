@@ -25,10 +25,12 @@ choices=…)`, the class docstring is the `--help` description, and every flag w
 takes the other spelling as an alias (`--path_pattern` / `--path-pattern`). The CLIs in `cli/` are
 one-line shells (`build_parser()` = `Request.parser()`, `main()` = `run_<stage>(from_argv())`).
 
-The SAM3 detection flags are one nested `DetectionRequest` (`GROUP = "detection"`) shared by
+The SAM3 detection flags are one nested `DetectionRequest` (`GROUP = "detection"`) and the audit's
+verdict gate one nested `MultiviewRequest` (`GROUP = "multiview audit"`), both shared by
 `PositionRequest` and `AuditRequest`; `.options()` on either builds the `PositionCaptionOptions`
 field by field, so an option field with no request field is an error, not a silent default. The
-audit pins `min_instances=2` there rather than exposing it. Validation lives in `__post_init__`
+audit pins `min_instances=2` (`MultiviewRequest.MIN_INSTANCES`, applied by the shared
+`requests.audit_options`) rather than exposing it. Validation lives in `__post_init__`
 (autotag mode, `--flatten` vs `--from_report`, the randomize tokenizers, resize tiers); a missing
 input tree is a `FileNotFoundError` the shell turns into `SystemExit`. `__init__.py` exposes all
 fifteen names lazily; `tests/test_registry_requests.py` round-trips every registered stage's
@@ -47,6 +49,25 @@ followed by position in one process loads it once, and `release_models()` (expor
 the GPU to another process (the trainer's daemon job does, before its VAE/TE children);
 `detector.py::build_detect_fn` builds the SAM3 detector from a `DetectionRequest` (the A/B,
 review and probe CLIs share it).
+
+## The audit phase
+
+`PositionRequest.multiview_audit` (`off` / `report` / `apply`) runs the multiview audit as the
+position stage's **first** phase, over the complement population — `is_audit_target` is defined as
+exactly what `is_candidate` rejects as `single-subject`. `run.py::_run_audit_phase` reuses the
+already-resident SAM3 + tagger, detects under `req.audit_options()`, and in `apply` mode hands
+`multiview_audit.promotions()` to `run_position_captions(promoted=…)`, which substitutes the
+promoted caption **before** `is_candidate` sees it.
+
+**Order is load-bearing, not a preference.** `multiple views` is what moves an image out of the
+`single-subject` rejection AND what `is_repeated_subject_layout` reads to arm the `view_invariant`
+gate; audit after the sweep and both arrive too late. `admitted()` is the one verdict/confidence
+gate the write path and the promotion path share.
+
+**The two write different trees on purpose.** `apply_findings` (the standalone stage) writes the
+caption master; the phase writes the revised tree through `run_position_captions`. Revised-first
+(`_walk_captions.resolve_caption`) means a master write reaches nothing downstream once a revised
+caption exists — see the gotcha in `docs/multiview_audit.md`.
 
 ## Export
 
@@ -89,5 +110,6 @@ Every `--apply` that touches captions must be followed by the trainer's TE re-en
 
 `test_registry_requests` and `test_stage_requests` (the surface), `test_stage_replay`,
 `test_resize_images` (bucket numbers and the `anima_resize_*` PNG keys), `test_autotag_captions`,
-`test_position_captions`, `test_correct_captions`, `test_multiview_apply`, `test_ocr`,
+`test_position_captions` (the promotion path included), `test_correct_captions`,
+`test_multiview_apply` (the gate and `_run_audit_phase`), `test_ocr`,
 `test_export`.

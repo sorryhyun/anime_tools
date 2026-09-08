@@ -30,6 +30,7 @@ from anime_tools.stages.requests import (
     CorrectRequest,
     DetectionRequest,
     ExportRequest,
+    MultiviewRequest,
     OcrRequest,
     PositionRequest,
     ResizeRequest,
@@ -52,6 +53,15 @@ DETECTION = DetectionRequest(
     pad=0.1,
     row_tol=0.3,
     max_instances=4,
+)
+
+MULTIVIEW = MultiviewRequest(
+    multiview_threshold=0.4,
+    identity_confidence=0.8,
+    suggest_counts=True,
+    apply_verdicts=("multiple views", "extra-character"),
+    apply_confidence=("strong", "weak"),
+    sheets=False,
 )
 
 CASES: dict[str, Request] = {
@@ -130,15 +140,10 @@ CASES: dict[str, Request] = {
     "audit": AuditRequest(
         dst="d",
         apply=True,
-        apply_verdicts=("multiple views", "extra-character"),
-        apply_confidence=("strong", "weak"),
         crops=True,
-        sheets=False,
         detection=DETECTION,
+        multiview=MULTIVIEW,
         name_confidence=0.6,
-        multiview_threshold=0.4,
-        identity_confidence=0.8,
-        suggest_counts=True,
     ),
     "ocr": OcrRequest(
         dst="d",

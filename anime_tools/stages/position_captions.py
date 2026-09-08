@@ -153,6 +153,10 @@ class PositionCaptionStats:
     novel_tags: int = 0
     pinned_tags: dict[str, int] = field(default_factory=dict)
     skipped: dict[str, int] = field(default_factory=dict)
+    # Captions the multiview audit phase handed over, and how many of those the
+    # sweep could not turn into clauses and wrote for the tag alone.
+    promoted: int = 0
+    promoted_written: int = 0
 
     def skip(self, reason: str) -> None:
         self.skipped[reason] = self.skipped.get(reason, 0) + 1
@@ -530,26 +534,53 @@ def run_position_captions(
     token_count_fn: Callable[[str], int] | None = None,
     progress: Callable[[int, int, str], None] | None = None,
     part_detect_fn: Callable[[Image.Image, str, float], list[Detection]] | None = None,
+    promoted: Mapping[str, str] | None = None,
 ) -> tuple[list[ImageProposal], PositionCaptionStats]:
     """Walk the resized tree, propose clauses, and (with ``apply``) write them.
 
+    ``promoted`` is the multiview audit phase's verdict, ``{caption_path:
+    caption}`` (:func:`~anime_tools.stages.multiview_audit.promotions`): the
+    caption it names REPLACES the walked one before
+    :func:`~anime_tools.captions.caption_layout.is_candidate` sees it, so an
+    image the audit just tagged ``multiple views`` is swept here instead of
+    being rejected as ``single-subject`` — and ``is_repeated_subject_layout``
+    reads the same tag, arming the view-invariant gate. The promoted text is
+    what a clause proposal composes from, so under ``apply`` the tag persists
+    with the clauses; a promoted image whose proposal fails is written with the
+    tag alone rather than losing it.
+
     GOTCHA: the caption master (``source_dir``) is NEVER written — the rewrite
     lands at ``resized_dir/<rel>``, what the TE step encodes, and the master is
-    only the read fallback. The stale ``{stem}.variants.txt`` sidecar, which
-    wins over ``{stem}.txt`` at encode time, is dropped alongside the write.
-    The write replaces rather than appends, so ``apply`` defaults off.
+    only the read fallback. That holds for a promoted caption too: the audit's
+    tag lands in the revised tree, the one every later stage actually reads.
+    The stale ``{stem}.variants.txt`` sidecar, which wins over ``{stem}.txt`` at
+    encode time, is dropped alongside the write. The write replaces rather than
+    appends, so ``apply`` defaults off.
     """
     options = options or PositionCaptionOptions()
     stats = PositionCaptionStats()
     rows: list[ImageProposal] = []
+    promoted = promoted or {}
 
     walked = list(iter_captions(resized_dir, source_dir, path_pattern, stats))
     for index, (image_path, rel, dst_caption, caption) in enumerate(walked, 1):
         if progress is not None:
             progress(index, len(walked), str(rel))
+        promotion = promoted.get(str(rel))
+        if promotion is not None and promotion != caption:
+            caption = promotion
+            stats.promoted += 1
         ok, reason = is_candidate(caption)
         if not ok:
             stats.skip(reason)
+            # A promotion the sweep still cannot use (the gate admitted it, but
+            # the tag did not make it a candidate) is written on its own so the
+            # audit's verdict is not silently dropped.
+            if promotion is not None and apply:
+                write_caption(
+                    dst_caption, caption, drop_variants=True, history_by="audit"
+                )
+                stats.promoted_written += 1
             continue
         stats.candidates += 1
 
@@ -574,6 +605,13 @@ def run_position_captions(
             stats.skip(proposal.status.removeprefix("skip:"))
             if crops_dir is not None:
                 _save_skip_overlay(crops_dir, rel, image, proposal)
+            # No clauses to write, but the audit's tag is a fact about the
+            # picture and outlives a failed proposal.
+            if promotion is not None and apply:
+                write_caption(
+                    dst_caption, caption, drop_variants=True, history_by="audit"
+                )
+                stats.promoted_written += 1
             continue
         stats.proposed += 1
         stats.clause_tags += sum(len(i.tags) for i in proposal.instances)

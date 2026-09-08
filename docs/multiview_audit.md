@@ -34,12 +34,53 @@ close-up left, seated full body right), captioned `1girl`, no layout tag.
 
 ## 3. Running it
 
+Two ways in. As the position stage's **first phase** — the normal one, because the
+tag it writes is what lets the clause writer see the image at all:
+
+```bash
+python -m anime_tools.stages.cli.position_captions --multiview_audit report        # audit, tag nothing
+python -m anime_tools.stages.cli.position_captions --multiview_audit apply --apply # audit, tag, then sweep
+```
+
+Or as its own stage, when the audit is what you came for:
+
 ```bash
 python -m anime_tools.stages.cli.audit_multiview              # dry run + sheets
 python -m anime_tools.stages.cli.audit_multiview --apply      # write the master
 ```
 
-Dry-run by default; the report lands in `workspace/captions/multiview_audit/`.
+Dry-run by default; the report lands in `workspace/captions/multiview_audit/`
+(or `<position report_dir>/audit/audit_report.json` for the phase).
+
+### Why the audit runs BEFORE the sweep, never after
+
+`is_candidate` gates on the tag. Writing `multiple views` moves the image from
+its `single-subject` rejection to `multiple-views` **accepted**, and the same tag
+is what `is_repeated_subject_layout` reads, arming the `view_invariant` gate. Run
+the audit after the sweep and both effects arrive too late — the image was
+already skipped, and you need a second position pass to collect them. That
+ordering is the whole reason the audit is a phase of `caption-position` rather
+than a stage beside it.
+
+`--multiview_audit`:
+
+| mode | what phase 1 does | what phase 2 sees |
+|---|---|---|
+| `off` (default) | nothing | its own population only |
+| `report` | findings + contact sheets, tags nothing | its own population only |
+| `apply` | also promotes every finding the verdict/confidence gate admits | its population **plus** the promoted images |
+
+The phase detects under this stage's own detector with `min_instances` pinned to
+2 (`requests.audit_options`), reuses the already-resident SAM3 + tagger, and puts
+its report and sheets under `<report_dir>/audit/` so neither phase can read the
+other's back on a replay. The promotion map is built whether or not `--apply` was
+passed, so a dry run's report is the plan an apply would carry out.
+
+**The phase writes the revised tree, not the master** — the opposite of the
+standalone stage below, and deliberately: promoted text is handed to the sweep in
+memory, so the tag lands with the clauses in `resized/<rel>.txt`, which is what
+the TE step encodes. A promoted image whose proposal fails is written with the
+tag alone rather than losing it (`stats.promoted_written`).
 
 **Population** — exactly the complement of the clause pipeline: every caption
 `is_candidate` rejects with reason `single-subject`. Tied to that function's own
@@ -83,6 +124,15 @@ signals then argue about what it means, and `--apply` requires two to agree:
 clause rewrite which only touches the revised caption — a missing `multiple views`
 is a fact about the picture that every later stage should read down from. Append
 at the end of the flat bag, via `compose_caption` so trailing clauses survive.
+
+> **GOTCHA — revised-first outranks the master.** `_walk_captions.resolve_caption`
+> reads the revised caption and falls back to the master only when there is none,
+> so once preprocessing has written `resized/<rel>.txt` a master write reaches
+> **nothing downstream**: the drift guard skips any image whose revised text has
+> since diverged, and for the rest the tag sits in a file no later stage reads.
+> On a corpus where every image already has a revised caption this stage's
+> `--apply` is effectively inert. The `--multiview_audit` phase above is the path
+> that does not have this problem — it writes where the sweep reads.
 Default `--apply_verdicts` is `multiple views` only, `--apply_confidence` is
 `strong` only. **`image_dataset/` is gitignored** — `report.json` holds the
 verbatim before-text and is the only undo. Follow any apply with the trainer's

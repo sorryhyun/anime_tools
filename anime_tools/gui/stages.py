@@ -166,6 +166,7 @@ BASIC_FIELDS: dict[str, frozenset[str]] = {
         {
             "crops",
             "flatten",
+            "multiview_audit",
             "prompt",
             "score_threshold",
             "min_instances",

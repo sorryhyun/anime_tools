@@ -171,6 +171,85 @@ def _run_flatten(req: PositionRequest, src: Path, dst: Path, report_dir: Path):
     return rows, stats
 
 
+def _run_audit_phase(
+    req: PositionRequest,
+    *,
+    src: Path,
+    dst: Path,
+    report_dir: Path,
+    detect_fn,
+    part_detect_fn,
+    tagger,
+    vocabulary,
+):
+    """The multiview audit run as the position stage's first phase.
+
+    Reuses the caller's already-resident SAM3 + tagger and detects under
+    ``req.audit_options()`` — this stage's detector with ``min_instances``
+    pinned to 2, which is the one thing the audit does differently on purpose.
+    Its report and sheets land under ``<report_dir>/audit/`` so neither phase
+    can read the other's back on a replay.
+
+    Returns ``(rows, stats, promoted)``. ``promoted`` is empty unless the mode
+    is ``apply``; it is built whether or not ``--apply`` was passed, so a dry
+    run's report is the plan an apply would carry out.
+    """
+    if not req.audits:
+        return [], None, {}
+
+    from anime_tools.stages.multiview_audit import promotions, run_multiview_audit
+
+    audit_dir = report_dir / "audit"
+    print(
+        f"multiview audit ({req.multiview_audit}): sweeping the single-subject captions"
+    )
+    rows, stats = run_multiview_audit(
+        resized_dir=dst,
+        source_dir=src,
+        detect_fn=detect_fn,
+        tag_fn=tagger.predict,
+        vocabulary=vocabulary,
+        options=req.audit_options(),
+        path_pattern=req.path_pattern,
+        crops_dir=(audit_dir / "crops") if req.crops else None,
+        sheets_dir=(audit_dir / "sheets") if req.multiview.sheets else None,
+        progress=make_progress(200),
+        part_detect_fn=part_detect_fn,
+        multiview_threshold=req.multiview.multiview_threshold,
+        identity_confidence=req.multiview.identity_confidence,
+        suggest_counts=req.multiview.suggest_counts,
+    )
+    promoted = (
+        promotions(
+            rows,
+            verdicts=req.multiview.apply_verdicts,
+            confidences=req.multiview.apply_confidence,
+        )
+        if req.promotes
+        else {}
+    )
+    write_json(
+        audit_dir / "audit_report.json",
+        {
+            "summary": {
+                "mode": req.multiview_audit,
+                "seen": stats.seen,
+                "audited": stats.audited,
+                "findings": stats.findings,
+                "verdicts": dict(sorted(stats.verdicts.items(), key=lambda kv: -kv[1])),
+                "promoted": len(promoted),
+                "skipped": dict(sorted(stats.skipped.items(), key=lambda kv: -kv[1])),
+            },
+            "images": [asdict(r) for r in rows],
+        },
+    )
+    print(
+        f"  audited {stats.audited}, {stats.findings} finding(s), "
+        f"{len(promoted)} promoted into the sweep"
+    )
+    return rows, stats, promoted
+
+
 def run_position(req: PositionRequest):
     """Detect → order → crop → tag → compose over the resized tree, or the
     ``flatten`` / ``from_report`` text-only passes. Returns ``(rows, stats)``."""
@@ -219,6 +298,21 @@ def run_position(req: PositionRequest):
         def token_count_fn(text: str) -> int:
             return len(tokenizer(text, add_special_tokens=True)["input_ids"])
 
+    # Phase 1: the audit, over the captions phase 2 rejects as single-subject.
+    # BEFORE the sweep, not after: `multiple views` is what promotes an image out
+    # of that rejection and what arms the view-invariant gate, so a tag written
+    # afterwards would need a second position run to do any work.
+    _audit_rows, audit_stats, promoted = _run_audit_phase(
+        req,
+        src=src,
+        dst=dst,
+        report_dir=report_dir,
+        detect_fn=detect_fn,
+        part_detect_fn=part_detect_fn,
+        tagger=tagger,
+        vocabulary=vocabulary,
+    )
+
     options = req.options()
     rows, stats = run_position_captions(
         resized_dir=dst,
@@ -233,6 +327,7 @@ def run_position(req: PositionRequest):
         crops_dir=(report_dir / "crops") if req.crops else None,
         token_count_fn=token_count_fn,
         progress=make_progress(200),
+        promoted=promoted,
     )
     del sam_processor, sam_model
 
@@ -267,6 +362,24 @@ def run_position(req: PositionRequest):
         ),
         "pinned_tags": dict(sorted(stats.pinned_tags.items(), key=lambda kv: -kv[1])),
         "skipped": dict(sorted(stats.skipped.items(), key=lambda kv: -kv[1])),
+        # The audit phase, when it ran. ``promoted`` is what phase 1 handed to
+        # phase 2; ``promoted_written`` is the tail phase 2 could not turn into
+        # clauses and wrote for the tag alone.
+        "multiview_audit": (
+            {
+                "mode": req.multiview_audit,
+                "audited": audit_stats.audited,
+                "findings": audit_stats.findings,
+                "verdicts": dict(
+                    sorted(audit_stats.verdicts.items(), key=lambda kv: -kv[1])
+                ),
+                "promoted": stats.promoted,
+                "promoted_written": stats.promoted_written,
+                "report": str(report_dir / "audit" / "audit_report.json"),
+            }
+            if audit_stats is not None
+            else None
+        ),
         "part_prompts": list(options.part_prompts),
         # Images with at least one bound instance from a part prompt.
         "part_recovered": sum(
@@ -288,6 +401,18 @@ def run_position(req: PositionRequest):
             f"WARNING: {len(over_budget)} caption(s) exceed {req.max_tokens} tokens — "
             "the tail truncates silently at TE-cache time."
         )
+    if audit_stats is not None:
+        print(
+            f"multiview audit: {audit_stats.findings} finding(s) over "
+            f"{audit_stats.audited} single-subject caption(s); "
+            f"{stats.promoted} promoted into this run's sweep. "
+            f"sheets: {report_dir / 'audit' / 'sheets'}"
+        )
+        if req.audits and not req.promotes and audit_stats.findings:
+            print(
+                "  --multiview_audit=report tags nothing. Re-run with "
+                "`--multiview_audit apply` to feed the findings into the sweep."
+            )
     print_dry_run_footer(req.apply, POSITION_TE_NOTE)
     if req.apply and req.rewrite and stats.moved_tags:
         print(
@@ -318,7 +443,7 @@ def run_audit(req: AuditRequest):
     src = resolve_path(req.src)
     dst = resolve_path(req.dst)
     report_dir = resolve_path(req.report_dir)
-    verdicts, confidences = req.apply_verdicts, req.apply_confidence
+    verdicts, confidences = req.multiview.apply_verdicts, req.multiview.apply_confidence
 
     if req.from_report:
         # The writable set is the verdict/confidence gate, not a row ``status``,
@@ -361,12 +486,12 @@ def run_audit(req: AuditRequest):
         options=options,
         path_pattern=req.path_pattern,
         crops_dir=(report_dir / "crops") if req.crops else None,
-        sheets_dir=(report_dir / "sheets") if req.sheets else None,
+        sheets_dir=(report_dir / "sheets") if req.multiview.sheets else None,
         progress=make_progress(200),
         part_detect_fn=part_detect_fn,
-        multiview_threshold=req.multiview_threshold,
-        identity_confidence=req.identity_confidence,
-        suggest_counts=req.suggest_counts,
+        multiview_threshold=req.multiview.multiview_threshold,
+        identity_confidence=req.multiview.identity_confidence,
+        suggest_counts=req.multiview.suggest_counts,
     )
     del sam_processor, sam_model
 
@@ -418,7 +543,7 @@ def run_audit(req: AuditRequest):
 
     print(json.dumps(summary, indent=2, ensure_ascii=False))
     print(f"\nreport: {report_path}")
-    if req.sheets:
+    if req.multiview.sheets:
         print(f"sheets: {report_dir / 'sheets'} (one PNG per finding, verdict-first)")
     print_dry_run_footer(
         req.apply, _audit_written_note(src, len(written), "report.json")

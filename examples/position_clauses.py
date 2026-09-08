@@ -23,7 +23,12 @@ import json
 from dataclasses import replace
 from pathlib import Path
 
-from anime_tools.stages import AuditRequest, DetectionRequest, PositionRequest
+from anime_tools.stages import (
+    AuditRequest,
+    DetectionRequest,
+    MultiviewRequest,
+    PositionRequest,
+)
 
 
 def main() -> None:
@@ -75,7 +80,10 @@ def main() -> None:
     audit = AuditRequest(
         path_pattern=args.path_pattern,
         detection=detection,
-        apply_confidence=("strong",),  # a weak finding has only geometry behind it
+        # A weak finding has only geometry behind it. The same block rides on
+        # PositionRequest, where --multiview_audit runs this audit as that
+        # stage's first phase instead of as a separate run.
+        multiview=MultiviewRequest(apply_confidence=("strong",)),
         apply=args.apply,
     )
     print("$ python -m anime_tools.stages.cli.audit_multiview", *audit.to_argv())

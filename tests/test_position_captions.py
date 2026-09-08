@@ -2567,3 +2567,181 @@ def test_bag_relax_blocks_a_move_the_strict_sets_grant(pipeline_bits):
     assert "maid" in parsed.flat_tags
     assert not any("maid" in c.tags for c in parsed.clauses)
     assert "maid" not in {m["tag"] for m in relaxed.moved}
+
+
+# ----- the multiview audit phase's promotions ------------------------------
+#
+# `--multiview_audit apply` runs the audit first and hands its verdict here as
+# `promoted`, so a caption the audit just tagged is swept in the SAME run
+# instead of needing a second one. See docs/multiview_audit.md.
+
+_ONE_GIRL_CAPTION = (
+    "safe, 1girl, akita neru, @channel, blonde hair, full body, close-up, "
+    "simple background"
+)
+_PROMOTED_CAPTION = f"{_ONE_GIRL_CAPTION}, multiple views"
+
+
+def _run_promoted(pipeline_bits, src, dst, **kwargs):
+    """``_run_io`` with a tagger that separates the two views by FRAMING.
+
+    The identity tags `_run_io` leans on are exactly what the view-invariant
+    gate suppresses once `multiple views` is in the caption — which is the
+    point of the promotion — so a sheet needs a tag that is genuinely per-view
+    before any clause survives.
+    """
+    from anime_tools.stages.position_captions import run_position_captions
+
+    _, vocabulary, _, Options = pipeline_bits
+    return run_position_captions(
+        resized_dir=dst,
+        source_dir=src,
+        detect_fn=_detector(
+            {0.5: [((0, 0, 400, 500), 0.9), ((600, 0, 1000, 500), 0.9)]}
+        ),
+        tag_fn=_tagger(
+            [
+                {
+                    "kept": {"akita neru": 0.9, "blonde hair": 0.8, "full body": 0.9},
+                    "groups": {"hair_color": "blonde hair", "framing": "full body"},
+                },
+                {
+                    "kept": {"akita neru": 0.9, "blonde hair": 0.8, "close-up": 0.9},
+                    "groups": {"hair_color": "blonde hair", "framing": "close-up"},
+                },
+            ]
+        ),
+        vocabulary=vocabulary,
+        options=Options(),
+        **kwargs,
+    )
+
+
+def test_without_a_promotion_a_single_subject_caption_is_never_swept(
+    pipeline_bits, tmp_path
+):
+    """The blind spot the audit exists for: `1girl` with no layout tag."""
+    src, dst = _corpus(tmp_path, _ONE_GIRL_CAPTION)
+
+    _rows, stats = _run_io(pipeline_bits, src, dst, apply=True)
+
+    assert stats.candidates == 0 and stats.written == 0
+    assert stats.skipped == {"single-subject": 1}
+    assert stats.promoted == 0
+
+
+def test_a_promotion_makes_it_a_candidate_and_carries_the_tag_through(
+    pipeline_bits, tmp_path
+):
+    """`multiple views` is what `is_candidate` gates on, so the promoted text —
+    not the walked one — is what the sweep reads and what the clauses compose
+    from."""
+    src, dst = _corpus(tmp_path, _ONE_GIRL_CAPTION)
+
+    _rows, stats = _run_promoted(
+        pipeline_bits,
+        src,
+        dst,
+        apply=True,
+        promoted={"artistA/a.txt": _PROMOTED_CAPTION},
+    )
+
+    assert stats.promoted == 1 and stats.candidates == 1 and stats.written == 1
+    written = (dst / "artistA" / "a.txt").read_text(encoding="utf-8")
+    assert "multiple views" in written
+    assert has_clauses(written)
+
+
+def test_a_promotion_arms_the_view_invariant_gate(pipeline_bits, tmp_path):
+    """The second-order damage the missing tag causes: without it the writer
+    would bind the character's name per view, asserting one girl as two. The
+    same tag that promotes the image is the one `is_repeated_subject_layout`
+    reads, so the gate fires in the same pass."""
+    from anime_tools.captions.caption_layout import is_repeated_subject_layout
+    from anime_tools.captions.position_clauses import parse_caption
+
+    assert not is_repeated_subject_layout(_ONE_GIRL_CAPTION)
+    assert is_repeated_subject_layout(_PROMOTED_CAPTION)
+
+    src, dst = _corpus(tmp_path, _ONE_GIRL_CAPTION)
+    _rows, _stats = _run_promoted(
+        pipeline_bits,
+        src,
+        dst,
+        apply=True,
+        promoted={"artistA/a.txt": _PROMOTED_CAPTION},
+    )
+
+    clauses = parse_caption(
+        (dst / "artistA" / "a.txt").read_text(encoding="utf-8")
+    ).clauses
+    bound = {tag for clause in clauses for tag in clause.tags}
+    # View-invariant: she is the same girl in both views, so her name and hair
+    # belong to the flat bag, not to a view.
+    assert not bound & {"akita neru", "blonde hair"}
+
+
+def test_a_promotion_the_sweep_cannot_use_is_still_written(pipeline_bits, tmp_path):
+    """A verdict the gate admitted outlives a caption the sweep still rejects —
+    the tag is a fact about the picture, not a by-product of the clauses."""
+    src, dst = _corpus(tmp_path, _ONE_GIRL_CAPTION)
+    # Already-clauses: promoted, but `is_candidate` rejects it all the same.
+    promotion = f"{_ONE_GIRL_CAPTION}, multiple views. On the left, akita neru."
+
+    _rows, stats = _run_io(
+        pipeline_bits, src, dst, apply=True, promoted={"artistA/a.txt": promotion}
+    )
+
+    assert stats.promoted == 1 and stats.candidates == 0
+    assert stats.promoted_written == 1
+    # This stage's newline convention, not the audit stage's (_caption_io.py):
+    # the phase writes through write_caption like every other position write.
+    assert (dst / "artistA" / "a.txt").read_text(encoding="utf-8") == promotion
+
+
+def test_a_promotion_writes_the_revised_tree_and_never_the_master(
+    pipeline_bits, tmp_path
+):
+    """Unlike the audit STAGE, which writes the master, the phase writes where
+    every later stage actually reads: revised-first means a master edit would
+    not reach the TE step at all once a revised caption exists."""
+    src, dst = _corpus(tmp_path, _ONE_GIRL_CAPTION)
+
+    _run_io(
+        pipeline_bits,
+        src,
+        dst,
+        apply=True,
+        promoted={"artistA/a.txt": _PROMOTED_CAPTION},
+    )
+
+    assert (src / "artistA" / "a.txt").read_text(encoding="utf-8") == _ONE_GIRL_CAPTION
+
+
+def test_a_dry_run_counts_the_promotion_and_writes_nothing(pipeline_bits, tmp_path):
+    """`promoted` is built whether or not --apply was passed, so the dry run's
+    report is the plan an apply would carry out."""
+    src, dst = _corpus(tmp_path, _ONE_GIRL_CAPTION)
+
+    _rows, stats = _run_promoted(
+        pipeline_bits, src, dst, promoted={"artistA/a.txt": _PROMOTED_CAPTION}
+    )
+
+    assert stats.promoted == 1 and stats.candidates == 1 and stats.proposed == 1
+    assert stats.written == 0 and stats.promoted_written == 0
+    assert not (dst / "artistA" / "a.txt").exists()
+
+
+def test_a_promotion_that_changes_nothing_is_not_counted(pipeline_bits, tmp_path):
+    """A finding whose proposal equals the caption is a no-op, not a promotion."""
+    src, dst = _corpus(tmp_path, _TWO_GIRLS_CAPTION)
+
+    _rows, stats = _run_io(
+        pipeline_bits,
+        src,
+        dst,
+        apply=True,
+        promoted={"artistA/a.txt": _TWO_GIRLS_CAPTION},
+    )
+
+    assert stats.promoted == 0 and stats.candidates == 1

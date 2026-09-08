@@ -9,8 +9,9 @@ default and the argument group are written here, once. Flags are spelled with
 underscores (``--path_pattern``), the caption stages' canonical form, and take
 the hyphenated spelling as an alias.
 
-The SAM3 detection flags are one nested :class:`DetectionRequest`, so the
-position stage and the multiview audit cannot declare the same detector twice.
+The SAM3 detection flags are one nested :class:`DetectionRequest`, and the
+audit's verdict gate one nested :class:`MultiviewRequest`, so the position stage
+and the multiview audit cannot declare either twice.
 """
 
 from __future__ import annotations
@@ -46,12 +47,14 @@ from anime_tools.stages.resize import (
 from anime_tools.tagger.dbv4_meta import DEFAULT_TAGGER_DIR
 
 __all__ = [
+    "MULTIVIEW_MODES",
     "POSITION_ONLY_FLAGS",
     "AuditRequest",
     "AutotagRequest",
     "CorrectRequest",
     "DetectionRequest",
     "ExportRequest",
+    "MultiviewRequest",
     "OcrRequest",
     "PositionRequest",
     "ResizeRequest",
@@ -71,6 +74,13 @@ two."""
 
 DETECTION = "detection"
 """The argument group both SAM3 stages run their detector under."""
+
+MULTIVIEW = "multiview audit"
+"""The argument group the audit's verdict gate sits in — declared once in
+:class:`MultiviewRequest` and embedded by both SAM3 stages."""
+
+MULTIVIEW_MODES = ("off", "report", "apply")
+"""``PositionRequest.multiview_audit``: what the audit phase is allowed to do."""
 
 OCR_DRAWER = "Combine OCR"
 """Export's drawer: the text-clause combine and the tree it reads."""
@@ -238,6 +248,67 @@ class DetectionRequest(StageRequest):
         )
 
 
+VERDICT = "verdict"
+
+
+@dataclass(frozen=True, kw_only=True)
+class MultiviewRequest(StageRequest):
+    """The multiview audit's verdict gate: what counts as a witness, what the
+    review surface is, and which findings a write is allowed to touch.
+
+    Nested rather than declared per stage, because the audit runs from two
+    places — its own stage, and the position stage's ``--multiview_audit``
+    phase — and a drifting threshold between the two would make the same
+    corpus give two answers.
+    """
+
+    GROUP: ClassVar[str] = MULTIVIEW
+
+    MIN_INSTANCES: ClassVar[int] = 2
+    """Pinned rather than exposed: two subjects is what the audit is for."""
+
+    multiview_threshold: float = arg(
+        DEFAULT_MULTIVIEW_PROB,
+        help="Whole-image P(multiple views) at which the tagger counts as a witness "
+        "— and, on its own, raises an image detection saw as one box",
+        group=VERDICT,
+    )
+    identity_confidence: float = arg(
+        DEFAULT_IDENTITY_CONFIDENCE,
+        help="Probability an identity-group winner needs before the verdict "
+        "believes it. The group heads are softmax argmaxes, so they name a hair "
+        "colour for a headless crop too — lowering this lets those back in",
+        group=VERDICT,
+    )
+    suggest_counts: bool = arg(
+        False,
+        help=f"Also propose an 'Ngirls' fix for a '{EXTRA_CHARACTER}' verdict. Off "
+        "because the 'girl' prompt does not exclude males — check the people-count "
+        "head in the report before trusting any of these",
+        group=VERDICT,
+    )
+    apply_verdicts: tuple[str, ...] = _csv(
+        (MULTIPLE_VIEWS,),
+        help=f"Comma-separated verdicts a write may touch ('{MULTIPLE_VIEWS}', "
+        f"'{EXTRA_CHARACTER}')",
+        group=VERDICT,
+    )
+    apply_confidence: tuple[str, ...] = _csv(
+        ("strong",),
+        help="Comma-separated confidence tiers a write may touch (strong, weak). A "
+        "weak finding has only the geometry behind it — review the crops first",
+        group=VERDICT,
+    )
+    sheets: bool = _off(
+        True,
+        "--no_sheets",
+        help="Skip the per-finding contact sheets. They are the review surface — "
+        "boxed original + the crops the tagger saw + the proposed edit, one PNG per "
+        "finding under <report_dir>/sheets/, named verdict-first",
+        group=MULTIVIEW,
+    )
+
+
 def _options(*sources) -> PositionCaptionOptions:
     """A :class:`PositionCaptionOptions` whose every field is read off the first
     of ``sources`` that has it. A field none has is a missing flag."""
@@ -250,6 +321,28 @@ def _options(*sources) -> PositionCaptionOptions:
         else:
             raise AttributeError(f"no request field for option {f.name!r}")
     return PositionCaptionOptions(**kw)
+
+
+def audit_options(
+    detection: DetectionRequest, name_confidence: float
+) -> PositionCaptionOptions:
+    """The options the multiview audit phase detects under, wherever it runs from.
+
+    The caller's detector verbatim, ``min_instances`` pinned to
+    :data:`MultiviewRequest.MIN_INSTANCES`, every other knob at its default.
+    Two subjects rather than the caption's count is deliberate: passing
+    ``expected=1`` would satisfy the target on the first box and suppress both
+    the low-threshold retry and the body-part fallback, on the exact population
+    the audit exists to search (``docs/multiview_audit.md``).
+    """
+    return _options(
+        detection,
+        _Pinned(
+            min_instances=MultiviewRequest.MIN_INSTANCES,
+            name_confidence=name_confidence,
+        ),
+        PositionCaptionOptions(),
+    )
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -315,6 +408,22 @@ class PositionRequest(TaggerRequest, ReplayRequest):
         "A/B is built. Flattens hand-written clauses too.",
     )
     detection: DetectionRequest = field(default_factory=DetectionRequest)
+    multiview: MultiviewRequest = field(default_factory=MultiviewRequest)
+    multiview_audit: str = arg(
+        "off",
+        choices=MULTIVIEW_MODES,
+        help="Run the multiview audit as this stage's FIRST phase, over the "
+        "captions this one skips as 'single-subject'. off: never (default). "
+        "report: audit, write findings + contact sheets, tag nothing — this "
+        "stage then sweeps only its own population. apply: also promote every "
+        "finding the --apply_verdicts/--apply_confidence gate admits, so a "
+        "newly-tagged sheet falls into THIS run's sweep. The order is the whole "
+        "point: 'multiple views' is what moves an image from is_candidate's "
+        "'single-subject' rejection to 'multiple-views', and what arms the "
+        "view-invariant gate — audit after the sweep and the tag arrives too "
+        "late to do either. See docs/multiview_audit.md.",
+        group=MULTIVIEW,
+    )
     blank_crops: bool = _off(
         True,
         "--no_blank_crops",
@@ -470,14 +579,38 @@ class PositionRequest(TaggerRequest, ReplayRequest):
                 "--flatten and --from_report are mutually exclusive: the flatten "
                 "pass is already text-only, so there is no model pass to skip."
             )
+        if self.multiview_audit not in MULTIVIEW_MODES:
+            raise ValueError(
+                f"--multiview_audit must be one of {list(MULTIVIEW_MODES)}"
+            )
+        # Both text-only passes load no model, and the audit phase is a SAM3 +
+        # tagger sweep — silently skipping it would be the worse failure.
+        if self.audits and (self.flatten or self.from_report):
+            raise ValueError(
+                "--multiview_audit needs the model pass: --flatten and "
+                "--from_report are text-only. Run the audit in its own stage "
+                "(`python -m anime_tools.stages.cli.audit_multiview`) instead."
+            )
+
+    @property
+    def audits(self) -> bool:
+        """Whether the audit phase runs at all."""
+        return self.multiview_audit != "off"
+
+    @property
+    def promotes(self) -> bool:
+        """Whether a finding the gate admits is fed to the clause sweep."""
+        return self.multiview_audit == "apply"
 
     def options(self) -> PositionCaptionOptions:
         """The options one pass runs under: the detection block plus the
         clause-composition knobs."""
         return _options(self, self.detection)
 
-
-VERDICT = "verdict"
+    def audit_options(self) -> PositionCaptionOptions:
+        """The options the audit PHASE detects under — this stage's detector with
+        ``min_instances`` pinned, exactly what the audit stage would use."""
+        return audit_options(self.detection, self.name_confidence)
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -494,66 +627,21 @@ class AuditRequest(TaggerRequest, ReplayRequest):
     """
 
     report_dir: str = _report_dir(f"{WS.REPORTS}/multiview_audit")
-    apply_verdicts: tuple[str, ...] = _csv(
-        (MULTIPLE_VIEWS,),
-        help=f"Comma-separated verdicts --apply may write ('{MULTIPLE_VIEWS}', "
-        f"'{EXTRA_CHARACTER}')",
-    )
-    apply_confidence: tuple[str, ...] = _csv(
-        ("strong",),
-        help="Comma-separated confidence tiers --apply may write (strong, weak). A "
-        "weak finding has only the geometry behind it — review the crops first",
-    )
     crops: bool = arg(
         False, help="Export the per-instance crops next to the report (review aid)"
     )
-    sheets: bool = _off(
-        True,
-        "--no_sheets",
-        help="Skip the per-finding contact sheets. They are the review surface — "
-        "boxed original + the crops the tagger saw + the proposed edit, one PNG per "
-        "finding under <report_dir>/sheets/, named verdict-first",
-    )
     detection: DetectionRequest = field(default_factory=DetectionRequest)
+    multiview: MultiviewRequest = field(default_factory=MultiviewRequest)
     name_confidence: float = arg(
         0.5,
         help="Confidence floor for naming the character in a finding",
         group=DETECTION,
     )
-    multiview_threshold: float = arg(
-        DEFAULT_MULTIVIEW_PROB,
-        help="Whole-image P(multiple views) at which the tagger counts as a witness "
-        "— and, on its own, raises an image detection saw as one box",
-        group=VERDICT,
-    )
-    identity_confidence: float = arg(
-        DEFAULT_IDENTITY_CONFIDENCE,
-        help="Probability an identity-group winner needs before the verdict "
-        "believes it. The group heads are softmax argmaxes, so they name a hair "
-        "colour for a headless crop too — lowering this lets those back in",
-        group=VERDICT,
-    )
-    suggest_counts: bool = arg(
-        False,
-        help=f"Also propose an 'Ngirls' fix for a '{EXTRA_CHARACTER}' verdict. Off "
-        "because the 'girl' prompt does not exclude males — check the people-count "
-        "head in the report before trusting any of these",
-        group=VERDICT,
-    )
-
-    MIN_INSTANCES: ClassVar[int] = 2
-    """Pinned rather than exposed: two subjects is what the audit is for."""
 
     def options(self) -> PositionCaptionOptions:
         """The position stage's detector verbatim, with ``min_instances`` pinned
         and every other non-detection knob at its default."""
-        return _options(
-            self.detection,
-            _Pinned(
-                min_instances=self.MIN_INSTANCES, name_confidence=self.name_confidence
-            ),
-            PositionCaptionOptions(),
-        )
+        return audit_options(self.detection, self.name_confidence)
 
 
 @dataclass(frozen=True)

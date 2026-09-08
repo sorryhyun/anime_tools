@@ -26,6 +26,7 @@ from anime_tools.stages.requests import (
     CorrectRequest,
     DetectionRequest,
     ExportRequest,
+    MultiviewRequest,
     OcrRequest,
     PositionRequest,
     ResizeRequest,
@@ -58,10 +59,9 @@ def test_a_default_argv_names_only_what_changed():
         "1024",
         "--no-recursive",
     ]
-    assert AuditRequest(apply_confidence=("strong", "weak")).to_argv() == [
-        "--apply_confidence",
-        "strong,weak",
-    ]
+    assert AuditRequest(
+        multiview=MultiviewRequest(apply_confidence=("strong", "weak"))
+    ).to_argv() == ["--apply_confidence", "strong,weak"]
     assert GroupRequest(min_size=1).to_argv() == ["--min-size", "1"]
 
 
@@ -146,7 +146,7 @@ def test_the_audit_pins_two_subjects_and_takes_the_rest_from_its_detector():
     detection = DetectionRequest(part_prompts=("hips", "thighs"), score_threshold=0.6)
     req = AuditRequest(detection=detection, name_confidence=0.6)
     options = req.options()
-    assert options.min_instances == AuditRequest.MIN_INSTANCES == 2
+    assert options.min_instances == MultiviewRequest.MIN_INSTANCES == 2
     assert options.mask_containment_threshold == 0.8
     assert options.name_confidence == 0.6
     assert options.part_prompts == ("hips", "thighs")
@@ -154,6 +154,27 @@ def test_the_audit_pins_two_subjects_and_takes_the_rest_from_its_detector():
     assert options.blank_crops is PositionCaptionOptions().blank_crops
     assert options.strict_count is PositionCaptionOptions().strict_count
     assert AuditRequest().detection == PositionRequest().detection
+    # The position stage's audit PHASE detects under the same options the audit
+    # stage would, so one corpus cannot give two answers.
+    assert (
+        PositionRequest(detection=detection, name_confidence=0.6).audit_options()
+        == options
+    )
+    assert AuditRequest().multiview == PositionRequest().multiview
+
+
+def test_the_audit_phase_mode_says_what_the_position_stage_may_do():
+    """``off`` is the default; only ``apply`` feeds a finding into the sweep."""
+    base = PositionRequest()
+    assert base.multiview_audit == "off"
+    assert not base.audits and not base.promotes
+    report = PositionRequest(multiview_audit="report")
+    assert report.audits and not report.promotes
+    apply_ = PositionRequest(multiview_audit="apply")
+    assert apply_.audits and apply_.promotes
+    # A default request names nothing; the mode is one flag on the argv.
+    assert base.to_argv() == []
+    assert apply_.to_argv() == ["--multiview_audit", "apply"]
 
 
 def test_the_processor_floor_is_the_lowest_threshold_any_pass_asks_for():
@@ -183,6 +204,14 @@ def test_a_request_refuses_what_its_cli_refused():
         ResizeRequest(resize_crop_anchor="corner")
     with pytest.raises(ValueError, match="module:callable"):
         GroupRequest(embedder="just_a_module")
+    with pytest.raises(ValueError, match="--multiview_audit must be one of"):
+        PositionRequest(multiview_audit="yes")
+    # The audit phase is a SAM3 + tagger sweep; both text-only passes load no
+    # model, and silently skipping it would be the worse failure.
+    with pytest.raises(ValueError, match="needs the model pass"):
+        PositionRequest(multiview_audit="apply", flatten=True)
+    with pytest.raises(ValueError, match="needs the model pass"):
+        PositionRequest(multiview_audit="report", from_report="r.json")
 
 
 def test_the_cli_reports_a_bad_request_the_way_argparse_does(capsys):

@@ -529,6 +529,51 @@ def run_multiview_audit(
     return rows, stats
 
 
+def admitted(
+    findings: Iterable[MultiviewFinding],
+    *,
+    verdicts: Sequence[str] = (MULTIPLE_VIEWS,),
+    confidences: Sequence[str] = ("strong",),
+) -> list[MultiviewFinding]:
+    """The findings a write — or a promotion — is allowed to act on.
+
+    One predicate for both callers: :func:`apply_findings`, which writes them to
+    disk, and :func:`promotions`, which hands them to the clause sweep in
+    memory, so the two cannot disagree about what is actionable. An empty
+    ``proposed`` still passes here — :func:`~anime_tools.stages.replay.apply_one`
+    reports that as ``no-proposal``, which the report counts.
+    """
+    return [
+        f for f in findings if f.verdict in verdicts and f.confidence in confidences
+    ]
+
+
+def promotions(
+    findings: Iterable[MultiviewFinding],
+    *,
+    verdicts: Sequence[str] = (MULTIPLE_VIEWS,),
+    confidences: Sequence[str] = ("strong",),
+) -> dict[str, str]:
+    """``{caption_path: proposed}`` for every admitted finding — the audit's
+    verdict as the clause sweep reads it, with no file in between.
+
+    This is what makes audit-then-position one run rather than two: the sweep
+    consults this map before :func:`~anime_tools.captions.caption_layout.is_candidate`,
+    so an image the audit just called ``multiple views`` is promoted out of the
+    ``single-subject`` rejection and arms the view-invariant gate in the same
+    pass. Nothing here touches disk, so a dry run reports exactly the plan an
+    ``--apply`` would carry out.
+    """
+    return {
+        f.caption_path: f.proposed
+        for f in admitted(findings, verdicts=verdicts, confidences=confidences)
+        # An empty proposal would promote the image to an empty caption; the
+        # write path lets it through only because apply_one names it and counts
+        # it, and there is nothing here to count it into.
+        if f.proposed
+    }
+
+
 def apply_findings(
     findings: Iterable[MultiviewFinding],
     *,
@@ -551,9 +596,7 @@ def apply_findings(
     """
     written: list[tuple[str, str, str]] = []
     skipped: Counter = Counter()
-    for finding in findings:
-        if finding.verdict not in verdicts or finding.confidence not in confidences:
-            continue
+    for finding in admitted(findings, verdicts=verdicts, confidences=confidences):
         status = apply_one(
             source_dir / finding.caption_path,
             finding.caption,

@@ -15,6 +15,7 @@ __all__ = [
     "CorrectRequest",
     "DetectionRequest",
     "ExportRequest",
+    "MultiviewRequest",
     "OcrRequest",
     "PositionRequest",
     "ResizeRequest",
