@@ -200,24 +200,17 @@ stays asserted flat and the freed slot refills from the ranked tail.
 
 3. The identity gate — the flat bag outranks the crop tagger. For a group in
 `ClauseVocabulary.gated_groups()` a clause may carry a value the caption named,
-or nothing. Emitting the crop's winner unconditionally is a noise amplifier:
-gate 1 suppresses whatever every crop agrees on, so a wrong outlier is exactly
-what survives — on a back view the eyes are not visible, the tagger guesses, and
-the guess is promoted because it disagrees with the front view. With the gate,
-invented identity values and contradictory hair/eye colors across views of one
-girl go to zero while total clause tags rise, the blocked slot refilling from the
-tail. The gated set is derived, not hand-picked: `_BAG_GATED_GROUPS`
+or nothing. Without it gate 1 amplifies noise: it suppresses whatever every crop
+agrees on, so the guess a back view makes about invisible eyes is exactly what
+survives. The gated set is derived rather than hand-picked — `_BAG_GATED_GROUPS`
 (`hair_color`, `eye_color`, `hair_length`) plus every exclusive subject group the
-checkpoint declares — an exclusive (softmax) group holds one value by
-construction, so a crop naming a second is a contradiction, and deriving it from
-`groups.yaml` keeps the gate from drifting from the tagger. `hair_length` is the
-one non-exclusive member, hence the surviving hand list; `hairstyle` is
-deliberately not gated, since a crop legitimately reveals a `hair bun` the
-booru caption never tagged. An exclusive slot also prefers a kept tag the
-caption already named over the crop's softmax winner, which otherwise let the
-gate reject the winner and emit nothing. The gate is load-bearing for the
-rewrite: it keeps a hallucinated hair color from replacing the real one in the
-bag. `--ungated_identity` reverts it.
+checkpoint declares, since an exclusive (softmax) group holds one value by
+construction. `hair_length` is the one non-exclusive member, hence the surviving
+hand list; `hairstyle` is deliberately not gated, since a crop legitimately
+reveals a `hair bun` the booru caption never tagged. An exclusive slot prefers a
+kept tag the caption already named over the crop's softmax winner, which
+otherwise let the gate reject the winner and emit nothing.
+`--ungated_identity` reverts it.
 
 4. Framing — which view a clause is describing. `framing` is in
 `SUBJECT_GROUPS`, so a clause can read `On the left, ass focus, denim,
@@ -285,12 +278,9 @@ matched by name. Rule 3 is evidence-based rather than count-based because most
 proposals carry no girls-count tag at all, so a `detected == characters` gate
 would pin nearly the whole corpus.
 
-Why the margin is relative. Rules 4–5 replaced a single absolute gap test
-(`winner - runner_up ≥ 0.35`), which asked a question the numbers cannot answer:
-the tagger's boundaries are per-tag F1 thresholds spanning a wide range, so a
-fixed gap is a different — and mostly impossible — test for every tag. The split
-takes the categorical half from the tagger itself (rule 4, no tuning) and keeps
-a graded guard (rule 5) scored as `1 - runner_up/winner`, which is scale-free.
+The margin is relative (`1 - runner_up/winner`) because the tagger's per-tag F1
+thresholds span a wide range, so the absolute gap test rules 4–5 replaced
+(`winner - runner_up ≥ 0.35`) was a different test for every tag.
 `--attribution_margin 0.0` reduces to rule 4 alone; the absolute behaviour is not
 recoverable by a flag. The report records `moved[{tag, position, margin}]` and
 `pinned{tag: rule}` per image, and `summary.pinned_tags` aggregates the rules.
@@ -322,12 +312,10 @@ GUI dock runs. It is a GPU job (SAM3 + tagger held resident for the whole sweep)
 so under the trainer it is daemon-routed — `--queue` detaches, `--inline`
 bypasses.
 
-Applying without a review step rewrites the revised captions in place —
-nothing of yours is at risk, since the master is untouched and the text it
-replaced is kept as a `revised@N` version beside it (the GUI shows those as
-badges and has an Undo), but the rewritten text is what trains until you look at
-it. The pass is idempotent and reversible (`--flatten --apply`), yet a dry run
-with `--crops` is still the way to eyeball proposals first.
+Applying without a review step is safe — the master is untouched, the replaced
+text is kept as a `revised@N` version (a badge with an Undo in the GUI), and
+`--flatten --apply` reverses the pass — but the rewritten text is what trains
+until you look at it, so eyeball a dry run with `--crops` first.
 
 Dry run is the default and writes nothing. It emits
 `workspace/captions/position/report.json`:
@@ -358,11 +346,11 @@ Two read-only review tools sheet the same pass (see the code map):
 
 ### `--multiview_audit` — the audit phase that runs first
 
-`single-subject` is this stage's largest skip reason by far, and some unknown
-fraction of it is mis-tagged: a sheet that is several views of one character
-but was never tagged `multiple views` claims `1girl`, so it is rejected here and
-never looked at. The [multiview audit](multiview_audit.md) is exactly that
-complement, and `--multiview_audit` runs it as phase 1 of this stage:
+`single-subject` is this stage's largest skip reason, and some of it is
+mis-tagged: a sheet that is several views of one character but was never tagged
+`multiple views` claims `1girl` and is rejected here. The
+[multiview audit](multiview_audit.md) sweeps exactly that complement, and
+`--multiview_audit` runs it as phase 1 of this stage:
 
 ```bash
 make caption-position ARGS="--multiview_audit report"           # audit, tag nothing
@@ -375,11 +363,8 @@ make caption-position ARGS="--multiview_audit apply --apply"    # audit, tag, th
 | `report` | findings + contact sheets, tags nothing | its own population only |
 | `apply` | also promotes every finding the gate admits | its population plus the promoted images |
 
-Before, not after. `is_candidate` gates on the tag, so writing `multiple
-views` is what moves an image out of `single-subject` — and the same tag is what
-`is_repeated_subject_layout` reads, arming the `view_invariant` gate that keeps
-the writer from binding one girl's name per view. An audit run afterwards would
-need a second position pass to collect either effect.
+The audit runs before the sweep: the tag it writes is what makes the image a
+candidate, and what arms the `view_invariant` gate.
 
 The phase reuses the already-resident SAM3 + tagger and detects under this
 stage's own detector with `min_instances` pinned to 2; its report and sheets land
@@ -432,23 +417,19 @@ carries `applied: true`, so feeding it back in is refused above; `--flatten
 
 The clauses go to the revised caption beside the resized image
 (`workspace/resized/<rel>.txt`) — the file the caption mirror writes and the TE
-step encodes. The master under `image_dataset/` is never written; it is only
-the read fallback for an image the caption step has not mirrored yet. Three
-things make that safe. The mirror reads the revised caption first:
-`write_corrected_preprocess_captions` corrects the revised caption in place
-(`correct_caption` reorders the flat bag around its clauses) and reads the
-master only for an image that has no revised caption yet, so the next mirror
-cannot write the clause-free master over the rewrite. The write
-invalidates the TE cache, since `_cache_is_current` compares the cache mtime
-against the caption and its sidecar. And the stale variant sidecar is
-dropped, because `{stem}.variants.txt` is the encode source of truth when
-present (the apply pass unlinks it; the caption step redraws it next run).
+step encodes. The master under `image_dataset/` is never written; it is only the
+read fallback for an image the caption step has not mirrored yet. Three things
+make that safe: the mirror is revised-first
+(`write_corrected_preprocess_captions` corrects the revised caption in place and
+falls back to the master only when there is none), the write invalidates the TE
+cache (`_cache_is_current` compares mtimes against the caption and its sidecar),
+and the stale `{stem}.variants.txt` — the encode source of truth when present —
+is unlinked and redrawn next run.
 
 The trap that remains: nothing re-encodes on its own. After a standalone
 `--apply` the caches are correctly stale but training keeps using them until an
-explicit `make preprocess-te`, which chains the caption mirror so the sidecars
-are regenerated first — and, because the clauses live in the resized tree, forces
-that mirror even with correction and variants off.
+explicit `make preprocess-te`, which chains the caption mirror — forced even with
+correction and variants off, since the clauses live in the resized tree.
 
 ### Reading the skip reasons
 
@@ -464,30 +445,26 @@ that mirror even with correction and variants off.
 A mismatch is a skip, not a wrong write, which is the safe direction; lowering
 the detection floor trades `too-few-instances` for `count-mismatch`.
 
-Two settled negatives — don't re-propose without new evidence. Box
-containment suppression ships off (`--containment_threshold 1.01`): it was
-measured to break far more proposing rows than it recovers, because a real second
-subject — one girl in front of another, an embrace — is exactly as nested as a
-group box. Only the inset half is handled automatically, by `--min_area_frac`.
-And there is no automatic gate on fragmentary masks: mask fill, row/column
-gap and `main_frac` were all measured and none separates a broken mask from a
-visually clean crop, so use the per-detection `score` in the report to pick what
-to eyeball.
+Two settled negatives — don't re-propose without new evidence. Box containment
+suppression ships off (`--containment_threshold 1.01`): it broke more proposing
+rows than it recovered, since a real second subject is as nested as a group box.
+Only the inset half is handled automatically, by `--min_area_frac`. And there is
+no automatic gate on fragmentary masks: mask fill, row/column gap and `main_frac`
+were all measured and none separates a broken mask from a visually clean crop, so
+use the per-detection `score` in the report to pick what to eyeball.
 
 ### Mask containment
 
 `--mask_containment_threshold 0.8` suppresses a detection whose mask is that
-nested inside a kept detection's mask. It is on by default for the reason the
-box rule is off: two boxes nest identically whether the inner detection is a
-fragment of the outer figure or a second girl in front of her, but their masks do
-not — a fragment's is a subset, an occluding subject's is disjoint, because SAM3
-segments the two separately. Measured nested pairs land near 1.0 (one object) or
-near 0.0 (two subjects), so 0.8 is not a tuned edge; `>1.0` disables. Known
-failure mode: when SAM3 emits one mask spanning both girls the individual's
-is a subset of it and gets suppressed — both observed regressions are that shape
-(2 → 1 → `too-few-instances`), unmitigated because any guard would be tuned on
-n=2, and both are skips rather than wrong writes. A pair with no usable mask
-falls back to the box rules, so `merge_part_detections` is unaffected.
+nested inside a kept detection's mask. It is on where the box rule is off because
+masks separate the two cases boxes cannot: a fragment's mask is a subset of the
+figure's, an occluding second girl's is disjoint. Measured nested pairs land near
+1.0 (one object) or near 0.0 (two subjects), so 0.8 is not a tuned edge; `>1.0`
+disables. Known failure mode: when SAM3 emits one mask spanning both girls the
+individual's is a subset of it and gets suppressed (2 → 1 →
+`too-few-instances`) — a skip rather than a wrong write, unmitigated because any
+guard would be tuned on the n=2 observed cases. A pair with no usable mask falls
+back to the box rules, so `merge_part_detections` is unaffected.
 
 ## Knobs
 

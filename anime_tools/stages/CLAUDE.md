@@ -59,10 +59,9 @@ already-resident SAM3 + tagger, detects under `req.audit_options()`, and in `app
 `multiview_audit.promotions()` to `run_position_captions(promoted=…)`, which substitutes the
 promoted caption before `is_candidate` sees it.
 
-Order is load-bearing, not a preference. `multiple views` is what moves an image out of the
-`single-subject` rejection AND what `is_repeated_subject_layout` reads to arm the `view_invariant`
-gate; audit after the sweep and both arrive too late. `admitted()` is the one verdict/confidence
-gate the write path and the promotion path share.
+The audit runs before the sweep: `multiple views` is what moves an image out of the
+`single-subject` rejection and what `is_repeated_subject_layout` reads to arm the `view_invariant`
+gate. `admitted()` is the one verdict/confidence gate the write path and the promotion path share.
 
 Both write the revised tree, like every other caption stage — the phase through
 `run_position_captions`, the standalone stage through `apply_findings`. No stage writes the

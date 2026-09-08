@@ -298,25 +298,22 @@ Measured on caformer_b36 at 384px, batch 1, one Apple CPU — end to end through
 | torch, float32 (the default on CPU now) | 1.80 | — |
 | onnxruntime | 0.49 | 7.6e-06 |
 
-Two things that table settles. The export is numerically a no-op (7.6e-06 is
-float32 rounding; the same 13 tags were emitted, same rating, same people count),
-and bfloat16 on a CPU was the larger error of the two as well as the slower
-path — torch emulates it there — which is why `default_dtype` now picks per
-device instead of always asking for bf16.
+The export is numerically a no-op (7.6e-06 is float32 rounding; same 13 tags,
+same rating, same people count). Torch emulates bfloat16 on a CPU, so it was both
+the larger error and the slower path — hence `default_dtype` picking per device.
 
 The graph is never shipped: the dbv4 weights are gated and GPL-3.0, so every user
-exports their own — which is why the download is a build row and why
-`dbv4.onnx` is absent from every file set in `contract.py`. Its presence is the whole selection
-rule (`backend="auto"`);
+exports their own, and `dbv4.onnx` is absent from every file set in
+`contract.py`. Its presence is the whole selection rule (`backend="auto"`);
 `ANIMA_TAGGER_BACKEND=torch` opts back out without deleting a 539 MB file, and
 `backend="onnx"` fails loudly rather than falling back, for a bench run that means
 to measure the graph.
 
-What onnxruntime does not buy is a torch-free tagger — SAM3 and PE-Spatial
-keep torch a plain dependency, and `Dbv4Output`, the sidecar head and the whole
-post-processing tail are still torch. It buys the forward pass, and it drops timm
-from the tagging path, which is what lets the ComfyUI node tag without building a
-second timm model inside ComfyUI's own torch.
+onnxruntime does not buy a torch-free tagger — SAM3 and PE-Spatial keep torch a
+plain dependency, and `Dbv4Output`, the sidecar head and the post-processing tail
+are still torch. It buys the forward pass, and drops timm from the tagging path,
+so the ComfyUI node tags without building a second timm model inside ComfyUI's own
+torch.
 
 Only the CPU and CUDA execution providers are ever asked for. CoreML is available
 on macOS and is not used: it took 165 partitions out of a 1208-node graph, ran at

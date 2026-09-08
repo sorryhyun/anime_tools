@@ -14,11 +14,9 @@ is several views of one character but was never tagged `multiple views` claims
 caption master that is 2551 of 3007 captions; some unknown fraction of them
 are mis-tagged.
 
-The second-order damage matters more than the missing tag. If such an image did
-reach the clause writer, `is_repeated_subject_layout` would return `False` (no
-layout tag), so the `view_invariant` gate would not fire and the writer would bind
-the character's name and her view-invariant traits per view — asserting one
-girl as two. The missing tag is what keeps that gate from working.
+The tag also arms the `view_invariant` gate: without it
+`is_repeated_subject_layout` returns `False` and the writer binds the character's
+name and her view-invariant traits per view, asserting one girl as two.
 
 Founding example: `ama_mitsuki/5847168` — one office lady drawn twice (bent-over
 close-up left, seated full body right), captioned `1girl`, no layout tag.
@@ -35,8 +33,7 @@ close-up left, seated full body right), captioned `1girl`, no layout tag.
 
 ## 3. Running it
 
-Two ways in. As the position stage's first phase — the normal one, because the
-tag it writes is what lets the clause writer see the image at all:
+Two ways in. As the position stage's first phase, which is the normal one:
 
 ```bash
 python -m anime_tools.stages.cli.position_captions --multiview_audit report        # audit, tag nothing
@@ -53,17 +50,10 @@ python -m anime_tools.stages.cli.audit_multiview --apply      # write the captio
 Dry-run by default; the report lands in `workspace/captions/multiview_audit/`
 (or `<position report_dir>/audit/audit_report.json` for the phase).
 
-### Why the audit runs BEFORE the sweep, never after
+### The audit runs before the sweep
 
-`is_candidate` gates on the tag. Writing `multiple views` moves the image from
-its `single-subject` rejection to `multiple-views` accepted, and the same tag
-is what `is_repeated_subject_layout` reads, arming the `view_invariant` gate. Run
-the audit after the sweep and both effects arrive too late — the image was
-already skipped, and you need a second position pass to collect them. That
-ordering is the whole reason the audit is a phase of `caption-position` rather
-than a stage beside it.
-
-`--multiview_audit`:
+The tag it writes is what makes the image a candidate, so it is phase 1 and the
+sweep phase 2. `--multiview_audit`:
 
 | mode | what phase 1 does | what phase 2 sees |
 |---|---|---|
@@ -99,11 +89,10 @@ Skip reasons in the report's counter:
   two bodies that are both already named.
 - `single-instance` — detection found at most one subject.
 
-Detection differs from the clause pipeline in one way on purpose: the
-escalation target is forced to `min_instances` (2) rather than the caption's
-count. Passing `expected=1` would satisfy the target on the first box and
-suppress both the low-threshold retry and the body-part fallback — on the exact
-population we are trying to search.
+Detection differs from the clause pipeline in one way: the escalation target is
+forced to `min_instances` (2) rather than the caption's count, since `expected=1`
+would be satisfied by the first box and suppress both the low-threshold retry and
+the body-part fallback.
 
 Evidence model. Two boxes on a `1girl` caption raises the image; three
 signals then argue about what it means, and `--apply` requires two to agree:
@@ -121,12 +110,9 @@ signals then argue about what it means, and `--apply` requires two to agree:
 Verdicts: `multiple views` / `extra-character` / `unsure` / `count-explained`.
 
 Writes: `--apply` writes the revised caption (`--dst`), like every other
-caption stage. The hand-written master is never touched — it is the curator's,
-and what this proposes is a machine verdict off a few crops. It is also the only
-tree the write would reach: `resolve_caption` is revised-first, so a caption
-written to the master is read past by the clause sweep, the correction pass and
-the TE step alike once a revised caption exists. Append at the end of the flat
-bag, via `compose_caption` so trailing clauses survive. Default
+caption stage; the hand-written master is never touched, and revised-first
+`resolve_caption` would read past a master write anyway. The tag is appended at
+the end of the flat bag, via `compose_caption` so trailing clauses survive. Default
 `--apply_verdicts` is `multiple views` only, `--apply_confidence` is `strong`
 only. The replaced text goes onto `{stem}.history.txt` (the undo) and the stale
 `{stem}.variants.txt` is dropped, since it outranks `{stem}.txt` at encode time.
@@ -172,25 +158,13 @@ falls back to the plain `girl` text prompt). It has the recall of the best text
 variant with the junk profile of `girl`: near-zero whole-canvas empty-mask
 proposals, and no degenerate NMS survivors.
 
-Mask quality decides the survivor of an NMS-matched pair. Greedy NMS in
-shared `dedupe_detections` used to rank on score alone, so a garbage proposal — a
-near-whole-canvas box over an almost empty mask — could outscore the clean
-duplicate it overlapped by a hair and suppress it, leaving the tagger reading a
-crop of nothing. When NMS has already judged two proposals to be the same
-object, the survivor is now the one that fills more of its own box:
-`--dedupe_fill_ratio`, default 2.0, swaps the pair when the loser's
-fill-within-its-own-box is that many times the survivor's; `0` disables it.
+Mask quality decides the survivor of an NMS-matched pair: `--dedupe_fill_ratio`
+(2.0) swaps the pair when the loser fills its own box that many times more than
+the survivor, `0` disables. Ranking on score alone let a near-whole-canvas box
+over an almost empty mask suppress the clean duplicate it overlapped. 2.0 sits in
+an empty band the corpus measurement found — every pair at ratio ≥ 2.0 had a
+degenerate survivor, every pair below it a clean one. The rule lives in shared
+`dedupe_detections`, so `caption-position` gets it too.
 
-2.0 is the default because the corpus measurement found an empty band there —
-every pair at ratio ≥ 2.0 had a degenerate survivor and every pair below it a
-clean one — so the value sits in a gap rather than on a tuned edge. It is a
-relative comparison inside a pair NMS has already matched, which is why it does
-not run into the settled negative against an absolute mask-fill cut (see
-[`position_captions.md`](position_captions.md)): it needs no cut-point and it
-cannot drop an instance, only swap which of two duplicates represents it. The
-rule lives in shared `dedupe_detections`, so `caption-position` gets it too.
-
-A companion guard that would have dropped degenerate proposals outright by an
-absolute fill threshold was measured and refuted — real sparse-subject views
-sit in the same fill band as the junk — and does not ship. That failure shape is
-handled by the score floor plus audit spot-checking.
+An absolute fill threshold on top of it was measured and refuted — real
+sparse-subject views sit in the same fill band as the junk — and does not ship.
