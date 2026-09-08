@@ -63,7 +63,8 @@ class ReplaySpec:
     """How to read one stage's report and where its proposals get written.
 
     ``target_root`` is the tree ``caption_path`` is relative to: ``"src"`` for
-    the stages that write the caption master, ``"dst"`` for the revised caption.
+    a stage that writes the caption master, ``"dst"`` for the revised caption —
+    which is every replaying stage today; none of them writes the master.
     """
 
     stage: str
@@ -117,16 +118,17 @@ REPLAY_SHAPES: dict[str, ReplaySpec] = {
     ),
     # The writable set is the verdict/confidence gate, not a row ``status``, so
     # ``row_filter`` is left open here and closed over the gate at replay time.
-    # ``apply_findings`` writes ``proposed + "\n"``; a replay must be
-    # byte-identical to it.
+    # Same target and same bytes as ``apply_findings``: the revised caption, no
+    # trailing newline, the stale variants sidecar dropped.
     "audit": ReplaySpec(
         stage="audit_multiview",
         rows_key="images",
         stats_key="summary",
         before_field="caption",
         after_field="proposed",
-        target_root="src",
-        newline=True,
+        target_root="dst",
+        drop_variants=True,
+        history_by="audit",
     ),
 }
 """GUI stage id → the shape of the report its CLI writes. OCR is absent: it writes

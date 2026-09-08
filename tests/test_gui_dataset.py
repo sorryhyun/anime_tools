@@ -285,17 +285,36 @@ def test_item_detail_rejects_unknown_and_escaping_paths(client):
 
 
 def test_writing_a_caption_round_trips(client, home):
+    """A master edit lands in the workspace overlay, never in the input tree:
+    `image_dataset/` is read-only for the tools and Export publishes the
+    overlay back to it."""
     c, _ = client
+    before = (home / "image_dataset" / "a.txt").read_text(encoding="utf-8")
     r = c.put(
         "/api/dataset/item",
         json={"rel": "a.png", "kind": "master", "text": "1girl, solo, smile"},
     )
     assert r.status_code == 200, r.text
-    assert (home / "image_dataset" / "a.txt").read_text(
+    assert (home / "workspace" / "master" / "a.txt").read_text(
         encoding="utf-8"
     ) == "1girl, solo, smile"
+    assert (home / "image_dataset" / "a.txt").read_text(encoding="utf-8") == before
     assert r.json()["parsed"]["flat_tags"] == ["1girl", "solo", "smile"]
     assert r.json()["variants_stale"] is False
+
+
+def test_an_edited_master_shadows_the_hand_written_one(client, home):
+    """Overlay-first, the same rule `resolve_caption` applies a level down: the
+    panel reads back the edit, and Export sees a row to publish."""
+    c, _ = client
+    c.put(
+        "/api/dataset/item",
+        json={"rel": "a.png", "kind": "master", "text": "1girl, solo, smile"},
+    )
+    versions = c.get("/api/dataset/item", params={"rel": "a.png"}).json()["versions"]
+    master = next(v for v in versions if v["kind"] == "master")
+    assert master["path"] == "workspace/master/a.txt"
+    assert master["parsed"]["flat_tags"] == ["1girl", "solo", "smile"]
 
 
 def test_writing_a_revised_caption_flags_the_stale_sidecar(client, home):
@@ -339,7 +358,7 @@ def test_a_caption_is_stored_as_one_line(client, home):
         "/api/dataset/item",
         json={"rel": "a.png", "kind": "master", "text": " 1girl,\n solo \n"},
     )
-    assert (home / "image_dataset" / "a.txt").read_text(
+    assert (home / "workspace" / "master" / "a.txt").read_text(
         encoding="utf-8"
     ) == "1girl, solo"
 

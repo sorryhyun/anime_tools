@@ -65,7 +65,7 @@ const en = {
     truncated: (shown: number, total: number) =>
       `showing ${shown} of ${total} — narrow it with the filter`,
     more: (n: number) => `+ ${n} more`,
-    capMaster: "master — image_dataset, the hand-written caption",
+    capMaster: "master — the hand-written caption; an edit lands in workspace/master",
     capHistory: "history — .history.txt, what the revised caption used to say",
     capRevised: "revised — workspace/resized, the stage output",
     capVariants: "variants — .variants.txt, generated and read-only",

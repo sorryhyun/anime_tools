@@ -51,7 +51,7 @@ const ko: Dict = {
     noRoot: "큐레이션 홈에 {0}이(가) 없습니다. ⚙ 설정에서 루트를 데이터셋으로 지정하세요.",
     truncated: (shown, total) => `${total}개 중 ${shown}개 표시 — 필터로 좁히세요`,
     more: (n) => `+ ${n}개 더`,
-    capMaster: "master — image_dataset, 손으로 쓴 캡션",
+    capMaster: "master — 손으로 쓴 캡션; 편집은 workspace/master 에 저장됩니다",
     capHistory: "history — .history.txt, revised 캡션이 예전에 뭐라고 했는지",
     capRevised: "revised — workspace/resized, 스테이지 출력",
     capVariants: "variants — .variants.txt, 자동 생성이라 읽기 전용",

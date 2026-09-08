@@ -118,8 +118,8 @@ class DatasetRequest(StageRequest):
 
     src: str = arg(
         "image_dataset",
-        help="Caption master dir — the read-only fallback for every stage but the "
-        "audit (which writes it) and Export (which publishes a revised master back to it)",
+        help="Caption master dir — hand-written, and the read-only fallback for "
+        "every stage. Only Export writes it, publishing a revised master back",
     )
     dst: str = arg(
         WS.RESIZED,
@@ -619,11 +619,11 @@ class AuditRequest(TaggerRequest, ReplayRequest):
 
     Sweeps the images the position stage skips as ``single-subject`` and reports
     every one where the ``girl`` prompt finds two or more subjects. See
-    ``docs/multiview_audit.md``.
+    ``docs/multiview_audit.md``. The position stage runs this as its own first
+    phase under ``--multiview_audit``, which is the usual way in.
 
-    Dry-run by default; ``--apply`` writes the missing tag into the caption master,
-    so follow it with a TE re-encode. ``image_dataset/`` is gitignored, so an apply
-    is not git-recoverable — keep ``report.json``, it holds the before-text.
+    Dry-run by default; ``--apply`` writes the missing tag into the revised
+    caption under ``--dst``, never the master, so follow it with a TE re-encode.
     """
 
     report_dir: str = _report_dir(f"{WS.REPORTS}/multiview_audit")

@@ -71,10 +71,14 @@ class Rung:
     of: str = ""
     """Which rung a history sidecar records the past of; its badges wear that
     rung's name (``revised@2``)."""
+    overlay: str = ""
+    """A second root that *shadows* ``root``: read from here when it holds the
+    file, and write here always. How the master rung stays editable without
+    writing ``image_dataset/`` — see :data:`CAPTION_LADDER`."""
 
 
 CAPTION_LADDER: tuple[Rung, ...] = (
-    Rung("master", "src", editable=True),
+    Rung("master", "src", editable=True, overlay="master"),
     Rung("history", "dst", editable=False, expand="history", of="revised"),
     Rung("revised", "dst", editable=True),
     Rung("variants", "dst", editable=False, expand="variants"),
@@ -85,6 +89,13 @@ CAPTION_LADDER: tuple[Rung, ...] = (
 to be. The run bar has no Apply gate, so the text a run replaces survives as a
 badge here. The sidebar strip, the panel's badges and :func:`write_caption`'s guard
 all read this tuple.
+
+The master rung carries an ``overlay``: ``image_dataset/`` is the INPUT tree and
+**read-only for the tools** (``anime_tools.workspace``), so editing a master
+caption writes ``workspace/master/<rel>.txt`` and reads it back in preference to
+the hand-written original, which stays untouched as its own undo. Export's
+``master`` row publishes the overlay to ``image_dataset/`` — that row is the one
+consumer, and its ``is_file()`` guard is exactly "this master was edited".
 """
 
 CAPTION_KINDS = tuple(r.kind for r in CAPTION_LADDER if r.editable)
@@ -341,14 +352,35 @@ def mask_path(roots: Roots, rel: Path) -> Path | None:
 
 
 def caption_paths(roots: Roots, rel: Path) -> dict[str, Path]:
-    """Every rung's file, keyed by rung kind; :data:`CAPTION_LADDER` names the
-    root each lives in."""
+    """Every rung's file to READ, keyed by rung kind; :data:`CAPTION_LADDER`
+    names the root each lives in.
+
+    A rung with an ``overlay`` resolves to it when it holds the file and to
+    ``root`` otherwise — the same overlay-first rule ``resolve_caption`` applies
+    one level down, so an edited master shadows the hand-written one. Costs the
+    master rung a second stat per row on a whole-dataset listing.
+    :func:`caption_write_path` is the write side.
+    """
     txt = rel.with_suffix(".txt")
     out: dict[str, Path] = {}
     for r in CAPTION_LADDER:
         p = getattr(roots, r.root) / txt
+        if r.overlay:
+            over = getattr(roots, r.overlay) / txt
+            if over.is_file():
+                p = over
         out[r.kind] = _SIDECAR_PATH[r.expand](p) if r.expand else p
     return out
+
+
+def caption_write_path(roots: Roots, rel: Path, kind: str) -> Path:
+    """Where writing rung ``kind`` lands — its ``overlay`` when it has one.
+
+    Never ``roots.src``: ``image_dataset/`` is the input tree, and Export is the
+    only thing that writes it (``anime_tools.workspace``).
+    """
+    rung = next(r for r in CAPTION_LADDER if r.kind == kind)
+    return getattr(roots, rung.overlay or rung.root) / rel.with_suffix(".txt")
 
 
 def list_items(
@@ -686,7 +718,9 @@ def write_caption(roots: Roots, rel_str: str, kind: str, text: str) -> dict[str,
 
     A caption is a single line by contract, so newlines fold to spaces. An empty
     body is refused rather than treated as a delete. A hand edit pushes history
-    like a stage run does, for the rungs :data:`HISTORY_OF` gives one.
+    like a stage run does, for the rungs :data:`HISTORY_OF` gives one — the
+    master rung has none because it does not need one: the edit goes to the
+    ``workspace/master/`` overlay and the hand-written original stays put.
 
     The answer carries the whole ladder back under ``versions``, not just the
     entry written: the push above *creates a rung* (``revised@1``), and a caller
@@ -702,7 +736,7 @@ def write_caption(roots: Roots, rel_str: str, kind: str, text: str) -> dict[str,
         raise DatasetError("refusing to write an empty caption")
 
     caps = caption_paths(roots, rel)
-    p = caps[kind]
+    p = caption_write_path(roots, rel, kind)
     if kind in HISTORY_OF and p.is_file():
         push_history(p, p.read_text(encoding="utf-8").strip(), by="edit")
     p.parent.mkdir(parents=True, exist_ok=True)

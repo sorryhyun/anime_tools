@@ -53,7 +53,7 @@ const ja: Dict = {
       "キュレーションホームに {0} がありません。⚙ 設定でルートをデータセットに向けてください。",
     truncated: (shown, total) => `${total} 件中 ${shown} 件を表示 — 絞り込みで狭めてください`,
     more: (n) => `+ 他 ${n} 件`,
-    capMaster: "master — image_dataset、手書きのキャプション",
+    capMaster: "master — 手書きのキャプション; 編集は workspace/master に保存されます",
     capHistory: "history — .history.txt、revised キャプションが以前言っていたこと",
     capRevised: "revised — workspace/resized、ステージの出力",
     capVariants: "variants — .variants.txt、自動生成で読み取り専用",

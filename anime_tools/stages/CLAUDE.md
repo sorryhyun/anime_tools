@@ -64,10 +64,11 @@ promoted caption **before** `is_candidate` sees it.
 gate; audit after the sweep and both arrive too late. `admitted()` is the one verdict/confidence
 gate the write path and the promotion path share.
 
-**The two write different trees on purpose.** `apply_findings` (the standalone stage) writes the
-caption master; the phase writes the revised tree through `run_position_captions`. Revised-first
-(`_walk_captions.resolve_caption`) means a master write reaches nothing downstream once a revised
-caption exists — see the gotcha in `docs/multiview_audit.md`.
+**Both write the revised tree**, like every other caption stage — the phase through
+`run_position_captions`, the standalone stage through `apply_findings`. No stage writes the
+hand-written master (`docs/contract.md` §2: Export and the GUI caption editor are its only
+writers), and revised-first (`_walk_captions.resolve_caption`) means a master write would be read
+past anyway once a revised caption exists.
 
 ## Export
 

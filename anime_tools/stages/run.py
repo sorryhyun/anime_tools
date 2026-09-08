@@ -426,11 +426,11 @@ def run_position(req: PositionRequest):
 # ---- multiview audit -----------------------------------------------------
 
 
-def _audit_written_note(src: Path, written: int, holder: str) -> str:
+def _audit_written_note(dst: Path, written: int, holder: str) -> str:
     return (
-        f"\n{written} caption(s) written to the master ({src}). Run "
-        "`make preprocess-te` now to re-encode. The master is gitignored — "
-        f"{holder} holds the before-text if you need to back this out."
+        f"\n{written} revised caption(s) written ({dst}). Run "
+        "`make preprocess-te` now to re-encode. To back it out: the "
+        f"`.history.txt` sidecar beside each, or {holder}."
     )
 
 
@@ -462,7 +462,7 @@ def run_audit(req: AuditRequest):
             report_dir=report_dir,
             notes=[f"gate: verdicts={list(verdicts)} confidences={list(confidences)}"],
             after_write_note=lambda stats: _audit_written_note(
-                src, stats.written, "the replayed report"
+                dst, stats.written, "the replayed report"
             ),
         )
         return rows, stats
@@ -499,7 +499,7 @@ def run_audit(req: AuditRequest):
     apply_skipped: dict[str, int] = {}
     if req.apply:
         written, skipped = apply_findings(
-            rows, source_dir=src, verdicts=verdicts, confidences=confidences
+            rows, resized_dir=dst, verdicts=verdicts, confidences=confidences
         )
         apply_skipped = dict(skipped.most_common())
 
@@ -546,7 +546,7 @@ def run_audit(req: AuditRequest):
     if req.multiview.sheets:
         print(f"sheets: {report_dir / 'sheets'} (one PNG per finding, verdict-first)")
     print_dry_run_footer(
-        req.apply, _audit_written_note(src, len(written), "report.json")
+        req.apply, _audit_written_note(dst, len(written), "report.json")
     )
     return rows, stats
 

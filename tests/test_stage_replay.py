@@ -428,15 +428,14 @@ def test_replay_cli_does_not_import_torch(tmp_path: Path, module: str, repo_root
     and never imports torch."""
     import subprocess
 
-    # The multiview audit is the last stage that writes the master; the other
-    # two write the revised caption beside the resized image.
-    writes_master = module.endswith("audit_multiview")
+    # Every replaying stage writes the revised caption beside the resized image;
+    # none of them writes the hand-written master.
     resized = tmp_path / "resized"
     source = tmp_path / "master"
     resized.mkdir()
     source.mkdir()
     Image.new("RGB", (8, 8)).save(resized / "a.png")
-    target = (source if writes_master else resized) / "a.txt"
+    target = resized / "a.txt"
     target.write_text("safe, 2girls, blue hair", encoding="utf-8")
     proposed = "safe, 2girls. On the left, blue hair."
 

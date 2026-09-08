@@ -5,7 +5,7 @@ every finding a tier admits. Every run writes a manifest of verbatim before/afte
 text next to the report, and ``--revert <manifest>`` restores it, refusing any
 caption edited since.
 
-Dry-run by default; a real apply or revert changes the caption master, so run
+Dry-run by default; a real apply or revert changes the revised captions, so run
 ``make preprocess-te`` after.
 """
 
@@ -45,7 +45,9 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help="Manifest json from a previous run — undo it instead of applying",
     )
-    p.add_argument("--source", default="image_dataset", help="Caption master dir")
+    p.add_argument(
+        "--dst", default=WS.RESIZED, help="Resized dir — where the captions are written"
+    )
     p.add_argument(
         "--manifest",
         default=None,
@@ -62,13 +64,13 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> None:
     args = parse_args()
-    source_dir = resolve_path(args.source)
+    resized_dir = resolve_path(args.dst)
 
     if args.revert:
         manifest_path = resolve_path(args.revert)
         manifest = read_json(manifest_path)
         results = revert_curated(
-            manifest["entries"], source_dir=source_dir, apply=args.apply
+            manifest["entries"], resized_dir=resized_dir, apply=args.apply
         )
         print(json.dumps(dict(Counter(r["status"] for r in results)), indent=2))
         for r in results:
@@ -95,7 +97,7 @@ def main() -> None:
     }
 
     manifest, unmatched = apply_curated(
-        rows, accepted, source_dir=source_dir, apply=args.apply
+        rows, accepted, resized_dir=resized_dir, apply=args.apply
     )
     print(json.dumps(dict(Counter(e["status"] for e in manifest)), indent=2))
     for e in manifest:

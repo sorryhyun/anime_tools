@@ -1,6 +1,6 @@
 """The multiview audit's write path shares :func:`replay.apply_one`'s drift
-ladder: the statuses it reports, and that a write is byte-identical to what a
-``--from_report`` replay would write (``proposed + "\\n"``).
+ladder: the statuses it reports, and that it writes the REVISED caption — never
+the hand-written master — byte-identically to a ``--from_report`` replay.
 """
 
 from __future__ import annotations
@@ -32,7 +32,7 @@ def _finding(rel: str, *, caption: str = CAPTION, proposed: str = PROPOSED):
 
 
 def test_apply_findings_writes_and_reports_each_skip(tmp_path: Path) -> None:
-    src = tmp_path / "image_dataset"
+    src = tmp_path / "resized"
     (src / "sub").mkdir(parents=True)
     (src / "ok.txt").write_text(CAPTION, encoding="utf-8")
     (src / "sub" / "done.txt").write_text(PROPOSED, encoding="utf-8")
@@ -58,7 +58,7 @@ def test_apply_findings_writes_and_reports_each_skip(tmp_path: Path) -> None:
                 proposed=PROPOSED,
             ),
         ],
-        source_dir=src,
+        resized_dir=src,
     )
 
     assert written == [("ok.txt", CAPTION, PROPOSED)]
@@ -68,8 +68,9 @@ def test_apply_findings_writes_and_reports_each_skip(tmp_path: Path) -> None:
         "missing-caption": 1,
         "no-proposal": 1,
     }
-    # Byte-exact with the replay path: trailing newline, nothing else touched.
-    assert (src / "ok.txt").read_text(encoding="utf-8") == PROPOSED + "\n"
+    # Byte-exact with the replay path, and with every other revised writer:
+    # no trailing newline, nothing else touched.
+    assert (src / "ok.txt").read_text(encoding="utf-8") == PROPOSED
     assert (src / "sub" / "moved.txt").read_text(encoding="utf-8") == (
         "1girl, solo, red eyes"
     )
@@ -77,17 +78,49 @@ def test_apply_findings_writes_and_reports_each_skip(tmp_path: Path) -> None:
 
 
 def test_apply_findings_is_idempotent(tmp_path: Path) -> None:
-    src = tmp_path / "image_dataset"
+    src = tmp_path / "resized"
     src.mkdir()
     (src / "a.txt").write_text(CAPTION, encoding="utf-8")
 
-    first, _ = apply_findings([_finding("a.txt")], source_dir=src)
-    second, skipped = apply_findings([_finding("a.txt")], source_dir=src)
+    first, _ = apply_findings([_finding("a.txt")], resized_dir=src)
+    second, skipped = apply_findings([_finding("a.txt")], resized_dir=src)
 
     assert len(first) == 1
     assert second == []
     assert dict(skipped) == {"already-applied": 1}
-    assert (src / "a.txt").read_text(encoding="utf-8") == PROPOSED + "\n"
+    assert (src / "a.txt").read_text(encoding="utf-8") == PROPOSED
+
+
+def test_apply_findings_never_touches_the_master(tmp_path: Path) -> None:
+    """The master is hand-written; a machine verdict off a few crops does not
+    get to edit it. It is also read past — resolve_caption is revised-first."""
+    master, revised = tmp_path / "image_dataset", tmp_path / "resized"
+    master.mkdir()
+    revised.mkdir()
+    (master / "a.txt").write_text(CAPTION, encoding="utf-8")
+    (revised / "a.txt").write_text(CAPTION, encoding="utf-8")
+
+    apply_findings([_finding("a.txt")], resized_dir=revised)
+
+    assert (master / "a.txt").read_text(encoding="utf-8") == CAPTION
+    assert (revised / "a.txt").read_text(encoding="utf-8") == PROPOSED
+
+
+def test_a_write_keeps_the_replaced_text_and_drops_the_stale_sidecar(
+    tmp_path: Path,
+) -> None:
+    """Both are consequences of writing the revised tree: `.variants.txt` wins
+    over `.txt` at encode time, and `.history.txt` is the undo the master write
+    never had."""
+    revised = tmp_path / "resized"
+    revised.mkdir()
+    (revised / "a.txt").write_text(CAPTION, encoding="utf-8")
+    (revised / "a.variants.txt").write_text(CAPTION, encoding="utf-8")
+
+    apply_findings([_finding("a.txt")], resized_dir=revised)
+
+    assert not (revised / "a.variants.txt").exists()
+    assert CAPTION in (revised / "a.history.txt").read_text(encoding="utf-8")
 
 
 # ----- the gate, shared by the write path and the position phase ------------

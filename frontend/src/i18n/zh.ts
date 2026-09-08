@@ -51,7 +51,7 @@ const zh: Dict = {
     noRoot: "整理主目录下没有 {0}。请在 ⚙ 设置中把根目录指向你的数据集。",
     truncated: (shown, total) => `共 ${total} 张，显示 ${shown} 张 — 用过滤缩小范围`,
     more: (n) => `+ 还有 ${n} 项`,
-    capMaster: "master — image_dataset，手写的标注",
+    capMaster: "master — 手写的标注；编辑会保存到 workspace/master",
     capHistory: "history — .history.txt，revised 标注以前的内容",
     capRevised: "revised — workspace/resized，阶段输出",
     capVariants: "variants — .variants.txt，自动生成且只读",

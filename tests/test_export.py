@@ -327,3 +327,51 @@ def test_revert_checks_a_combined_row_against_what_it_recorded(ocr):
     _, stats = revert_export(rows, apply=True)
     assert stats.skipped.get("drifted", 0) == 0
     assert not (ocr.out / "resized" / "a.txt").exists()
+
+
+def test_a_gui_master_edit_is_what_fills_the_overlay(tmp_path):
+    """The producer end of the `master` row: the GUI caption editor writes
+    `workspace/master/`, never `image_dataset/`, and Export publishes it back.
+
+    Closes the loop the overlay only had a consumer for — before this, nothing
+    wrote the tree the master row reads, so the row never had a file to publish.
+    """
+    from anime_tools.gui import dataset as D
+
+    home = tmp_path
+    paths = ExportPaths(
+        resized=home / "workspace" / "resized",
+        masks=home / "workspace" / "masks",
+        master=home / "workspace" / "master",
+        index=home / "workspace" / "captions" / "caption_index.json",
+        src=home / "image_dataset",
+        out=home / "post_image_dataset",
+    )
+    _png(paths.resized / "a.png")
+    _png(paths.src / "a.png")
+    _txt(paths.src / "a.txt", "1girl, solo")
+    paths.master.mkdir(parents=True, exist_ok=True)
+    roots = D.Roots(
+        src=paths.src,
+        master=paths.master,
+        dst=paths.resized,
+        masks=paths.masks,
+        out=paths.out,
+    )
+
+    # Nothing edited yet: no overlay file, so no master row.
+    assert _by(plan_export(paths), "master") == []
+
+    D.write_caption(roots, "a.png", "master", "1girl, solo, smile")
+
+    assert (paths.master / "a.txt").read_text(encoding="utf-8") == "1girl, solo, smile"
+    # The input tree is untouched until Export says so.
+    assert (paths.src / "a.txt").read_text(encoding="utf-8") == "1girl, solo"
+
+    (master,) = _by(plan_export(paths), "master")
+    assert Path(master.src) == paths.master / "a.txt"
+    assert Path(master.dst) == paths.src / "a.txt"
+    assert master.status == "would-overwrite"
+
+    run_export(paths, apply=True)
+    assert (paths.src / "a.txt").read_text(encoding="utf-8") == "1girl, solo, smile"

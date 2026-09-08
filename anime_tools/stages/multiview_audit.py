@@ -577,32 +577,33 @@ def promotions(
 def apply_findings(
     findings: Iterable[MultiviewFinding],
     *,
-    source_dir: Path,
+    resized_dir: Path,
     verdicts: Sequence[str] = (MULTIPLE_VIEWS,),
     confidences: Sequence[str] = ("strong",),
 ) -> tuple[list[tuple[str, str, str]], Counter]:
-    """Write proposed captions into the **master** tree.
+    """Write proposed captions into the **revised** tree.
 
-    The master rather than the revised tree: a missing ``multiple views`` is a
-    fact about the picture, and every later stage reads down from it.
+    Where every other stage writes, and the caption master is never touched: it
+    is hand-written, and what the audit proposes is a machine verdict off a few
+    crops. It is also the only tree the write reaches — ``resolve_caption`` is
+    revised-first, so a caption written to the master would be read past by the
+    clause sweep, the correction pass and the TE step alike.
 
     Returns ``(written, skipped)``: the ``(rel, before, after)`` triples written
     and a count per :func:`~anime_tools.stages.replay.apply_one` status for the
-    gated rows that were not, so a master edited since the audit is ``drifted``
-    and left alone.
-
-    GOTCHA: ``image_dataset/`` is gitignored, so this is not git-recoverable —
-    the report's ``caption`` field is the only verbatim before-text.
+    gated rows that were not, so a caption edited since the audit is ``drifted``
+    and left alone. The replaced text goes onto the ``.history.txt`` sidecar.
     """
     written: list[tuple[str, str, str]] = []
     skipped: Counter = Counter()
     for finding in admitted(findings, verdicts=verdicts, confidences=confidences):
         status = apply_one(
-            source_dir / finding.caption_path,
+            resized_dir / finding.caption_path,
             finding.caption,
             finding.proposed,
             apply=True,
-            newline=True,
+            drop_variants=True,
+            history_by="audit",
         )
         if status == "written":
             written.append(
@@ -644,14 +645,14 @@ def apply_curated(
     rows: Iterable[dict],
     accepted: set[str],
     *,
-    source_dir: Path,
+    resized_dir: Path,
     apply: bool,
 ) -> tuple[list[dict], list[str]]:
-    """Apply a reviewer-curated accept list of report rows to the caption master.
+    """Apply a reviewer-curated accept list of report rows to the revised captions.
 
     Returns ``(manifest, unmatched)``: one entry per accepted row with the
-    verbatim before/after (the only undo — ``image_dataset/`` is gitignored) and
-    any accepted image with no finding. Same drift guard as
+    verbatim before/after and any accepted image with no finding. Same drift
+    guard as
     :func:`apply_findings`.
     """
     by_image = {r["image"]: r for r in rows if r.get("verdict")}
@@ -676,11 +677,12 @@ def apply_curated(
             continue
         entry["tag"], entry["after"] = derived
         entry["status"] = apply_one(
-            source_dir / row["caption_path"],
+            resized_dir / row["caption_path"],
             row["caption"],
             entry["after"],
             apply=apply,
-            newline=True,
+            drop_variants=True,
+            history_by="audit",
         )
     return manifest, unmatched
 
@@ -688,11 +690,11 @@ def apply_curated(
 def revert_curated(
     manifest: Iterable[dict],
     *,
-    source_dir: Path,
+    resized_dir: Path,
     apply: bool,
 ) -> list[dict]:
     """Undo :func:`apply_curated` from its manifest, restoring ``before`` only
-    where the master still holds exactly ``after``."""
+    where the revised caption still holds exactly ``after``."""
     results: list[dict] = []
     for entry in manifest:
         outcome = {"image": entry["image"], "status": "skipped"}
@@ -704,11 +706,12 @@ def revert_curated(
             continue
         # A revert is an apply with the two texts swapped.
         status = apply_one(
-            source_dir / entry["caption_path"],
+            resized_dir / entry["caption_path"],
             entry["after"],
             entry["before"],
             apply=apply,
-            newline=True,
+            drop_variants=True,
+            history_by="audit",
         )
         outcome["status"] = _REVERT_STATUS.get(status, status)
     return results

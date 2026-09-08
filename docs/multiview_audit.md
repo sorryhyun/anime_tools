@@ -1,8 +1,9 @@
-# Multi-view audit — untagged `multiple views` in the caption master
+# Multi-view audit — untagged `multiple views`
 
-Ships as a stage: it sweeps the captions `caption-position` never looks at,
-finds the ones that are several views of one character, and can write the
-missing `multiple views` tag into the caption master.
+Sweeps the captions `caption-position` never looks at, finds the ones that are
+several views of one character, and can write the missing `multiple views` tag
+into the revised caption. Runs as that stage's first phase (`--multiview_audit`)
+or on its own.
 
 ## 1. The blind spot
 
@@ -46,7 +47,7 @@ Or as its own stage, when the audit is what you came for:
 
 ```bash
 python -m anime_tools.stages.cli.audit_multiview              # dry run + sheets
-python -m anime_tools.stages.cli.audit_multiview --apply      # write the master
+python -m anime_tools.stages.cli.audit_multiview --apply      # write the captions
 ```
 
 Dry-run by default; the report lands in `workspace/captions/multiview_audit/`
@@ -76,11 +77,10 @@ its report and sheets under `<report_dir>/audit/` so neither phase can read the
 other's back on a replay. The promotion map is built whether or not `--apply` was
 passed, so a dry run's report is the plan an apply would carry out.
 
-**The phase writes the revised tree, not the master** — the opposite of the
-standalone stage below, and deliberately: promoted text is handed to the sweep in
-memory, so the tag lands with the clauses in `resized/<rel>.txt`, which is what
-the TE step encodes. A promoted image whose proposal fails is written with the
-tag alone rather than losing it (`stats.promoted_written`).
+Promoted text is handed to the sweep **in memory**, so the tag lands together
+with the clauses in `resized/<rel>.txt` — one write, not two. A promoted image
+whose proposal fails is written with the tag alone rather than losing it
+(`stats.promoted_written`).
 
 **Population** — exactly the complement of the clause pipeline: every caption
 `is_candidate` rejects with reason `single-subject`. Tied to that function's own
@@ -120,23 +120,17 @@ signals then argue about what it means, and `--apply` requires two to agree:
 
 **Verdicts**: `multiple views` / `extra-character` / `unsure` / `count-explained`.
 
-**Writes**: `--apply` writes the **caption master** (`image_dataset/`), unlike the
-clause rewrite which only touches the revised caption — a missing `multiple views`
-is a fact about the picture that every later stage should read down from. Append
-at the end of the flat bag, via `compose_caption` so trailing clauses survive.
-
-> **GOTCHA — revised-first outranks the master.** `_walk_captions.resolve_caption`
-> reads the revised caption and falls back to the master only when there is none,
-> so once preprocessing has written `resized/<rel>.txt` a master write reaches
-> **nothing downstream**: the drift guard skips any image whose revised text has
-> since diverged, and for the rest the tag sits in a file no later stage reads.
-> On a corpus where every image already has a revised caption this stage's
-> `--apply` is effectively inert. The `--multiview_audit` phase above is the path
-> that does not have this problem — it writes where the sweep reads.
-Default `--apply_verdicts` is `multiple views` only, `--apply_confidence` is
-`strong` only. **`image_dataset/` is gitignored** — `report.json` holds the
-verbatim before-text and is the only undo. Follow any apply with the trainer's
-TE re-encode (`make preprocess-te`).
+**Writes**: `--apply` writes the **revised caption** (`--dst`), like every other
+caption stage. The hand-written master is never touched — it is the curator's,
+and what this proposes is a machine verdict off a few crops. It is also the only
+tree the write would reach: `resolve_caption` is revised-first, so a caption
+written to the master is read past by the clause sweep, the correction pass and
+the TE step alike once a revised caption exists. Append at the end of the flat
+bag, via `compose_caption` so trailing clauses survive. Default
+`--apply_verdicts` is `multiple views` only, `--apply_confidence` is `strong`
+only. The replaced text goes onto `{stem}.history.txt` (the undo) and the stale
+`{stem}.variants.txt` is dropped, since it outranks `{stem}.txt` at encode time.
+Follow any apply with the trainer's TE re-encode (`make preprocess-te`).
 
 **`--from_report <report.json>`**: replay a dry run's findings instead of
 re-auditing — the report already holds `caption_path`, the before-text
@@ -155,7 +149,7 @@ python -m anime_tools.stages.cli.audit_multiview --apply \
 Same staleness rules as the other two stages (full table in
 [`position_captions.md`](position_captions.md)): a report whose recorded
 `summary.src`/`dst` disagree with this run, or whose own `applied` is true, is
-refused; a master caption edited since the audit is skipped as `skip:drifted`,
+refused; a caption edited since the audit is skipped as `skip:drifted`,
 never overwritten — the same guard `apply_findings` applies in-process. Output
 goes to `apply_report.json` (never over the `report.json` it read), whose
 top-level `written[]` lists the relative image paths actually written.

@@ -1,9 +1,8 @@
 """Caption reads and writes for stages, with the write invariants.
 
-*Trailing newline*: ``audit_multiview`` writes ``text + "\\n"``, autotag and the
-clause rewrite write ``text`` bare. A replay must reproduce the byte-exact file
-its native apply would have written, or the next run reads the difference as
-drift.
+*Trailing newline*: every stage writes ``text`` bare. A replay must reproduce
+the byte-exact file its native apply would have written, or the next run reads
+the difference as drift.
 
 *Variants sidecar*: ``{stem}.variants.txt`` wins over ``{stem}.txt`` at encode
 time, so every write into the revised tree passes ``drop_variants=True``.
