@@ -9,15 +9,15 @@ or on its own.
 
 `is_candidate` (`anime_tools/stages/position_captions.py`) sends a caption to
 detection only if it has a layout tag or claims more than one girl. A sheet that
-*is* several views of one character but was never tagged `multiple views` claims
+is several views of one character but was never tagged `multiple views` claims
 `1girl`, so it is skipped as `single-subject` and never looked at. Over the
-caption master that is **2551 of 3007 captions**; some unknown fraction of them
+caption master that is 2551 of 3007 captions; some unknown fraction of them
 are mis-tagged.
 
-The second-order damage matters more than the missing tag. If such an image *did*
+The second-order damage matters more than the missing tag. If such an image did
 reach the clause writer, `is_repeated_subject_layout` would return `False` (no
 layout tag), so the `view_invariant` gate would not fire and the writer would bind
-the character's name and her view-invariant traits **per view** — asserting one
+the character's name and her view-invariant traits per view — asserting one
 girl as two. The missing tag is what keeps that gate from working.
 
 Founding example: `ama_mitsuki/5847168` — one office lady drawn twice (bent-over
@@ -35,7 +35,7 @@ close-up left, seated full body right), captioned `1girl`, no layout tag.
 
 ## 3. Running it
 
-Two ways in. As the position stage's **first phase** — the normal one, because the
+Two ways in. As the position stage's first phase — the normal one, because the
 tag it writes is what lets the clause writer see the image at all:
 
 ```bash
@@ -56,7 +56,7 @@ Dry-run by default; the report lands in `workspace/captions/multiview_audit/`
 ### Why the audit runs BEFORE the sweep, never after
 
 `is_candidate` gates on the tag. Writing `multiple views` moves the image from
-its `single-subject` rejection to `multiple-views` **accepted**, and the same tag
+its `single-subject` rejection to `multiple-views` accepted, and the same tag
 is what `is_repeated_subject_layout` reads, arming the `view_invariant` gate. Run
 the audit after the sweep and both effects arrive too late — the image was
 already skipped, and you need a second position pass to collect them. That
@@ -69,7 +69,7 @@ than a stage beside it.
 |---|---|---|
 | `off` (default) | nothing | its own population only |
 | `report` | findings + contact sheets, tags nothing | its own population only |
-| `apply` | also promotes every finding the verdict/confidence gate admits | its population **plus** the promoted images |
+| `apply` | also promotes every finding the verdict/confidence gate admits | its population plus the promoted images |
 
 The phase detects under this stage's own detector with `min_instances` pinned to
 2 (`requests.audit_options`), reuses the already-resident SAM3 + tagger, and puts
@@ -77,18 +77,18 @@ its report and sheets under `<report_dir>/audit/` so neither phase can read the
 other's back on a replay. The promotion map is built whether or not `--apply` was
 passed, so a dry run's report is the plan an apply would carry out.
 
-Promoted text is handed to the sweep **in memory**, so the tag lands together
+Promoted text is handed to the sweep in memory, so the tag lands together
 with the clauses in `resized/<rel>.txt` — one write, not two. A promoted image
 whose proposal fails is written with the tag alone rather than losing it
 (`stats.promoted_written`).
 
-**Population** — exactly the complement of the clause pipeline: every caption
+Population — exactly the complement of the clause pipeline: every caption
 `is_candidate` rejects with reason `single-subject`. Tied to that function's own
 reason string so the two cannot drift apart. A girls-count of 0 (scenery, `1boy`,
 an uncounted caption) stays in: the subject prompt finding two subjects there is
 just as much a caption bug.
 
-**Skip reasons** in the report's counter:
+Skip reasons in the report's counter:
 
 - `handled-by-position-captions:<reason>` — `is_candidate` accepted it, so
   `caption-position` already handles it (e.g. `already-has-clauses`).
@@ -99,28 +99,28 @@ just as much a caption bug.
   two bodies that are both already named.
 - `single-instance` — detection found at most one subject.
 
-**Detection** differs from the clause pipeline in one way on purpose: the
+Detection differs from the clause pipeline in one way on purpose: the
 escalation target is forced to `min_instances` (2) rather than the caption's
 count. Passing `expected=1` would satisfy the target on the first box and
 suppress both the low-threshold retry and the body-part fallback — on the exact
 population we are trying to search.
 
-**Evidence model.** Two boxes on a `1girl` caption raises the image; three
+Evidence model. Two boxes on a `1girl` caption raises the image; three
 signals then argue about what it means, and `--apply` requires two to agree:
 
-1. **Identity agreement** across the per-instance crops (hair / eye / hairstyle,
+1. Identity agreement across the per-instance crops (hair / eye / hairstyle,
    plus character name). The only signal that separates "one girl twice" from "a
    second girl" — but it goes silent on a headless crop. A box recovered only by
    the retry escalation (below `score_threshold`) does not vote on identity
    (`reliable=False`), though it still counts as a body.
-2. **Whole-image `multiple views` head.** Needs no legible crop; the fallback
-   when (1) has nothing. Runs on *every* audited image, so a sheet whose views SAM
+2. Whole-image `multiple views` head. Needs no legible crop; the fallback
+   when (1) has nothing. Runs on every audited image, so a sheet whose views SAM
    merged into one box still surfaces (`tagger-only`, never above `weak`).
-3. **People-count head** saying `1girl` while the geometry sees several bodies.
+3. People-count head saying `1girl` while the geometry sees several bodies.
 
-**Verdicts**: `multiple views` / `extra-character` / `unsure` / `count-explained`.
+Verdicts: `multiple views` / `extra-character` / `unsure` / `count-explained`.
 
-**Writes**: `--apply` writes the **revised caption** (`--dst`), like every other
+Writes: `--apply` writes the revised caption (`--dst`), like every other
 caption stage. The hand-written master is never touched — it is the curator's,
 and what this proposes is a machine verdict off a few crops. It is also the only
 tree the write would reach: `resolve_caption` is revised-first, so a caption
@@ -132,10 +132,10 @@ only. The replaced text goes onto `{stem}.history.txt` (the undo) and the stale
 `{stem}.variants.txt` is dropped, since it outranks `{stem}.txt` at encode time.
 Follow any apply with the trainer's TE re-encode (`make preprocess-te`).
 
-**`--from_report <report.json>`**: replay a dry run's findings instead of
+`--from_report <report.json>`: replay a dry run's findings instead of
 re-auditing — the report already holds `caption_path`, the before-text
-(`caption`) and the `proposed` caption, so the write needs **no SAM3 and no
-tagger** (the run does not import `torch`; pinned by
+(`caption`) and the `proposed` caption, so the write needs no SAM3 and no
+tagger (the run does not import `torch`; pinned by
 `tests/test_stage_replay.py`). The verdict/confidence gate is still applied at
 replay time, so one audit pass can be replayed at several tiers:
 
@@ -154,11 +154,11 @@ never overwritten — the same guard `apply_findings` applies in-process. Output
 goes to `apply_report.json` (never over the `report.json` it read), whose
 top-level `written[]` lists the relative image paths actually written.
 
-This is the *gate-based* replay. The reviewer-curated workflow — hand-picking
+This is the gate-based replay. The reviewer-curated workflow — hand-picking
 findings across tiers from the contact sheets, with a revert manifest — is
 `anime_tools/stages/cli/audit_apply_curated.py`.
 
-**Contact sheets** (`<report_dir>/sheets/`, on by default): one PNG per finding —
+Contact sheets (`<report_dir>/sheets/`, on by default): one PNG per finding —
 boxed original, the crops the tagger actually saw colour-matched to their box, the
 identity read off each, the verdict and its witnesses, and the proposed caption.
 Filenames are `verdict_confidence_stem.png` so a directory listing sorts by
@@ -166,31 +166,31 @@ verdict.
 
 ## 4. Shipped detection behaviour
 
-**The subject detector is a learned SAM3 soft prompt**, not a text prompt — it is
+The subject detector is a learned SAM3 soft prompt, not a text prompt — it is
 the default of this audit and of `caption-position` alike (`--prompt_embed none`
 falls back to the plain `girl` text prompt). It has the recall of the best text
 variant with the junk profile of `girl`: near-zero whole-canvas empty-mask
 proposals, and no degenerate NMS survivors.
 
-**Mask quality decides the survivor of an NMS-matched pair.** Greedy NMS in
+Mask quality decides the survivor of an NMS-matched pair. Greedy NMS in
 shared `dedupe_detections` used to rank on score alone, so a garbage proposal — a
 near-whole-canvas box over an almost empty mask — could outscore the clean
 duplicate it overlapped by a hair and suppress it, leaving the tagger reading a
-crop of nothing. When NMS has already judged two proposals to be **the same
-object**, the survivor is now the one that fills more of its own box:
-`--dedupe_fill_ratio`, default **2.0**, swaps the pair when the loser's
+crop of nothing. When NMS has already judged two proposals to be the same
+object, the survivor is now the one that fills more of its own box:
+`--dedupe_fill_ratio`, default 2.0, swaps the pair when the loser's
 fill-within-its-own-box is that many times the survivor's; `0` disables it.
 
 2.0 is the default because the corpus measurement found an empty band there —
 every pair at ratio ≥ 2.0 had a degenerate survivor and every pair below it a
 clean one — so the value sits in a gap rather than on a tuned edge. It is a
-*relative* comparison inside a pair NMS has already matched, which is why it does
-not run into the settled negative against an *absolute* mask-fill cut (see
+relative comparison inside a pair NMS has already matched, which is why it does
+not run into the settled negative against an absolute mask-fill cut (see
 [`position_captions.md`](position_captions.md)): it needs no cut-point and it
 cannot drop an instance, only swap which of two duplicates represents it. The
 rule lives in shared `dedupe_detections`, so `caption-position` gets it too.
 
-A companion guard that would have dropped degenerate *proposals* outright by an
-absolute fill threshold was measured and **refuted** — real sparse-subject views
+A companion guard that would have dropped degenerate proposals outright by an
+absolute fill threshold was measured and refuted — real sparse-subject views
 sit in the same fill band as the junk — and does not ship. That failure shape is
 handled by the score floor plus audit spot-checking.

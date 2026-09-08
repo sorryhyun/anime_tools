@@ -1,6 +1,6 @@
 # anime_tools Guidebook
 
-This is the start-to-finish guide to curating a dataset with **anime_tools**: install, put your
+This is the start-to-finish guide to curating a dataset with anime_tools: install, put your
 images in place, open the web GUI, run the caption / grouping / mask stages in order, and hand the
 result to the [Anima LoRA trainer](https://github.com/sorryhyun/anima_lora). It is written for
 someone who installed from the one-line installer and has never opened the code. It explains what
@@ -42,12 +42,12 @@ The trainer depends on this package; this package never imports the trainer.
 
 | Item | Note |
 |---|---|
-| Python | **3.13**. The installer pins it; `uv` fetches one if the machine has none. |
+| Python | 3.13. The installer pins it; `uv` fetches one if the machine has none. |
 | GPU | Optional but strongly recommended. Every model stage (the tagger, SAM3, PE-Spatial, OCR) runs on CPU, at a fraction of the speed. Each stage picks CUDA when torch sees it and CPU otherwise. |
 | OS | Linux, Windows, macOS. On macOS there is no CUDA and no triton; the package shims SAM3 around both, so the SAM3 stages run on CPU there. |
 | Disk | The models the stages fetch on first use (the tagger backbone, SAM3, PE-Spatial, OCR, the Danbooru tag KB) plus a resized copy of your dataset under `workspace/`. |
 
-> **Windows torch is CPU-only on PyPI.** The PowerShell installer defaults to the CUDA 13.0
+> Windows torch is CPU-only on PyPI. The PowerShell installer defaults to the CUDA 13.0
 > torch index for that reason (§3). Linux torch from PyPI already bundles CUDA.
 
 ---
@@ -80,7 +80,7 @@ Two environment variables steer the installer:
 | `ANIME_TOOLS_VERSION=v0.3.1` | Install that tag instead of the latest release. |
 | `TORCH_INDEX=https://download.pytorch.org/whl/cu130` | Extra package index for torch. The PowerShell installer already defaults to this one; on Linux it is only needed for a CPU-only build (`…/whl/cpu`). |
 
-When it finishes, open a **new shell** so the PATH change is seen, then:
+When it finishes, open a new shell so the PATH change is seen, then:
 
 ```bash
 cd <your dataset folder>
@@ -96,7 +96,7 @@ uv add "anime-tools @ git+https://github.com/sorryhyun/anime_tools"
 There is no PyPI package; pin a tag or point `[tool.uv.sources]` at a checkout. One thing to
 copy into your own `pyproject.toml`: SAM3 pins `numpy<2`, and that pin is stale. This repo
 overrides it, but uv honours `[tool.uv]` only in the workspace root, so a project that
-*depends* on anime-tools has to repeat the override or the resolve fails on numpy:
+depends on anime-tools has to repeat the override or the resolve fails on numpy:
 
 ```toml
 [tool.uv]
@@ -118,7 +118,7 @@ uv tool run --from anime-tools python -m anime_tools.downloads --list
 
 ## 4. The curation home and its layout
 
-Everything is relative to one directory, the **curation home**. It is, in order of precedence,
+Everything is relative to one directory, the curation home. It is, in order of precedence,
 `ANIME_TOOLS_HOME`, then `ANIMA_HOME` (the trainer's own home, so a tree the trainer uses
 works unchanged), then the directory you run from. `anime-tools-gui --home <dir>` sets it
 for that server.
@@ -142,21 +142,21 @@ for that server.
 
 Three rules explain most of what you will see:
 
-- **`image_dataset/` is read-only for the stages.** Your captions there are the *master*. Every
+- `image_dataset/` is read-only for the stages. Your captions there are the *master*. Every
   stage writes a *revised* caption under `workspace/resized/` instead, falling back to the master
   when no revised caption exists yet. Only two things ever write the master: the caption editor
   in the GUI when you edit that rung by hand, and Export.
-- **Every stage that opens an image opens it under `workspace/resized/`** — masking and grouping
+- Every stage that opens an image opens it under `workspace/resized/` — masking and grouping
   included, so the whole pipeline shares one geometry. An image that exists only in
   `image_dataset/` is invisible to them. That is why the GUI runs Resize automatically before
   any stage that needs it (§7.1).
-- **Nothing writes outside `workspace/` except Export** (§7.9). You can delete the workspace and
+- Nothing writes outside `workspace/` except Export (§7.9). You can delete the workspace and
   regenerate it; you cannot lose a master caption to a stage.
 
 Image files are matched to captions by stem: `chars/alice/001.png` reads `chars/alice/001.txt`.
 Subfolders are kept as-is through the whole pipeline (`<rel>` above).
 
-> **Upgrading from a pre-workspace install** (one that wrote `post_image_dataset/resized/`
+> Upgrading from a pre-workspace install (one that wrote `post_image_dataset/resized/`
 > directly): `python -m anime_tools.workspace.migrate` prints what it would move and
 > `--apply` moves it. It renames directories and never merges: an existing destination is
 > reported and skipped. A dataset root you had pinned to the old path in ⚙ Settings is named
@@ -166,21 +166,21 @@ Subfolders are kept as-is through the whole pipeline (`<rel>` above).
 
 ## 5. Hugging Face sign-in and models
 
-Two of the models are **gated** on the Hugging Face Hub: the dbv4 tagger backbone (GPL-3.0,
-never vendored — it is fetched under *your* token at load) and SAM 3. Both need a token with
+Two of the models are gated on the Hugging Face Hub: the dbv4 tagger backbone (GPL-3.0,
+never vendored — it is fetched under your token at load) and SAM 3. Both need a token with
 read access, and the account behind it has to have accepted each repo's terms once.
 
-In the GUI: ☰ → **⚙ Settings…** → *Hugging Face* → paste a token. It is handed to
-`huggingface_hub`'s login and stored by it, never shown again. The header shows **⚠ no HF
-token** until one is set. Gated rows in the Models list carry an *accept the terms* link; open
+In the GUI: ☰ → ⚙ Settings… → Hugging Face → paste a token. It is handed to
+`huggingface_hub`'s login and stored by it, never shown again. The header shows ⚠ no HF
+token until one is set. Gated rows in the Models list carry an accept the terms link; open
 it signed in as the same account.
 
-Nothing has to be pre-fetched: **every stage fetches what it needs on first use.** The
-**Models & weights** dialog (☰ → *Models & weights*) lists one row per checkpoint — what it is
-for, whether it is installed, where it lands — grouped under **packs**, the sets that install
-together: *Tagger*, *Danbooru tag DB*, *Masking*, *OCR*, *Grouping*. Each
-pack header has a **Download pack** button, each row its own **Download**, and the bar at the
-bottom **Download all N missing**. A download runs as an ordinary job, one at a time, sharing the
+Nothing has to be pre-fetched: every stage fetches what it needs on first use. The
+Models & weights dialog (☰ → Models & weights) lists one row per checkpoint — what it is
+for, whether it is installed, where it lands — grouped under packs, the sets that install
+together: Tagger, Danbooru tag DB, Masking, OCR, Grouping. Each
+pack header has a Download pack button, each row its own Download, and the bar at the
+bottom Download all N missing. A download runs as an ordinary job, one at a time, sharing the
 slot with the stages. The buttons only move the wait, and any gated-repo refusal, to a moment you
 picked.
 
@@ -214,17 +214,17 @@ panel.
 
 Every image under `image_dataset/`, in its folders, with dots on the row for what exists:
 resized, has a mask, and one dot per caption rung. Under each image its captions form a
-**ladder**, oldest first:
+ladder, oldest first:
 
 | Rung | File | Editable |
 |---|---|---|
-| **master** | `image_dataset/<rel>.txt` — hand-written; the stages only read it | yes |
-| **history** (`revised@1`, `revised@2`, …) | `<rel>.history.txt` — what the revised caption used to say, before each run that replaced it | no |
-| **revised** | `workspace/resized/<rel>.txt` — the stage output; the next run rewrites it and keeps this text as a version | yes |
-| **variants** (`v0`, `v1`, …) | `<rel>.variants.txt` — generated; `v0` is the pristine revised caption | no |
+| master | `image_dataset/<rel>.txt` — hand-written; the stages only read it | yes |
+| history (`revised@1`, `revised@2`, …) | `<rel>.history.txt` — what the revised caption used to say, before each run that replaced it | no |
+| revised | `workspace/resized/<rel>.txt` — the stage output; the next run rewrites it and keeps this text as a version | yes |
+| variants (`v0`, `v1`, …) | `<rel>.variants.txt` — generated; `v0` is the pristine revised caption | no |
 
-The **filter** box narrows the tree; `↑`/`↓` or `j`/`k` walk the images; `#<rel>|<kind>` in
-the URL is a link to one caption. The **tree / groups** toggle draws the same listing in two
+The filter box narrows the tree; `↑`/`↓` or `j`/`k` walk the images; `#<rel>|<kind>` in
+the URL is a link to one caption. The tree / groups toggle draws the same listing in two
 orders — the folders, or the near-twin groups the Groups stage found (§7.7).
 
 ### 6.2 The caption editor
@@ -234,56 +234,56 @@ badge per version. The tag bag and each position clause are boxed in the text; t
 from the server's own parser, so the browser never guesses at a caption's structure.
 Double-click a tag to look it up in the Danbooru tag KB (once it is downloaded).
 
-**Save** (⌘/Ctrl+Enter) writes `master` or `revised`; the other rungs are read-only. Every
+Save (⌘/Ctrl+Enter) writes `master` or `revised`; the other rungs are read-only. Every
 write pushes the text it replaced onto the history rung, by hand or by a stage alike. A save
-tells you what to do next: the trainer's text-encoder re-encode always, and *re-run Correct*
+tells you what to do next: the trainer's text-encoder re-encode always, and re-run Correct
 too when you edited a revised caption that already had a `.variants.txt`, because that
 sidecar is now stale.
 
-Below the captions, an image that the OCR stage has read shows the **text in the image** with
+Below the captions, an image that the OCR stage has read shows the text in the image with
 each line's confidence and position (§7.6).
 
 ### 6.3 The dock is the stage runner
 
-The button strip along the bottom **is the stage list**: Resize sits behind the scenes, and
-the buttons are **Autotag · Curate · OCR · Groups · Masks · Export**. Curate holds three stages
+The button strip along the bottom is the stage list: Resize sits behind the scenes, and
+the buttons are Autotag · Curate · OCR · Groups · Masks · Export. Curate holds three stages
 (Position / Correct / Audit) and Masks holds three (Subject / Text / Merge), picked inside the
 panel. One click opens a stage's form; a second click on the open one folds the dock away.
 
 The form is generated from the stage's own `--help`. It opens on the knobs a run changes its
-mind about; the rest fold under **▸ advanced (n)** at the bottom of each group, with a note when
+mind about; the rest fold under ▸ advanced (n) at the bottom of each group, with a note when
 a hidden field is off its default. Dataset roots, the report root and the model paths never
 appear on a form — they come from ⚙ Settings.
 
-- **Run** runs the stage on the selected image alone (**just `<rel>`**).
-- **Run batch** runs it over every image the Settings `path_pattern` names — `*` is the whole
+- Run runs the stage on the selected image alone (just `<rel>`).
+- Run batch runs it over every image the Settings `path_pattern` names — `*` is the whole
   dataset.
-- **Undo** puts back what the last run of this stage wrote, by replaying its report backwards.
-- **Cancel** stops the running job.
+- Undo puts back what the last run of this stage wrote, by replaying its report backwards.
+- Cancel stops the running job.
 
-**A Run writes for real.** There is no Apply gate in the GUI: what a run replaces becomes a
+A Run writes for real. There is no Apply gate in the GUI: what a run replaces becomes a
 version badge on the caption (`revised@2`), the run's report is read back as a per-image diff
 in the caption panel, and Undo is that report replayed with the two texts swapped. Undo is
 guarded: a caption you edited by hand after the run is left alone and counted as skipped.
 
-The newest output line shows in the stage bar; the **log** button opens the whole thing. A
+The newest output line shows in the stage bar; the log button opens the whole thing. A
 stage that walks images shows a progress bar; a run with a preflight in front of it shows
-*step 1/2 · resize* first.
+step 1/2 · resize first.
 
 ### 6.4 ⚙ Settings is three dialogs
 
 | Dialog | What it holds |
 |---|---|
-| **Settings** | The curation home and models dir, the five **dataset roots** (`src`, `master`, `dst`, `masks`, `out`), the Hugging Face token. |
-| **Advanced settings** | **Stage defaults** filled into every stage that takes them (`path_pattern`, the tagger dir, the SAM3 checkpoint and soft prompt, the report root, the mask root), and the **Preprocess** block — the Resize stage's own form, since Resize has no dock button. |
-| **Models & weights** | The model rows of §5. |
+| Settings | The curation home and models dir, the five dataset roots (`src`, `master`, `dst`, `masks`, `out`), the Hugging Face token. |
+| Advanced settings | Stage defaults filled into every stage that takes them (`path_pattern`, the tagger dir, the SAM3 checkpoint and soft prompt, the report root, the mask root), and the Preprocess block — the Resize stage's own form, since Resize has no dock button. |
+| Models & weights | The model rows of §5. |
 
 Each dialog saves only what it holds. Roots are relative to the curation home; a missing one is
-flagged. The panel may *read* any root the saved settings point at, but it will only *create*
+flagged. The panel may read any root the saved settings point at, but it will only create
 directories under the home, so a typo in an external root is a missing root rather than a new
 empty one.
 
-The ☰ menu's **Language** row switches the panel between English, Korean, Japanese and
+The ☰ menu's Language row switches the panel between English, Korean, Japanese and
 Chinese in place; a first visit follows the browser's own language list. Only the panel's chrome
 is translated — a stage's title, its form labels and help come from its `--help` and stay in
 English, and captions, tags and paths are data.
@@ -297,12 +297,12 @@ Resize once, and each caption stage reads the revised caption the previous one w
 
 ### 7.1 Resize (automatic)
 
-**Reads** `image_dataset/`. **Writes** `workspace/resized/<rel>.png`.
+Reads `image_dataset/`. Writes `workspace/resized/<rel>.png`.
 
 Every image lands in the bucket tier that resizes it the least, keeping its native aspect
 inside that tier's token band. The geometry is the trainer's own, so whichever side resizes
 first, the other finds every image already at its bucket and skips it. Images under the pixel
-floor (0.5 MP by default) are **skipped and named** in the report — such an image is never
+floor (0.5 MP by default) are skipped and named in the report — such an image is never
 resized, so no stage sees it; the image panel says so on the pixel-count chip, and the floor
 is in ⚙ Advanced settings › Preprocess.
 
@@ -315,15 +315,15 @@ the preflight is near-free. Always writes; there is no dry run.
 
 ### 7.2 Autotag captions
 
-**Reads** each resized image and its caption (revised, else master). **Writes** the revised
-caption. **Model**: the Anima Tagger (tagger checkpoint + gated dbv4 backbone).
+Reads each resized image and its caption (revised, else master). Writes the revised
+caption. Model: the Anima Tagger (tagger checkpoint + gated dbv4 backbone).
 
 Predicts an Anima-order tag string — `rating, count, characters, copyrights, @artists,
 generals` — per image. Three modes:
 
 | Mode | What it does |
 |---|---|
-| `missing` (default) | Only images **no caption speaks for**. Nothing existing is touched. |
+| `missing` (default) | Only images no caption speaks for. Nothing existing is touched. |
 | `merge` | Appends tags the caption lacks, keeping its position clauses. |
 | `overwrite` | Replaces the caption outright. The old text is kept as a history version. |
 
@@ -333,43 +333,43 @@ See [`docs/anima_tagger.md`](../anima_tagger.md) for the tagger itself.
 
 ### 7.3 Correct + mirror captions
 
-**Reads** the master captions and the Danbooru tag KB. **Writes** the revised caption and,
+Reads the master captions and the Danbooru tag KB. Writes the revised caption and,
 optionally, `.variants.txt`.
 
 Mirrors each master into a corrected revised caption: tags typed against the KB and ordered
 into Anima's buckets, an optional trigger word slotted in, an optional `@no-artist` sentinel,
-and optional **drop groups** that strip whole tag families from every mirrored caption without
+and optional drop groups that strip whole tag families from every mirrored caption without
 touching the master. With a variant count set it also writes `<rel>.variants.txt`: `v0` is the
 corrected caption, `v1…` are smart-shuffled and dropout draws that the trainer encodes verbatim.
 
 Always writes; there is no dry run and no report, so there is no Undo either — the replaced
-text is on the history rung. The KB is the **Danbooru tag KB** row in Models (§5); its
+text is on the history rung. The KB is the Danbooru tag KB row in Models (§5); its
 optional English row rewrites the descriptions the tag lookup shows.
 
-> Correct mirrors the **master**. A revised caption's position clauses survive a re-run (they
+> Correct mirrors the master. A revised caption's position clauses survive a re-run (they
 > are re-attached to the fresh mirror), but tags Autotag `merge` added to the flat bag do not,
 > so run Correct before Autotag `merge`, not after.
 
 ### 7.4 Position captions
 
-**Reads** resized images and their captions. **Writes** the revised caption. **Models**: SAM 3
+Reads resized images and their captions. Writes the revised caption. Models: SAM 3
 (gated), the subject soft prompt, the Anima Tagger.
 
 For an image with two or more subjects, detects each one, orders them in reading order, tags a
 mask-blanked crop of each, and rewrites the caption into the position-clause grammar:
-`<flat tag bag>. On the left, …. On the right, ….` A tag that belongs to one subject *moves*
+`<flat tag bag>. On the left, …. On the right, ….` A tag that belongs to one subject moves
 out of the flat bag into that subject's clause; nothing the curated caption never said is
 invented beyond a small allowance. Single-subject images are skipped and say why in the report.
 
-An apply drops any stale `.variants.txt` beside the captions it rewrote. **Backing it out** is
+An apply drops any stale `.variants.txt` beside the captions it rewrote. Backing it out is
 its own mode, `--flatten`, which merges every clause back into the flat bag with no model
 loaded — or Undo. The full grammar, the gates and every knob are in
 [`docs/position_captions.md`](../position_captions.md).
 
 ### 7.5 Multiview audit
 
-**Reads** the single-subject images the position stage skipped. **Writes** the **revised
-caption** — `multiple views` appended to the flat tag bag, and only that. **Models**: as
+Reads the single-subject images the position stage skipped. Writes the revised
+caption — `multiple views` appended to the flat tag bag, and only that. Models: as
 Position.
 
 Finds `1girl` images that are really several views of one girl and reports each with a
@@ -382,23 +382,23 @@ default; a weak finding has only the geometry behind it, so review its sheet fir
 
 ### 7.6 OCR text
 
-**Reads** resized images. **Writes** `workspace/ocr/<rel>.ocr.txt`. **Models**: the
+Reads resized images. Writes `workspace/ocr/<rel>.ocr.txt`. Models: the
 AnimeText text-block detector (finds balloon lines and the sound effects drawn onto the
 artwork) and the manga VL reader (reads every box — Japanese, Chinese, English; hearts, small
-kana and hand-lettered sfx included). Both are the *OCR* pack in Models & weights.
+kana and hand-lettered sfx included). Both are the OCR pack in Models & weights.
 
-Records the words *in the picture* — dialogue, signs, sound effects — one line per text block
-with its position. It is **not a caption**: nothing downstream encodes it, no caption is read or
+Records the words in the picture — dialogue, signs, sound effects — one line per text block
+with its position. It is not a caption: nothing downstream encodes it, no caption is read or
 written, and no re-encode is needed afterwards. The image panel shows the lines. By default
 ASCII-only lines are dropped (page numbers, URLs); a balloon is one block, so its columns arrive
 as one line.
 
 ### 7.7 Build groups
 
-**Reads** resized images. **Writes** `workspace/groups/groups.json`. **Model**: PE-Spatial.
+Reads resized images. Writes `workspace/groups/groups.json`. Model: PE-Spatial.
 
 Clusters near-identical images — duplicates, alternate versions, crops of one picture — per
-top-level folder, by visual content rather than filename or caption. The sidebar's **groups**
+top-level folder, by visual content rather than filename or caption. The sidebar's groups
 ordering draws the result: one collapsible header per group, so redundancy sits together and
 is easy to thin out. Filters and pending dots mean the same thing in both orderings.
 
@@ -409,14 +409,14 @@ form. See [`docs/grouping.md`](../grouping.md).
 
 ### 7.8 Masks: Subject, Merge
 
-**Read** resized images. **Write** `workspace/masks_sam/` and its merge under
-`workspace/masks/` — 8-bit `{stem}_mask.png` mirroring the source subfolder. **Model**: SAM 3.
+Read resized images. Write `workspace/masks_sam/` and its merge under
+`workspace/masks/` — 8-bit `{stem}_mask.png` mirroring the source subfolder. Model: SAM 3.
 
-- **Subject** keeps the subject and masks out the background: by default it grounds SAM3 on the
-  learned subject prompt. Prompts to mask *out* (`speech bubble,text`) can be added — balloons
+- Subject keeps the subject and masks out the background: by default it grounds SAM3 on the
+  learned subject prompt. Prompts to mask out (`speech bubble,text`) can be added — balloons
   and lettering are ordinary ignore prompts here.
-- **Merge** takes the pixel-wise minimum of its input trees into `workspace/masks/`, the tree the
-  sidebar shows as *mask* / *overlay* and Export publishes. The default input is the generator's
+- Merge takes the pixel-wise minimum of its input trees into `workspace/masks/`, the tree the
+  sidebar shows as mask / overlay and Export publishes. The default input is the generator's
   tree; a missing input is skipped, and a hand-painted tree can be listed beside it.
 
 The two directories are one setting, not two fields, because a second tree merged in beside
@@ -426,26 +426,26 @@ change one. See [`docs/masking.md`](../masking.md).
 
 ### 7.9 Export workspace
 
-**Reads** the workspace. **Writes** `post_image_dataset/` — and, for a revised master,
+Reads the workspace. Writes `post_image_dataset/` — and, for a revised master,
 `image_dataset/`.
 
 The only stage that writes outside the workspace. It publishes six artifact kinds — resized
 image, revised caption, variants sidecar, mask, revised master, caption index — each decided on
 its own against its destination: identical files are skipped (byte compare for text, size and
 mtime for pixels), so re-exporting an unchanged dataset is a walk and a stat apiece. It always
-**copies**, never links, so the export tree survives the workspace being cleared.
+copies, never links, so the export tree survives the workspace being cleared.
 
-From the CLI it is dry-run by default and lists what it would copy. In the GUI **Run** copies,
-and **Undo** restores the text it overwrote from the export's own ledger; an overwritten
-*pixel* cannot be restored and is reported as such. The trainer reads only what Export wrote.
+From the CLI it is dry-run by default and lists what it would copy. In the GUI Run copies,
+and Undo restores the text it overwrote from the export's own ledger; an overwritten
+pixel cannot be restored and is reported as such. The trainer reads only what Export wrote.
 
 ---
 
 ## 8. Handing off to the trainer
 
-1. **Export** (§7.9). The trainer reads `post_image_dataset/resized/` for images and revised
+1. Export (§7.9). The trainer reads `post_image_dataset/resized/` for images and revised
    captions, `post_image_dataset/masks/` for masks, and `image_dataset/` for the master.
-2. In the trainer, **re-encode the text embeddings** — its `make preprocess-te` — after any
+2. In the trainer, re-encode the text embeddings — its `make preprocess-te` — after any
    apply that changed a caption. The trainer's caches are reused as-is and never expire on their
    own, so a changed caption with an old cache trains on the old text.
 3. Resize is shared: the trainer's `make preprocess-resize` finds every image already at its
@@ -510,33 +510,33 @@ generated from the installed code, so a new flag appears on the form by itself.
 
 ## 11. Troubleshooting
 
-**A stage fails with a gated-repo error (401 / 403 from the Hub).** The token is missing, or
+A stage fails with a gated-repo error (401 / 403 from the Hub). The token is missing, or
 the account has not accepted that repo's terms. Set the token in ⚙ Settings, then open the
-*accept the terms* link on the row in Models & weights, signed in as the same account. The
+accept the terms link on the row in Models & weights, signed in as the same account. The
 Download button reproduces the failure without a full stage run.
 
-**`uv` fails resolving numpy in my own project.** SAM3's stale `numpy<2` pin. Add the
+`uv` fails resolving numpy in my own project. SAM3's stale `numpy<2` pin. Add the
 override from §3.2 to your `pyproject.toml`.
 
-**macOS: `import sam3` complains about triton, or a tensor cannot be put on `cuda`.** Both are
+macOS: `import sam3` complains about triton, or a tensor cannot be put on `cuda`. Both are
 handled inside the package's SAM3 loader; if you see them, you are importing sam3 yourself or
 running an old release. The SAM3 stages run on CPU there, slowly.
 
-**Windows: torch has no CUDA.** PyPI's Windows torch is CPU-only. Reinstall with the PowerShell
+Windows: torch has no CUDA. PyPI's Windows torch is CPU-only. Reinstall with the PowerShell
 installer, which defaults to the CUDA index, or set `TORCH_INDEX` explicitly.
 
-**A stage sees no images / does nothing for this image.** The image is not under
+A stage sees no images / does nothing for this image. The image is not under
 `workspace/resized/`. Either it sits under the resize floor (the pixel-count chip says so;
 lower the floor in ⚙ Advanced settings › Preprocess) or the `src` root does not point at your
 dataset.
 
-**"saved — .variants.txt is now stale".** You edited a revised caption that had variants. Re-run
+"saved — .variants.txt is now stale". You edited a revised caption that had variants. Re-run
 Correct with the same variant count, then the trainer's TE re-encode.
 
-**Undo says it skipped things.** The caption no longer holds what the run wrote — you or a later
+Undo says it skipped things. The caption no longer holds what the run wrote — you or a later
 run changed it — so that row was left alone. The skipped rows are still in the report.
 
-**A run reads the wrong report, or two stages share one.** Each stage keeps its own directory
+A run reads the wrong report, or two stages share one. Each stage keeps its own directory
 under the report root (`captions/autotag`, `captions/position`, …); the root is one Settings
 value and moving it moves them all. Leave it blank to keep reports beside the `dst` root.
 

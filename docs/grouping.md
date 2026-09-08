@@ -1,7 +1,7 @@
 # Grouping — near-twin components over PE-Spatial features
 
-Ships as the **Groups** stage: it embeds every image in the resized tree, connects the pairs that
-are near-twins, and writes `groups.json`. The sidebar's *groups* ordering reads that manifest.
+Ships as the Groups stage: it embeds every image in the resized tree, connects the pairs that
+are near-twins, and writes `groups.json`. The sidebar's groups ordering reads that manifest.
 Nothing else does — grouping is a curation aid for thinning duplicates and balancing concepts, not
 a preprocess or training step, and it never touches a caption.
 
@@ -15,10 +15,10 @@ computed once per image at the model's native 512×512 square bucket:
 
 A pair goes through two stages (`grouping/groups.py::_grid_match_edges`):
 
-1. **Stage A, prefilter.** `cls` cosine must reach `--sim-min`. This only prunes obviously unrelated
+1. Stage A, prefilter. `cls` cosine must reach `--sim-min`. This only prunes obviously unrelated
    pairs so the per-folder pass stays proportional to the candidate pairs; it is not the gate.
-2. **Stage B, grid match** (`grouping/matching.py::match_fracs`). Each `grid16` is pooled again to
-   `--grid`×`--grid` cells (7×7 = 49 by default). A cell of image A is an *inlier* when its nearest
+2. Stage B, grid match (`grouping/matching.py::match_fracs`). Each `grid16` is pooled again to
+   `--grid`×`--grid` cells (7×7 = 49 by default). A cell of image A is an inlier when its nearest
    cell in B has cosine at least `--cell-match-min`, that cell's own nearest in A is the same cell
    (mutual nearest neighbour), and the match is distinctive under a ratio test: the cosine distance
    to the best cell must be at most `--ratio` times the distance to the second best. Flat colour
@@ -30,7 +30,7 @@ group is transitive: A–B and B–C put A and C together even if they never mat
 Components are listed largest first; anything smaller than `--min-size` is dropped from the
 manifest and stays a singleton.
 
-**Scope is the top-level folder** under the source dir (`_artist_of`), so two folders never merge
+Scope is the top-level folder under the source dir (`_artist_of`), so two folders never merge
 and a folder with one image is skipped. A flat tree is one bucket.
 
 Which way is stricter:
@@ -80,10 +80,10 @@ headers; see the
 
 ## 3. Running it
 
-In the GUI, **Groups › Build groups**. The form shows `--sim-min` and `--min-size`; the rest
-folds under *advanced*. `--source-dir` is bound to the dataset's `dst` root and `--out` to the
+In the GUI, Groups › Build groups. The form shows `--sim-min` and `--min-size`; the rest
+folds under advanced. `--source-dir` is bound to the dataset's `dst` root and `--out` to the
 report root, so neither is asked, and `--device` is resolved in the child. Because the stage is
-bound to `dst`, the GUI runs **Resize** in front of it — the resized tree is the pixel data every
+bound to `dst`, the GUI runs Resize in front of it — the resized tree is the pixel data every
 other stage reads.
 
 From a checkout:
@@ -119,20 +119,20 @@ weights (`facebook/PE-Spatial-B16-512`, one `.pt`) are fetched into `<models>/pe
 
 ## 4. Reading it in the sidebar
 
-The sidebar draws one listing in two orderings, *tree* and *groups*. In *groups* mode the rows
-are folded as *folder → component → images*, each component headed by its mean cosine, with every
-image the manifest does not place under a trailing **ungrouped** bucket, so switching modes cannot
+The sidebar draws one listing in two orderings, tree and groups. In groups mode the rows
+are folded as folder → component → images, each component headed by its mean cosine, with every
+image the manifest does not place under a trailing ungrouped bucket, so switching modes cannot
 lose an image. Filters and pending dots mean the same thing in both modes because the server
 answers rels only (`gui/dataset.py::load_groups`) and the browser joins them onto the listing it
 already has; a component the filter cuts down to one visible row is not shown as a group.
 
 Three notes the view can carry:
 
-- **no manifest** at `<report_root>/groups/groups.json` — build one from the Groups panel. Not an
+- no manifest at `<report_root>/groups/groups.json` — build one from the Groups panel. Not an
   error; an unparseable file is.
-- **older manifest** — the file's `version` is not 2. The components are still usable; rebuild to
+- older manifest — the file's `version` is not 2. The components are still usable; rebuild to
   pick up the current gate.
-- **nothing clustered**, with the `source_dir` the manifest was built from — a manifest built
+- nothing clustered, with the `source_dir` the manifest was built from — a manifest built
   against another tree joins onto nothing, which is why that path rides along.
 
 ## 5. The feature cache
@@ -142,8 +142,8 @@ Embedding is the expensive half, so features are cached per image under `$NEAR_T
 `grid16`, the source's `(size, mtime_ns)` and `FEATURE_CACHE_VER`. A re-run at other thresholds is
 only the matching pass.
 
-The key addresses a *location*, so it does not move when the pixels underneath are rewritten. The
-stamp is what makes that a miss: **Resize rewrites `workspace/resized/` under the same names**, and
+The key addresses a location, so it does not move when the pixels underneath are rewritten. The
+stamp is what makes that a miss: Resize rewrites `workspace/resized/` under the same names, and
 the stamp check is what stops a regenerated tree from reading stale features
 (`tests/test_grouping_features.py` pins it). Anything wrong with an entry — no file, a truncated
 `.npz`, a pre-stamp or older-version entry, a moved stamp, an unreadable source — means recompute,
@@ -170,7 +170,7 @@ refused by the request. The result must satisfy `grouping/features.py::Embedder`
 
 Two further CLIs under `grouping/cli/` solve a narrower problem with a different matcher: pairing
 censored training images with an uncensored drop whose filenames and resolutions do not
-correspond. They take **no flags for paths** — both read six fixed locations off the curation
+correspond. They take no flags for paths — both read six fixed locations off the curation
 home (`cli/_decensored.py`): `image_dataset/sincos/` (the censored originals), `sincos_decensored/`
 (the drop), and `output/curate/sincos_decensored/` for everything they write.
 
@@ -201,7 +201,7 @@ with its match, leaves the caption alone, and deletes the image-derived caches f
 
 ## 8. Limits
 
-- Every image is decoded to a 512×512 **square**, so aspect is not preserved; the grid match is
+- Every image is decoded to a 512×512 square, so aspect is not preserved; the grid match is
   tolerant of the resulting stretch but a crop that changes the aspect a lot scatters cells.
 - Scope is the top-level folder. A twin that straddles two folders is never found.
 - The manifest is a snapshot: an image added after the run is simply ungrouped until the next one.
@@ -221,5 +221,5 @@ with its match, leaves the caption alone, and deletes the image-derived caches f
 | `anime_tools/grouping/cli/build_groups.py` | the shell: `GroupRequest.parser()` → `run_groups` |
 | `anime_tools/grouping/cli/{match,apply}_decensored.py`, `_decensored.py` | the decensor pass and its fixed paths |
 | `anime_tools/gui/dataset.py::load_groups` | the manifest as the sidebar's group view |
-| `frontend/src/tree.ts::regroup` | the *groups* ordering and the ungrouped bucket |
+| `frontend/src/tree.ts::regroup` | the groups ordering and the ungrouped bucket |
 | `tests/test_grouping_grid_match.py`, `tests/test_grouping_features.py` | the gate, the cache stamp, stem collisions |

@@ -16,17 +16,17 @@ Declare the request in the package's `requests.py` (`stages/`, `masking/` or `gr
 dataclass over `anime_tools/_request.py::Request`. Every field is `arg(default, help=…,
 group=…, gate=…, choices=…)`; the class docstring is the `--help` description. Rules:
 
-- **Torch-free.** The module is imported by the GUI server and by the registry test with torch
+- Torch-free. The module is imported by the GUI server and by the registry test with torch
   poisoned. Model imports go inside the runner's body.
-- **Validation in `__post_init__`**, raising `ValueError`; the shell turns it into
+- Validation in `__post_init__`, raising `ValueError`; the shell turns it into
   `parser.error`, the GUI into a 400. A missing input tree is a `FileNotFoundError`.
-- **Flag spelling follows the package**: `stages/` underscores (`FLAG_SEP = "_"`), `masking/`
+- Flag spelling follows the package: `stages/` underscores (`FLAG_SEP = "_"`), `masking/`
   and `grouping/` hyphens. The other spelling is generated as an alias.
 - A `store_false` switch names its flag in `off=` metadata (`skip_en` is `--keep_en`).
-- A **drawer** is a switch field with `gate=<its own name>` and a `group` title, and every knob
+- A drawer is a switch field with `gate=<its own name>` and a `group` title, and every knob
   inside it carries `gate=<the switch>`. The GUI folds a shut drawer and drops its knobs from the
   argv; `tests/test_masking_plan.py` shows the shape.
-- **Shared flags keep one spelling** across stages — `path_pattern`, `tagger_dir`, `checkpoint`,
+- Shared flags keep one spelling across stages — `path_pattern`, `tagger_dir`, `checkpoint`,
   `prompt_embed`, `device` — because the GUI fills each from one Settings value.
   `tests/test_registry_requests.py::test_shared_flags_keep_one_spelling` pins the list; the
   device flag literal exists once, in `_device.py::DEVICE_HELP`.
@@ -42,7 +42,7 @@ group=…, gate=…, choices=…)`; the class docstring is the `--help` descript
 preflight, model load through `stages/_models.py` (cached per process; `release_models()`
 empties it), the library call, `report.json` via `cli/_report.py`, progress through
 `cli/_args.py::make_progress` (the `  [done/total] detail` line is the GUI's bar and the daemon's
-`progress.jsonl`), and the printed epilogue. **Dry-run by default; `--apply` writes.** A
+`progress.jsonl`), and the printed epilogue. Dry-run by default; `--apply` writes. A
 `phase("…")` bracket from `_progress.py` around a model load keeps the daemon's stall watchdog
 quiet.
 

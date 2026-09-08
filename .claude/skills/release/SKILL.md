@@ -7,7 +7,7 @@ to release, bump the version, or debug the installer or the release workflow.
 
 # Releasing
 
-Releases are **tag-driven**: `.github/workflows/release.yml` runs on a `v*` tag, rebuilds the
+Releases are tag-driven: `.github/workflows/release.yml` runs on a `v*` tag, rebuilds the
 frontend and refuses a stale committed bundle (`git diff --exit-code -- anime_tools/gui/static/`),
 runs `uv build`, and publishes a GitHub release with generated notes carrying `install.sh`,
 `install.ps1`, the wheel and the sdist. An untagged push never changes what users install.

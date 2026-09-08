@@ -13,13 +13,13 @@ skill; the caption grammar these stages write is the `captions` skill.
 
 ## Requests and runners
 
-**The surface is a request object per stage** (`requests.py`, torch-free): `ResizeRequest`,
+The surface is a request object per stage (`requests.py`, torch-free): `ResizeRequest`,
 `AutotagRequest`, `PositionRequest`, `CorrectRequest`, `OcrRequest`, `AuditRequest`,
 `ExportRequest`, run by `run.py::run_<stage>(req)`, which is the old CLI main minus the parsing
 (preflight, model load, the library call, `report.json`, the printed epilogue). Same base as
 masking's (`anime_tools/_request.py`), with two differences: flags are spelled with underscores
 (`FLAG_SEP = "_"`), and a `store_false` switch names its one flag in `off` metadata (`skip_en` is
-`--keep_en`). **The parser is generated from the class** (`Request.parser()` →
+`--keep_en`). The parser is generated from the class (`Request.parser()` →
 `_request.build_parser`): every field is declared through `arg(default, help=…, group=…, gate=…,
 choices=…)`, the class docstring is the `--help` description, and every flag with a separator
 takes the other spelling as an alias (`--path_pattern` / `--path-pattern`). The CLIs in `cli/` are
@@ -37,7 +37,7 @@ fifteen names lazily; `tests/test_registry_requests.py` round-trips every regist
 request through its parser and imports the request half torch-poisoned;
 `tests/test_stage_requests.py` keeps the stage-specific pins.
 
-**`registry.py`** is the stage list — `Stage(id, title, request="module:Class",
+`registry.py` is the stage list — `Stage(id, title, request="module:Class",
 run="module:function", module, panel, …)` for all eleven stages, masking and grouping included —
 resolved lazily (`Stage.request_class()`, `Stage.runner()`), so the GUI server and the trainer can
 enumerate stages without importing one, and a driver can go from a stage id to the in-process
@@ -53,18 +53,18 @@ review and probe CLIs share it).
 ## The audit phase
 
 `PositionRequest.multiview_audit` (`off` / `report` / `apply`) runs the multiview audit as the
-position stage's **first** phase, over the complement population — `is_audit_target` is defined as
+position stage's first phase, over the complement population — `is_audit_target` is defined as
 exactly what `is_candidate` rejects as `single-subject`. `run.py::_run_audit_phase` reuses the
 already-resident SAM3 + tagger, detects under `req.audit_options()`, and in `apply` mode hands
 `multiview_audit.promotions()` to `run_position_captions(promoted=…)`, which substitutes the
-promoted caption **before** `is_candidate` sees it.
+promoted caption before `is_candidate` sees it.
 
-**Order is load-bearing, not a preference.** `multiple views` is what moves an image out of the
+Order is load-bearing, not a preference. `multiple views` is what moves an image out of the
 `single-subject` rejection AND what `is_repeated_subject_layout` reads to arm the `view_invariant`
 gate; audit after the sweep and both arrive too late. `admitted()` is the one verdict/confidence
 gate the write path and the promotion path share.
 
-**Both write the revised tree**, like every other caption stage — the phase through
+Both write the revised tree, like every other caption stage — the phase through
 `run_position_captions`, the standalone stage through `apply_findings`. No stage writes the
 hand-written master (Export and the GUI caption editor are its only writers), and revised-first
 (`_walk_captions.resolve_caption`) means a master write would be read past anyway once a revised
@@ -72,12 +72,12 @@ caption exists.
 
 ## Export
 
-**Export is the only thing that writes outside the workspace.** Six artifact kinds
+Export is the only thing that writes outside the workspace. Six artifact kinds
 (`image`/`caption`/`variants`/`mask`/`master`/`index`), each decided against the destination
 (`identical` by byte compare for text, `(size, mtime_ns)` for pixels). It always copies, takes no
 `--from_report`, and `revert_export` restores text it overwrote — an overwritten pixel reports
 `not-undoable`. `--combine_ocr` (GUI: the "Combine OCR" drawer, `--ocr_dir` inside it) is the one
-knob that makes a row a *render* rather than a copy: a `caption` / `variants` row whose image has a
+knob that makes a row a render rather than a copy: a `caption` / `variants` row whose image has a
 `{stem}.ocr.txt` publishes the text with the OCR clauses attached (the lines held to `--ocr_min_det`
 and `--ocr_min_glyph`, both recorded on the row), carries `ocr` + `text` in the
 report (`text` re-derived at decide time — a sidecar deleted since the plan publishes the caption
@@ -86,7 +86,7 @@ again without the knob takes the clause back. The trainer must `make preprocess-
 
 ## Reports, replay, shared scaffolding
 
-Stages are dry-run by default **from the CLI** and write `report.json`; `--apply` writes for real.
+Stages are dry-run by default from the CLI and write `report.json`; `--apply` writes for real.
 The GUI always passes it. `tests/test_registry_requests.py` pins one spelling per shared flag,
 since the GUI fills `--path_pattern` / `--tagger_dir` / `--checkpoint` / `--prompt_embed` from one
 Settings value each.

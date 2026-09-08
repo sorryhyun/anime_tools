@@ -8,10 +8,10 @@ or touching this package**. This file is the module map. Docs: `docs/position_ca
 ## Module map
 
 - `position_clauses.py` — the one parser: `<flat tag bag>. On the left, …. In the …, ….` Periods
-  delimit clauses, commas delimit tags inside one. **Never `split(",")` a caption**; go through
+  delimit clauses, commas delimit tags inside one. Never `split(",")` a caption; go through
   `parse_caption` / `compose_caption`, and `tag_spans` for `[start, end)` offsets (what the GUI
   editor paints boxes from).
-- `taxonomy.py` is the one tag-*shape* vocabulary (pure stdlib): `normalize_tag` is the key every
+- `taxonomy.py` is the one tag-shape vocabulary (pure stdlib): `normalize_tag` is the key every
   "does the caption already say this?" comparison uses, so two danbooru spellings of a tag can never
   read as two tags. `tests/test_tag_taxonomy.py` greps `stages/` for the bare `.lower()` that should
   be this call. Also `is_count_tag`/`count_of`/`exact_count` (the one count regex) and
@@ -22,10 +22,10 @@ or touching this package**. This file is the module map. Docs: `docs/position_ca
   hand-edit tolerance (blank, `#`, wrong-arity lines skipped) live there. Three sidecars sit on it:
   `variants.py` (`.variants.txt`, `v0` = pristine), `history.py` (`.history.txt`, capped at
   `HISTORY_LIMIT`, sequences never renumbered), `ocr_sidecar.py` (`.ocr.txt`). OCR is not a caption
-  — it names words *in the picture*, so no caption stage reads it and the workspace caption never
+  — it names words in the picture, so no caption stage reads it and the workspace caption never
   carries it. It reaches the trainer only through Export's `--combine_ocr`
   (`ocr_sidecar.with_ocr_clause`: the lines attached as the trailing `Japanese text reads as
-  "…", "…"` clause on the *published* caption and every variant line; an existing text clause is
+  "…", "…"` clause on the published caption and every variant line; an existing text clause is
   replaced, no lines removes it). Two floors say which lines get there — `DEFAULT_MIN_DET` on the
   detector's box confidence and `DEFAULT_MIN_GLYPH` on `OcrLine.glyph_px` (`sqrt(w*h/len(text))`,
   the em of the line: a box too small for the glyphs read from it, or text too fine to render) —
@@ -37,7 +37,7 @@ or touching this package**. This file is the module map. Docs: `docs/position_ca
   `tokenizers.py` is the length check behind `CorrectRequest`'s randomize tokenizers.
 - `clause_rewrite.py` / `clause_vocabulary.py` / `group_router.py` / `caption_layout.py` are the
   position-clause rewrite: which tag may enter which clause, and what moves out of the bag. Gate
-  and group sets are **data** in `data/clause_vocabulary.yaml` (the trainer's
+  and group sets are data in `data/clause_vocabulary.yaml` (the trainer's
   `configs/clause_vocabulary.yaml` overrides it) — retune there, not in Python.
 
 ## Who else reads a caption

@@ -3,9 +3,9 @@
 Index of the `docs/` tree. Each row is a one-line orientation; read the linked doc before working
 on the thing it describes.
 
-- **Guidelines** — user-facing walkthroughs: start here if you installed the package to curate a
+- Guidelines — user-facing walkthroughs: start here if you installed the package to curate a
   dataset.
-- **Stages** — one reference per stage family: what it reads and writes, running it from the GUI
+- Stages — one reference per stage family: what it reads and writes, running it from the GUI
   and the CLI, the knobs, the limits.
 
 The architecture notes for people changing the code are `CLAUDE.md` at the repo root (the

@@ -7,7 +7,7 @@ Phase 3b (2026-08-30); the `results/` history came along (gitignored).
 archived 2026-08-30 to
 `_archive/anima_tagger_training/pe_backend_removed_2026_08_30/bench_tagger_external/`
 (now under this repo's gitignored `_archive/`) when the PE tagger backend was removed —
-"ours" *is* dbv4-backed now, so the comparison it ran is moot. Results under `results/`
+"ours" is dbv4-backed now, so the comparison it ran is moot. Results under `results/`
 predate that.
 
 Still live: `calibration_check.py` (CPU-only ECE check on the dbv4 sidecar

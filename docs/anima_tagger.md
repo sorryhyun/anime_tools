@@ -7,7 +7,7 @@ captions, batch autotag, and the GUI's autotag server.
 
 The live checkpoint is `models/captioners/anima-tagger-dbv4/`: the external
 `animetimm/caformer_b36.dbv4-full` backbone (134 M params, 384², GPL-3.0,
-gated — fetched under your HF token, **never vendored**) projected onto a
+gated — fetched under your HF token, never vendored) projected onto a
 2,532-tag vocab / 4-class rating, plus a small sidecar head for copyright / OC
 characters / renamed generals. `config.json["backend"] == "dbv4"` is the only
 backend `AnimaTagger` loads. Requires `timm`.
@@ -21,13 +21,13 @@ the torch-free `anime_tools/tagger/dbv4_meta.py` are the single source of truth
 for repo and file set (`tagger.py` re-exports them; the ComfyUI node and
 `anime_tools/downloads.py` — the catalog behind the GUI's Models rows — track
 them). `python -m anime_tools.downloads tagger tagger_backbone tagger_onnx`,
-what ⚙ Settings → **Models** runs, pre-fetches both halves and traces the ONNX
+what ⚙ Settings → Models runs, pre-fetches both halves and traces the ONNX
 graph the third row builds out of them.
 
 Every runtime entry point (position captions, batch autotag, the GUI autotag
 server) goes through `ensure_tagger_checkpoint`, which also runs
 `ensure_tagger_backbone`: an offline hub-cache probe, then a token fetch on miss
-— **before** SAM3 / the tagger load, so a missing token or unaccepted terms
+— before SAM3 / the tagger load, so a missing token or unaccepted terms
 fails fast with the `hf auth login` + accept-terms hint (a gated 401/403 is
 translated in `anime_tools/_hf.py`) instead of a traceback halfway through a
 job. `ANIMA_TAGGER_NO_AUTOFETCH=1` refuses the fetch (offline hosts / CI).
@@ -47,7 +47,7 @@ PIL image → 384² resize
            fallback → top-1 artist / top-1 copyright
 ```
 
-The backbone is frozen and external; the **only trained weights we ship** are
+The backbone is frozen and external; the only trained weights we ship are
 the sidecar linear head (`sidecar.safetensors` + `sidecar.json`). The vocab
 build, the rules/groups snapshots and the threshold calibration are ours.
 
@@ -56,8 +56,8 @@ dbv4's snake_case names onto our space-separated vocab, recovering `rules.yaml`
 renames. Tags dbv4 does not support sit at logit −30, and a pure-`softmax`
 group only emits a winner that clears its own threshold ("at most one" — dbv4
 was never CE-trained on our groups). What dbv4 cannot express is exactly what
-the **sidecar** covers: copyright, dataset OC characters, renamed generals, and
-an 8-way people-count softmax. **`@artist` is deliberately not covered** —
+the sidecar covers: copyright, dataset OC characters, renamed generals, and
+an 8-way people-count softmax. `@artist` is deliberately not covered —
 artist attribution is not a tagger goal. `people_count` is nonetheless always
 taken from the count-tag rule (`taxonomy.classify_people`,
 `people_count_source="count-tag-rule"`), which beats the sidecar's own head;
@@ -69,12 +69,12 @@ everything else.
 ### Rating band
 
 Anima's rating band is 4-class — `safe, sensitive, nsfw, explicit`.
-`anime_tools.tagger.tagger.RATINGS` fixes the class *order* (it is the rating
+`anime_tools.tagger.tagger.RATINGS` fixes the class order (it is the rating
 head's class index); `anime_tools.captions.taxonomy.CAPTION_RATINGS` is the
 unordered set the caption-side consumers test against. Danbooru's own literals
 are accepted as aliases and folded onto the band at vocab-build time
 (`general`→`safe`, `questionable`→`nsfw`), so a raw booru caption classifies as
-a rating instead of falling through to the `general` *category*. `AnimaTagger`
+a rating instead of falling through to the `general` category. `AnimaTagger`
 reads `vocab["ratings"]` from the checkpoint and `n_ratings` flows from the
 manifest, so the band is a property of the checkpoint, not a loader constant.
 
@@ -133,7 +133,7 @@ External corpus paths are routed via one `.env` key —
 | `<corpus>/selected/` (optional) | Curated subset (already deduped) | Additional caption source. |
 
 `image_dataset/` (Anima's training set) is also scanned by default.
-`CAPTION_CORPUS_DIR` is **not committed** — it's per-user. The checkpoint
+`CAPTION_CORPUS_DIR` is not committed — it's per-user. The checkpoint
 snapshots `rules.yaml` + `groups.yaml`, so inference has zero runtime
 dependency on the corpus dir.
 
@@ -168,8 +168,8 @@ models/captioners/anima-tagger-dbv4/
 ```
 
 The checkpoint dir holds only our files, so it stays moveable across machines;
-the backbone weights land in the **HF hub cache**, not under `models/` — that is
-where `Dbv4Backend._load_model` looks. Their gate is *auto-approve*: `hf auth
+the backbone weights land in the HF hub cache, not under `models/` — that is
+where `Dbv4Backend._load_model` looks. Their gate is auto-approve: `hf auth
 login` (or the GUI Settings dialog's token field) plus one click on
 [the repo page](https://huggingface.co/animetimm/caformer_b36.dbv4-full). The
 hidden-state cache lives at
@@ -181,15 +181,15 @@ hidden-state cache lives at
 
 `tag_groups.yaml` declares typed groups with one of three modes:
 
-* **`softmax_when_solo`** — K-way CE over the group's logits when the sample is
+* `softmax_when_solo` — K-way CE over the group's logits when the sample is
   single-subject (`solo`/`1girl`/`1boy`/`1other` fires AND no multi-count tag
   fires) AND no `escape:` tag fires; per-tag BCE otherwise. Used for groups
   mutually exclusive on a single subject (eye color, hair color, hair length,
   primary garment) but irrelevant when an explicit escape applies (e.g.
   `heterochromia` for eye_color, `multicolored hair` for hair_color).
-* **`softmax`** — always K-way CE (modulo `escape:`). For genuinely exclusive
+* `softmax` — always K-way CE (modulo `escape:`). For genuinely exclusive
   groups like rating.
-* **`multilabel`** — left in BCE; the group exists only for introspection / UI
+* `multilabel` — left in BCE; the group exists only for introspection / UI
   grouping.
 
 `captions/group_router.py` holds the router and `compute_grouped_loss` (BCE on
@@ -206,21 +206,21 @@ per tag and picks the F1-maximizing one on val. Tags with fewer than
 `min_support` val positives, zero achievable F1, or membership in a softmax
 group keep `default=0.5` (softmax-group tags are routed by argmax at inference).
 Tag-block size of 256 caps memory. dbv4-native tags keep their card thresholds
-and are **not** recalibrated — our val split is far too small to improve on
+and are not recalibrated — our val split is far too small to improve on
 them; only sidecar tags are swept.
 
 ### Role-marker scan
 
 `role_markers.py` is a read-only curator helper. It reads `vocab.json` +
 `dataset.json` and ranks every `category=='character'` tag by its conditional
-co-occurrence with another character tag on **solo** training samples (the same
+co-occurrence with another character tag on solo training samples (the same
 `solo`/`1girl`/`1boy`/`1other` predicate the router applies), auto-bucketing
-each candidate: **A_costume** (shares a name prefix with a top partner → variant
-of an existing base; curate via `tag_rules.yaml` `dedup:`), **D_role** (broad
+each candidate: A_costume (shares a name prefix with a top partner → variant
+of an existing base; curate via `tag_rules.yaml` `dedup:`), D_role (broad
 partner pool, ≥ `--min_role_partners` distinct partners → affiliation marker
 mistyped as character, e.g. `sensei (blue archive)`, `doctor (arknights)`;
-curate via `remove:`), **C_pair** (top-1 partner ≥ `--pair_dominance` of
-co-occurrences → genuine couple/sibling pair; leave alone) and **B_review**
+curate via `remove:`), C_pair (top-1 partner ≥ `--pair_dominance` of
+co-occurrences → genuine couple/sibling pair; leave alone) and B_review
 (everything else; eyeball). `--out_yaml stub.yaml` writes a YAML stub split into
 pasteable sections (A as dedup blocks, D under `remove:`, B/C as commented
 hints). No file in the checkpoint dir is mutated.
@@ -246,20 +246,20 @@ debug = tagger.predict(Image.open("foo.png"))
    `align_vocab`, rating sigmoids normalised to a distribution, and the 3072-d
    hidden feature run through the sidecar head.
 2. `sigmoid(tag_logits) ≥ thresholds` → `kept`; `argmax(rating_logits)` → rating.
-3. **Group-aware refinement.** For each loaded `softmax`/`softmax_when_solo`
+3. Group-aware refinement. For each loaded `softmax`/`softmax_when_solo`
    group, when the gating predicate applies (single-subject for
    `softmax_when_solo`, always for `softmax`, both modulo escape tags), replace
    any sigmoid-admitted members with the single argmax winner over the group's
    logits.
-4. **Girls-count cap.** When `kept` contains digit-prefixed `Ngirls`, trim
+4. Girls-count cap. When `kept` contains digit-prefixed `Ngirls`, trim
    character predictions to the top-`max(N)` by score — caps independent-sigmoid
    leakage on gender-ambiguous art.
-5. **Character floor + original fallback.** Any character below
+5. Character floor + original fallback. Any character below
    `character_floor` (default `0.5`, above some F1 thresholds as low as `0.05`
    for noisy long-tail characters) is dropped. When that empties the character
    slot AND no copyright survives, add `original` (booru convention for non-IP
    work) so the caption still has a slot-filling copyright.
-6. **Top-1 artist + top-1 copyright.** Independent sigmoid heads can admit
+6. Top-1 artist + top-1 copyright. Independent sigmoid heads can admit
    several borderline tags; collapse to the highest-scoring one (booru
    convention is one artist / one copyright per work).
 
@@ -272,11 +272,11 @@ spaces, and joins with `, `.
 
 ### Runtimes: timm or onnxruntime
 
-The backbone runs on timm by default and on **onnxruntime** as soon as an
+The backbone runs on timm by default and on onnxruntime as soon as an
 exported graph sits beside the checkpoint. Nothing downstream of the score vector
 changes — the sidecar, the thresholds, the groups and the slot order are the same
 code either way — so the choice is purely speed, and the graph is built for you:
-`downloads.py`'s `tagger_onnx` row *is* the export, so fetching the tagger leaves
+`downloads.py`'s `tagger_onnx` row is the export, so fetching the tagger leaves
 the checkpoint dir already on onnxruntime.
 
 ```bash
@@ -296,23 +296,23 @@ Measured on caformer_b36 at 384px, batch 1, one Apple CPU — end to end through
 |---|---|---|
 | torch, bfloat16 (the old default) | 2.39 | 2.1e-02 |
 | torch, float32 (the default on CPU now) | 1.80 | — |
-| onnxruntime | **0.49** | 7.6e-06 |
+| onnxruntime | 0.49 | 7.6e-06 |
 
 Two things that table settles. The export is numerically a no-op (7.6e-06 is
 float32 rounding; the same 13 tags were emitted, same rating, same people count),
-and **bfloat16 on a CPU was the larger error of the two** as well as the slower
+and bfloat16 on a CPU was the larger error of the two as well as the slower
 path — torch emulates it there — which is why `default_dtype` now picks per
 device instead of always asking for bf16.
 
 The graph is never shipped: the dbv4 weights are gated and GPL-3.0, so every user
-exports their own — which is why the download is a *build* row and why
-`dbv4.onnx` is absent from every file set in `contract.py`. Its *presence* is the whole selection
+exports their own — which is why the download is a build row and why
+`dbv4.onnx` is absent from every file set in `contract.py`. Its presence is the whole selection
 rule (`backend="auto"`);
 `ANIMA_TAGGER_BACKEND=torch` opts back out without deleting a 539 MB file, and
 `backend="onnx"` fails loudly rather than falling back, for a bench run that means
 to measure the graph.
 
-What onnxruntime does **not** buy is a torch-free tagger — SAM3 and PE-Spatial
+What onnxruntime does not buy is a torch-free tagger — SAM3 and PE-Spatial
 keep torch a plain dependency, and `Dbv4Output`, the sidecar head and the whole
 post-processing tail are still torch. It buys the forward pass, and it drops timm
 from the tagging path, which is what lets the ComfyUI node tag without building a
@@ -329,7 +329,7 @@ on macOS and is not used: it took 165 partitions out of a 1208-node graph, ran a
 `anime_tools/stages/cli/autotag_captions.py` (over `stages/autotag.py`) is the
 dataset-wide counterpart to the Dataset tab's per-image button: it walks the
 resized tree, tags each image, and writes the `.txt` sidecar beside the resized
-image — the **revised** caption under `workspace/resized/`. The hand-written
+image — the revised caption under `workspace/resized/`. The hand-written
 master is the read-only fallback (`resolve_caption`), so `--mode missing`
 (default) means "no caption speaks for this image"; `merge` appends only novel
 tags and round-trips position clauses verbatim; `overwrite` replaces. Every
@@ -356,14 +356,14 @@ outputs a STRING that drops into any text input.
 
 ## Known limitations
 
-1. **Rating-class imbalance.** Train-corpus rating mix is ~67% explicit / ~32%
+1. Rating-class imbalance. Train-corpus rating mix is ~67% explicit / ~32%
    sensitive / ~0.6% safe. Class-weighted CE compensates partially. If
    `safe`-rating accuracy matters downstream, oversample at training time.
-2. **Per-tag positives are thin for the long tail.** At `min_freq=5` each
+2. Per-tag positives are thin for the long tail. At `min_freq=5` each
    long-tail tag has 5–20 positives; calibrated thresholds for those tags are
    noisier than for high-frequency ones. `--min_freq 10` is a knob to revisit if
    F1 disappoints.
-3. **Long-tail characters lean on `character_floor`.** Some F1 thresholds settle
+3. Long-tail characters lean on `character_floor`. Some F1 thresholds settle
    as low as `0.05`; the post-prediction floor (default `0.5`) is what stops
    borderline guesses from leaking into the caption on stylized /
    gender-ambiguous art. Lowering it recovers recall at the cost of precision.

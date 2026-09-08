@@ -3,14 +3,14 @@
 Dataset curation for anime diffusion training — the half of
 [`anima_lora`](https://github.com/sorryhyun/anima_lora) that produces the
 caption master and sidecars, split out so it can be used on datasets bound for
-*any* trainer and installed without the trainer's DiT/VAE stack.
+any trainer and installed without the trainer's DiT/VAE stack.
 
 | Sub-package | What | Install |
 |---|---|---|
-| `anime_tools.captions` | The caption **grammar** (`parse_caption` / `compose_caption` — never `split(",")` a caption), tag taxonomy + Danbooru-KB correction, `--caption_drop_groups`, shuffle/dropout **variants sidecars**, `caption_index.json` builder | base (torch-free) |
-| `anime_tools.tagger` | **Anima Tagger** — a vocab/threshold/sidecar head over the external `animetimm/*.dbv4-full` caformer tagger, emitting Anima-format tags (`rating, count, characters, copyrights, @artists, generals`). CLIs: `python -m anime_tools.tagger.cli --mode …`, `…cli.autotag`, `…cli.autotag_server`, `…cli.train_sidecar` |
-| `anime_tools.stages` | Caption stages: batch **autotag**, **position clauses** (SAM3 crops → tagger → v2 rewrite), correction + variants mirror, **multiview audit** |
-| `anime_tools.grouping` | Near-twin / same-concept **grouping** on PE-Spatial-B16-512 features (`anime_tools.vision.pe`, weights fetched from the Hub) → `groups.json`; decensor match tools. CLI: `python -m anime_tools.grouping.cli.build_groups --source-dir …` |
+| `anime_tools.captions` | The caption grammar (`parse_caption` / `compose_caption` — never `split(",")` a caption), tag taxonomy + Danbooru-KB correction, `--caption_drop_groups`, shuffle/dropout variants sidecars, `caption_index.json` builder | base (torch-free) |
+| `anime_tools.tagger` | Anima Tagger — a vocab/threshold/sidecar head over the external `animetimm/*.dbv4-full` caformer tagger, emitting Anima-format tags (`rating, count, characters, copyrights, @artists, generals`). CLIs: `python -m anime_tools.tagger.cli --mode …`, `…cli.autotag`, `…cli.autotag_server`, `…cli.train_sidecar` |
+| `anime_tools.stages` | Caption stages: batch autotag, position clauses (SAM3 crops → tagger → v2 rewrite), correction + variants mirror, multiview audit |
+| `anime_tools.grouping` | Near-twin / same-concept grouping on PE-Spatial-B16-512 features (`anime_tools.vision.pe`, weights fetched from the Hub) → `groups.json`; decensor match tools. CLI: `python -m anime_tools.grouping.cli.build_groups --source-dir …` |
 | `anime_tools.masking` | Training masks: SAM3 subject masks (balloons / lettering as ignore prompts), merge. CLIs: `python -m anime_tools.masking.cli.{generate_masks,merge_masks}` |
 
 ## Install
@@ -44,7 +44,7 @@ The repo is the product (kohya-ss/sd-scripts style): pin a tag, or use a
 `[tool.uv.sources]` path override for a live checkout.
 
 sam3 pins `numpy>=1.26,<2` and the pin is stale (see `[tool.uv]` in `pyproject.toml`), but uv
-reads `tool.uv` only from the workspace root — a project that *depends* on anime-tools has to
+reads `tool.uv` only from the workspace root — a project that depends on anime-tools has to
 repeat the override in its own `pyproject.toml`, or the resolve fails on numpy:
 
 ```toml
@@ -61,13 +61,13 @@ cd <your dataset folder>   # image_dataset/, workspace/, models/ live here
 anime-tools-gui --open     # http://127.0.0.1:8790
 ```
 
-A small standalone panel on your dataset. The **sidebar is the dataset**: every
+A small standalone panel on your dataset. The sidebar is the dataset: every
 source image, and under each one its captions as a ladder — the hand-written
 `master`, every version the `revised` caption used to be (`revised@N`), that
 caption, then the generated `v0…vN` variants. `master` and `revised` are
 editable; every write, by hand or by a stage, keeps what it replaced as a
-version badge, and **Undo** puts it back from the run's report. The **stage
-runner is the bottom dock**: its buttons are the stage list, the form is
+version badge, and Undo puts it back from the run's report. The stage
+runner is the bottom dock: its buttons are the stage list, the form is
 generated from the CLI's own `--help`, and a Run works on the selected image or
 the whole batch as one `python -m …` subprocess while the dataset stays on
 screen. The ☰ menu holds three Settings dialogs (dataset roots, stage defaults,
@@ -96,7 +96,7 @@ networks/calibration/sam3_girl_prompt.safetensors  SAM3 subject soft prompt (def
 
 `python -m anime_tools.downloads --list` says which weights are present and where each one goes.
 
-Every artifact the trainer reads is a **file**. Paths resolve against the curation
+Every artifact the trainer reads is a file. Paths resolve against the curation
 home: `ANIME_TOOLS_HOME` → `ANIMA_HOME` → current directory
 (`ANIME_TOOLS_MODELS` overrides the model dir).
 
@@ -139,7 +139,7 @@ touch — uv, bun, python — is cross-platform.
 
 The GUI frontend lives in `frontend/` (TypeScript / Solid) and builds into
 `anime_tools/gui/static/` — `index.html` with script and CSS inlined, plus the
-bundled Pretendard beside it — which is **committed**: git installs ship it
+bundled Pretendard beside it — which is committed: git installs ship it
 as-is, and CI fails if it drifts from `frontend/src`. Users never need bun. bun
 is the whole toolchain (`frontend/build.ts` drives `Bun.build`); there is no
 Vite, webpack or Rollup in the tree.

@@ -16,7 +16,7 @@ torch.
 
 ## Backend selection
 
-The backbone runs on timm (`dbv4_backend.py`), or on **onnxruntime** (`dbv4_onnx.py`) when
+The backbone runs on timm (`dbv4_backend.py`), or on onnxruntime (`dbv4_onnx.py`) when
 `<ckpt_dir>/dbv4.onnx` exists — the `tagger_onnx` catalog row builds that graph as part of
 downloading the tagger (`python -m anime_tools.tagger.cli.export_onnx` is the same export with
 knobs), and its presence is the whole selection rule (`ANIMA_TAGGER_BACKEND=torch` opts out).
