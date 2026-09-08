@@ -34,9 +34,7 @@ It takes a folder of images with hand-written captions and produces everything t
 reads before training — bucket-resized images, corrected and enriched captions, caption
 variants, a typed tag index, training masks, and a grouping manifest for thinning duplicates.
 
-The trainer depends on this package; this package never imports the trainer. Everything the
-two agree on — file names, the caption grammar, where things land — is written down once in
-[`docs/contract.md`](../contract.md).
+The trainer depends on this package; this package never imports the trainer.
 
 ---
 
@@ -45,9 +43,9 @@ two agree on — file names, the caption grammar, where things land — is writt
 | Item | Note |
 |---|---|
 | Python | **3.13**. The installer pins it; `uv` fetches one if the machine has none. |
-| GPU | Optional but strongly recommended. Every model stage (the tagger, SAM3, PE-Spatial, the text segmenter, OCR) runs on CPU, at a fraction of the speed. Each stage picks CUDA when torch sees it and CPU otherwise. |
+| GPU | Optional but strongly recommended. Every model stage (the tagger, SAM3, PE-Spatial, OCR) runs on CPU, at a fraction of the speed. Each stage picks CUDA when torch sees it and CPU otherwise. |
 | OS | Linux, Windows, macOS. On macOS there is no CUDA and no triton; the package shims SAM3 around both, so the SAM3 stages run on CPU there. |
-| Disk | The models the stages fetch on first use (the tagger backbone, SAM3, PE-Spatial, the text nets, OCR, the Danbooru tag KB) plus a resized copy of your dataset under `workspace/`. |
+| Disk | The models the stages fetch on first use (the tagger backbone, SAM3, PE-Spatial, OCR, the Danbooru tag KB) plus a resized copy of your dataset under `workspace/`. |
 
 > **Windows torch is CPU-only on PyPI.** The PowerShell installer defaults to the CUDA 13.0
 > torch index for that reason (§3). Linux torch from PyPI already bundles CUDA.
@@ -370,15 +368,16 @@ loaded — or Undo. The full grammar, the gates and every knob are in
 
 ### 7.5 Multiview audit
 
-**Reads** the single-subject images the position stage skipped. **Writes** `multiple views`
-into the **master caption**, and only that. **Models**: as Position.
+**Reads** the single-subject images the position stage skipped. **Writes** the **revised
+caption** — `multiple views` appended to the flat tag bag, and only that. **Models**: as
+Position.
 
 Finds `1girl` images that are really several views of one girl and reports each with a
 contact sheet under the report directory. The apply is gated to the strong findings by
 default; a weak finding has only the geometry behind it, so review its sheet first.
 
-> This is the one stage that writes `image_dataset/` directly. The report holds the
-> before-text of every write, and Undo reads it back. See
+> The hand-written master is never touched. The text an apply replaces is kept as a history
+> version, and Undo replays the report. See
 > [`docs/multiview_audit.md`](../multiview_audit.md).
 
 ### 7.6 OCR text
@@ -415,8 +414,7 @@ form. See [`docs/grouping.md`](../grouping.md).
 
 - **Subject** keeps the subject and masks out the background: by default it grounds SAM3 on the
   learned subject prompt. Prompts to mask *out* (`speech bubble,text`) can be added — balloons
-  and lettering are ordinary ignore prompts here. (The separate *Text* stage, a UNet++ segmenter
-  behind a ComicTextDetector gate, was removed in 0.5: nobody used it.)
+  and lettering are ordinary ignore prompts here.
 - **Merge** takes the pixel-wise minimum of its input trees into `workspace/masks/`, the tree the
   sidebar shows as *mask* / *overlay* and Export publishes. The default input is the generator's
   tree; a missing input is skipped, and a hand-painted tree can be listed beside it.
@@ -439,8 +437,7 @@ mtime for pixels), so re-exporting an unchanged dataset is a walk and a stat api
 
 From the CLI it is dry-run by default and lists what it would copy. In the GUI **Run** copies,
 and **Undo** restores the text it overwrote from the export's own ledger; an overwritten
-*pixel* cannot be restored and is reported as such. The trainer reads only what Export wrote —
-see [`docs/contract.md`](../contract.md) §2 for every path.
+*pixel* cannot be restored and is reported as such. The trainer reads only what Export wrote.
 
 ---
 
@@ -482,9 +479,11 @@ stages spell flags with underscores (`--path_pattern`), grouping and masking wit
 | Export | `anime_tools.stages.cli.export_workspace` | dry run → `report.json` |
 
 The dry-run stages write `report.json` under `workspace/captions/<stage>/` and stop.
-`--apply` writes for real. `--from_report <report.json>` replays a dry run's proposals without
-loading a model, skipping any caption that changed in between, and writes `apply_report.json`
-beside the report it read. The GUI's Undo is the same replay backwards.
+`--apply` writes for real. Position captions and the multiview audit also take
+`--from_report <report.json>`, which replays a dry run's proposals without loading a model,
+skipping any caption that changed in between, and writes `apply_report.json` beside the report
+it read. Autotag has no such flag: its pass is one forward per image, so re-running it is
+cheaper than working out what to skip. The GUI's Undo is the same replay backwards.
 
 ```bash
 python -m anime_tools.stages.cli.autotag_captions --mode merge            # dry run
@@ -541,19 +540,15 @@ run changed it — so that row was left alone. The skipped rows are still in the
 under the report root (`captions/autotag`, `captions/position`, …); the root is one Settings
 value and moving it moves them all. Leave it blank to keep reports beside the `dst` root.
 
-**The audit wrote my master and I want it back.** `image_dataset/` is not versioned by the
-tools; the audit's `report.json` holds the before-text of every write, and Undo replays it.
-
 ---
 
 ## 12. Further reading
 
-- [`docs/contract.md`](../contract.md) — what the trainer reads: every file, format and seam.
 - [`docs/anima_tagger.md`](../anima_tagger.md) — the tagger, its vocab and calibration.
 - [`docs/position_captions.md`](../position_captions.md) — the clause grammar, gates and knobs.
 - [`docs/multiview_audit.md`](../multiview_audit.md) — the audit's verdicts and sheets.
 - [`docs/grouping.md`](../grouping.md) — near-twin grouping.
-- [`docs/masking.md`](../masking.md) — subject and text masks.
+- [`docs/masking.md`](../masking.md) — subject masks and their merge.
 - [`examples/README.md`](../../examples/README.md) — the Python API, one script per feature.
 - [Anima LoRA
   Guidebook](https://github.com/sorryhyun/anima_lora/blob/main/docs/guidelines/guidebook.md)

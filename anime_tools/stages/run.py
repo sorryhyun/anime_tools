@@ -67,28 +67,21 @@ AUTOTAG_TE_NOTE = "captions changed — run `make preprocess-te` to re-encode."
 
 def run_autotag(req: AutotagRequest):
     """Tag the resized tree and propose (with ``apply``, write) the revised
-    caption. Returns ``(rows, stats)`` from the tagging or replay pass."""
+    caption. Returns ``(rows, stats)`` from the tagging pass.
+
+    No ``--from_report``: the pass is one forward per image, so re-running it is
+    cheaper than the machinery to skip it. The report it leaves is still what
+    the GUI's Undo reads (``contract.REPLAY_SHAPES["autotag"]``).
+    """
     from anime_tools.stages.autotag import (
         AutotagOptions,
         build_tag_fn,
         run_autotag_captions,
     )
-    from anime_tools.stages.replay import run_replay_cli
 
     resized_dir = _resized(req.dst)
     source_dir = resolve_path(req.src)
     report_dir = resolve_path(req.report_dir)
-    if req.from_report:
-        # Write a previous dry run's proposals — no tagger, no images opened.
-        rows, stats, _ = run_replay_cli(
-            req,
-            spec=REPLAY_SHAPES["autotag"],
-            src=source_dir,
-            dst=resized_dir,
-            report_dir=report_dir,
-            after_write_note=AUTOTAG_TE_NOTE,
-        )
-        return rows, stats
 
     tag_fn, info = build_tag_fn(
         req.tagger_dir, device=req.device, min_confidence=req.min_confidence

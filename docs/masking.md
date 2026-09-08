@@ -10,7 +10,7 @@ the background behind the subject stops contributing to the gradient.
 An 8-bit **L** PNG named `{stem}_mask.png`, at the image's own relative path under the mask
 directory (`chars/alice/001.png` → `chars/alice/001_mask.png`). **White (255) = train on this
 pixel, black (0) = ignore it in the loss.** The trainer converts the file to L, NEAREST-resizes
-it to the latent's pixel size and scales it to `[0, 1]` (`docs/contract.md` §2); an image
+it to the latent's pixel size and scales it to `[0, 1]`; an image
 with no mask is trained on in full, so generating none is fine.
 
 The generator writes that polarity through one of two helpers in `_masks.py`: `write_mask`
@@ -52,8 +52,7 @@ SAM3 grounded on text prompts. Two prompt lists, opposite polarity:
 - `--focus-prompts` (default `girl`) — keep **only** these regions; everything outside is
   masked out. A bare run isolates the subject from her background.
 - `--prompts` (default none) — mask these **out**. `speech bubble,text` is the usual spelling;
-  balloons and lettering are ordinary ignore prompts here (the dedicated text-mask stage,
-  a UNet++ segmenter behind a ComicTextDetector gate, was removed in 0.5 — nobody used it).
+  balloons and lettering are ordinary ignore prompts here.
 
 Give both and the focus region survives minus the ignore regions (`focus * (1 - ignore)`).
 Pass `none` to either to empty it; both empty is refused before a weight is read. A cleared

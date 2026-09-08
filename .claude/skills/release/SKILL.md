@@ -34,7 +34,8 @@ the GUI is a server that spawns stage CLIs rather than a bundle.
 ## What a release must keep true
 
 - The GUI server process stays torch-free (`tests/test_boundary.py::test_gui_server_is_torch_free`).
-- The package is consumed as a git dependency by the trainer; a change to anything in
-  `docs/contract.md` needs the trainer bumped in step, and `contract.CONTRACT_VERSION` moved.
+- The package is consumed as a git dependency by the trainer; a change to anything on the shared
+  surface — file formats, the caption grammar, `contract.py`, `buckets.py` — needs the trainer
+  bumped in step, and `contract.CONTRACT_VERSION` moved.
 - `packages.find` includes only `anime_tools*`: `comfyui/`, `design/`, `examples/` and
   `frontend/` sources are not in the wheel; `anime_tools/gui/static/*` is.

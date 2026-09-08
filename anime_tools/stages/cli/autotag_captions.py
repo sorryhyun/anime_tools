@@ -13,8 +13,9 @@ from anime_tools.stages.requests import AutotagRequest
 # read-only fallback the tagger merged into, so the drift baseline is the target's
 # own text (``target_before``), not what spoke for the image.
 REPLAY_SPEC = REPLAY_SHAPES["autotag"]
-"""The shape ``stages.run`` replays this stage's report through — the same
-object ``gui/proposals.py`` reads from ``contract.REPLAY_SHAPES``."""
+"""The shape this stage's ``report.json`` is read back through — the same object
+``gui/proposals.py`` reads from ``contract.REPLAY_SHAPES``. This stage has no
+``--from_report``, so the only reader is the GUI's Undo."""
 
 DEFAULT_REPORT_DIR = AutotagRequest.report_dir
 

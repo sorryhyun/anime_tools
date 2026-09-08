@@ -42,8 +42,9 @@ AutotagRequest.from_argv(
 - Caption stages spell flags with underscores (`--path_pattern`); grouping and masking with hyphens
   (`--source-dir`). Either spelling is accepted everywhere.
 - Stages that propose are **dry-run by default** and write `report.json`; `apply=True` writes.
-  Resize and correct always write. A `from_report=` request replays a dry run's proposals without
-  loading a model and skips any caption that changed since.
+  Resize and correct always write. On position captions and the multiview audit, a `from_report=`
+  request replays a dry run's proposals without loading a model and skips any caption that changed
+  since; autotag has no replay — its pass is one forward per image, so re-run it.
 - Paths are relative to the **curation home** (`ANIME_TOOLS_HOME` → `ANIMA_HOME` → the current
   directory). Stages read `workspace/resized/` and write under `workspace/`; only Export writes
   outside it. A write to a caption pushes the replaced text onto `{stem}.history.txt`.

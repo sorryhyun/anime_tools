@@ -87,7 +87,6 @@ CASES: dict[str, Request] = {
         mode="merge",
         min_confidence=0.4,
         apply=True,
-        from_report="r.json",
         report_dir="rep",
         tagger_dir="ckpt",
         device="cpu",

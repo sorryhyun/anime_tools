@@ -40,8 +40,7 @@ from anime_tools.captions.vocab_io import load_vocab, names_by_category
 from anime_tools.path_filter import filter_paths_by_glob
 
 DEFAULT_VOCAB = "models/captioners/anima-tagger-dbv4/vocab.json"
-# A contract artifact (docs/contract.md §2), published to
-# ``post_image_dataset/captions/`` by Export.
+# A contract artifact, published to ``post_image_dataset/captions/`` by Export.
 DEFAULT_OUT = f"{WS.REPORTS}/caption_index.json"
 # Artist is detected by the `@` prefix (superset of the vocab artist list);
 # character/copyright/count are classified by vocab membership.

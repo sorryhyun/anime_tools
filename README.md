@@ -76,12 +76,7 @@ switch (English, Korean, Japanese, Chinese). `--host 0.0.0.0` exposes it on the
 LAN for a headless GPU box (no auth — use your own tunnel), `--home` overrides
 the curation home.
 
-The end-to-end walkthrough — install, the curation home, the panel, every stage
-in the order you run it, and the hand-off to the trainer — is the
-[**guidebook**](docs/guidelines/guidebook.md).
-
-FastAPI + uvicorn are plain dependencies; the trainer's own PySide6 GUI remains
-the rich editor.
+FastAPI + uvicorn are plain dependencies.
 
 ## Layout of a curated dataset
 
@@ -101,8 +96,7 @@ networks/calibration/sam3_girl_prompt.safetensors  SAM3 subject soft prompt (def
 
 `python -m anime_tools.downloads --list` says which weights are present and where each one goes.
 
-Every artifact the trainer reads is a **file**; the formats are frozen in
-[`docs/contract.md`](docs/contract.md). Paths resolve against the curation
+Every artifact the trainer reads is a **file**. Paths resolve against the curation
 home: `ANIME_TOOLS_HOME` → `ANIMA_HOME` → current directory
 (`ANIME_TOOLS_MODELS` overrides the model dir).
 
@@ -112,8 +106,6 @@ home: `ANIME_TOOLS_HOME` → `ANIMA_HOME` → current directory
 [guidebook](docs/guidelines/guidebook.md) (end-to-end walkthrough for users); the
 rest are per-piece references:
 
-- [`docs/contract.md`](docs/contract.md) — the `anime_tools` ↔ `anima_lora` contract (dependency
-  direction, file formats, grammar, seams).
 - [`docs/anima_tagger.md`](docs/anima_tagger.md) — the tagger: vocab build, dbv4 backend,
   sidecar head, calibration.
 - [`docs/position_captions.md`](docs/position_captions.md) — position-clause grammar, rewrite rules,
@@ -121,7 +113,7 @@ rest are per-piece references:
 - [`docs/multiview_audit.md`](docs/multiview_audit.md) — multi-view / multi-panel caption audit.
 - [`docs/grouping.md`](docs/grouping.md) — near-twin grouping, `groups.json`, the feature cache,
   decensor match tools.
-- [`docs/masking.md`](docs/masking.md) — SAM3 subject masks, text masks, merge, where a mask lives.
+- [`docs/masking.md`](docs/masking.md) — SAM3 subject masks, merge, where a mask lives.
 - [`comfyui/anima_tagger/`](comfyui/anima_tagger/) — the Anima Tagger ComfyUI node (loader +
   captioner; link the directory into `custom_nodes/`).
 - `.claude/skills/captions/` — the Claude Code skill for the caption pipeline.

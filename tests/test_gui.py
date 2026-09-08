@@ -990,11 +990,16 @@ def test_pick_port_skips_busy_port():
 
 def test_replay_capable_stages_advertise_it():
     """Apply reads ``schema()["replay"]``, so a ``--from_report`` stage carries it."""
-    for stage_id in ("autotag", "position"):
+    for stage_id in ("position", "audit"):
         st, sc = _stage(stage_id)
         assert S.schema(st)["replay"] is True
         assert any(f["dest"] == S.REPLAY_FIELD for f in sc["fields"])
     assert S.schema(S.BY_ID["groups"])["replay"] is False
+    # Autotag deliberately has none: its pass is one forward per image, so
+    # re-running it is cheaper than the machinery to skip it.
+    st, sc = _stage("autotag")
+    assert S.schema(st)["replay"] is False
+    assert not any(f["dest"] == S.REPLAY_FIELD for f in sc["fields"])
 
 
 def test_replay_report_name_matches_the_stages():
@@ -1006,15 +1011,15 @@ def test_replay_report_name_matches_the_stages():
 
 def test_a_replay_reports_beside_the_run_it_replays():
     """A replay reports beside the dry run it reads, never over it."""
-    st, sc = _stage("autotag")
+    st, sc = _stage("position")
     dry = S.report_path(st, sc["fields"], {}, "r")
-    assert dry == "r/captions/autotag/report.json"
+    assert dry == "r/captions/position/report.json"
     replay = S.report_path(st, sc["fields"], {S.REPLAY_FIELD: dry}, "r")
-    assert replay == f"r/captions/autotag/{S.REPLAY_REPORT_NAME}" != dry
+    assert replay == f"r/captions/position/{S.REPLAY_REPORT_NAME}" != dry
 
 
 def test_from_report_reaches_the_argv():
-    _, sc = _stage("autotag")
+    _, sc = _stage("position")
     argv = S.build_argv(sc, {S.REPLAY_FIELD: "r/report.json"}, apply=True)
     assert "--from_report" in argv
     assert argv[argv.index("--from_report") + 1] == "r/report.json"
@@ -1072,28 +1077,31 @@ def test_apply_replays_a_dry_run_end_to_end(tmp_path, monkeypatch):
         (src / f"{n}.png").write_bytes(b"\x89PNG\r\n\x1a\n")
         (src / f"{n}.txt").write_text("1girl, solo.")
         (dst / f"{n}.png").write_bytes(b"\x89PNG\r\n\x1a\n")
-        # Autotag writes the revised caption, so that is what a replay of it
+        # The stage writes the revised caption, so that is what a replay of it
         # gates on and what comes out the other end.
         (dst / f"{n}.txt").write_text("1girl, solo.")
 
-    # What the tagger pass left behind.
-    rdir = tmp_path / "workspace" / "captions" / "autotag"
+    # What the detect+tag pass left behind.
+    rdir = tmp_path / "workspace" / "captions" / "position"
     rdir.mkdir(parents=True)
     (rdir / "report.json").write_text(
         json.dumps(
             {
-                "apply": False,
-                "src": str(src),
-                "dst": str(dst),
-                "stats": {"seen": 3, "proposed": 3, "written": 0},
-                "rows": [
+                "summary": {
+                    "applied": False,
+                    "src": str(src),
+                    "dst": str(dst),
+                    "seen": 3,
+                    "proposed": 3,
+                    "written": 0,
+                },
+                "images": [
                     {
                         "image": f"{n}.png",
                         "caption_path": f"{n}.txt",
-                        "existing": "1girl, solo.",
-                        "target_before": "1girl, solo.",
+                        "original": "1girl, solo.",
                         "proposed": f"1girl, solo, {n}_tag.",
-                        "status": "ok",
+                        "status": "proposed",
                     }
                     for n in ("a", "b", "c")
                 ],
@@ -1106,9 +1114,9 @@ def test_apply_replays_a_dry_run_end_to_end(tmp_path, monkeypatch):
     job = c.post(
         "/api/jobs",
         json={
-            "stage": "autotag",
+            "stage": "position",
             "apply": True,
-            "values": {S.REPLAY_FIELD: "workspace/captions/autotag/report.json"},
+            "values": {S.REPLAY_FIELD: "workspace/captions/position/report.json"},
         },
     ).json()
     assert "--from_report" in job["argv"] and "--apply" in job["argv"]
@@ -1128,7 +1136,7 @@ def test_apply_replays_a_dry_run_end_to_end(tmp_path, monkeypatch):
     assert report["written"] == ["a.png", "b.png"]
     assert (dst / "a.txt").read_text() == "1girl, solo, a_tag."
     assert (dst / "c.txt").read_text() == "1girl, solo, hand edited."
-    # The master is not autotag's to write.
+    # The master is not the stage's to write.
     assert (src / "a.txt").read_text() == "1girl, solo."
     # …and that list is all the sidebar has to re-stat.
     rows = c.post("/api/dataset/items", json={"rels": report["written"]}).json()[

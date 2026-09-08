@@ -54,8 +54,7 @@ threshold are what stand between a pose change and a group.
 
 ## 2. What it produces
 
-`--out` defaults to `workspace/groups/groups.json` (`MANIFEST_VERSION = 2`, the row in
-`docs/contract.md` §2):
+`--out` defaults to `workspace/groups/groups.json` (`MANIFEST_VERSION = 2`):
 
 ```json
 {
@@ -76,7 +75,8 @@ with zero groups.
 
 The manifest is not one of Export's artifact kinds. The trainer's own `make curate-group` runs this
 CLI with the trainer's output path, and its Dataset tab folds the members under green group
-headers; see the trainer guidebook §7.4.
+headers; see the
+[trainer guidebook](https://github.com/sorryhyun/anima_lora/blob/main/docs/guidelines/guidebook.md).
 
 ## 3. Running it
 

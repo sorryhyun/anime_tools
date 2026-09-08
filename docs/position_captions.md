@@ -6,11 +6,6 @@ is asserted once, in the clause of the subject it belongs to. The rewrite lands
 on the **revised** captions under `workspace/resized/`; the hand-written master
 in `image_dataset/` is never written. Dry run is the default.
 
-The measurement logs behind each rule — sweep tables, A/B results, dated
-rollouts, refuted alternatives — are in
-`_archive/docs/position_captions_history.md` (local-only, gitignored). Read that
-before *retuning* a rule; read this to run the stage.
-
 ## Why
 
 The flat tag bag cannot say *which* attribute belongs to *which* subject
@@ -327,6 +322,13 @@ GUI dock runs. It is a GPU job (SAM3 + tagger held resident for the whole sweep)
 so under the trainer it is **daemon-routed** — `--queue` detaches, `--inline`
 bypasses.
 
+**Applying without a review step** rewrites the revised captions in place —
+nothing of yours is at risk, since the master is untouched and the text it
+replaced is kept as a `revised@N` version beside it (the GUI shows those as
+badges and has an Undo), but the rewritten text is what trains until you look at
+it. The pass is idempotent and reversible (`--flatten --apply`), yet a dry run
+with `--crops` is still the way to eyeball proposals first.
+
 **Dry run is the default and writes nothing.** It emits
 `workspace/captions/position/report.json`:
 
@@ -548,30 +550,6 @@ falls back to the box rules, so `merge_part_detections` is unaffected.
   cannot re-flatten a binding back into the bag.
 - **Training** sees no new machinery: the clauses ride the ordinary TE path.
 
-## Turning it on in the trainer's preprocess chain
-
-Off by default in all four surfaces; each runs the stage **with `--apply`** (no
-dry run) inline in `make preprocess`, after the VAE cache and before the
-caption/TE steps — the same job re-encodes, so the staleness trap is handled for
-you. Only the standalone `--apply` path needs a manual `make preprocess-te`.
-
-| Surface | How |
-|---|---|
-| Config | `caption_position_clauses = true` in `configs/preprocess.toml` (user-owned) |
-| CLI | `make preprocess ARGS="--caption_position_clauses"` / `--no_caption_position_clauses` |
-| Env | `CAPTION_POSITION_CLAUSES=1` |
-| GUI | Preprocessing tab → **캡션 편집 / Caption rewriting** → `위치 절 생성 (다중 인물)` |
-
-Precedence is env → config, with the CLI flag winning over both; the GUI always
-exports the env var, so its checkbox **initializes from the config key** and a
-CLI-side `true` cannot be silently cancelled by a GUI run exporting `0`. Applying
-without a review step rewrites the revised captions in place — nothing of yours
-is at risk, since the master is untouched and the text it replaced is kept as a
-`revised@N` version beside it (the GUI shows those as badges and has an Undo),
-but the rewritten text is what trains until you look at it. The pass is
-idempotent and reversible from the CLI (`--flatten --apply`), yet a dry run with
-`--crops` is still the way to eyeball proposals first.
-
 ## Limits / open
 
 - **Hair *length* across crops** — `long hair` vs `medium hair` on two views of one
@@ -592,13 +570,6 @@ idempotent and reversible from the CLI (`--flatten --apply`), yet a dry run with
   them hair (`silver hair`, `light brown hair`, `light blue hair`, `dark blue
   hair`, `light purple hair`, `french braid`), carry a calibrated threshold above
   1.0 ("never emit") on the dbv4 tagger, so that binding is silently lost.
-- **Bag-removal tolerance is the open risk.** The probe validated clause
-  *comprehension* (48/48 sides correct) — not that removing a tag from the flat
-  bag is safe for a model pretrained on flat bags. **The training A/B (clause
-  corpus vs the flattened control) is still owed.**
-- **Is the margin in the right place?** The relative one at 0.25 is calibrated
-  against one artist slice, not the corpus. The report carries the per-move
-  margin on the knob's own scale — retune against a full-corpus spot-check.
 - **`sole-value` on non-identity invariants.** `body_shape` / `skin` /
   `face_features` are in the invariant set, so a `2girls` caption naming one
   `large breasts` keeps it flat even when only one girl has it — safe, and the
@@ -624,7 +595,3 @@ idempotent and reversible from the CLI (`--flatten --apply`), yet a dry run with
 | `anime_tools/downloads.py` | `DEFAULT_SUBJECT_PROMPT_EMBED` and the `soft_prompt` asset row that fetches it |
 | `anime_tools/captions/variants.py` / `correction.py` | Atomic-clause variant generation; clause-aware order correction |
 | `tests/test_position_captions.py` | Unit tests (grammar round-trip, ordering, selection, skip paths, the rewrite rules) |
-
-The soft prompt's own training write-up, the dbv4 tagger backend notes and the
-label-sharing head experiments belonged to the trainer repo and did not come
-across in the split; local copies, where they exist, are under `_archive/docs/`.

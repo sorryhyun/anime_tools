@@ -146,7 +146,7 @@ python -m anime_tools.stages.cli.audit_multiview --apply \
     --apply_verdicts 'multiple views,extra-character'
 ```
 
-Same staleness rules as the other two stages (full table in
+Same staleness rules as the position stage (full table in
 [`position_captions.md`](position_captions.md)): a report whose recorded
 `summary.src`/`dst` disagree with this run, or whose own `applied` is true, is
 refused; a caption edited since the audit is skipped as `skip:drifted`,
@@ -194,8 +194,3 @@ A companion guard that would have dropped degenerate *proposals* outright by an
 absolute fill threshold was measured and **refuted** — real sparse-subject views
 sit in the same fill band as the junk — and does not ship. That failure shape is
 handled by the score floor plus audit spot-checking.
-
-The research history behind all of this — the founding investigation, the
-per-corpus measurements, the prompt sweeps and the declined alternatives — was
-split out of this doc into a local, gitignored archive and is not part of the
-published docs.

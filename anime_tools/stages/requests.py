@@ -130,12 +130,32 @@ class DatasetRequest(StageRequest):
 
 
 @dataclass(frozen=True, kw_only=True)
-class ReplayRequest(DatasetRequest):
-    """Dry-run by default, ``apply`` writes, ``from_report`` replays a dry run."""
+class ApplyRequest(DatasetRequest):
+    """Dry-run by default; ``apply`` writes.
+
+    The report every run leaves is what the GUI's Undo reads back
+    (``anime_tools.contract.REPLAY_SHAPES``), whether or not the stage can
+    replay one.
+    """
 
     apply: bool = arg(
         False, help="Write what the run proposes (default: dry run, report only)"
     )
+    report_dir: str
+    """Where ``report.json`` lands; distinct per stage so one stage cannot read
+    another's report."""
+
+
+@dataclass(frozen=True, kw_only=True)
+class ReplayRequest(ApplyRequest):
+    """Adds ``from_report``: apply a dry run's proposals without a model.
+
+    Only for a stage whose model pass is worth not repeating — position clauses
+    (SAM3 detect + crop + tag) and the multiview audit (one pass re-applied at
+    several verdict/confidence tiers). Autotag is one forward pass per image and
+    deliberately has no replay: re-run it.
+    """
+
     from_report: str | None = arg(
         None,
         help="Replay a previous dry run's report.json instead of re-running the "
@@ -143,9 +163,6 @@ class ReplayRequest(DatasetRequest):
         "caption that changed since. Emits apply_report.json beside the report it "
         "reads, never over it",
     )
-    report_dir: str
-    """Where ``report.json`` lands; distinct per stage so one stage's replay
-    cannot read another's report."""
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -346,7 +363,7 @@ def audit_options(
 
 
 @dataclass(frozen=True, kw_only=True)
-class AutotagRequest(TaggerRequest, ReplayRequest):
+class AutotagRequest(TaggerRequest, ApplyRequest):
     """Auto-tag the dataset with the Anima Tagger and write the revised caption.
 
     Walks the resized tree and proposes a caption per image, in one of three

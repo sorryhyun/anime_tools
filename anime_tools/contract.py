@@ -9,7 +9,7 @@ without pulling a stage (and its torch) into their process. Pinned by
 Everything below is part of the CLI/stdio surface a consumer was written
 against. That surface is append-only within one :data:`CONTRACT_VERSION`; a
 removed or renamed name bumps it, and the trainer asserts the version it
-expects. The file formats themselves are in ``docs/contract.md``.
+expects.
 """
 
 from __future__ import annotations

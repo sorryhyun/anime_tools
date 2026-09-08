@@ -5,6 +5,12 @@
    counted and left alone.
 3. No model: the replay path never imports ``torch`` (pinned in a subprocess).
 4. Roots must agree, and an already-applied report is refused.
+
+``AUTOTAG_SPEC`` appears here as a *report shape*, not a replayable stage:
+autotag has no ``--from_report`` (its pass is one forward per image), but its
+report is still read back through that spec by the GUI's Undo, so the reader and
+the drift ladder are pinned against a real autotag report. Only ``position`` and
+``audit`` reach these functions from a CLI.
 """
 
 from __future__ import annotations
@@ -418,7 +424,6 @@ def test_position_replay_skips_a_non_proposed_row(tmp_path: Path):
 @pytest.mark.parametrize(
     "module",
     [
-        "anime_tools.stages.cli.autotag_captions",
         "anime_tools.stages.cli.position_captions",
         "anime_tools.stages.cli.audit_multiview",
     ],
@@ -455,15 +460,13 @@ def test_replay_cli_does_not_import_torch(tmp_path: Path, module: str, repo_root
             "apply": False,
             "src": str(source),
             "dst": str(resized),
-            "images" if module.endswith("audit_multiview") else "rows": [
+            "images": [
                 {
                     "image": "a.png",
                     "caption_path": "a.txt",
                     "status": "ok",
                     "verdict": "multiple views",
                     "confidence": "strong",
-                    "existing": "safe, 2girls, blue hair",
-                    "target_before": "safe, 2girls, blue hair",
                     "caption": "safe, 2girls, blue hair",
                     "proposed": proposed,
                 }

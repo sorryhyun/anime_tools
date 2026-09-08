@@ -1,9 +1,9 @@
 # Anima Tagger — multi-label tagger trained on Anima's caption distribution
 
-A small classifier that maps an image to a comma-separated tag string in
-exactly the format Anima's training-time T5 saw. Used as the case-1 ψ_src
-provider for DirectEdit, and as a standalone captioner for LoRA dataset prep /
-prompt scaffolding via the ComfyUI node in `comfyui/anima_tagger/`.
+A multi-label classifier that maps an image to a comma-separated tag string in
+Anima's caption format (`rating, count, characters, copyrights, @artists,
+generals`). It is what this package's own caption stages tag with: position
+captions, batch autotag, and the GUI's autotag server.
 
 The live checkpoint is `models/captioners/anima-tagger-dbv4/`: the external
 `animetimm/caformer_b36.dbv4-full` backbone (134 M params, 384², GPL-3.0,
@@ -25,22 +25,12 @@ what ⚙ Settings → **Models** runs, pre-fetches both halves and traces the ON
 graph the third row builds out of them.
 
 Every runtime entry point (position captions, batch autotag, the GUI autotag
-server, DirectEdit) goes through `ensure_tagger_checkpoint`, which also runs
+server) goes through `ensure_tagger_checkpoint`, which also runs
 `ensure_tagger_backbone`: an offline hub-cache probe, then a token fetch on miss
 — **before** SAM3 / the tagger load, so a missing token or unaccepted terms
 fails fast with the `hf auth login` + accept-terms hint (a gated 401/403 is
 translated in `anime_tools/_hf.py`) instead of a traceback halfway through a
 job. `ANIMA_TAGGER_NO_AUTOFETCH=1` refuses the fetch (offline hosts / CI).
-
-## Why this exists
-
-DirectEdit's invert/edit primitive is robust to ψ_src corruption — even
-shuffled or tag-dropped source captions reconstruct the source image at ~99%
-pixel fidelity. But edit *leverage* (whether ψ_tar = ψ_src + edit-tag actually
-applies the change) collapses when ψ_src is structurally far from Anima's
-training-time embedding manifold. Generic booru taggers were bad enough at this
-to be the live blocker; this tagger replaces that role with an
-Anima-distribution head.
 
 ## Architecture
 
@@ -87,26 +77,6 @@ are accepted as aliases and folded onto the band at vocab-build time
 a rating instead of falling through to the `general` *category*. `AnimaTagger`
 reads `vocab["ratings"]` from the checkpoint and `n_ratings` flows from the
 manifest, so the band is a property of the checkpoint, not a loader constant.
-
-### Design rationale
-
-**Why a shared trunk for both heads.** Rating prediction and tag prediction look
-at the same kinds of visual content — lots of the rating signal is also
-expressible as tag co-occurrence. A shared trunk gives the rating gradient a
-path into the same representation the tag head reads from, at the cost of one
-extra Linear at the head split. Empirically this is what gelcrawl's quality
-classifier does too (`gelcrawl/classify.py`); we reuse that pattern.
-
-**Why mean-pool over patch tokens.** A contrastive-image-text trunk's CLS token
-is trained for retrieval, not for multi-label classification. Mean-pool over the
-patch tokens gives a content-weighted summary instead; head capacity is enough
-that the pooling choice doesn't bottleneck.
-
-**Why a sqrt(neg/pos) BCE pos-weight.** Anima's tag distribution has a heavy
-long-tail. Default BCE-with-logits treats every tag-output identically, so
-common tags (1girl) dominate the gradient. Inverse-frequency weights
-(`n_neg/n_pos`) over-correct and explode rare-tag gradients. `sqrt(n_neg/n_pos)`
-is the standard middle ground — softens the long-tail without overshoot.
 
 ## Code layout
 
@@ -169,9 +139,7 @@ dependency on the corpus dir.
 
 ## Training pipeline
 
-The backbone is external and frozen, so the only trained piece is the sidecar
-linear head; the vocab build is ours. The `make` targets below live in the
-trainer repo, which wraps these modules.
+The `make` targets below live in the trainer repo, which wraps these modules.
 
 ```bash
 # 1. Vocab + train/val split + per-stem manifest + resolved typed groups.
@@ -356,17 +324,6 @@ on macOS and is not used: it took 165 partitions out of a 1208-node graph, ran a
 
 ## Wired-up touchpoints
 
-### CLI driver
-
-The trainer repo's
-`scripts/experimental_tasks/inference.py::cmd_test_directedit` (`make
-exp-test-directedit PROMPT='glasses'`) runs the tagger on the source image to
-seed `--prompt_src`. It requires `models/captioners/anima-tagger-dbv4/`
-(auto-downloaded on first use; `make tagger-dbv4` rebuilds it locally) and exits
-with a clear error if the checkpoint is missing. `scripts/edit.py` itself
-doesn't tag — it takes `--prompt_src` directly. Tagging happens only in that
-driver or in the ComfyUI node.
-
 ### Batch auto-tagging (`make caption-autotag`)
 
 `anime_tools/stages/cli/autotag_captions.py` (over `stages/autotag.py`) is the
@@ -380,35 +337,6 @@ write keeps what it replaced as a `{stem}.history.txt` version.
 Dry run by default, `--apply` writes,
 and any apply must be followed by the trainer's TE re-encode
 (`make preprocess-te`).
-
-#### `--from_report` — apply a dry run without re-loading the tagger
-
-The dry run's `report.json` already records, per image, the destination
-(`rows[].caption_path`) and the exact text (`rows[].proposed`), so the apply
-pass has nothing left to compute:
-
-```bash
-make caption-autotag                                   # the model pass, once
-make caption-autotag ARGS="--apply --from_report post_image_dataset/captions/autotag/report.json"
-make preprocess-te                                     # still REQUIRED
-```
-
-The second line **loads no model** — it does not even import `torch`
-(`tests/test_stage_replay.py` pins that in a subprocess). The same flag exists
-on `caption-position` and `audit-multiview`; the shared implementation is
-`anime_tools/stages/replay.py`, and
-[`position_captions.md`](position_captions.md) carries the full staleness table.
-A replay is **refused** when the report's `src`/`dst` differ from this run's,
-records neither, or has its own `apply` flag already set; a row whose caption no
-longer matches `existing` is **skipped and counted** (`skip:drifted`), never
-overwritten — the guard that makes a stale report safe to replay over hand edits
-— and a file already holding the proposal is `skip:already-applied`, so replays
-are idempotent. `--path_pattern` still filters. The replay writes
-**`apply_report.json`** (never over the `report.json` it read), shaped like the
-stage's own — metadata plus `stats` and `rows` — with `from_report`, per-row
-`{image, caption_path, before, after, status}`, and a top-level **`written[]` of
-the relative image paths actually written**, which is what a UI reads to reload
-exactly the affected dataset items.
 
 ### ComfyUI nodes (`comfyui/anima_tagger/`)
 
@@ -424,9 +352,7 @@ The node ships in this repo under
 imports `anime_tools.tagger.AnimaTagger` from the installed package — so install
 is `pip install ./anime_tools` + link/copy the directory into ComfyUI's
 `custom_nodes/` (its README has the exact commands). `AnimaTaggerCaption`
-outputs a STRING that drops into any text input — DirectEdit's `ANIMA_TAGGER`
-socket, `CLIPTextEncode` for prompt scaffolding, or `Save Text File` for LoRA
-dataset pre-fill.
+outputs a STRING that drops into any text input.
 
 ## Known limitations
 
@@ -437,22 +363,7 @@ dataset pre-fill.
    long-tail tag has 5–20 positives; calibrated thresholds for those tags are
    noisier than for high-frequency ones. `--min_freq 10` is a knob to revisit if
    F1 disappoints.
-3. **No bench harness yet.** An `anima_tagger` bench per the standard envelope
-   (cf. `bench/_common.py::write_result`) is the next thing to add — F1 on a
-   held-out set plus a downstream "edit-success-rate" metric on a small
-   DirectEdit set. `bench/tagger_external/` is the closest thing today.
-4. **Long-tail characters lean on `character_floor`.** Some F1 thresholds settle
+3. **Long-tail characters lean on `character_floor`.** Some F1 thresholds settle
    as low as `0.05`; the post-prediction floor (default `0.5`) is what stops
-   borderline guesses from leaking into ψ_src on stylized / gender-ambiguous
-   art. Lowering it recovers recall at the cost of precision.
-
-## Open design questions
-
-1. **Trunk swap.** gelcrawl's `classify.py` uses DINOv3 ViT-L/16@224 and works
-   well in this domain. If quality saturates and the backbone looks like the
-   limit, the trunk is a `config.json` backend descriptor plus a sidecar
-   retrain away.
-2. **Embedding output instead of tag string.** `predict_caption` emits a string
-   that gets re-tokenized by T5. A head producing `[K, D_t5]` continuous tokens
-   directly is possible — but that's the img2emb design and hits the same
-   structural challenges. Stick with tag-string output for now.
+   borderline guesses from leaking into the caption on stylized /
+   gender-ambiguous art. Lowering it recovers recall at the cost of precision.

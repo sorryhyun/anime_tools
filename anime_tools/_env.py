@@ -1,9 +1,9 @@
 """Curation-side environment: home dir, path anchoring, ``.env``, logging.
 
-Home-directory resolution (``docs/contract.md`` §4): ``ANIME_TOOLS_HOME``, then
-``ANIMA_HOME`` (the trainer's home, so an in-tree run anchors identically), then
-the current working directory. There is no checkout-root fallback — once
-installed this file lives in site-packages.
+Home-directory resolution: ``ANIME_TOOLS_HOME``, then ``ANIMA_HOME`` (the
+trainer's home, so an in-tree run anchors identically), then the current working
+directory. There is no checkout-root fallback — once installed this file lives
+in site-packages.
 """
 
 from __future__ import annotations

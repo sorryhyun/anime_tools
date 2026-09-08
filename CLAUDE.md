@@ -18,8 +18,9 @@ No module here may import `library.*`, `networks`, `train`, `gui`, `scripts`, `b
 `tests/test_boundary.py` greps for it. That test also pins that `anime_tools.captions.*`,
 `tagger.dbv4_meta` and `gui.create_app()` work without `torch` in `sys.modules`.
 
-`docs/contract.md` describes the `anime_tools` ↔ `anima_lora` seam (file formats, grammar, shared
-code). Changing a format there means changing both repos, so check before editing one.
+The `anime_tools` ↔ `anima_lora` seam is a shared surface — file formats, the caption grammar, and
+the code both sides spell (`contract.py`, `buckets.py`) — so changing one of them means changing
+both repos in step.
 
 ## Commands
 
@@ -158,3 +159,10 @@ Each of these is implemented in one package but bites from any of them.
 
 A nested `CLAUDE.md` loads when you read a file in its directory; a skill loads when you ask for
 it. If a task touches a package only through `tests/` or `docs/`, open the nested file yourself.
+
+- **Run the test suite at most twice per task** (here or in `../anime_tools`): once
+  after the change, once after fixing what it caught. Re-running it as a progress
+  check is noise — read the failure and fix it. Needing a third run means the change
+  wants rethinking, not another loop; if a run is genuinely required beyond that, say
+  why. Scope a re-run to the affected file (`pytest tests/test_x.py`) rather than
+  sweeping the whole suite again.

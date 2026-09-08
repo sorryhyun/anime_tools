@@ -169,8 +169,7 @@ the chain right after resize because it *creates* the captions every later stage
 `caption_position_clauses`, off by default, after the VAE cache and before the caption/TE steps;
 correction always). Each is a `configs/preprocess.toml` key, an env var and a CLI flag over the
 same `Request`, run in-process with `--apply`; the chain re-encodes TE itself, so no separate
-`preprocess-te` there. That wiring, its precedence rules and its tests live in the trainer repo;
-the seam is `docs/contract.md`.
+`preprocess-te` there. That wiring, its precedence rules and its tests live in the trainer repo.
 
 ## References
 

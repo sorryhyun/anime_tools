@@ -6,7 +6,7 @@ Sub-packages (import what you need; the top level stays torch-free):
 (the caption-master stages).
 
 The trainer (``anima_lora``) depends on this package; this package never
-imports the trainer (``docs/contract.md``).
+imports the trainer.
 """
 
 from __future__ import annotations

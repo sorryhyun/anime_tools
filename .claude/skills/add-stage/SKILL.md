@@ -68,7 +68,8 @@ The CLI in `cli/` is a shell and nothing more: `build_parser()` returns `Request
   keyed by the id. A missing id falls back to the English the server sent, but `en.ts` is the
   schema, so add it there first and `tsc` names the other three. Then `make frontend`.
 - `docs/<stage>.md` + a row in `docs/README.md`; `examples/` gets a script if the API is new.
-- If the trainer will call it, `docs/contract.md` and the trainer repo (one-way dependency).
+- If the trainer will call it, the trainer repo — the dependency is one-way, so the wrapper lives
+  there and imports this package, never the reverse.
 
 ## 4. Tests to update
 

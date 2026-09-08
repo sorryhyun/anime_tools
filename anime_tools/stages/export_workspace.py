@@ -1,7 +1,6 @@
 """Publish the workspace to the paths the trainer reads.
 
-Six artifact kinds, and where each lands (``docs/contract.md`` §2 is the
-destination side of this table):
+Six artifact kinds, and where each lands:
 
 ``image``     ``workspace/resized/<rel>``           → ``post_image_dataset/resized/<rel>``
 ``caption``   ``workspace/resized/<rel>.txt``       → ``post_image_dataset/resized/<rel>.txt``

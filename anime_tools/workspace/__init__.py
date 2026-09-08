@@ -30,8 +30,7 @@ SOURCE_ROOT = "image_dataset"
 """The input tree. Read-only for the tools from the workspace phase onward."""
 
 EXPORT_ROOT = "post_image_dataset"
-"""The output tree, and the one the trainer reads (``docs/contract.md`` §2).
-Written only by Export."""
+"""The output tree, and the one the trainer reads. Written only by Export."""
 
 DEFAULT_ROOTS: dict[str, str] = {
     # input -> workspace -> output, the order ⚙ Settings shows them in.

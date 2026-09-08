@@ -33,7 +33,7 @@ the stage it reports on. The file is append-only and line-buffered, one
 ``json.dumps`` per line, so a reader can tail it while the stage writes.
 
 The trainer's stream is documented in ``anima_lora/library/training/progress.py``;
-its reader is ``anima_daemon/tail.py``. ``docs/contract.md`` names this file.
+its reader is ``anima_daemon/tail.py``.
 """
 
 from __future__ import annotations

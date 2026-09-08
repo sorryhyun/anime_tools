@@ -66,9 +66,9 @@ gate the write path and the promotion path share.
 
 **Both write the revised tree**, like every other caption stage — the phase through
 `run_position_captions`, the standalone stage through `apply_findings`. No stage writes the
-hand-written master (`docs/contract.md` §2: Export and the GUI caption editor are its only
-writers), and revised-first (`_walk_captions.resolve_caption`) means a master write would be read
-past anyway once a revised caption exists.
+hand-written master (Export and the GUI caption editor are its only writers), and revised-first
+(`_walk_captions.resolve_caption`) means a master write would be read past anyway once a revised
+caption exists.
 
 ## Export
 

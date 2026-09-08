@@ -7,7 +7,6 @@ on the thing it describes.
   dataset.
 - **Stages** — one reference per stage family: what it reads and writes, running it from the GUI
   and the CLI, the knobs, the limits.
-- **Seams** — what this package and the trainer agree on.
 
 The architecture notes for people changing the code are `CLAUDE.md` at the repo root (the
 invariants and the map), one `CLAUDE.md` per package under `anime_tools/` (that module's
@@ -27,14 +26,8 @@ architecture), `frontend/CLAUDE.md` for the browser half, and `.claude/skills/` 
 
 | Doc | Description |
 |-----|-------------|
-| [anima_tagger.md](anima_tagger.md) | Anima Tagger — the vocab / threshold / sidecar head over the dbv4 caformer; vocab build, calibration, batch autotag and `--from_report` |
+| [anima_tagger.md](anima_tagger.md) | Anima Tagger — the vocab / threshold / sidecar head over the dbv4 caformer; vocab build, calibration, batch autotag |
 | [position_captions.md](position_captions.md) | Position captions — the clause grammar, the four gates and five move rules, SAM3 detection, knobs and skip reasons |
 | [multiview_audit.md](multiview_audit.md) | Multiview audit — finding untagged `multiple views` in the caption master |
 | [grouping.md](grouping.md) | Near-twin grouping — PE-Spatial features, `groups.json`, the feature cache, custom embedders, decensor match tools |
 | [masking.md](masking.md) | Training masks — SAM3 subject masks, merge, where a mask lives |
-
-## Seams
-
-| Doc | Description |
-|-----|-------------|
-| [contract.md](contract.md) | The `anime_tools` ↔ `anima_lora` contract — dependency direction, file formats, the caption grammar, shared code |
