@@ -17,7 +17,7 @@ architecture), `frontend/CLAUDE.md` for the browser half, and `.claude/skills/` 
 
 | Doc | Description |
 |-----|-------------|
-| [guidelines/guidebook.md](guidelines/guidebook.md) | The guidebook — install, the curation home, the web panel, every stage in the order you run it, the hand-off to the trainer, troubleshooting |
+| [guidelines/guidebook.md](guidelines/guidebook.md) | The guidebook — install, the curation home, the web panel, every stage in the order you run it, troubleshooting |
 | [guidelines/가이드북.md](guidelines/가이드북.md) | 가이드북 (Korean) |
 | [guidelines/ガイドブック.md](guidelines/ガイドブック.md) | ガイドブック (Japanese) |
 | [guidelines/指南书.md](guidelines/指南书.md) | 指南书 (Chinese) |

@@ -1,9 +1,9 @@
 # anime_tools
 
-Dataset curation for anime diffusion training — the half of
-[`anima_lora`](https://github.com/sorryhyun/anima_lora) that produces the
-caption master and sidecars, split out so it can be used on datasets bound for
-any trainer and installed without the trainer's DiT/VAE stack.
+Dataset curation for anime diffusion training: the caption master and every
+sidecar a training run reads, produced from a folder of images. It installs on
+its own — no DiT, no VAE, no training stack — and everything it writes is a
+plain file on disk.
 
 | Sub-package | What | Install |
 |---|---|---|
@@ -34,7 +34,7 @@ a torch
 index (PyPI's Linux wheel is already CUDA; Windows defaults to CPU). Update
 with `uv tool upgrade anime-tools`.
 
-As a library dependency (what the trainer does):
+As a library dependency:
 
 ```bash
 uv add "anime-tools @ git+https://github.com/sorryhyun/anime_tools"   # git dependency; no PyPI
@@ -87,7 +87,7 @@ workspace/                                       everything the tools write
   master/{stem}.txt                                revised master (Export publishes it back to image_dataset/)
   masks_sam/ masks/                                the SAM3 generator's tree, and the merge
   captions/<stage>/report.json  groups/groups.json  ocr/  export/report.json
-post_image_dataset/resized/ masks/               what the trainer reads   ← written only by Export (--combine_ocr attaches ocr/ lines to each published caption)
+post_image_dataset/resized/ masks/               the published dataset    ← written only by Export (--combine_ocr attaches ocr/ lines to each published caption)
 models/captioners/anima-tagger-dbv4/            tagger checkpoint (auto-fetched from sorryhyun/anima-tagger)
 models/sam3/  models/pe/  models/animetext/       SAM3 / PE-Spatial / OCR text-block detector
 models/paddleocr_vl_1.6*/                             the manga VL reader (VL-1.6 base + LoRA/tower)
@@ -96,7 +96,7 @@ networks/calibration/sam3_girl_prompt.safetensors  SAM3 subject soft prompt (def
 
 `python -m anime_tools.downloads --list` says which weights are present and where each one goes.
 
-Every artifact the trainer reads is a file. Paths resolve against the curation
+Every artifact is a file. Paths resolve against the curation
 home: `ANIME_TOOLS_HOME` → `ANIMA_HOME` → current directory
 (`ANIME_TOOLS_MODELS` overrides the model dir).
 
@@ -144,8 +144,8 @@ as-is, and CI fails if it drifts from `frontend/src`. Users never need bun. bun
 is the whole toolchain (`frontend/build.ts` drives `Bun.build`); there is no
 Vite, webpack or Rollup in the tree.
 
-`tests/test_boundary.py` pins the one rule of the split: this package never
-imports the trainer (`library.*`, `networks`, `train`).
+`tests/test_boundary.py` pins the package boundary: nothing here imports a
+training stack (`library.*`, `networks`, `train`).
 
 ## License
 

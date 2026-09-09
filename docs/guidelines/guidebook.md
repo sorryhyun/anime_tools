@@ -1,9 +1,9 @@
 # anime_tools Guidebook
 
 This is the start-to-finish guide to curating a dataset with anime_tools: install, put your
-images in place, open the web GUI, run the caption / grouping / mask stages in order, and hand the
-result to the [Anima LoRA trainer](https://github.com/sorryhyun/anima_lora). It is written for
-someone who installed from the one-line installer and has never opened the code. It explains what
+images in place, open the web GUI, run the caption / grouping / mask stages in order, and publish
+the result as a ready-to-train dataset. It is written for someone who installed from the one-line
+installer and has never opened the code. It explains what
 each stage reads and writes and how to take a run back; the knobs themselves are on each stage's
 form, generated from its own `--help`, and the design docs linked from each section explain them.
 
@@ -18,23 +18,22 @@ form, generated from its own `--help`, and the design docs linked from each sect
 5. [Hugging Face sign-in and models](#5-hugging-face-sign-in-and-models)
 6. [The GUI](#6-the-gui)
 7. [The workflow, stage by stage](#7-the-workflow-stage-by-stage)
-8. [Handing off to the trainer](#8-handing-off-to-the-trainer)
-9. [CLI equivalents](#9-cli-equivalents)
-10. [Updating](#10-updating)
-11. [Troubleshooting](#11-troubleshooting)
-12. [Further reading](#12-further-reading)
+8. [CLI equivalents](#8-cli-equivalents)
+9. [Updating](#9-updating)
+10. [Troubleshooting](#10-troubleshooting)
+11. [Further reading](#11-further-reading)
 
 ---
 
 ## 1. What this is
 
-`anime_tools` is the dataset-curation half of the Anima LoRA trainer, split out so it can run
-on its own: a smaller install, no DiT or VAE, and a dataset it produces can go to any trainer.
-It takes a folder of images with hand-written captions and produces everything the trainer
-reads before training — bucket-resized images, corrected and enriched captions, caption
-variants, a typed tag index, training masks, and a grouping manifest for thinning duplicates.
+`anime_tools` is a dataset-curation toolkit for anime diffusion training. It takes a folder of
+images with hand-written captions and produces everything a training run reads — bucket-resized
+images, corrected and enriched captions, caption variants, a typed tag index, training masks,
+and a grouping manifest for thinning duplicates.
 
-The trainer depends on this package; this package never imports the trainer.
+It installs on its own — no DiT, no VAE, nothing from a training stack — and everything it
+writes is a plain file on disk, so the dataset it produces can go to any trainer.
 
 ---
 
@@ -119,8 +118,8 @@ uv tool run --from anime-tools python -m anime_tools.downloads --list
 ## 4. The curation home and its layout
 
 Everything is relative to one directory, the curation home. It is, in order of precedence,
-`ANIME_TOOLS_HOME`, then `ANIMA_HOME` (the trainer's own home, so a tree the trainer uses
-works unchanged), then the directory you run from. `anime-tools-gui --home <dir>` sets it
+`ANIME_TOOLS_HOME`, then `ANIMA_HOME` (also honoured, so a tree already set up under that
+variable works unchanged), then the directory you run from. `anime-tools-gui --home <dir>` sets it
 for that server.
 
 ```
@@ -136,7 +135,7 @@ for that server.
     masks/<rel>/{stem}_mask.png     the merge — what Export publishes
     captions/<stage>/report.json    what each run did, and how to undo it
     groups/groups.json              the grouping manifest
-  post_image_dataset/             OUTPUT — written only by Export; the tree the trainer reads
+  post_image_dataset/             OUTPUT — the published dataset; written only by Export
   models/                         model weights (ANIME_TOOLS_MODELS overrides)
 ```
 
@@ -193,7 +192,7 @@ python -m anime_tools.downloads sam3 ocr      # fetch by row id or pack id
 ```
 
 Weights land under `<home>/models/` (`ANIME_TOOLS_MODELS` overrides), except the SAM3 subject
-soft prompt, which sits at `networks/calibration/` because that is where the trainer keeps it.
+soft prompt, which sits at `networks/calibration/`.
 
 ---
 
@@ -236,7 +235,7 @@ Double-click a tag to look it up in the Danbooru tag KB (once it is downloaded).
 
 Save (⌘/Ctrl+Enter) writes `master` or `revised`; the other rungs are read-only. Every
 write pushes the text it replaced onto the history rung, by hand or by a stage alike. A save
-tells you what to do next: the trainer's text-encoder re-encode always, and re-run Correct
+tells you what to do next: a downstream text-embedding re-encode always, and re-run Correct
 too when you edited a revised caption that already had a `.variants.txt`, because that
 sidecar is now stale.
 
@@ -300,9 +299,9 @@ Resize once, and each caption stage reads the revised caption the previous one w
 Reads `image_dataset/`. Writes `workspace/resized/<rel>.png`.
 
 Every image lands in the bucket tier that resizes it the least, keeping its native aspect
-inside that tier's token band. The geometry is the trainer's own, so whichever side resizes
-first, the other finds every image already at its bucket and skips it. Images under the pixel
-floor (0.5 MP by default) are skipped and named in the report — such an image is never
+inside that tier's token band. The geometry is deterministic, so a re-run finds every image
+already at its bucket and skips it. Images under the pixel floor (0.5 MP by default) are
+skipped and named in the report — such an image is never
 resized, so no stage sees it; the image panel says so on the pixel-count chip, and the floor
 is in ⚙ Advanced settings › Preprocess.
 
@@ -310,8 +309,8 @@ You never click it: the GUI runs it as the first step of every stage that reads 
 tree, and a run over one image resizes just that image. Already-current images are skipped, so
 the preflight is near-free. Always writes; there is no dry run.
 
-> The tiers (`target_res`) must match the trainer's, or each side keeps re-resizing the
-> other's output.
+> The tiers (`target_res`) must match what your training pipeline expects, or each side keeps
+> re-resizing the other's output.
 
 ### 7.2 Autotag captions
 
@@ -340,7 +339,7 @@ Mirrors each master into a corrected revised caption: tags typed against the KB 
 into Anima's buckets, an optional trigger word slotted in, an optional `@no-artist` sentinel,
 and optional drop groups that strip whole tag families from every mirrored caption without
 touching the master. With a variant count set it also writes `<rel>.variants.txt`: `v0` is the
-corrected caption, `v1…` are smart-shuffled and dropout draws that the trainer encodes verbatim.
+corrected caption, `v1…` are smart-shuffled and dropout draws, each encoded verbatim downstream.
 
 Always writes; there is no dry run and no report, so there is no Undo either — the replaced
 text is on the history rung. The KB is the Danbooru tag KB row in Models (§5); its
@@ -437,28 +436,11 @@ copies, never links, so the export tree survives the workspace being cleared.
 
 From the CLI it is dry-run by default and lists what it would copy. In the GUI Run copies,
 and Undo restores the text it overwrote from the export's own ledger; an overwritten
-pixel cannot be restored and is reported as such. The trainer reads only what Export wrote.
+pixel cannot be restored and is reported as such. Only what Export wrote leaves the workspace.
 
 ---
 
-## 8. Handing off to the trainer
-
-1. Export (§7.9). The trainer reads `post_image_dataset/resized/` for images and revised
-   captions, `post_image_dataset/masks/` for masks, and `image_dataset/` for the master.
-2. In the trainer, re-encode the text embeddings — its `make preprocess-te` — after any
-   apply that changed a caption. The trainer's caches are reused as-is and never expire on their
-   own, so a changed caption with an old cache trains on the old text.
-3. Resize is shared: the trainer's `make preprocess-resize` finds every image already at its
-   bucket and skips it, provided the tiers match.
-
-Point both at the same home (`ANIMA_HOME` is honoured here) and nothing moves. From there
-the trainer's own guide takes over — the [Anima LoRA Guidebook][trainer-guide].
-
-[trainer-guide]: https://github.com/sorryhyun/anima_lora/blob/main/docs/guidelines/guidebook.md
-
----
-
-## 9. CLI equivalents
+## 8. CLI equivalents
 
 Every stage is a `python -m` module over the same request object the GUI form fills, with one
 flag per form field (`--help` lists them). Paths are relative to the curation home. Caption
@@ -496,7 +478,7 @@ script per feature, API beside CLI.
 
 ---
 
-## 10. Updating
+## 9. Updating
 
 ```bash
 uv tool upgrade anime-tools          # tool install
@@ -508,7 +490,7 @@ generated from the installed code, so a new flag appears on the form by itself.
 
 ---
 
-## 11. Troubleshooting
+## 10. Troubleshooting
 
 A stage fails with a gated-repo error (401 / 403 from the Hub). The token is missing, or
 the account has not accepted that repo's terms. Set the token in ⚙ Settings, then open the
@@ -531,7 +513,7 @@ lower the floor in ⚙ Advanced settings › Preprocess) or the `src` root does 
 dataset.
 
 "saved — .variants.txt is now stale". You edited a revised caption that had variants. Re-run
-Correct with the same variant count, then the trainer's TE re-encode.
+Correct with the same variant count, then re-encode the text embeddings downstream.
 
 Undo says it skipped things. The caption no longer holds what the run wrote — you or a later
 run changed it — so that row was left alone. The skipped rows are still in the report.
@@ -542,7 +524,7 @@ value and moving it moves them all. Leave it blank to keep reports beside the `d
 
 ---
 
-## 12. Further reading
+## 11. Further reading
 
 - [`docs/anima_tagger.md`](../anima_tagger.md) — the tagger, its vocab and calibration.
 - [`docs/position_captions.md`](../position_captions.md) — the clause grammar, gates and knobs.
@@ -550,6 +532,3 @@ value and moving it moves them all. Leave it blank to keep reports beside the `d
 - [`docs/grouping.md`](../grouping.md) — near-twin grouping.
 - [`docs/masking.md`](../masking.md) — subject masks and their merge.
 - [`examples/README.md`](../../examples/README.md) — the Python API, one script per feature.
-- [Anima LoRA
-  Guidebook](https://github.com/sorryhyun/anima_lora/blob/main/docs/guidelines/guidebook.md)
-  — training, from preprocessing to ComfyUI.

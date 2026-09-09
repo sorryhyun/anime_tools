@@ -73,10 +73,8 @@ pairwise `cls` cosine of the component, a readability score rather than a gate. 
 embedder's `name` (its class name if it has none). An empty source tree still writes a manifest,
 with zero groups.
 
-The manifest is not one of Export's artifact kinds. The trainer's own `make curate-group` runs this
-CLI with the trainer's output path, and its Dataset tab folds the members under green group
-headers; see the
-[trainer guidebook](https://github.com/sorryhyun/anima_lora/blob/main/docs/guidelines/guidebook.md).
+The manifest is not one of Export's artifact kinds. It stays under `workspace/groups/`, where the
+GUI reads it in place and folds each group's members under one header in the sidebar.
 
 ## 3. Running it
 
@@ -151,7 +149,8 @@ never an error.
 
 The cache does not record which embedder wrote it. Switching embedders means a fresh
 `$NEAR_TWIN_CACHE` root. The default embedder runs in bf16, which is what existing entries were
-written with. This cache is curation-private and is not the trainer's `{stem}_anima_pe.safetensors`.
+written with. This cache is curation-private: nothing outside grouping reads it, and Export never
+publishes it.
 
 ## 6. Custom embedders
 

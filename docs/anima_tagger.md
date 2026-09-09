@@ -135,17 +135,17 @@ dependency on the corpus dir.
 
 ## Training pipeline
 
-The `make` targets below live in the trainer repo, which wraps these modules.
+Every step is a `python -m` module in `anime_tools.tagger.cli`.
 
 ```bash
 # 1. Vocab + train/val split + per-stem manifest + resolved typed groups.
-make tagger ARGS="--min_freq 5"          # == --mode build_vocab
+python -m anime_tools.tagger.cli.main --mode build_vocab --min_freq 5
 # 2. Assemble the checkpoint dir (vocab / rules / groups / split + descriptor).
-make tagger-dbv4
+python -m anime_tools.tagger.cli.build_dbv4_ckpt
 # 3. Cache dbv4 hidden states + train / calibrate the sidecar head.
-make daemon-run ARGS="anime_tools/tagger/cli/train_sidecar.py --ckpt_dir models/captioners/anima-tagger-dbv4"
+python -m anime_tools.tagger.cli.train_sidecar --ckpt_dir models/captioners/anima-tagger-dbv4
 # 4. Single-image sanity check.
-make test-tagger ARGS="--image foo.png --show_scores"
+python -m anime_tools.tagger.cli.main --mode predict --image foo.png --show_scores
 # 5. Curator helper — character tags that behave like affiliation markers.
 python -m anime_tools.tagger.cli.main --mode scan_role_markers --out_yaml stub.yaml
 ```
@@ -313,8 +313,7 @@ master is the read-only fallback (`resolve_caption`), so `--mode missing`
 tags and round-trips position clauses verbatim; `overwrite` replaces. Every
 write keeps what it replaced as a `{stem}.history.txt` version.
 Dry run by default, `--apply` writes,
-and any apply must be followed by the trainer's TE re-encode
-(`make preprocess-te`).
+and any apply must be followed by a downstream text-embedding re-encode.
 
 ### ComfyUI nodes (`comfyui/anima_tagger/`)
 

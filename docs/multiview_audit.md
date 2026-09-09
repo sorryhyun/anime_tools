@@ -116,7 +116,8 @@ the end of the flat bag, via `compose_caption` so trailing clauses survive. Defa
 `--apply_verdicts` is `multiple views` only, `--apply_confidence` is `strong`
 only. The replaced text goes onto `{stem}.history.txt` (the undo) and the stale
 `{stem}.variants.txt` is dropped, since it outranks `{stem}.txt` at encode time.
-Follow any apply with the trainer's TE re-encode (`make preprocess-te`).
+Any apply changes caption text, so re-encode the text embeddings
+downstream before the next training run.
 
 `--from_report <report.json>`: replay a dry run's findings instead of
 re-auditing — the report already holds `caption_path`, the before-text

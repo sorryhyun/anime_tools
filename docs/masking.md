@@ -2,16 +2,16 @@
 
 Two stages under the GUI's Masks button (Subject / Merge), two `python -m` CLIs,
 two request objects in `anime_tools.masking`. Together they write the
-`{stem}_mask.png` files the trainer's masked loss reads, so a speech bubble, a signature or
+`{stem}_mask.png` files a masked-loss training run reads, so a speech bubble, a signature or
 the background behind the subject stops contributing to the gradient.
 
 ## 1. What a mask is here
 
 An 8-bit L PNG named `{stem}_mask.png`, at the image's own relative path under the mask
 directory (`chars/alice/001.png` → `chars/alice/001_mask.png`). **White (255) = train on this
-pixel, black (0) = ignore it in the loss.** The trainer converts the file to L, NEAREST-resizes
-it to the latent's pixel size and scales it to `[0, 1]`; an image
-with no mask is trained on in full, so generating none is fine.
+pixel, black (0) = ignore it in the loss.** The training side converts the file to L,
+NEAREST-resizes it to the latent's pixel size and scales it to `[0, 1]`; an image with no mask
+is trained on in full, so generating none is fine.
 
 The generator writes that polarity through one of two helpers in `_masks.py`: `write_mask`
 saves a keep array as `keep * 255`, and `write_ignore_mask` saves the inverse of a
@@ -19,7 +19,7 @@ detection, `detected=1 → alpha=0`. The two are the whole difference between "k
 subject" and "mask out the balloons".
 
 Both stages read `workspace/resized/` — the tree `resize` populates and every other
-stage opens — so a mask is cut at the same geometry the trainer sees. A mask cut from the
+stage opens — so a mask is cut at the same geometry every other stage sees. A mask cut from the
 master pixels would land off the subject for a ratio-clamped image, which is why the GUI runs
 resize as a preflight in front of the generator.
 
@@ -40,7 +40,7 @@ In the GUI the two directories are one ⚙ Settings value, `mask_root`, not two 
 fields: the generator keeps its own tail under it (`masks_sam`), the merge's input list
 moves with it, and a blank root means beside the `masks` root. Only the merged
 output is the dataset's `masks` root; that is the tree `Export` copies to
-`post_image_dataset/masks/`, and the one the trainer's `make mask` lands in.
+`post_image_dataset/masks/`.
 
 Export decides a mask by `(size, mtime_ns)` against the destination and overwrites a pixel
 file without keeping the old bytes, so a mask it replaced reports `not-undoable` on Undo.
@@ -167,7 +167,7 @@ under is simply skipped on CPU.
 - There is no per-image review or Undo for masks: what a run changes its mind about is
   answered by `--force` and a re-run, and Export's copy of a pixel file is not undoable.
 - The merge's minimum treats any input as an ignore mask; a keep-only subject mask and a
-  hand-painted ignore mask combine correctly when both are in the trainer's polarity.
+  hand-painted ignore mask combine correctly when both are in the polarity above.
 
 ## 8. Code map
 

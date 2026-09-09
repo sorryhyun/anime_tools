@@ -298,19 +298,18 @@ them apart — a real loss of curation on those 14 captions.
 ## Running it
 
 ```bash
-make caption-position                                  # dry run, whole dataset
-make caption-position ARGS="--crops --qwen3 models/text_encoders/qwen_3_06b_base.safetensors"
-make caption-position ARGS="--path_pattern 'artist_a/*'"   # scope a slice
-make caption-position ARGS="--apply"                   # write (after the review)
-make preprocess-te                                     # REQUIRED after --apply
-make caption-position ARGS="--flatten --apply"         # undo: clauses → flat bag
+P="python -m anime_tools.stages.cli.position_captions"
+$P                                     # dry run, whole dataset
+$P --crops --qwen3 models/text_encoders/qwen_3_06b_base.safetensors
+$P --path_pattern 'artist_a/*'         # scope a slice
+$P --apply                             # write (after the review)
+$P --flatten --apply                   # undo: clauses → flat bag
 ```
 
-The `make` targets live in the trainer repo; the stage itself is `python -m
-anime_tools.stages.cli.position_captions` with the same flags, which is what the
-GUI dock runs. It is a GPU job (SAM3 + tagger held resident for the whole sweep),
-so under the trainer it is daemon-routed — `--queue` detaches, `--inline`
-bypasses.
+That module is what the GUI dock runs, with the same flags. It is a GPU job
+(SAM3 + tagger held resident for the whole sweep), so give it one where you can.
+Re-encode the text embeddings downstream after any `--apply` — a changed caption
+against a stale cache trains on the old text.
 
 Applying without a review step is safe — the master is untouched, the replaced
 text is kept as a `revised@N` version (a badge with an Undo in the GUI), and

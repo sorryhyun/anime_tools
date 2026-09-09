@@ -9,6 +9,7 @@ build/
 .env
 .claude/*
 !.claude/skills/
+!.claude/agents/
 models/
 networks/
 # The curation home is the checkout during dev, so its three dataset trees land

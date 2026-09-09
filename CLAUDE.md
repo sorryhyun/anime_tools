@@ -160,6 +160,7 @@ Each of these is implemented in one package but bites from any of them.
 | `anime_tools/downloads.py` — adding or moving a weight | the `model-catalog` skill |
 | A new stage, a renamed flag, a GUI knob | the `add-stage` skill |
 | A version bump, the installer, `release.yml` | the `release` skill |
+| An edit to `docs/guidelines/guidebook.md` | the `translator` agent — it re-syncs the ko/ja/zh guidebooks beside it |
 | Tests in `tests/` | the nested file of the package under test; `test_registry_requests` and `test_boundary` span all of them |
 
 A nested `CLAUDE.md` loads when you read a file in its directory; a skill loads when you ask for
