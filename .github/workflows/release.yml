@@ -12,7 +12,12 @@ jobs:
       - uses: astral-sh/setup-uv@v5
         with:
           python-version: "3.13"
+      # Pinned the same way ci.yml pins it: bun is the bundler and its minified
+      # output changes between releases, so an unpinned bun rebuilds the committed
+      # page a few bytes differently and fails the drift check below.
       - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: frontend/.bun-version
       # The built frontend is committed; rebuild and refuse to release a stale one.
       - run: scripts/build_frontend.sh
       - run: git diff --exit-code -- anime_tools/gui/static/
