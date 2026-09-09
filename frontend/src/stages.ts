@@ -8,15 +8,16 @@ import type { Config } from "./config";
 
 /** One translated label out of an `i18n` table, or nothing when the server
     sent an id no locale spells. */
-const label = (table: Record<string, string>, key: string): string | undefined => table[key];
+const label = (table: Partial<Record<string, string>>, key: string): string | undefined =>
+  table[key];
 
 /** The dock's own navigation, translated: the panel buttons and the stage names
  * under them. They are a closed list (`gui/stages.py`'s registry) and they are
- * how the app is walked, which is why these three are the exception to
- * server-owned text shipping as it arrives — a stage's doc, its notes and every
- * field label under it still do. The key is the id the server sent and an
- * unknown one falls back to the string it came with, so a stage added
- * server-side is a readable button before it is a translated one.
+ * how the app is walked, which is why they are the exception to server-owned
+ * text shipping as it arrives — every field label under a stage still does. The
+ * key is the id the server sent and an unknown one falls back to the string it
+ * came with, so a stage added server-side is a readable button before it is a
+ * translated one.
  */
 export const panelLabel = (panel: string) => label(t().stage.panels, panel) ?? panel;
 export const stageTitle = (s: Stage) => label(t().stage.titles, s.id) ?? s.title;
@@ -25,6 +26,16 @@ export const stageTitle = (s: Stage) => label(t().stage.titles, s.id) ?? s.title
     falling back to an English one. */
 export const stageShort = (s: Stage) =>
   label(t().stage.shorts, s.id) ?? (s.short === s.title ? stageTitle(s) : s.short);
+
+/** What the stage bar's (?) reveals, translated the same way: the doc, and the
+ * ⚠ notes under it. The fallback is the text the server sent — the docstring in
+ * the request class and the registry's `notes` — so an untranslated stage
+ * explains itself in English rather than in nothing.
+ */
+export const stageDoc = (s: Stage) => label(t().stage.docs, s.id) ?? s.doc.trim();
+/** Empty when the server sent no notes: a locale translates a stage's warning,
+    it never adds one the stage does not have. */
+export const stageNotes = (s: Stage) => (s.notes ? (label(t().stage.notes, s.id) ?? s.notes) : "");
 
 /** The stage registry and the forms over it: which stage is open, what its form
  * says, and how the dock's buttons bucket the stages.

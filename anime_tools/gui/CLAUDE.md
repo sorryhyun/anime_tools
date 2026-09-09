@@ -96,10 +96,13 @@ field and an already-hidden field are never folded — the server settles that, 
   rewritten; a checkout or a venv install gets the refusal (`refusal()`, the same answer the pane
   greys its button on) as a 409. The route is a plain `def`: FastAPI runs it in the threadpool, so
   the GitHub call cannot stall a streaming job.
-- The panel's own chrome is translated (`frontend/src/i18n/`), and so is the dock's navigation —
-  the panel buttons and the stage names on them, keyed by the registry's own ids. Everything else
-  the server owns (a stage's doc and notes, argparse labels and help, the model catalog) ships as it
-  arrives.
+- The panel's own chrome is translated (`frontend/src/i18n/`), and so are the two things the
+  browser reads *as* prose rather than as data: the dock's navigation (the panel buttons and the
+  stage names on them) and what the stage bar's (?) reveals (a stage's doc and its notes), both
+  keyed by the registry's own ids and both falling back to what this server sent. So a docstring
+  edited here is the English of that (?) and stays the answer in every locale that has no line for
+  the stage. Everything else the server owns (argparse labels and help, the model catalog) ships as
+  it arrives.
 
 `static/` is the committed bundle built from `frontend/` by `make frontend`; never edit it by
 hand, and CI fails on drift.

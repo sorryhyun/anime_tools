@@ -4,14 +4,32 @@
  * The dock's panels and the stage names under them are translated here, keyed
  * by the id the registry sends (`stage.panels` / `stage.titles` / `stage.shorts`)
  * — they are a closed, rarely-changing list and they are the app's own
- * navigation. Everything else the server writes is not: a stage's doc and notes,
- * every argparse label and help string, and the model catalog's rows arrive as
- * they were written, and captions, paths and tags are data.
+ * navigation. The prose behind the stage bar's (?) joins them as an *overlay*
+ * (`stage.docs` / `stage.notes`): the docstring the server sent is the English,
+ * and a locale with no entry for a stage falls back to it. Everything else the
+ * server writes is untranslated — every argparse label and help string and the
+ * model catalog's rows arrive as they were written, and captions, paths and
+ * tags are data.
  *
  * `en` is the schema: every other locale is declared `: Dict` (`ko.ts`, `ja.ts`,
  * `zh.ts`), so a missing or misspelled key is a type error rather than a blank
  * label at runtime.
  */
+/** The registry's stage ids (`anime_tools/stages/registry.py`), named so the
+    two overlays below are checked against ids that exist rather than accepting
+    any string. */
+export type StageId =
+  | "resize"
+  | "autotag"
+  | "position"
+  | "correct"
+  | "audit"
+  | "ocr"
+  | "groups"
+  | "masks_sam"
+  | "masks_merge"
+  | "export";
+
 const en = {
   langName: "English",
   common: {
@@ -239,9 +257,9 @@ const en = {
       Masks: "Masks",
       Export: "Export",
     },
-    /** Stage titles, keyed by stage id; same fallback as `panels`. The doc,
-        the notes and every field label under them are argparse text and stay
-        as the server wrote them. */
+    /** Stage titles, keyed by stage id; same fallback as `panels`. Every field
+        label under them is argparse text and stays as the server wrote it; the
+        doc and the notes are overlaid below. */
     titles: {
       resize: "Resize to buckets",
       autotag: "Autotag captions",
@@ -263,6 +281,16 @@ const en = {
       masks_sam: "Subject",
       masks_merge: "Merge",
     },
+    /** The prose the stage bar's (?) reveals, keyed by stage id — an *overlay*
+        on the request class's docstring, not a copy of it. `en` spells nothing:
+        that docstring is the English, and re-typing it here would only let the
+        two drift. A stage a locale has no line for reads in English, which is
+        why these are `Partial` where `titles` is not. */
+    docs: {} as Partial<Record<StageId, string>>,
+    /** The same overlay over the registry's `notes` — the ⚠ line under the doc.
+        Read only when the server sent notes at all, so a locale can translate a
+        warning but never invent one. */
+    notes: {} as Partial<Record<StageId, string>>,
     run: "Run",
     runBatch: "Run batch",
     undo: "Undo",

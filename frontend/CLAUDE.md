@@ -71,9 +71,10 @@ nothing fetched, no business rule lives there. The state is five composables at
   fold per group and on that group's own bottom edge. That fold is local,
   unsaved state — it is a look at one group of one stage, not a preference
   about how you work, which is what `layout.ts`'s help areas are.
-  `panelLabel` / `stageTitle` / `stageShort` live here too: the dock's own
-  navigation is translated, keyed by the id the server sent and falling back to
-  the string that came with it.
+  `panelLabel` / `stageTitle` / `stageShort` live here too, and `stageDoc` /
+  `stageNotes` beside them: the dock's own navigation and the prose behind the
+  stage bar's (?) are translated, keyed by the id the server sent and falling
+  back to the string that came with it.
 - `runner.ts` — the Run → versions → Undo loop, and the one job the dock
   follows. A Run writes (`--apply`, always): there is no Apply button, because
   the caption ladder is what that gate was standing in for — the text a run
@@ -146,13 +147,18 @@ dicts and says which module writes each one.
 
 - Every user-facing string comes from `i18n/`. A literal in a component
   ships as English to four languages. Server-owned text is not re-typed here
-  either: a stage's doc and notes, field labels, argparse help and the model
-  catalog's rows are rendered as they arrive, and captions, tags and paths are
-  data. The dock's navigation is the one exception — the panel buttons and
-  the stage names on them are a closed list and they are how the app is walked,
-  so `stage.panels` / `stage.titles` / `stage.shorts` translate them, keyed by
-  the registry's own ids, and an id no locale spells falls back to the English
-  the server sent.
+  either: field labels, argparse help and the model catalog's rows are rendered
+  as they arrive, and captions, tags and paths are data. Two things the server
+  sends are translated anyway, both keyed by the registry's own ids and both
+  falling back to the English that arrived. The dock's navigation — the panel
+  buttons and the stage names on them are a closed list and they are how the app
+  is walked, so `stage.panels` / `stage.titles` / `stage.shorts` spell them. And
+  the prose behind the stage bar's (?) — `stage.docs` / `stage.notes`, read
+  through `stageDoc` / `stageNotes`, since a (?) that answers in English inside a
+  Korean window is the one place a fallback is worse than a translation. Those
+  two are `Partial`, not full tables: `en` spells nothing in them, because the
+  request class's docstring *is* the English, and a stage a locale has no line
+  for reads as the server wrote it rather than as a blank.
 - Never split a caption in the browser. Clause structure comes from the
   server (`/api/dataset/item`, `/api/dataset/parse`) — the grammar has one
   implementation, in `anime_tools/captions/`. No `split(",")`, ever. The boxed

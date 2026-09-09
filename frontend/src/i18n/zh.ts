@@ -219,6 +219,54 @@ const zh: Dict = {
       masks_sam: "主体",
       masks_merge: "合并",
     },
+    docs: {
+      resize:
+        "把标注 master 缩放进每个阶段都会读的桶分辨率树。\n\n" +
+        "其他阶段一律走 --dst，所以只存在于 image_dataset/ 里的图片对它们是看不见的。每张图落进缩得最少的那一档 --target_res，并在该档的 token 带宽内保持原有比例；几何与训练器的 make preprocess-resize 一致，所以谁先跑，另一边就跳过。\n\n" +
+        "总是写入；没有试运行，已经在目标桶里的图片不会重新解码，直接跳过。glob 按 --src 匹配。",
+      autotag:
+        "用 Anima Tagger 给数据集打标签，并写入 revised 标注。\n\n" +
+        "遍历缩放树，为每张图提出一份标注，--mode 有三种：missing（没有任何标注说到的图片，默认）、merge（保留从句，只补上新标签）、overwrite（整份替换）。读的是 revised，没有就退回 master；写的永远是 revised，被顶掉的文本作为 {stem}.history.txt 的一个版本留下。\n\n" +
+        "默认试运行，--apply 才写。TE 缓存会过期却看着像新的，所以真正应用之后请接着跑 make preprocess-te。",
+      position:
+        "把多主体的标注改写成位置从句（SAM3 + Anima Tagger）。\n\n" +
+        "在缩放后的数据集上按 检测 → 排序 → 裁剪并抹除 → 打标签 → 组合 推进，把每个可归属的标签从扁平的标签袋移进它自己的从句（--flatten 是反向的一遍）。从句只落在 --dst 下的 revised 标注上，绝不落在标注 master 上。见 docs/position_captions.md。\n\n" +
+        "默认试运行，--apply 才写，并且会丢掉过期的 .variants.txt 附文件，所以之后请重新跑一次 TE 编码。",
+      correct:
+        "在缩放后的预处理图片旁边写下校正过的标注。\n\n" +
+        "就地校正 revised 标注，只有当一张图还没有 revised 时才去读 master，变体附文件是可选的。总是写入：没有试运行，也没有报告。",
+      audit:
+        "审查 1girl 的标注，找出其实是同一个人多个视角的图片。\n\n" +
+        "扫过位置阶段以 single-subject 跳过的图片，把 girl 提示词找到两个以上主体的全部报告出来。见 docs/multiview_audit.md。位置阶段用 --multiview_audit 把这一步当作自己的第一个阶段来跑，平常都是从那儿进来的。\n\n" +
+        "默认试运行；--apply 会把缺的标签写进 --dst 下的 revised 标注，不写 master，之后请重新跑一次 TE 编码。",
+      ocr:
+        "读出每张图里的文字，并记下它写了什么。\n\n" +
+        "遍历缩放树，用 AnimeText 检测器（anime_tools.ocr.animetext，torch 上的 YOLO12；首次使用下载 54 MB，权重是 GPL-3.0，从不随包分发）框出每一块文字，再用漫画 VL 阅读器（anime_tools.ocr.sfx，在手写拟声词上微调过的 PaddleOCR-VL-1.6；torch，首次使用约 2.8 GB）读出每个框，把 {stem}.ocr.txt 写进 OCR 树，布局与缩放树一致。不读也不写任何标注，之后也不需要重新编码 TE。\n\n" +
+        "对白框里的台词和画在画面上的拟声词由同一个检测器一起框。一个框的读取就是一行，所以被解码守卫挡下的读取会连框一起丢掉。给了 --mask_dir，文字掩码里没有被任何框覆盖的连通块也会当作独立的行读出来（det 0.000）。每一行都带着检测器的框置信度（det）和阅读器的平均 token 置信度（score）。\n\n" +
+        "默认试运行：试运行会留下一份 report.json，装着它本来要写的每一行；--apply 只写附文件，别的什么都不做。",
+      groups:
+        "按 PE-Spatial 的视觉相似度把数据集里的图片分组，写出 groups.json 清单。\n\n" +
+        "这是一件策展工具，不是训练的预处理步骤：它按画师把几乎相同的图片聚在一起，好让 GUI 的数据集页可以按分组筛选，除此之外什么都不写。两张图在每格下限 --cell-match-min 之下、match_frac 达到 --match-frac-min 时归为一组。重跑会复用共享的 PE-Spatial 特征缓存，所以重新调阈值很便宜。",
+      masks_sam:
+        "SAM3 主体掩码，写到 workspace/masks_sam/。\n\n" +
+        "--prompts 指的是要被掩掉的东西（在损失里忽略）；--focus-prompts 指的是要保留的东西，其余全部掩掉。两个都给，保留的区域减去掩掉的区域就是活下来的部分。主体提示词默认由一段学出来的软提示（--prompt_embed）来承担；传 none 就用普通的文本提示词。",
+      masks_merge:
+        "把多个来源的掩码按像素取最小值合并（掩码区域的并集）。\n\n" +
+        "以 (rel_dir, name) 为键合并，所以各输入里相对路径相同的掩码会碰到一起；嵌套的结构在 --output-dir 下原样保留。输入目录不存在是跳过而不是报错 —— 默认的输入是某一个生成器的树，第二棵树（手绘的掩码、另一个工具的输出）只要列在旁边就行。",
+      export:
+        "把工作区发布到训练器读取的路径。\n\n" +
+        "这是本包里唯一写到 workspace/ 之外的操作：缩放后的图片、掩码和标注都会复制到 --out 之下。\n\n" +
+        "默认试运行。--apply 会真的复制，并且对每一行重新对照目的地判断，所以试运行之后被改过的文件会被报告而不是被覆盖。把一次导出收回去靠的是 GUI 的 Undo，不是这里的某个开关。",
+    },
+    notes: {
+      resize: "在每个读取缩放树的阶段之前自动运行。这里的默认值对它们全都生效。",
+      autotag:
+        "把 revised 标注写在缩放树下；master 只在缺少时读取，从不改动。missing 会跳过标注已经说到的图片。",
+      correct: "就地校正 revised 标注；master 只在还没有 revised 的图片上读取，从不改动。",
+      ocr: "把 {stem}.ocr.txt 写进 OCR 树，布局与缩放树一致。不读也不写任何标注。",
+      export:
+        "唯一写到工作区之外的阶段：运行会复制到训练器读取的那棵树，已经一样的就跳过。Undo 能还原它覆盖掉的文本；被替换的像素无法撤销。",
+    },
     run: "运行",
     runBatch: "批量运行",
     undo: "撤销",

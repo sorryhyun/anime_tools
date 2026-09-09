@@ -1,5 +1,6 @@
 import { createMemo, createSignal, For, Show } from "solid-js";
 import { t } from "../i18n";
+import { stageDoc, stageNotes } from "../stages";
 import type { Field, Stage, Values } from "../types";
 import { FieldRow, grouped, str } from "./FieldRow";
 import { browsePath, PathPicker } from "./PathPicker";
@@ -103,11 +104,13 @@ export function StageForm(props: {
   return (
     <>
       {/* The prose lives behind the stage bar's (?), and the notes go with it;
-          the (?) is warn-tinted while it hides a stage's notes. */}
+          the (?) is warn-tinted while it hides a stage's notes. Both are
+          translated where a locale has a line for the stage and arrive as the
+          server wrote them where it does not (`stageDoc` / `stageNotes`). */}
       <Show when={props.help}>
-        <div class="doc">{props.stage.doc.trim()}</div>
-        <Show when={props.stage.notes}>
-          <div class="notes">⚠ {props.stage.notes}</div>
+        <div class="doc">{stageDoc(props.stage)}</div>
+        <Show when={stageNotes(props.stage)}>
+          {(notes) => <div class="notes">⚠ {notes()}</div>}
         </Show>
       </Show>
       <For each={groups()}>

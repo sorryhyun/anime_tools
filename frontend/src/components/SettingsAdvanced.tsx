@@ -3,7 +3,7 @@ import { createStore, reconcile, unwrap } from "solid-js/store";
 import { slots, t } from "../i18n";
 import type { SettingsOut } from "../config";
 import type { HelpArea } from "../layout";
-import { stageTitle } from "../stages";
+import { stageNotes, stageTitle } from "../stages";
 import { MASK_SETTING, REPORT_SETTING } from "../types";
 import type { DatasetRoots, Field, Stage } from "../types";
 import { FieldRow, grouped } from "./FieldRow";
@@ -113,7 +113,7 @@ export function SettingsAdvanced(props: {
             </h4>
             <Show when={props.helpOpen("preprocess")}>
               <p class="dim" style="margin:0 0 8px">
-                {pre_().notes}{" "}
+                {stageNotes(pre_())}{" "}
                 {slots(t().settings.preprocessHelp, () => (
                   <code>target_res</code>
                 ))}
