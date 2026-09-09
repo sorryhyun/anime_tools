@@ -955,12 +955,18 @@ class ResizeRequest(DatasetRequest):
 
 
 @dataclass(frozen=True, kw_only=True)
-class ExportRequest(DatasetRequest):
+class ExportRequest(StageRequest):
     """Publish the workspace to the paths the trainer reads.
 
     The one operation in the package that writes outside ``workspace/``: resized
     images, masks and captions are copied under ``--out``, and whatever curation
     excluded is copied beside them under ``<out>/_excluded/``.
+
+    Takes no ``--path_pattern``, which is why it is not a
+    :class:`DatasetRequest`: an export is the workspace or it is a partial
+    dataset the trainer reads as the whole one. Narrowing it is what the GUI's
+    per-image Run would have meant, and one image published over a stale tree is
+    never what "Export" was asked for.
 
     Dry-run by default. ``--apply`` copies for real, re-deciding every row against
     the destination, so a file edited since the dry run is reported rather than

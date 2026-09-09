@@ -16,6 +16,7 @@ from anime_tools.stages.export_workspace import (
     rows_from_report,
     run_export,
 )
+from anime_tools.stages.requests import ExportRequest
 
 
 def _png(path: Path, colour: int = 10) -> None:
@@ -99,10 +100,17 @@ def test_a_flat_legacy_mask_still_publishes(ws):
     assert rels == {"a.png", "sub/b.png"}
 
 
-def test_the_pattern_narrows_to_one_image(ws):
-    rows = plan_export(ws, path_pattern="sub/b.*")
-    # The index is dataset-wide, so it is not something a scope excludes.
-    assert {r.rel for r in rows} == {"sub/b.png", "caption_index.json"}
+def test_the_plan_is_the_whole_workspace(ws):
+    """Export takes no pattern: every image in the resized tree is published.
+
+    A publish narrowed to one image would land beside a stale tree the trainer
+    reads as the whole dataset, so the narrowing the other stages take is the
+    one thing this one does not have (`ExportRequest` is not a
+    `DatasetRequest`).
+    """
+    assert not hasattr(ExportRequest, "path_pattern")
+    rows = plan_export(ws)
+    assert {r.rel for r in rows} >= {"a.png", "sub/b.png", "caption_index.json"}
 
 
 # ---- the copy -----------------------------------------------------------

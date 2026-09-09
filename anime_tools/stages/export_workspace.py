@@ -293,17 +293,17 @@ def _mask_source(masks: Path, images: Path, image: Path, rel: Path) -> Path:
     return masks / mask_name(rel.stem)
 
 
-def plan_export(
-    paths: ExportPaths, *, path_pattern: str | None = "*"
-) -> list[ExportRow]:
+def plan_export(paths: ExportPaths) -> list[ExportRow]:
     """Every artifact this export would publish, decided against disk.
 
-    Enumerates the *resized* tree, which is what curation produced. An artifact
-    absent from the workspace contributes no row at all; ``missing-source`` is
-    left for a replay of the report, where the file vanished after the plan.
+    Enumerates the *resized* tree, which is what curation produced -- the whole
+    of it, since a publish narrowed to part of the workspace is a dataset the
+    trainer would read as all of it. An artifact absent from the workspace
+    contributes no row at all; ``missing-source`` is left for a replay of the
+    report, where the file vanished after the plan.
     """
     rows: list[ExportRow] = []
-    for image in walk_images(paths.resized, recursive=True, pattern=path_pattern):
+    for image in walk_images(paths.resized, recursive=True):
         rel = image.relative_to(paths.resized)
         out_image = paths.out / "resized" / rel
         rows.append(_row(rel, "image", image, out_image))
@@ -359,12 +359,10 @@ def plan_export(
         rows.append(
             _row(rel, "index", paths.index, paths.out / "captions" / paths.index.name)
         )
-    return rows + _excluded_rows(paths, path_pattern=path_pattern)
+    return rows + _excluded_rows(paths)
 
 
-def _excluded_rows(
-    paths: ExportPaths, *, path_pattern: str | None = "*"
-) -> list[ExportRow]:
+def _excluded_rows(paths: ExportPaths) -> list[ExportRow]:
     """The excluded tree, mirrored under ``<out>/_excluded/``.
 
     A second, smaller plan over the same shapes: ``_excluded/resized`` is walked
@@ -388,7 +386,7 @@ def _excluded_rows(
     out = paths.out / WS.EXCLUDED_SUBDIR
 
     rows: list[ExportRow] = []
-    for image in walk_images(resized, recursive=True, pattern=path_pattern):
+    for image in walk_images(resized, recursive=True):
         rel = image.relative_to(resized)
         out_image = out / "resized" / rel
         rows.append(_row(rel, "image", image, out_image, excluded=True))
@@ -455,12 +453,11 @@ def export_one(row: ExportRow, *, apply: bool) -> str:
 def run_export(
     paths: ExportPaths,
     *,
-    path_pattern: str | None = "*",
     apply: bool = False,
     progress: Callable[[int, int, str], None] | None = None,
 ) -> tuple[list[ExportRow], ExportStats]:
     """Plan the export and, with ``apply``, perform it."""
-    rows = plan_export(paths, path_pattern=path_pattern)
+    rows = plan_export(paths)
     return _run(rows, apply=apply, progress=progress)
 
 

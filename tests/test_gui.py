@@ -156,9 +156,10 @@ def test_scoped_stages_are_the_ones_taking_a_pattern():
         "audit",
         "ocr",
         "masks_sam",
-        # Export narrows the same way.
-        "export",
     }
+    # Export is the one stage with no pattern to narrow: it publishes the
+    # workspace, and one image published on its own is a partial dataset.
+    assert "export" not in scoped
 
 
 def test_required_field_is_enforced():

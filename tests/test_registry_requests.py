@@ -192,10 +192,11 @@ CASES: dict[str, Request] = {
         device="cpu",
     ),
     "masks_merge": MergeMasksRequest(mask_dirs=("x", "y"), output_dir="o"),
+    # No ``path_pattern``: Export publishes the whole workspace, and is the one
+    # stage the GUI cannot narrow to the open image.
     "export": ExportRequest(
         src="s",
         dst="d",
-        path_pattern="a/*",
         masks="m",
         master="mm",
         index="i.json",

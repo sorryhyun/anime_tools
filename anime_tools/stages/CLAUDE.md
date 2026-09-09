@@ -75,7 +75,15 @@ Export is the only thing that writes outside the workspace. Six artifact kinds
 (`image`/`caption`/`variants`/`mask`/`master`/`index`), each decided against the destination
 (`identical` by byte compare for text, `(size, mtime_ns)` for pixels). It always copies, takes no
 `--from_report`, and `revert_export` restores text it overwrote — an overwritten pixel reports
-`not-undoable`. `--combine_ocr` (GUI: the "Combine OCR" drawer, `--ocr_dir` inside it) is the one
+`not-undoable`.
+
+It also takes no `--path_pattern` — `ExportRequest` is the one stage request that is not a
+`DatasetRequest`, and `plan_export` walks the whole resized tree. A publish is the workspace or
+it is a partial dataset landing beside a stale tree the trainer reads as all of it. That is also
+what makes it the one stage the GUI cannot narrow to the open image: `scoped` is
+"has `path_pattern`", so Export shows a single Run and `POST /api/jobs` refuses a `rel` for it.
+
+`--combine_ocr` (GUI: the "Combine OCR" drawer, `--ocr_dir` inside it) is the one
 knob that makes a row a render rather than a copy: a `caption` / `variants` row whose image has a
 `{stem}.ocr.txt` publishes the text with the OCR clauses attached (the lines held to `--ocr_min_det`
 and `--ocr_min_glyph`, both recorded on the row), carries `ocr` + `text` in the

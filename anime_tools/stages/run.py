@@ -842,15 +842,15 @@ def run_export(req: ExportRequest):
         raise FileNotFoundError(
             f"nothing to export: {paths.resized} does not exist. Run the Resize stage first."
         )
-    pattern = req.path_pattern or "*"
-    rows, stats = publish(
-        paths, path_pattern=pattern, apply=req.apply, progress=make_progress(50)
-    )
+    rows, stats = publish(paths, apply=req.apply, progress=make_progress(50))
     path = write_stage_report(
         resolve_path(req.report_dir),
         {
             **stage_report_header(
-                src=paths.src, dst=paths.resized, path_pattern=pattern, apply=req.apply
+                src=paths.src,
+                dst=paths.resized,
+                path_pattern=None,
+                apply=req.apply,
             ),
             "out": str(paths.out),
             "excluded_dir": str(paths.excluded),

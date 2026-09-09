@@ -473,6 +473,10 @@ From the CLI it is dry-run by default and lists what it would copy. In the GUI R
 and Undo restores the text it overwrote from the export's own ledger; an overwritten
 pixel cannot be restored and is reported as such. Only what Export wrote leaves the workspace.
 
+It is the one stage with no per-image Run and no `path_pattern`: a publish is the whole
+workspace. One image published on its own would land beside a tree the trainer still reads as
+the whole dataset, which is the opposite of what pressing Export asks for.
+
 ---
 
 ## 8. CLI equivalents
