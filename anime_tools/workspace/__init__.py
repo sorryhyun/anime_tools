@@ -1,7 +1,8 @@
 """The workspace layout: where the tools write, and where Export publishes to::
 
     <home>/
-      image_dataset/                  INPUT -- read-only for the tools
+      image_dataset/                  INPUT -- read-only for the tools (the
+                                      ``src`` root's default name)
       workspace/                      everything the tools produce
         master/<rel>.txt                revised master
         resized/<rel>.{png,txt,variants.txt}
@@ -10,14 +11,19 @@
         captions/<stage>/report.json    the diffs
         groups/groups.json
         export/report.json              the export ledger
-      post_image_dataset/             OUTPUT -- written only by Export
+      post_image_dataset/             OUTPUT -- written only by Export (the
+                                      ``out`` root's default name)
         resized/  masks/
 
 The invariant: **no stage writes outside** ``workspace/``; Export is the only
-thing that touches ``image_dataset/`` or ``post_image_dataset/``.
+thing that touches the ``src`` or ``out`` roots.
 
 Nothing here reads the filesystem or the settings file: these are the *default*
-paths, which ⚙ Settings may override per root. Stdlib only, torch-free.
+paths, which ⚙ Settings may override per root. The two names outside
+``workspace/`` are placeholders inherited from the trainer's layout -- this is
+the only module that spells them, and everything else names the root
+(``src`` / ``out``, ``--src`` / ``--out``) rather than the directory.
+Stdlib only, torch-free.
 """
 
 from __future__ import annotations
@@ -27,10 +33,13 @@ WORKSPACE = "workspace"
 and honours ``ANIME_TOOLS_WORKSPACE``."""
 
 SOURCE_ROOT = "image_dataset"
-"""The input tree. Read-only for the tools from the workspace phase onward."""
+"""The input tree, home-relative. Read-only for the tools from the workspace
+phase onward. The name is only the default ⚙ Settings starts from; import this
+rather than spelling it."""
 
 EXPORT_ROOT = "post_image_dataset"
-"""The output tree, and the one the trainer reads. Written only by Export."""
+"""The output tree, and the one the trainer reads. Written only by Export, and
+likewise a default name — import it rather than spelling it."""
 
 DEFAULT_ROOTS: dict[str, str] = {
     # input -> workspace -> output, the order ⚙ Settings shows them in.

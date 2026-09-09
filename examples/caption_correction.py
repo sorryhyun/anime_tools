@@ -15,6 +15,7 @@ from __future__ import annotations
 import tempfile
 from pathlib import Path
 
+from anime_tools import workspace as WS
 from anime_tools._env import curation_home
 from anime_tools.captions.correction import (
     CaptionCorrectionOptions,
@@ -112,7 +113,7 @@ def main() -> None:
     # --- index: typed tags per image → caption_index.json ------------------
     vocab = Path(DEFAULT_VOCAB)
     if vocab.exists():
-        src = curation_home() / "image_dataset"
+        src = curation_home() / WS.SOURCE_ROOT
         if src.is_dir():
             index = build_index(src, vocab)
             print(
@@ -124,7 +125,8 @@ def main() -> None:
             f"\n(skipping the index: no {vocab}; `python -m anime_tools.downloads tagger`)"
         )
     print(
-        "CLI: python -m anime_tools.captions.index --src image_dataset --out workspace/captions/caption_index.json"
+        f"CLI: python -m anime_tools.captions.index --src {WS.SOURCE_ROOT}"
+        f" --out {WS.REPORTS}/caption_index.json"
     )
 
 

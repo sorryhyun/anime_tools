@@ -223,7 +223,7 @@ const zh: Dict = {
     docs: {
       resize:
         "把标注 master 缩放进每个阶段都会读的桶分辨率树。\n\n" +
-        "其他阶段一律走 --dst，所以只存在于 image_dataset/ 里的图片对它们是看不见的。每张图落进缩得最少的那一档 --target_res，并在该档的 token 带宽内保持原有比例；几何与训练器的 make preprocess-resize 一致，所以谁先跑，另一边就跳过。\n\n" +
+        "其他阶段一律走 --dst，所以只存在于 --src 里的图片对它们是看不见的。每张图落进缩得最少的那一档 --target_res，并在该档的 token 带宽内保持原有比例；几何与训练器的 make preprocess-resize 一致，所以谁先跑，另一边就跳过。\n\n" +
         "总是写入；没有试运行，已经在目标桶里的图片不会重新解码，直接跳过。glob 按 --src 匹配。",
       autotag:
         "用 Anima Tagger 给数据集打标签，并写入 revised 标注。\n\n" +

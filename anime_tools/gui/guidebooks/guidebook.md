@@ -139,6 +139,9 @@ for that server.
   models/                         model weights (ANIME_TOOLS_MODELS overrides)
 ```
 
+The two names outside `workspace/` are only defaults: they are the `src` and `out` dataset
+roots, and ⚙ Settings (§6.4) points either one at a folder you already have.
+
 Three rules explain most of what you will see:
 
 - `image_dataset/` is read-only for the stages. Your captions there are the *master*. Every

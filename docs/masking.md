@@ -39,8 +39,8 @@ merge's positional input defaults to exactly the generator's tree
 In the GUI the two directories are one ⚙ Settings value, `mask_root`, not two form
 fields: the generator keeps its own tail under it (`masks_sam`), the merge's input list
 moves with it, and a blank root means beside the `masks` root. Only the merged
-output is the dataset's `masks` root; that is the tree `Export` copies to
-`post_image_dataset/masks/`.
+output is the dataset's `masks` root; that is the tree `Export` copies to the
+`out` root's `masks/`.
 
 Export decides a mask by `(size, mtime_ns)` against the destination and overwrites a pixel
 file without keeping the old bytes, so a mask it replaced reports `not-undoable` on Undo.

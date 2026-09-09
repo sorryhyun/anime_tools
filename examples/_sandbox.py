@@ -1,6 +1,6 @@
 """A throwaway curation home for the examples that walk a dataset.
 
-Every stage resolves its bare-relative paths (``image_dataset``, ``workspace/…``)
+Every stage resolves its bare-relative paths (the ``src`` root, ``workspace/…``)
 against the curation home — ``ANIME_TOOLS_HOME``, else ``ANIMA_HOME``, else the
 current directory — so an example can point the whole package at a temp
 directory by setting one variable before it builds a request.
@@ -17,6 +17,8 @@ import os
 import tempfile
 from pathlib import Path
 
+from anime_tools import workspace as WS
+
 CAPTIONS = {
     # Flat bag only — what a hand-written master usually looks like.
     "char_a/001": "safe, 1girl, solo, akita neru, long hair, yellow eyes, "
@@ -30,12 +32,12 @@ CAPTIONS = {
 
 
 def make_sandbox(root: Path | None = None) -> Path:
-    """Build ``<root>/image_dataset`` with three captioned images and make
-    ``root`` the curation home. Returns ``root``."""
+    """Build the ``src`` root under ``root`` with three captioned images and
+    make ``root`` the curation home. Returns ``root``."""
     from PIL import Image, ImageDraw
 
     root = Path(root) if root else Path(tempfile.mkdtemp(prefix="anime_tools_example_"))
-    src = root / "image_dataset"
+    src = root / WS.SOURCE_ROOT
     for i, (rel, caption) in enumerate(CAPTIONS.items()):
         png = src / f"{rel}.png"
         png.parent.mkdir(parents=True, exist_ok=True)

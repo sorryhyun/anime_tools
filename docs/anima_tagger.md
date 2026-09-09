@@ -128,7 +128,8 @@ External corpus paths are routed via one `.env` key —
 | `<corpus>/tag_groups.yaml` | Typed groupings (`eye_color`, `hair_color`, `hair_length`, `rating`, `top_garment`, …) | Group routing at train + inference. Snapshotted into the checkpoint. |
 | `<corpus>/selected/` (optional) | Curated subset (already deduped) | Additional caption source. |
 
-`image_dataset/` (Anima's training set) is also scanned by default.
+The `src` root — the caption master, `image_dataset/` by default — is also
+scanned.
 `CAPTION_CORPUS_DIR` is not committed — it's per-user. The checkpoint
 snapshots `rules.yaml` + `groups.yaml`, so inference has zero runtime
 dependency on the corpus dir.
@@ -169,7 +170,7 @@ where `Dbv4Backend._load_model` looks. Their gate is auto-approve: `hf auth
 login` (or the GUI Settings dialog's token field) plus one click on
 [the repo page](https://huggingface.co/animetimm/caformer_b36.dbv4-full). The
 hidden-state cache lives at
-`post_image_dataset/anima_tagger/dbv4/<arch>_hidden.safetensors`
+`<export root>/anima_tagger/dbv4/<arch>_hidden.safetensors`
 (`feature_cache.py`), read by `train_sidecar.py` and
 `bench/tagger_external/calibration_check.py`.
 

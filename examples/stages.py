@@ -15,10 +15,10 @@ audit, OCR, export) are **dry-run by default** and write ``report.json``;
 
 Where things land (``anime_tools/workspace/__init__.py``)::
 
-    image_dataset/          the hand-written master — read-only for the stages
+    <src root>/             the hand-written master — read-only for the stages
     workspace/resized/      every stage reads this tree; the revised caption is written here
     workspace/captions/     one report.json per stage
-    post_image_dataset/     what Export publishes — the only write outside workspace/
+    <out root>/             what Export publishes — the only write outside workspace/
 """
 
 from __future__ import annotations
@@ -29,6 +29,8 @@ import subprocess
 import sys
 
 from _sandbox import home_from_args
+
+from anime_tools import workspace as WS
 
 
 def main() -> None:
@@ -62,8 +64,8 @@ def main() -> None:
     # Reads the master caption, writes the revised one beside the resized
     # image, plus {stem}.variants.txt when asked. Needs the Danbooru KB.
     correct = CorrectRequest(
-        src="image_dataset",
-        dst="workspace/resized",
+        src=WS.SOURCE_ROOT,
+        dst=WS.RESIZED,
         recursive=True,
         caption_insert_no_artist=True,
         caption_drop_groups="lighting",
@@ -104,7 +106,7 @@ def main() -> None:
 
     run_export(replace(export, apply=True))
     published = sorted(
-        p.relative_to(home) for p in (home / "post_image_dataset").rglob("*.txt")
+        p.relative_to(home) for p in (home / WS.EXPORT_ROOT).rglob("*.txt")
     )
     print("  published captions:", [str(p) for p in published])
 

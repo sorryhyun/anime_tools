@@ -1,7 +1,7 @@
 """Replace censored sincos webp with their matched uncensored counterparts.
 
 Reads the manifest produced by match_decensored.py and, for each selected match,
-overwrites image_dataset/sincos/<stem>.webp with the decensored image. The .txt
+overwrites <caption master>/sincos/<stem>.webp with the decensored image. The .txt
 caption sidecar is left untouched (caption is unchanged). Image-dependent caches
 for the swapped stem are invalidated so `make preprocess` regenerates them; the
 text-only TE cache is kept.

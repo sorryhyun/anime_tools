@@ -28,6 +28,7 @@ if str(ROOT) not in sys.path:
 import torch
 from PIL import Image
 
+from anime_tools import workspace as WS
 from anime_tools._env import resolve_path as resolve_under_home
 from bench._common import make_run_dir, start_heartbeat, write_result
 from bench.sam3_soft_prompt.common import (
@@ -47,10 +48,8 @@ FLOORS = (0.2, 0.3, 0.4, 0.5, 0.6, 0.7)
 
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description=__doc__)
-    p.add_argument(
-        "--targets", default="post_image_dataset/captions/sam3_soft_prompt/text_targets"
-    )
-    p.add_argument("--dst", default="post_image_dataset/resized")
+    p.add_argument("--targets", default=f"{WS.REPORTS}/sam3_soft_prompt/text_targets")
+    p.add_argument("--dst", default=WS.RESIZED)
     p.add_argument("--prompts", nargs="+", required=True)
     p.add_argument("--which", choices=("holdout", "train", "all"), default="holdout")
     p.add_argument("--iou_threshold", type=float, default=0.65, help="NMS")

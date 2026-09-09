@@ -6,7 +6,7 @@ Run them from a checkout with `uv run python examples/<name>.py`; every script p
 `python -m …` command line it is equivalent to.
 
 The first three need no model and no dataset. The rest walk a curation home: pass `--home <dir>`
-(the directory holding `image_dataset/`, `workspace/`, `models/`), or let `stages.py` build a
+(the directory holding the source tree, `workspace/`, `models/`), or let `stages.py` build a
 throwaway one (`_sandbox.py`). Weights are fetched on first use; to fetch them up front,
 `python -m anime_tools.downloads --list` shows what is missing and `python -m anime_tools.downloads
 [ID…]` gets it.

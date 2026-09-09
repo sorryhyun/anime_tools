@@ -1,5 +1,5 @@
 """The workspace layout: no stage writes outside ``workspace/``, and Export is
-the only thing that touches ``image_dataset/`` or ``post_image_dataset/``.
+the only thing that touches the ``src`` or ``out`` roots.
 
 Pins the half visible in the *defaults* — every path a stage CLI would write to
 if run bare lands in the workspace, and the GUI's roots agree with the CLIs.

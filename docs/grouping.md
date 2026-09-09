@@ -170,7 +170,7 @@ refused by the request. The result must satisfy `grouping/features.py::Embedder`
 Two further CLIs under `grouping/cli/` solve a narrower problem with a different matcher: pairing
 censored training images with an uncensored drop whose filenames and resolutions do not
 correspond. They take no flags for paths — both read six fixed locations off the curation
-home (`cli/_decensored.py`): `image_dataset/sincos/` (the censored originals), `sincos_decensored/`
+home (`cli/_decensored.py`): `<src root>/sincos/` (the censored originals), `sincos_decensored/`
 (the drop), and `output/curate/sincos_decensored/` for everything they write.
 
 `python -m anime_tools.grouping.cli.match_decensored` compares every original to every candidate

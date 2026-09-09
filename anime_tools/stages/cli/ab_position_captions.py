@@ -57,7 +57,7 @@ _B = (80, 200, 120)  # challenger
 
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description=__doc__)
-    p.add_argument("--src", default="image_dataset")
+    p.add_argument("--src", default=WS.SOURCE_ROOT)
     p.add_argument("--dst", default=WS.RESIZED)
     p.add_argument("--path_pattern", dest="path_pattern", default="*")
     p.add_argument("--out", default=f"{WS.REPORTS}/position_ab")

@@ -22,7 +22,7 @@ __all__ = [
 
 ROOT = curation_home()
 # The censored originals, in the caption master.
-SINCOS_DIR = ROOT / "image_dataset" / "sincos"
+SINCOS_DIR = ROOT / WS.SOURCE_ROOT / "sincos"
 # The uncensored drop the matcher pairs against (pixiv IDs, unrelated names).
 DECEN_DIR = ROOT / "sincos_decensored"
 # matches.csv + review.html + the descriptor caches.

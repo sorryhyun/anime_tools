@@ -57,7 +57,7 @@ class PositionPalette:
 
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description=__doc__)
-    p.add_argument("--src", default="image_dataset", help="Caption master (before)")
+    p.add_argument("--src", default=WS.SOURCE_ROOT, help="Caption master (before)")
     p.add_argument(
         "--dst",
         default=WS.RESIZED,

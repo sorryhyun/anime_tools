@@ -117,7 +117,7 @@ class DatasetRequest(StageRequest):
     """The three dataset roots every caption stage walks."""
 
     src: str = arg(
-        "image_dataset",
+        WS.SOURCE_ROOT,
         help="Caption master dir — hand-written, and the read-only fallback for "
         "every stage. Only Export writes it, publishing a revised master back",
     )
@@ -859,7 +859,7 @@ class ResizeRequest(DatasetRequest):
     """Resize the caption master into the bucket-resolution tree every stage reads.
 
     Every other stage walks ``--dst``, so an image that exists only under
-    ``image_dataset/`` is invisible to them. Each image lands in the ``--target_res``
+    ``--src`` is invisible to them. Each image lands in the ``--target_res``
     tier that resizes it the least, keeping its native aspect inside that tier's
     token band; the geometry matches the trainer's ``make preprocess-resize``, so
     whichever side runs first, the other one skips.
@@ -960,7 +960,7 @@ class ExportRequest(DatasetRequest):
     """
 
     src: str = arg(
-        "image_dataset",
+        WS.SOURCE_ROOT,
         help="Caption master dir — where a revised master publishes back to",
     )
     dst: str = arg(WS.RESIZED, help="Resized tree to publish (the workspace's)")

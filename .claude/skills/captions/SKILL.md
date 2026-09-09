@@ -42,7 +42,7 @@ carries it, an export without the knob takes it back, and `make preprocess-te` m
 `python -m anime_tools.stages.cli.correct_captions --caption_drop_groups artist,lighting,pose`
 (`CorrectRequest.caption_drop_groups`; the trainer spells it `CAPTION_DROP_GROUPS` /
 `caption_drop_groups` in its `configs/preprocess.toml`) strips whole kinds of tag from every
-revised caption — the master under `image_dataset/` is never edited.
+revised caption — the master under the `src` root is never edited.
 Slug table + resolution order in `anime_tools/captions/tag_drop_groups.py`: tag shape (`@`→artist,
 count, rating) → danbooru numeric kind → the KB's `[대분류 > 소분류]` path; anything not a slug is a
 literal path prefix (`"효과/연출 > 조명"`). Unknown-to-KB tags, ratings, the trigger word and `@no-artist`
@@ -81,7 +81,7 @@ the trainer's `make preprocess-te`.
 SAM3 `girl` instances → reading order (row-aware, so 2×2 view sheets get `top left`/`bottom right`)
 → mask-blanked crops → Anima Tagger → the revised caption rewritten
 (`workspace/resized/<rel>.txt` — the file Export publishes and the trainer's TE encodes;
-the hand-written master under `image_dataset/` is never written, only read as the fallback for a
+the hand-written master under the `src` root is never written, only read as the fallback for a
 not-yet-mirrored image). Request `PositionRequest`, orchestration in
 `anime_tools/stages/position_captions.py`; the trainer's `make caption-position` wraps it.
 

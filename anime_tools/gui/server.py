@@ -113,7 +113,7 @@ def _root_beside(settings: Mapping[str, Any], key: str, sibling: Path) -> str:
     whatever ``key`` holds, and *beside* ``sibling`` when it holds nothing.
 
     *Beside* stops at the curation home: a ``sibling`` of one component (a bare
-    ``resized``, or a pre-workspace ``post_image_dataset``) has the home itself
+    ``resized``, or a pre-workspace export root) has the home itself
     for a parent, which would strew the tails across the project root. The
     workspace root is used instead.
     """
@@ -998,7 +998,7 @@ def main(argv: list[str] | None = None) -> None:
     p.add_argument(
         "--home",
         default=None,
-        help="Curation home (image_dataset/, workspace/, models/ live "
+        help="Curation home (the source tree, workspace/, models/ live "
         "here). Default: $ANIME_TOOLS_HOME, $ANIMA_HOME, or the CWD",
     )
     p.add_argument(

@@ -26,6 +26,7 @@ if str(ROOT) not in sys.path:
 
 from PIL import Image
 
+from anime_tools import workspace as WS
 from anime_tools._env import resolve_path as resolve_under_home
 from anime_tools._walk import walk_images
 from bench.sam3_soft_prompt.common import (
@@ -43,15 +44,11 @@ COUNT_TARGETS = {("1girl",): 1, ("2girls", "multiple girls"): 2}
 
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description=__doc__)
-    p.add_argument("--dst", default="post_image_dataset/resized")
-    p.add_argument("--src", default="image_dataset", help="caption master")
+    p.add_argument("--dst", default=WS.RESIZED)
+    p.add_argument("--src", default=WS.SOURCE_ROOT, help="caption master")
     p.add_argument("--path_pattern", default="*")
-    p.add_argument(
-        "--caption_index", default="post_image_dataset/captions/caption_index.json"
-    )
-    p.add_argument(
-        "--out", default="post_image_dataset/captions/sam3_soft_prompt/targets"
-    )
+    p.add_argument("--caption_index", default=f"{WS.REPORTS}/caption_index.json")
+    p.add_argument("--out", default=f"{WS.REPORTS}/sam3_soft_prompt/targets")
     p.add_argument("--prompt", default="girl")
     p.add_argument("--alt_prompt", default="anime girl")
     p.add_argument("--floor", type=float, default=0.5)

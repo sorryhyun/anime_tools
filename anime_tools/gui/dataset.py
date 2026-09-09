@@ -3,11 +3,11 @@
 The trees it joins are keyed by the *same relative path* in each
 (:mod:`anime_tools.workspace` owns the layout):
 
-``src``     ``image_dataset/<rel>``            source image + hand-written master caption
+``src``     ``<source>/<rel>``                 source image + hand-written master caption
 ``master``  ``workspace/master/<rel>``         the revised master overlay (empty until Phase 2 fills it)
 ``dst``     ``workspace/resized/<rel>``        resized image + revised caption + ``.variants.txt`` + ``.history.txt``
 ``masks``   ``workspace/masks/<rel>``          ``{stem}_mask.png`` (nested; flat is the legacy fallback)
-``out``     ``post_image_dataset/``            the export destination, written by Export
+``out``     ``<export>/``                      the export destination, written by Export
 
 An image's captions are a **ladder** (:data:`CAPTION_LADDER`): the hand-written
 master, the versions the revised caption used to be, that caption itself, then the
@@ -74,7 +74,7 @@ class Rung:
     overlay: str = ""
     """A second root that *shadows* ``root``: read from here when it holds the
     file, and write here always. How the master rung stays editable without
-    writing ``image_dataset/`` — see :data:`CAPTION_LADDER`."""
+    writing ``src`` — see :data:`CAPTION_LADDER`."""
 
 
 CAPTION_LADDER: tuple[Rung, ...] = (
@@ -90,11 +90,11 @@ to be. The run bar has no Apply gate, so the text a run replaces survives as a
 badge here. The sidebar strip, the panel's badges and :func:`write_caption`'s guard
 all read this tuple.
 
-The master rung carries an ``overlay``: ``image_dataset/`` is the INPUT tree and
+The master rung carries an ``overlay``: ``src`` is the INPUT tree and
 **read-only for the tools** (``anime_tools.workspace``), so editing a master
 caption writes ``workspace/master/<rel>.txt`` and reads it back in preference to
 the hand-written original, which stays untouched as its own undo. Export's
-``master`` row publishes the overlay to ``image_dataset/`` — that row is the one
+``master`` row publishes the overlay back to ``src`` — that row is the one
 consumer, and its ``is_file()`` guard is exactly "this master was edited".
 """
 
@@ -376,8 +376,8 @@ def caption_paths(roots: Roots, rel: Path) -> dict[str, Path]:
 def caption_write_path(roots: Roots, rel: Path, kind: str) -> Path:
     """Where writing rung ``kind`` lands — its ``overlay`` when it has one.
 
-    Never ``roots.src``: ``image_dataset/`` is the input tree, and Export is the
-    only thing that writes it (``anime_tools.workspace``).
+    Never ``roots.src``: that is the input tree, and Export is the only thing
+    that writes it (``anime_tools.workspace``).
     """
     rung = next(r for r in CAPTION_LADDER if r.kind == kind)
     return getattr(roots, rung.overlay or rung.root) / rel.with_suffix(".txt")

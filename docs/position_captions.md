@@ -4,7 +4,7 @@ SAM3 detects the subjects, they are put in reading order, each mask-blanked crop
 is tagged by the Anima Tagger, and the caption is rewritten so each attribute
 is asserted once, in the clause of the subject it belongs to. The rewrite lands
 on the revised captions under `workspace/resized/`; the hand-written master
-in `image_dataset/` is never written. Dry run is the default.
+under `--src` is never written. Dry run is the default.
 
 ## Why
 
@@ -416,7 +416,7 @@ carries `applied: true`, so feeding it back in is refused above; `--flatten
 
 The clauses go to the revised caption beside the resized image
 (`workspace/resized/<rel>.txt`) — the file the caption mirror writes and the TE
-step encodes. The master under `image_dataset/` is never written; it is only the
+step encodes. The master under `--src` is never written; it is only the
 read fallback for an image the caption step has not mirrored yet. Three things
 make that safe: the mirror is revised-first
 (`write_corrected_preprocess_captions` corrects the revised caption in place and

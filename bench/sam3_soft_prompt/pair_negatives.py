@@ -8,7 +8,7 @@ boy-box rate and girl recall.
 
     make daemon-run ARGS="bench/sam3_soft_prompt/pair_negatives.py build"
     make daemon-run ARGS="bench/sam3_soft_prompt/train_soft_prompt.py --init 'anime girl' \\
-        --extra_manifest post_image_dataset/captions/sam3_soft_prompt/pairs/manifest.json --label pairneg"
+        --extra_manifest workspace/captions/sam3_soft_prompt/pairs/manifest.json --label pairneg"
     make daemon-run ARGS="bench/sam3_soft_prompt/pair_negatives.py eval --prompt <soft_prompt.safetensors>"
 """
 
@@ -30,6 +30,7 @@ import torch
 import torch.nn.functional as F
 from PIL import Image
 
+from anime_tools import workspace as WS
 from anime_tools._env import resolve_path as resolve_under_home
 from anime_tools._walk import walk_images
 from anime_tools.stages.instance_detection import Detection, crop_instance
@@ -56,14 +57,10 @@ def parse_args() -> argparse.Namespace:
     p.add_argument(
         "--prompt", default=KEEPER, help="text, or a .safetensors soft prompt"
     )
-    p.add_argument("--dst", default="post_image_dataset/resized")
+    p.add_argument("--dst", default=WS.RESIZED)
     p.add_argument("--path_pattern", default="*")
-    p.add_argument(
-        "--caption_index", default="post_image_dataset/captions/caption_index.json"
-    )
-    p.add_argument(
-        "--out", default="post_image_dataset/captions/sam3_soft_prompt/pairs"
-    )
+    p.add_argument("--caption_index", default=f"{WS.REPORTS}/caption_index.json")
+    p.add_argument("--out", default=f"{WS.REPORTS}/sam3_soft_prompt/pairs")
     p.add_argument(
         "--count_filter",
         choices=("pair", "any_boy"),

@@ -71,10 +71,10 @@ because resize rewrites files under a key that doesn't move, and `resize`'s `min
 "invisible to the pipeline", so it names each dropped file rather than counting it.
 
 Caption stages write the revised caption under `workspace/resized/` and read it first —
-the correction pass included, which corrects it in place; the hand-written master under
-`image_dataset/` is a read-only fallback for an image that has no revised caption yet.
+the correction pass included, which corrects it in place; the hand-written master under the
+`src` root is a read-only fallback for an image that has no revised caption yet.
 Export, the GUI's caption editor and the multiview audit's `--apply` (which adds `multiple views`
-to the master, report holding the before-text) are the only writers of `image_dataset/`. Each
+to the master, report holding the before-text) are the only writers of the `src` root. Each
 write pushes the replaced text onto `{stem}.history.txt`, which is what makes a run safe without
 an Apply gate: the old version is a badge in the panel and Undo replays the report backwards.
 

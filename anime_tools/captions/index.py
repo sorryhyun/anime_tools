@@ -40,7 +40,7 @@ from anime_tools.captions.vocab_io import load_vocab, names_by_category
 from anime_tools.path_filter import filter_paths_by_glob
 
 DEFAULT_VOCAB = "models/captioners/anima-tagger-dbv4/vocab.json"
-# A contract artifact, published to ``post_image_dataset/captions/`` by Export.
+# A contract artifact, published under the export tree's ``captions/`` by Export.
 DEFAULT_OUT = f"{WS.REPORTS}/caption_index.json"
 # Artist is detected by the `@` prefix (superset of the vocab artist list);
 # character/copyright/count are classified by vocab membership.
@@ -139,7 +139,7 @@ def _vocab_typed_non_copyright(tag: str, vsets: dict[str, set[str]]) -> bool:
 def _iter_captions(src: Path, path_pattern: str | None = None):
     """Yield ``(key, rel_path, text)`` for every ``.txt`` under ``src``.
 
-    ``image_dataset`` is a symlink to a tree of (possibly symlinked) artist
+    ``--src`` is often a symlink to a tree of (possibly symlinked) artist
     dirs, so the root is resolved and walked with ``followlinks=True``. The key
     is subdir-disambiguated (:func:`caption_key`), so the same bare stem may
     legally repeat across subfolders."""
@@ -316,8 +316,8 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument(
         "--src",
-        default="image_dataset",
-        help="Caption sidecar root (default: image_dataset)",
+        default=WS.SOURCE_ROOT,
+        help=f"Caption sidecar root (default: {WS.SOURCE_ROOT})",
     )
     ap.add_argument(
         "--vocab",

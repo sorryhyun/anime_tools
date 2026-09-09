@@ -2,12 +2,12 @@
 
 Six artifact kinds, and where each lands:
 
-``image``     ``workspace/resized/<rel>``           → ``post_image_dataset/resized/<rel>``
-``caption``   ``workspace/resized/<rel>.txt``       → ``post_image_dataset/resized/<rel>.txt``
+``image``     ``workspace/resized/<rel>``           → ``--out/resized/<rel>``
+``caption``   ``workspace/resized/<rel>.txt``       → ``--out/resized/<rel>.txt``
 ``variants``  ``workspace/resized/<rel>.variants.txt`` → beside the caption
-``mask``      ``workspace/masks/<sub>/<stem>_mask.png`` → ``post_image_dataset/masks/…``
-``master``    ``workspace/master/<rel>.txt``        → ``image_dataset/<rel>.txt``
-``index``     ``workspace/captions/caption_index.json`` → ``post_image_dataset/captions/…``
+``mask``      ``workspace/masks/<sub>/<stem>_mask.png`` → ``--out/masks/…``
+``master``    ``workspace/master/<rel>.txt``        → ``--src/<rel>.txt``
+``index``     ``workspace/captions/caption_index.json`` → ``--out/captions/…``
 
 ``master`` publishes back over the *input* tree, where the contract says the
 master lives: the only row that writes outside ``--out`` and the only one that

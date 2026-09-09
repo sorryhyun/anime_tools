@@ -90,7 +90,7 @@ FastAPI + uvicorn are plain dependencies.
 image_dataset/**/{stem}.png + {stem}.txt        caption master   ← hand-written; read-only for the tools
 workspace/                                       everything the tools write
   resized/{stem}.{png,txt,variants.txt}            resized image, revised caption, shuffle / dropout variants
-  master/{stem}.txt                                revised master (Export publishes it back to image_dataset/)
+  master/{stem}.txt                                revised master (Export publishes it back over the source tree)
   masks_sam/ masks/                                the SAM3 generator's tree, and the merge
   captions/<stage>/report.json  groups/groups.json  ocr/  export/report.json
 post_image_dataset/resized/ masks/               the published dataset    ← written only by Export (--combine_ocr attaches ocr/ lines to each published caption)
@@ -99,6 +99,10 @@ models/sam3/  models/pe/  models/animetext/       SAM3 / PE-Spatial / OCR text-b
 models/paddleocr_vl_1.6*/                             the manga VL reader (VL-1.6 base + LoRA/tower)
 networks/calibration/sam3_girl_prompt.safetensors  SAM3 subject soft prompt (default `--prompt_embed`)
 ```
+
+The two trees outside `workspace/` are the `src` and `out` dataset roots, and
+those names are only their defaults — ⚙ Settings points either one wherever your
+dataset already lives.
 
 `python -m anime_tools.downloads --list` says which weights are present and where each one goes.
 

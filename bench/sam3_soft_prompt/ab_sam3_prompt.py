@@ -26,6 +26,7 @@ if str(ROOT) not in sys.path:
 import torch.nn.functional as F
 from PIL import Image, ImageDraw
 
+from anime_tools import workspace as WS
 from anime_tools._env import resolve_path as resolve_under_home
 from anime_tools.stages.multiview_sheet import _font
 from bench.sam3_soft_prompt.build_targets import COUNT_TARGETS, survivors
@@ -54,9 +55,9 @@ def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument(
         "--manifest",
-        default="post_image_dataset/captions/sam3_soft_prompt/targets/manifest.json",
+        default=f"{WS.REPORTS}/sam3_soft_prompt/targets/manifest.json",
     )
-    p.add_argument("--dst", default="post_image_dataset/resized")
+    p.add_argument("--dst", default=WS.RESIZED)
     p.add_argument(
         "--which", default="disagree", choices=["disagree", "zero_girl", "train", "all"]
     )
@@ -69,7 +70,7 @@ def parse_args() -> argparse.Namespace:
     p.add_argument(
         "--out",
         default=None,
-        help="default post_image_dataset/captions/sam3_soft_prompt/ab_<which>",
+        help=f"default {WS.REPORTS}/sam3_soft_prompt/ab_<which>",
     )
     p.add_argument("--floor", type=float, default=0.5)
     p.add_argument("--retry_floor", type=float, default=0.35)
@@ -154,7 +155,7 @@ def main() -> None:
     if args.limit:
         rows = rows[: args.limit]
     out = resolve_under_home(
-        args.out or f"post_image_dataset/captions/sam3_soft_prompt/ab_{args.which}"
+        args.out or f"{WS.REPORTS}/sam3_soft_prompt/ab_{args.which}"
     )
     (out / "sheets").mkdir(parents=True, exist_ok=True)
     print(f"{len(rows)} images ({args.which}) → {out}", flush=True)

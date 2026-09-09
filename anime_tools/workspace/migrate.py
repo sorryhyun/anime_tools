@@ -1,6 +1,6 @@
 """Move a pre-workspace tree into ``workspace/``.
 
-Moves ``post_image_dataset/{resized,masks,captions,groups}`` — the four
+Moves the export root's ``{resized,masks,captions,groups}`` — the four
 directories an install predating the workspace left on the Export side of the
 line. Dry-run by default; ``--apply`` moves for real. It is a directory rename
 and never a merge: an existing destination is reported and skipped. A dataset

@@ -31,6 +31,7 @@ from PIL import Image
 from scipy.optimize import linear_sum_assignment
 from torchvision.ops import generalized_box_iou
 
+from anime_tools import workspace as WS
 from anime_tools._env import resolve_path as resolve_under_home
 from bench._common import make_run_dir, write_result
 from bench.sam3_soft_prompt.common import (
@@ -51,10 +52,8 @@ from bench.sam3_soft_prompt.common import (
 
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description=__doc__)
-    p.add_argument(
-        "--targets", default="post_image_dataset/captions/sam3_soft_prompt/targets"
-    )
-    p.add_argument("--dst", default="post_image_dataset/resized")
+    p.add_argument("--targets", default=f"{WS.REPORTS}/sam3_soft_prompt/targets")
+    p.add_argument("--dst", default=WS.RESIZED)
     p.add_argument(
         "--extra_manifest",
         action="append",

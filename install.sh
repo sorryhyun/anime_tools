@@ -62,7 +62,7 @@ cat <<MSG
 $(printf '\033[1;32m✓ anime-tools %s installed\033[0m' "$VERSION")
 
 Next steps:
-  cd <your dataset folder>      # image_dataset/, post_image_dataset/, models/ live here
+  cd <your dataset folder>      # image_dataset/, workspace/, models/ live here
   anime-tools-gui --open        # web GUI on http://127.0.0.1:8790
                                 #   (sign in to Hugging Face under ⚙ Settings — the
                                 #    tagger backbone and SAM3 weights are gated)
