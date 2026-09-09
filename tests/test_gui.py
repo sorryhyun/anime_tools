@@ -985,6 +985,33 @@ def test_pick_port_skips_busy_port():
     assert pick_port("127.0.0.1", 0) > 0
 
 
+def test_the_server_stops_when_the_last_window_has_gone():
+    """`--open` owns the window it opened: the last `/api/alive` stream closing
+    is what ends the run, and a second window still open is not it."""
+    from anime_tools.gui.server import ClientWatch
+
+    stopped = threading.Event()
+    watch = ClientWatch(stopped.set, grace=0.05)
+    watch.attach()
+    watch.attach()
+    watch.detach()
+    assert not stopped.wait(0.2), "one window is still open"
+    watch.detach()
+    assert stopped.wait(2.0)
+
+
+def test_a_reload_inside_the_grace_leaves_the_server_up():
+    """A reload drops the stream and reopens it, which must not read as a close."""
+    from anime_tools.gui.server import ClientWatch
+
+    stopped = threading.Event()
+    watch = ClientWatch(stopped.set, grace=0.2)
+    watch.attach()
+    watch.detach()
+    watch.attach()
+    assert not stopped.wait(0.5)
+
+
 # -- replay: Apply writes the dry run's proposals -------------------------
 
 

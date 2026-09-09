@@ -117,3 +117,12 @@ export function followLog(
   };
   return es;
 }
+
+/** Hold `/api/alive` open for as long as this page is: the server it was
+    launched with (`make gui`, i.e. `--open`) exits a few seconds after the last
+    window goes -- closing the app window stops the server rather than leaving it
+    in the terminal. Nothing is read off the stream; EventSource reconnects on
+    its own, so a reload gets back inside the grace. */
+export function holdAlive(): EventSource {
+  return new EventSource("/api/alive");
+}

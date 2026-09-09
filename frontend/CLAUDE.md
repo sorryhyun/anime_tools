@@ -160,6 +160,10 @@ dicts and says which module writes each one.
 - A composable is called once, from `App()`, and returns accessors. Anything
   it registers (a listener, an `EventSource`) is torn down in its own
   `onCleanup`, so App never has to remember to.
+- `index.tsx` holds one thing besides the render: `holdAlive()`, the `/api/alive`
+  stream the server watches to know the window is still open (`gui/CLAUDE.md`). It
+  is page-lifetime, not component-lifetime, which is why it is not a composable
+  and has no `onCleanup` — closing the page is what ends it.
 - Components under `components/` draw and emit — they hold view-local state
   (an expanded folder, a draft caption) but never fetch a stage, decide what a
   Run may write, or reach into another component's state.

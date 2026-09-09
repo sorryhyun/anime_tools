@@ -59,6 +59,15 @@ field and an already-hidden field are never folded — the server settles that, 
   `  [done/total] detail` and the `── step i/n: label ──` header this module prints in front of
   each step of a sequence are the two formats parsed there, and a stage printing neither simply
   has no bar.
+- The server exits with the window it opened. `main()`'s `--open` implies `--exit-with-window`
+  (`--no-exit-with-window` opts out, and the flag alone turns it on for a run that opens nothing),
+  which hands `create_app` a `ClientWatch`. The page holds `/api/alive` open for as long as it is on
+  screen and the watch stops uvicorn five seconds after the last stream closes, so closing the app
+  window reaps the server and the stages it is running (the lifespan's `mgr.shutdown()`) rather than
+  leaving them in the terminal. It is a held connection and not a polled heartbeat because a hidden
+  tab's timers are throttled to once a minute; the grace is what a reload gets back inside; and
+  nothing is armed until the first client attaches, so a `--open` whose browser never appears keeps
+  serving.
 - `tags.py` merges the two Danbooru KB files (base CSV = taxonomy; optional `.en.csv` replaces only
   the description) for `/api/tags/describe`, cached on both mtimes; a missing KB answers
   `installed: false` rather than erroring.

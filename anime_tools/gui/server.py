@@ -15,7 +15,7 @@ import mimetypes
 import os
 import threading
 import webbrowser
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from contextlib import asynccontextmanager
 from pathlib import Path, PurePosixPath
 from typing import Any
@@ -255,8 +255,56 @@ class Schemas:
         return self._value or {}
 
 
+class ClientWatch:
+    """Exit with the app window.
+
+    The page holds one ``/api/alive`` stream open for as long as it is on screen,
+    and the server stops itself once the last one has been gone for ``grace``
+    seconds — closing the window reaps the server the way closing the trainer's
+    window reaps what it started. A reload reconnects well inside the grace, and
+    an open stream also survives a backgrounded tab, which a polled heartbeat
+    would not: a hidden tab's timers are throttled to once a minute.
+
+    Nothing is armed until the first client attaches, so a ``--open`` whose
+    browser never appears leaves the server running rather than exiting behind
+    the user's back.
+    """
+
+    def __init__(self, stop: Callable[[], None], *, grace: float = 5.0) -> None:
+        self._stop = stop
+        self._grace = grace
+        self._lock = threading.Lock()
+        self._clients = 0
+        self._timer: threading.Timer | None = None
+
+    def attach(self) -> None:
+        with self._lock:
+            self._clients += 1
+            if self._timer is not None:
+                self._timer.cancel()
+                self._timer = None
+
+    def detach(self) -> None:
+        with self._lock:
+            self._clients = max(0, self._clients - 1)
+            if self._clients:
+                return
+            self._timer = threading.Timer(self._grace, self._fire)
+            self._timer.daemon = True
+            self._timer.start()
+
+    def _fire(self) -> None:
+        with self._lock:
+            if self._clients:  # a reload got back in under the grace
+                return
+        self._stop()
+
+
 def create_app(
-    *, jobs: JobManager | None = None, schemas: dict[str, Any] | None = None
+    *,
+    jobs: JobManager | None = None,
+    schemas: dict[str, Any] | None = None,
+    watch: ClientWatch | None = None,
 ) -> FastAPI:
     # Job logs are curation output, so they live in the workspace.
     mgr = jobs or JobManager(log_dir=workspace_dir() / "gui_logs")
@@ -490,6 +538,26 @@ def create_app(
                 if job.exit_code is not None and i >= len(job.lines):
                     yield f"event: done\ndata: {json.dumps(job.to_dict())}\n\n"
                     return
+
+        return StreamingResponse(gen(), media_type="text/event-stream")
+
+    @app.get("/api/alive")
+    async def alive(request: Request) -> StreamingResponse:
+        """The stream the page holds open so the server can tell it is still
+        there (:class:`ClientWatch`). It carries nothing but keep-alive comments;
+        without a watch it is an idle connection the browser is free to keep."""
+
+        async def gen():
+            if watch is not None:
+                watch.attach()
+            try:
+                yield b"retry: 1000\n\n"
+                while not await request.is_disconnected():
+                    await asyncio.sleep(15)
+                    yield b": ping\n\n"
+            finally:
+                if watch is not None:
+                    watch.detach()
 
         return StreamingResponse(gen(), media_type="text/event-stream")
 
@@ -891,6 +959,13 @@ def main(argv: list[str] | None = None) -> None:
         action="store_true",
         help="Open the GUI on start, in a chromeless Chromium app window if there is one",
     )
+    p.add_argument(
+        "--exit-with-window",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help="Stop the server a few seconds after the last GUI window closes "
+        "(default: on with --open, off without it)",
+    )
     args = p.parse_args(argv)
     if args.home:
         os.environ["ANIME_TOOLS_HOME"] = str(Path(args.home).expanduser().resolve())
@@ -903,12 +978,26 @@ def main(argv: list[str] | None = None) -> None:
     connect_host = "127.0.0.1" if args.host == "0.0.0.0" else args.host
     url = f"http://{connect_host}:{port}"
     print(f"anime_tools GUI → {url}   (home: {curation_home()})", flush=True)
-    app = create_app()
+    # The server is built before it exists, so the watch stops it through a
+    # closure rather than holding it; nothing can fire before serve() is running.
+    server: uvicorn.Server | None = None
+
+    def stop() -> None:
+        if server is not None:
+            server.should_exit = True
+
+    exit_with_window = (
+        args.open if args.exit_with_window is None else args.exit_with_window
+    )
+    app = create_app(watch=ClientWatch(stop) if exit_with_window else None)
     if args.open:
         threading.Thread(
             target=_open_when_ready, args=(connect_host, port, url), daemon=True
         ).start()
-    uvicorn.run(app, host=args.host, port=port, log_level="warning")
+    server = uvicorn.Server(
+        uvicorn.Config(app, host=args.host, port=port, log_level="warning")
+    )
+    server.run()
 
 
 if __name__ == "__main__":
