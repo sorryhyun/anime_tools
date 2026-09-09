@@ -66,6 +66,8 @@ const ko: Dict = {
     flagPending: "마지막 실행이 이 이미지를 바꿨습니다",
     flagResized: "resized — workspace/resized에 이 이미지가 있습니다",
     flagMask: "마스크 있음",
+    flagExcluded:
+      "제외됨 — 파일이 workspace/_excluded로 옮겨졌고, resize가 건너뛰며, 내보내기는 _excluded/ 아래에 발행합니다",
     root: "(최상위)",
     group: (id) => `그룹 ${id}`,
     groupHint: (id, cos) => `묶음 ${id} — 쌍별 CLS 코사인 평균 ${cos}`,
@@ -98,6 +100,20 @@ const ko: Dict = {
     belowFloor: (floor: string) =>
       `리사이즈 하한 ${floor} 미만 — 이 이미지는 리사이즈되지 않으므로, workspace/resized를 걷는 스테이지들에게는 아예 보이지 않습니다. ⚙ 설정 › Preprocess에서 하한을 낮추세요.`,
     zoomHint: "⌘/Ctrl+스크롤로 확대 · 드래그로 이동 · 더블클릭하면 원래 크기",
+    exclude: "제외",
+    excludeHint:
+      "이 이미지를 파이프라인에서 빼냅니다: 리사이즈본·마스크·OCR 사이드카가 workspace/_excluded로 옮겨지고, 이후 resize가 건너뛰며, 내보내기는 트레이너가 읽는 트리 대신 <out>/_excluded에 발행합니다. 원본 이미지와 master 캡션은 건드리지 않습니다.",
+    restore: "되돌리기",
+    restoreHint:
+      "모든 파일을 원래 트리로 되돌리고 대장에서 이 이미지를 지웁니다. 스테이지들이 다시 보게 됩니다.",
+    excluded: "제외됨",
+    /** {0}은 제외한 시각, 이미 서식이 적용된 문자열. */
+    excludedAt: (when: string) => `${when}에 파이프라인에서 제외됨`,
+    /** {0}은 workspace/_excluded로 옮겨진 파일 수. */
+    excludedFiles: (n: number) => `workspace/_excluded에 파일 ${n}개`,
+    /** 원래 자리가 이미 차 있어 남겨둔 파일. */
+    excludeKept: (n: number) =>
+      `파일 ${n}개는 _excluded에 남았습니다 — 원래 경로가 이미 차 있습니다`,
   },
   ocr: {
     title: "이미지 속 텍스트",

@@ -60,7 +60,10 @@ nothing fetched, no business rule lives there. The state is five composables at
   detail. The selection is the page's address: it is mirrored into the location
   hash both ways (`#rel|kind`), so a link into the GUI opens on an image.
   `reloadRels` re-stats named rows in place after a job wrote; `onSaved` folds a
-  just-saved caption back into the row rather than re-walking the tree.
+  just-saved caption back into the row rather than re-walking the tree, and
+  `setExcluded` — the ⊘ on the address line — folds in the row the server sends
+  back, then re-fetches the item, since what moved is what the panel was
+  reporting on.
 - `stages.ts` — the stage registry and the form over the open one, including
   how the dock's buttons bucket stages into panels. Every field comes from the
   stage's request dataclass (`gui/stages.py` walks the same field list the CLI

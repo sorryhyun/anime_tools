@@ -135,6 +135,8 @@ for that server.
     masks/<rel>/{stem}_mask.png     the merge — what Export publishes
     captions/<stage>/report.json    what each run did, and how to undo it
     groups/groups.json              the grouping manifest
+    _excluded/excluded.json         images you took out of the pipeline
+    _excluded/{resized,masks,ocr}/    and the files that moved out with them
   post_image_dataset/             OUTPUT — the published dataset; written only by Export
   models/                         model weights (ANIME_TOOLS_MODELS overrides)
 ```
@@ -154,6 +156,9 @@ Three rules explain most of what you will see:
   any stage that needs it (§7.1).
 - Nothing writes outside `workspace/` except Export (§7.9). You can delete the workspace and
   regenerate it; you cannot lose a master caption to a stage.
+- `workspace/_excluded/` is the exception you make on purpose: the images you took out of the
+  dataset (§6.5). Nothing in it is read by a stage, and Export publishes it under
+  `post_image_dataset/_excluded/` — beside the tree the trainer reads rather than inside it.
 
 Image files are matched to captions by stem: `chars/alice/001.png` reads `chars/alice/001.txt`.
 Subfolders are kept as-is through the whole pipeline (`<rel>` above).
@@ -232,7 +237,8 @@ ladder, oldest first:
 
 The filter box narrows the tree; `↑`/`↓` or `j`/`k` walk the images; `#<rel>|<kind>` in
 the URL is a link to one caption. The tree / groups toggle draws the same listing in two
-orders — the folders, or the near-twin groups the Groups stage found (§7.7).
+orders — the folders, or the near-twin groups the Groups stage found (§7.7). A row struck
+through and wearing `⊘` is one you excluded (§6.5).
 
 ### 6.2 The caption editor
 
@@ -294,6 +300,27 @@ The ☰ menu's Language row switches the panel between English, Korean, Japanese
 Chinese in place; a first visit follows the browser's own language list. Only the panel's chrome
 is translated — a stage's title, its form labels and help come from its `--help` and stay in
 English, and captions, tags and paths are data.
+
+---
+
+### 6.5 Taking an image out of the pipeline
+
+The `⊘ exclude` button beside an image's name drops it from the dataset without deleting
+anything. Its resized copy, its mask and its OCR sidecar move into `workspace/_excluded/`,
+the image goes into the ledger there, and from then on:
+
+- Resize skips it, so it never comes back into `workspace/resized/`;
+- every other stage therefore never sees it, since they all walk that tree;
+- Export publishes it under `post_image_dataset/_excluded/` instead of into `resized/`, so
+  the trainer never reads it but you still have it.
+
+Your source image under `image_dataset/` and its hand-written master caption are **not**
+touched. `↩ put back` on the same button moves every file back where it came from and takes
+the image out of the ledger, and the stages see it again on the next run.
+
+Use it for the picture that is a duplicate, a bad crop, or simply not what this LoRA is
+about — anything you would otherwise delete and then wish you had not. There is no Apply
+gate and no Undo in the run bar: excluding *is* the gesture, and un-excluding is its inverse.
 
 ---
 
@@ -467,6 +494,7 @@ stages spell flags with underscores (`--path_pattern`), grouping and masking wit
 | Subject masks | `anime_tools.masking.cli.generate_masks` | always writes |
 | Merge masks | `anime_tools.masking.cli.merge_masks` | always writes |
 | Export | `anime_tools.stages.cli.export_workspace` | dry run → `report.json` |
+| Exclude (§6.5) | `anime_tools.exclude` | dry run → prints what would move |
 
 The dry-run stages write `report.json` under `workspace/captions/<stage>/` and stop.
 `--apply` writes for real. Position captions and the multiview audit also take
@@ -479,6 +507,10 @@ cheaper than working out what to skip. The GUI's Undo is the same replay backwar
 python -m anime_tools.stages.cli.autotag_captions --mode merge            # dry run
 python -m anime_tools.stages.cli.autotag_captions --mode merge --apply    # write
 python -m anime_tools.stages.cli.export_workspace --apply                 # publish
+
+python -m anime_tools.exclude char_aki/bad.jpg --note "bad crop" --apply  # take one out
+python -m anime_tools.exclude --list                                     # what is out
+python -m anime_tools.exclude char_aki/bad.jpg --restore --apply         # put it back
 ```
 
 The Python API is the same object: [`examples/`](../../../examples/README.md) has one runnable

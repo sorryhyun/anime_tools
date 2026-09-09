@@ -134,6 +134,7 @@ export default function App() {
         help={layout.helpOpen("caption")}
         onHelp={() => layout.toggleHelp("caption")}
         onSaved={dataset.onSaved}
+        onSetExcluded={dataset.setExcluded}
       />
 
       <Dock

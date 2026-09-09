@@ -102,16 +102,33 @@ aside { grid-column:1; grid-row:2/4; border-right:1px solid var(--line); backgro
 .flag.rz { color:var(--ok); font:600 13px var(--font-mono); line-height:1 }
 /* This image is one the last Run changed. */
 .flag.prop { color:var(--accent); font-size:9px }
+/* Curation took this image out: the row dims, since none of the trees the other
+   flags report on still hold it. */
+.flag.excl { color:var(--warn); font-size:12px; line-height:1 }
+.tn.img.excluded .tl { color:var(--dim); text-decoration:line-through }
 
 /* ---- centre: one dataset item ----
    Both tracks are pinned by hand: the folded sidebar is `display:none`, and
    auto placement would then slide `main` into the zero-wide first column. */
-main { grid-column:2; grid-row:2; display:grid; grid-template-rows:auto minmax(0,1fr); overflow:hidden }
-.crumbs { display:flex; align-items:center; gap:6px; padding:8px 14px; border-bottom:1px solid var(--line) }
+/* A column rather than a two-row grid: the address line is sometimes followed
+   by a strip about this image (it is excluded, a move failed), and a track list
+   cannot say "however many bars there are, the split takes the rest". */
+main { grid-column:2; grid-row:2; display:flex; flex-direction:column; overflow:hidden }
+.crumbs { flex:none; display:flex; align-items:center; gap:6px; padding:8px 14px; border-bottom:1px solid var(--line) }
+/* This image is out of the pipeline: the strip under the address line saying so,
+   and its button. Warm, not red -- an exclusion is a decision, not a failure. */
+.excluded-bar { flex:none; display:flex; align-items:baseline; gap:8px; padding:6px 14px; font-size:12px; border-bottom:1px solid var(--line); background:#e0af6814; color:var(--warn) }
+.excluded-bar.err { color:var(--err); background:#f7768e14 }
+.excluded-bar .note { color:var(--fg); font-style:italic }
+/* Rides in the preview's tab bar, just past the overlay tab. The gap and the
+   smaller box are what keep it from reading as a fourth tab; it sits a little
+   above the bar's bottom edge so the selected tab's shoulder still runs on. */
+.tabs button.excl { margin:0 0 5px 14px; padding:4px 10px; font-size:12px; line-height:1.4 }
+button.excl.on { color:var(--warn); border-color:#5c4a2a }
 /* Preview | captions, with the boundary on a drag handle. The caption column is
    the sized one; `--cap-w` is set on the element by ItemView and saved to
    localStorage on pointerup. */
-.split { position:relative; display:grid; grid-template-columns:minmax(240px,1fr) var(--cap-w,420px); overflow:hidden }
+.split { flex:1; min-height:0; position:relative; display:grid; grid-template-columns:minmax(240px,1fr) var(--cap-w,420px); overflow:hidden }
 .splitgrip { position:absolute; top:0; bottom:0; right:calc(var(--cap-w,420px) - 2px); width:5px; cursor:col-resize; z-index:2 }
 .splitgrip:hover { background:var(--accent) }
 .preview { display:grid; grid-template-rows:auto minmax(0,1fr) auto; border-right:1px solid var(--line); overflow:hidden }

@@ -110,6 +110,24 @@ export function createDataset(config: Config) {
     );
   };
 
+  /** Take the open image out of the pipeline, or put it back.
+
+      Instant, like a caption save and unlike a Run: the server moves the files
+      and hands back the row it left behind, which is folded into the listing
+      here. The item itself is re-fetched rather than patched — excluding
+      changes what the panel can say about the resized copy and the mask, and
+      those moved. */
+  async function setExcluded(excluded: boolean, note = "") {
+    const rel = sel()?.rel;
+    if (!rel) return;
+    const result = await api.setExcluded(rel, excluded, note);
+    mutateList((prev) =>
+      prev ? { ...prev, items: prev.items.map((x) => (x.rel === rel ? result.row : x)) } : prev,
+    );
+    void refetchItem();
+    return result;
+  }
+
   /** Re-stat named sidebar rows in place, and the open item if it is one. */
   async function reloadRels(rels: string[]) {
     if (!rels.length) return;
@@ -143,6 +161,7 @@ export function createDataset(config: Config) {
     groups,
     item,
     onSaved,
+    setExcluded,
     reloadRels,
     reloadAll,
   };

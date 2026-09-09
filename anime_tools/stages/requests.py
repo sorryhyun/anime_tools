@@ -930,6 +930,13 @@ class ResizeRequest(DatasetRequest):
         "per-image curation decisions (skip / move) reach the resize pass; a "
         "skipped image is written nowhere and is invisible to every later stage.",
     )
+    excluded_dir: str = arg(
+        WS.EXCLUDED,
+        help="The exclusion ledger's tree (default: "
+        f"{WS.EXCLUDED}). Every rel it lists is added to --skip, which is what "
+        "makes an exclusion stick: this is the one stage that could put an "
+        "excluded image back in the resized tree every later stage walks.",
+    )
     report_dir: str = _report_dir(f"{WS.REPORTS}/resize")
 
     def __post_init__(self) -> None:
@@ -952,7 +959,8 @@ class ExportRequest(DatasetRequest):
     """Publish the workspace to the paths the trainer reads.
 
     The one operation in the package that writes outside ``workspace/``: resized
-    images, masks and captions are copied under ``--out``.
+    images, masks and captions are copied under ``--out``, and whatever curation
+    excluded is copied beside them under ``<out>/_excluded/``.
 
     Dry-run by default. ``--apply`` copies for real, re-deciding every row against
     the destination, so a file edited since the dry run is reported rather than
@@ -978,6 +986,13 @@ class ExportRequest(DatasetRequest):
         WS.EXPORT_ROOT,
         help="Export root: resized/, masks/ and captions/ land under it (default: "
         f"{WS.EXPORT_ROOT}). The tree the trainer reads.",
+    )
+    excluded_dir: str = arg(
+        WS.EXCLUDED,
+        help=f"The excluded tree (default: {WS.EXCLUDED}), republished as it is "
+        "under <out>/_excluded/ — beside the trainer's tree rather than in it, "
+        "so an image curation took out is still there and is never trained on. "
+        "A workspace where nothing is excluded publishes nothing extra.",
     )
     combine_ocr: bool = arg(
         False,

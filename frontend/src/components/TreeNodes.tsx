@@ -86,7 +86,7 @@ export function ImageNode(p: { ctx: TreeCtx; it: DatasetItem; depth: number; wit
   const on = (k: NodeKind) => isSel() && p.ctx.sel()!.kind === k;
   return (
     <div
-      classList={{ tn: true, img: true, sel: isSel() }}
+      classList={{ tn: true, img: true, sel: isSel(), excluded: p.it.excluded }}
       style={{ "padding-left": `${8 + p.depth * 12}px` }}
       title={p.it.rel}
       onClick={() => p.ctx.select(p.it.rel, "image")}
@@ -99,8 +99,14 @@ export function ImageNode(p: { ctx: TreeCtx; it: DatasetItem; depth: number; wit
       </span>
       {/* Row flags are about the *image*, not its captions. `r` = resize has
           produced the copy every stage downstream of it walks, so a row
-          without one is invisible to them. */}
+          without one is invisible to them; ⊘ says curation took it out, which
+          is *why* such a row has no `r`. */}
       <span class="flags">
+        <Show when={p.it.excluded}>
+          <span class="flag excl" title={t().tree.flagExcluded}>
+            ⊘
+          </span>
+        </Show>
         <Show when={p.ctx.pending()?.has(p.it.rel)}>
           <span class="flag prop" title={t().tree.flagPending}>
             ●

@@ -777,6 +777,26 @@ def create_app(
         except OSError as e:
             raise HTTPException(500, f"write failed: {e}") from e
 
+    @app.post("/api/dataset/exclude")
+    async def dataset_exclude(request: Request) -> dict[str, Any]:
+        """Take one image out of the pipeline, or put it back.
+
+        An instant action, not a job: it moves the image's files between
+        ``workspace/`` and ``workspace/_excluded/`` and answers with the row as
+        it now is. There is nothing to run and nothing to undo from a report —
+        the inverse gesture is the same route with ``excluded: false``.
+        """
+        body = await request.json()
+        roots = roots_for(
+            load_settings(), **{k: str(body.get(k) or "") for k in D.DEFAULT_ROOTS}
+        )
+        return D.set_excluded(
+            roots,
+            str(body.get("rel") or ""),
+            excluded=bool(body.get("excluded")),
+            note=str(body.get("note") or ""),
+        )
+
     @app.post("/api/dataset/parse")
     async def dataset_parse(request: Request) -> dict[str, Any]:
         """Parse an *unsaved* caption for the editor's live clause preview.

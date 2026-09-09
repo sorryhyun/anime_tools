@@ -72,6 +72,7 @@ def test_listing_joins_the_three_trees(client):
         },
         "resized": False,  # resize has not run over this one
         "mask": True,  # flat masks/{stem}_mask.png is the legacy fallback
+        "excluded": False,  # nobody has taken this image out of the pipeline
     }
     b = by_rel["sub/b.jpg"]
     assert b["dir"] == "sub" and b["captions"]["revised"] and b["captions"]["variants"]
@@ -96,6 +97,45 @@ def test_the_listing_carries_the_caption_ladder(client):
     assert D.CAPTION_KINDS == ("master", "revised")
     # A missing root still says what the rungs are, so the strip has a shape.
     assert c.get("/api/dataset", params={"src": "nowhere"}).json()["ladder"]
+
+
+def test_excluding_moves_the_image_out_and_the_row_says_so(client):
+    """The GUI gesture: an instant move, not a job, and the answer carries the
+    row so the sidebar folds it in rather than re-walking the tree."""
+    c, home = client
+    excluded = home / "workspace" / "_excluded"
+
+    body = c.post(
+        "/api/dataset/exclude", json={"rel": "sub/b.jpg", "excluded": True}
+    ).json()
+
+    assert body["action"] == "excluded"
+    assert body["row"]["excluded"] and not body["row"]["resized"]
+    assert (excluded / "resized" / "sub" / "b.png").is_file()
+    assert not (home / "workspace" / "resized" / "sub" / "b.png").exists()
+    # The panel gets the whole ledger row, so it can say when and why.
+    detail = c.get("/api/dataset/item", params={"rel": "sub/b.jpg"}).json()
+    assert detail["excluded"]["rel"] == "sub/b.jpg"
+    assert detail["resized"] is None
+
+    back = c.post(
+        "/api/dataset/exclude", json={"rel": "sub/b.jpg", "excluded": False}
+    ).json()
+
+    assert back["action"] == "restored" and not back["row"]["excluded"]
+    assert (home / "workspace" / "resized" / "sub" / "b.png").is_file()
+    assert (
+        c.get("/api/dataset/item", params={"rel": "sub/b.jpg"}).json()["excluded"]
+        is None
+    )
+
+
+def test_excluding_something_the_dataset_does_not_have_is_a_400(client):
+    """A rel with no image behind it would be a ledger row nothing ever
+    matches."""
+    c, _ = client
+    r = c.post("/api/dataset/exclude", json={"rel": "nope.png", "excluded": True})
+    assert r.status_code == 400
 
 
 def test_listing_filters(client):

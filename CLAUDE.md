@@ -78,6 +78,16 @@ to the master, report holding the before-text) are the only writers of the `src`
 write pushes the replaced text onto `{stem}.history.txt`, which is what makes a run safe without
 an Apply gate: the old version is a badge in the panel and Undo replays the report backwards.
 
+Excluding an image is the one gesture that moves files *out* of those trees:
+`anime_tools/exclude.py` puts every file it has (resized, mask, OCR sidecar) under
+`workspace/_excluded/<tree>/<rel>` and writes the rel into `workspace/_excluded/excluded.json`.
+The ledger is the state, and `resize` is where it bites — it adds every listed rel to its own
+`--skip`, which is the only place an exclusion has to be enforced, since every other stage
+walks `workspace/resized/` and the image has left it. Export republishes the whole tree under
+`<out>/_excluded/`, beside what the trainer reads rather than inside it. The GUI's ⊘ button and
+`python -m anime_tools.exclude` are the two ways in; the source image and its hand-written
+master are never touched, so putting one back is the same move reversed.
+
 `python -m anime_tools.workspace.migrate` moves a pre-workspace tree over. Any `--apply` that
 touches captions must be followed by the trainer's TE re-encode.
 
@@ -102,6 +112,10 @@ Each of these is implemented in one package but bites from any of them.
 - Dry-run by default from the CLI; `--apply` writes. Every run leaves `report.json`; the
   GUI always applies and relies on `{stem}.history.txt` plus `replay.apply_one` (the one
   drift-guarded write) for Undo.
+- An exclusion is enforced in one place. `exclude.py` empties the live trees, but only
+  `resize` could refill them, so only `resize` reads the ledger. A stage that learns to
+  check it separately is a second answer to the same question — the fix for one that
+  processes an excluded image is that it is not walking `workspace/resized/`.
 - Torch stays out of the server path. `captions/`, `gui/`, `contract.py`, `downloads.py`,
   every `requests.py` and `registry.py` import without torch; model imports live inside runner
   bodies. `tests/test_boundary.py` and `tests/test_registry_requests.py` pin it.
@@ -163,6 +177,7 @@ Each of these is implemented in one package but bites from any of them.
 | `anime_tools/gui/` — schema/argv binding, dataset ladder, jobs, settings | `anime_tools/gui/CLAUDE.md` |
 | `frontend/` — the Solid browser half | `frontend/CLAUDE.md` |
 | `anime_tools/ocr/` + `stages/ocr.py` — the AnimeText text-block detector over the resized tree, every box read by `ocr/sfx.py`, the manga VL crop reader (fine-tuned PaddleOCR-VL-1.6, decode guard built in) | `anime_tools/stages/CLAUDE.md`; the sidecar rule in the `captions` skill; `ocr/sfx.py`'s module doc |
+| `anime_tools/exclude.py` — taking an image out of the pipeline, and its ⊘ button | this file's "Where things get written"; `anime_tools/gui/CLAUDE.md` |
 | `anime_tools/downloads.py` — adding or moving a weight | the `model-catalog` skill |
 | `anime_tools/update.py` — the self-update and its GUI pane | the `release` skill; `anime_tools/gui/CLAUDE.md` |
 | A new stage, a renamed flag, a GUI knob | the `add-stage` skill |

@@ -83,6 +83,15 @@ report (`text` re-derived at decide time — a sidecar deleted since the plan pu
 bare; revert compares against the recorded text), and counts under `stats.combined`. Exporting
 again without the knob takes the clause back. The trainer must `make preprocess-te` after either.
 
+`--excluded_dir` adds a second, smaller plan over `workspace/_excluded/`
+(`anime_tools/exclude.py`): `_excluded/resized` walked as the live resized tree is,
+`_excluded/masks` looked up against it by the same rule, published under `<out>/_excluded/`.
+Same kinds, so the compare and the revert are unchanged; no `master` row and no OCR combine.
+The rows carry `excluded`, which is all that tells them apart in the report, and a workspace
+where nothing is excluded publishes nothing extra. `resize` reads the same tree's ledger into
+its `--skip` — that is where an exclusion is enforced, since every other stage walks
+`workspace/resized/` and an excluded image has left it.
+
 ## Reports, replay, shared scaffolding
 
 Stages are dry-run by default from the CLI and write `report.json`; `--apply` writes for real.

@@ -9,6 +9,11 @@ Six artifact kinds, and where each lands:
 ``master``    ``workspace/master/<rel>.txt``        → ``--src/<rel>.txt``
 ``index``     ``workspace/captions/caption_index.json`` → ``--out/captions/…``
 
+and once more for what curation took *out*::
+
+``image`` …   ``workspace/_excluded/resized/<rel>``  → ``--out/_excluded/resized/<rel>``
+``mask``      ``workspace/_excluded/masks/…``        → ``--out/_excluded/masks/…``
+
 ``master`` publishes back over the *input* tree, where the contract says the
 master lives: the only row that writes outside ``--out`` and the only one that
 can overwrite hand-written text, so it is copied only when the overlay holds a
@@ -28,6 +33,14 @@ carries the sidecar it read (``ocr``) and the text it publishes (``text``); the
 text is re-derived from disk whenever the row is decided, and a revert compares
 against the text recorded at the time.
 
+The excluded tree (:mod:`anime_tools.exclude`) publishes as a straight mirror
+under ``<out>/_excluded/``: same kinds, same compare, no OCR combine (its
+sidecars moved in with it) and no master row (a hand-written caption never left
+``--src``). It lands *beside* the trainer's tree rather than in it, so an
+excluded image is still there to look at and is never trained on. The rows carry
+:attr:`ExportRow.excluded`, which is the only thing that tells them apart in the
+report.
+
 Rows are per *artifact*, not per image, each decided on its own.
 
 Torch-free.
@@ -41,6 +54,7 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from anime_tools import workspace as WS
 from anime_tools._walk import walk_images
 from anime_tools.captions._sidecar import render_rows, sidecar_header
 from anime_tools.captions.ocr_sidecar import (
@@ -71,7 +85,7 @@ caption text."""
 
 @dataclass(frozen=True)
 class ExportPaths:
-    """The six directories one export reads from and writes to.
+    """The directories one export reads from and writes to.
 
     ``src`` (the caption master tree) and ``out`` (the export root) are
     destinations here, not sources, but keep their usual names.
@@ -83,6 +97,9 @@ class ExportPaths:
     index: Path
     src: Path
     out: Path
+    excluded: Path | None = None
+    """The excluded tree to republish under ``<out>/_excluded/``, or ``None``.
+    Set by ``--excluded_dir``; an absent tree contributes no rows."""
     ocr: Path | None = None
     """The OCR tree to combine from, or ``None`` to publish captions as they
     are. Set by ``--combine_ocr``; mirrors ``resized``."""
@@ -117,6 +134,10 @@ class ExportRow:
     text: str = ""
     """What a combined row publishes — the source with the text clause attached.
     Empty for a verbatim copy, whose bytes are the source's."""
+    excluded: bool = False
+    """Came out of the excluded tree, so it publishes under ``<out>/_excluded/``
+    rather than into the tree the trainer reads. The kind is the live one, so
+    nothing about the compare or the revert changes."""
 
     @property
     def combined(self) -> bool:
@@ -133,6 +154,9 @@ class ExportStats:
     overwrote: int = 0
     combined: int = 0
     """Rows published (or, dry, to be published) with the OCR clause attached."""
+    excluded: int = 0
+    """Rows published under ``<out>/_excluded/`` rather than into the trainer's
+    tree."""
     by_kind: Counter = field(default_factory=Counter)
     skipped: Counter = field(default_factory=Counter)
 
@@ -145,6 +169,7 @@ class ExportStats:
             "created": self.created,
             "overwrote": self.overwrote,
             "combined": self.combined,
+            "excluded": self.excluded,
             "by_kind": dict(sorted(self.by_kind.items())),
             "skipped": dict(sorted(self.skipped.items())),
         }
@@ -234,6 +259,7 @@ def _row(
     ocr: Path | None = None,
     min_det: float = DEFAULT_MIN_DET,
     min_glyph: float = DEFAULT_MIN_GLYPH,
+    excluded: bool = False,
 ) -> ExportRow:
     """One row, decided. ``ocr`` (the image's sidecar, when combining) marks it
     combined only if the sidecar exists — an image with no text publishes its
@@ -248,17 +274,23 @@ def _row(
             ocr=str(ocr) if combined else "",
             ocr_min_det=min_det,
             ocr_min_glyph=min_glyph,
+            excluded=excluded,
         )
     )
 
 
-def _mask_source(paths: ExportPaths, image: Path, rel: Path) -> Path:
+def _mask_source(masks: Path, images: Path, image: Path, rel: Path) -> Path:
     """The mask for ``rel``: the mirrored layout, or the legacy flat one — the
-    same two-step lookup ``gui.dataset.mask_path`` does."""
-    nested = mask_path_for(image, paths.resized, paths.masks)
+    same two-step lookup ``gui.dataset.mask_path`` does.
+
+    Takes the two roots rather than the :class:`ExportPaths` so the excluded
+    tree's own mirror (``_excluded/masks`` over ``_excluded/resized``) resolves
+    through the same rule.
+    """
+    nested = mask_path_for(image, images, masks)
     if nested.is_file():
         return nested
-    return paths.masks / mask_name(rel.stem)
+    return masks / mask_name(rel.stem)
 
 
 def plan_export(
@@ -305,7 +337,7 @@ def plan_export(
                 )
             )
 
-        mask = _mask_source(paths, image, rel)
+        mask = _mask_source(paths.masks, paths.resized, image, rel)
         if mask.is_file():
             rows.append(
                 _row(
@@ -327,6 +359,75 @@ def plan_export(
         rows.append(
             _row(rel, "index", paths.index, paths.out / "captions" / paths.index.name)
         )
+    return rows + _excluded_rows(paths, path_pattern=path_pattern)
+
+
+def _excluded_rows(
+    paths: ExportPaths, *, path_pattern: str | None = "*"
+) -> list[ExportRow]:
+    """The excluded tree, mirrored under ``<out>/_excluded/``.
+
+    A second, smaller plan over the same shapes: ``_excluded/resized`` is walked
+    the way the live resized tree is, and ``_excluded/masks`` is looked up
+    against it by the same rule, so the two halves of the export tree have the
+    same layout. No ``master`` row (the hand-written caption never left ``src``,
+    so an exclusion has nothing to publish back) and no OCR combine — the
+    sidecars moved into ``_excluded/ocr`` with the image, and what is archived
+    here is what was curated, not a render of it.
+
+    Nothing at all when the tree is absent, which is every workspace where
+    nobody has excluded anything.
+    """
+    root = paths.excluded
+    if root is None:
+        return []
+    resized = root / "resized"
+    if not resized.is_dir():
+        return []
+    masks = root / "masks"
+    out = paths.out / WS.EXCLUDED_SUBDIR
+
+    rows: list[ExportRow] = []
+    for image in walk_images(resized, recursive=True, pattern=path_pattern):
+        rel = image.relative_to(resized)
+        out_image = out / "resized" / rel
+        rows.append(_row(rel, "image", image, out_image, excluded=True))
+
+        caption = image.with_suffix(".txt")
+        if caption.is_file():
+            rows.append(
+                _row(
+                    rel,
+                    "caption",
+                    caption,
+                    out_image.with_suffix(".txt"),
+                    excluded=True,
+                )
+            )
+
+        variants = variants_sidecar_path(caption)
+        if variants.is_file():
+            rows.append(
+                _row(
+                    rel,
+                    "variants",
+                    variants,
+                    variants_sidecar_path(out_image),
+                    excluded=True,
+                )
+            )
+
+        mask = _mask_source(masks, resized, image, rel)
+        if mask.is_file():
+            rows.append(
+                _row(
+                    rel,
+                    "mask",
+                    mask,
+                    out / "masks" / mask.relative_to(masks),
+                    excluded=True,
+                )
+            )
     return rows
 
 
@@ -375,10 +476,12 @@ def _run(
         if status in ("created", "overwrote"):
             stats.by_kind[row.kind] += 1
             stats.combined += row.combined
+            stats.excluded += row.excluded
             setattr(stats, status, getattr(stats, status) + 1)
         elif status.startswith("would-"):
             stats.by_kind[row.kind] += 1
             stats.combined += row.combined
+            stats.excluded += row.excluded
         else:
             stats.skip(status)
         if progress:
@@ -413,13 +516,18 @@ _REVERT = {"created": "remove", "overwrote": "restore"}
 nothing and so has nothing to undo."""
 
 ROW_FIELDS = ("rel", "kind", "src", "dst", "status", "before", "ocr", "text")
+"""The text fields a report round-trips. ``excluded`` is read separately, being
+the one field that is not a string."""
 
 
 def rows_from_report(report: Mapping[str, object]) -> list[ExportRow]:
     """The rows of an export report, as :class:`ExportRow` again."""
     raw = report.get("rows")
     return [
-        ExportRow(**{k: str(r.get(k) or "") for k in ROW_FIELDS})
+        ExportRow(
+            **{k: str(r.get(k) or "") for k in ROW_FIELDS},
+            excluded=bool(r.get("excluded")),
+        )
         for r in (raw if isinstance(raw, list) else [])
         if isinstance(r, Mapping)
     ]

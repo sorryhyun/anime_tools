@@ -68,6 +68,8 @@ const ja: Dict = {
     flagPending: "直前の実行がこの画像を変更しました",
     flagResized: "resized — workspace/resized にこの画像があります",
     flagMask: "マスクあり",
+    flagExcluded:
+      "除外済み — ファイルは workspace/_excluded に移動し、resize は飛ばし、エクスポートは _excluded/ の下に発行します",
     root: "（ルート）",
     group: (id) => `グループ ${id}`,
     groupHint: (id, cos) => `まとまり ${id} — ペアごとの CLS コサイン平均 ${cos}`,
@@ -100,6 +102,19 @@ const ja: Dict = {
     belowFloor: (floor: string) =>
       `リサイズ下限 ${floor} 未満 — この画像はリサイズされないため、workspace/resized を歩く各ステージからは見えません。⚙ 設定 › Preprocess で下限を下げてください。`,
     zoomHint: "⌘/Ctrl+スクロールで拡大 · ドラッグで移動 · ダブルクリックで元に戻す",
+    exclude: "除外",
+    excludeHint:
+      "この画像をパイプラインから外します: リサイズ済みコピー・マスク・OCR サイドカーが workspace/_excluded に移動し、以後 resize は飛ばし、エクスポートはトレーナーが読むツリーではなく <out>/_excluded に発行します。元画像と master キャプションはそのままです。",
+    restore: "戻す",
+    restoreHint:
+      "すべてのファイルを元のツリーへ戻し、この画像を台帳から外します。各ステージからまた見えるようになります。",
+    excluded: "除外済み",
+    /** {0} は除外した時刻。整形済みの文字列です。 */
+    excludedAt: (when: string) => `${when} にパイプラインから外されました`,
+    /** {0} は workspace/_excluded に移動したファイル数。 */
+    excludedFiles: (n: number) => `workspace/_excluded に ${n} 件`,
+    /** 元の場所がふさがっていて残したファイル。 */
+    excludeKept: (n: number) => `${n} 件は _excluded に残りました — 元のパスがふさがっています`,
   },
   ocr: {
     title: "画像内のテキスト",

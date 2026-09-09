@@ -7,6 +7,7 @@ import { CaptionCard } from "./CaptionCard";
 import { OcrPanel } from "./OcrPanel";
 import { RevealButton } from "./RevealButton";
 import type {
+  ExcludeResult,
   ImageInfo,
   ItemDetail,
   NodeKind,
@@ -81,8 +82,27 @@ export function ItemView(props: {
   help: boolean;
   onHelp: () => void;
   onSaved: (saved: SavedCaption) => void;
+  /** Take this image out of the pipeline, or put it back. Resolves once the
+      files have moved, which is what the button waits on. */
+  onSetExcluded: (excluded: boolean) => Promise<ExcludeResult | undefined>;
 }) {
   const [view, setView] = createSignal<View>("image");
+  /** The exclusion round-trip: one at a time, and its failure said on the line
+      it was clicked from rather than in the run bar — nothing was run. */
+  const [moving, setMoving] = createSignal(false);
+  const [moveErr, setMoveErr] = createSignal("");
+  const [kept, setKept] = createSignal(0);
+  async function toggleExcluded(excluded: boolean) {
+    setMoving(true);
+    setMoveErr("");
+    try {
+      setKept((await props.onSetExcluded(excluded))?.skipped.length ?? 0);
+    } catch (e) {
+      setMoveErr(e instanceof Error ? e.message : String(e));
+    } finally {
+      setMoving(false);
+    }
+  }
   const [capW, setCapW] = createSignal(Number(localStorage.getItem(CAP_W)) || 420);
   let split!: HTMLDivElement;
 
@@ -154,6 +174,26 @@ export function ItemView(props: {
               <RevealButton path={(it().image ?? it().resized)?.path} can={props.canReveal} />
             </div>
 
+            <Show when={it().excluded}>
+              {(e) => (
+                <div class="excluded-bar">
+                  <b>⊘ {t().item.excluded}</b>
+                  <span class="dim">
+                    {t().item.excludedAt(new Date(e().at * 1000).toLocaleString())} ·{" "}
+                    {t().item.excludedFiles(e().moved.length)}
+                  </span>
+                  <Show when={e().note}>
+                    <span class="note">{e().note}</span>
+                  </Show>
+                </div>
+              )}
+            </Show>
+            <Show when={moveErr() || kept()}>
+              <div classList={{ "excluded-bar": true, err: !!moveErr() }}>
+                {moveErr() || t().item.excludeKept(kept())}
+              </div>
+            </Show>
+
             <div class="split" ref={split} style={{ "--cap-w": `${capW()}px` }}>
               <div class="splitgrip" onPointerDown={grip} title={t().common.dragToResize} />
               <div class="preview">
@@ -178,6 +218,19 @@ export function ItemView(props: {
                       );
                     }}
                   </For>
+                  {/* After the view tabs and set apart from them: it is an
+                      action on the picture you have just been looking at, not a
+                      fourth way of looking at it. One click moves the image out
+                      of the trees the stages walk, and the same button moves it
+                      back. */}
+                  <button
+                    classList={{ excl: true, on: !!it().excluded }}
+                    disabled={moving()}
+                    title={it().excluded ? t().item.restoreHint : t().item.excludeHint}
+                    onClick={() => void toggleExcluded(!it().excluded)}
+                  >
+                    {it().excluded ? `↩ ${t().item.restore}` : `⊘ ${t().item.exclude}`}
+                  </button>
                 </div>
                 <Show
                   when={view() !== "overlay"}

@@ -9,6 +9,12 @@ The trees it joins are keyed by the *same relative path* in each
 ``masks``   ``workspace/masks/<rel>``          ``{stem}_mask.png`` (nested; flat is the legacy fallback)
 ``out``     ``<export>/``                      the export destination, written by Export
 
+Beside them sits ``workspace/_excluded/``, which is not a root and does not join
+by ``rel``: it is where :mod:`anime_tools.exclude` *moves* an image the curator
+took out of the pipeline. A row still lists — you have to be able to see one to
+put it back — but wearing ``excluded``, and every one of its files has left the
+three trees above.
+
 An image's captions are a **ladder** (:data:`CAPTION_LADDER`): the hand-written
 master, the versions the revised caption used to be, that caption itself, then the
 generated variants. That order feeds both the dots on a sidebar row (:func:`_row`)
@@ -39,6 +45,14 @@ from anime_tools.captions.history import (
 from anime_tools.captions.ocr_sidecar import ocr_sidecar_path, read_ocr
 from anime_tools.captions.position_clauses import parse_caption, tag_spans
 from anime_tools.captions.variants import read_variants_sidecar, variants_sidecar_path
+from anime_tools.exclude import (
+    Entry,
+    ExclusionError,
+    Trees,
+    exclude_one,
+    read_entries,
+    restore_one,
+)
 from anime_tools.grouping.groups import MANIFEST_VERSION
 from anime_tools.gui.settings import load_settings
 from anime_tools.masking._masks import mask_name
@@ -383,6 +397,66 @@ def caption_write_path(roots: Roots, rel: Path, kind: str) -> Path:
     return getattr(roots, rung.overlay or rung.root) / rel.with_suffix(".txt")
 
 
+def excluded_trees(roots: Roots) -> Trees:
+    """The trees an exclusion moves between, for this request's roots.
+
+    ``resized`` and ``masks`` follow the dataset roots, so a relocated root is
+    honoured; the OCR sidecars and ``_excluded`` itself are workspace trees no
+    root names, resolved the way :func:`ocr_lines` resolves the first of them.
+    """
+    ws = workspace_dir()
+    return Trees(
+        resized=roots.dst,
+        masks=roots.masks,
+        ocr=ws / WS.OCR_SUBDIR,
+        excluded=ws / WS.EXCLUDED_SUBDIR,
+    )
+
+
+def excluded_entries(roots: Roots) -> dict[str, Entry]:
+    """The exclusion ledger, as a 400 rather than a 500 when it will not parse.
+
+    Read once per listing: it is one small JSON file, and a stat per row would be
+    the wrong shape for a flag that is a set membership.
+    """
+    try:
+        return read_entries(excluded_trees(roots).excluded)
+    except ExclusionError as e:
+        raise DatasetError(str(e)) from e
+
+
+def set_excluded(
+    roots: Roots, rel_str: str, *, excluded: bool, note: str = ""
+) -> dict[str, Any]:
+    """Take one image out of the pipeline, or put it back.
+
+    An instant action like a caption write, not a run: it moves files and answers
+    with the row as it now is, so the sidebar folds the result in rather than
+    re-walking the tree. Excluding checks the source tree first — a rel with no
+    image behind it would be a ledger row nothing ever matches — while restoring
+    does not, since the point may be that the source went away.
+    """
+    rel = _rel_key(rel_str)
+    trees = excluded_trees(roots)
+    if excluded and not (roots.src / rel).is_file():
+        raise DatasetError(f"not in the dataset: {rel.as_posix()}")
+    try:
+        result = (
+            exclude_one(trees, rel.as_posix(), note=note)
+            if excluded
+            else restore_one(trees, rel.as_posix())
+        )
+    except ExclusionError as e:
+        raise DatasetError(str(e)) from e
+    except OSError as e:
+        raise DatasetError(f"could not move {rel.as_posix()}: {e}") from e
+    entries = excluded_entries(roots)
+    return {
+        **result.to_dict(),
+        "row": _row(roots, rel, rel.name, excluded=rel.as_posix() in entries),
+    }
+
+
 def list_items(
     roots: Roots,
     *,
@@ -417,11 +491,13 @@ def list_items(
 
     total = len(paths)
     limit = max(1, min(int(limit), MAX_ITEMS))
+    entries = excluded_entries(roots)
     items = []
     for p in sorted(paths, key=lambda p: (p.parent.as_posix().lower(), p.name.lower()))[
         :limit
     ]:
-        items.append(_row(roots, p.relative_to(roots.src), p.name))
+        rel = p.relative_to(roots.src)
+        items.append(_row(roots, rel, p.name, excluded=rel.as_posix() in entries))
     return {
         "root": rel_to_home(roots.src),
         "missing": False,
@@ -432,13 +508,19 @@ def list_items(
     }
 
 
-def _row(roots: Roots, rel: Path, name: str) -> dict[str, Any]:
+def _row(
+    roots: Roots, rel: Path, name: str, *, excluded: bool = False
+) -> dict[str, Any]:
     """One sidebar row: the image plus which of its siblings exist.
 
     ``captions`` is one flag per :data:`CAPTION_LADDER` rung, one stat apiece so
     this stays cheap for a whole-dataset listing. ``resized`` is matched on *stem*
     (:func:`_sibling_image`) and is a row flag rather than a caption dot: it says
     whether the stages downstream of resize can see this image.
+
+    ``excluded`` is told rather than looked up, since it is one set membership
+    for the whole listing (:func:`excluded_entries`). It explains the rest of the
+    row: an excluded image has no resized copy and no mask, because they moved.
     """
     caps = caption_paths(roots, rel)
     parent = rel.parent.as_posix()
@@ -450,6 +532,7 @@ def _row(roots: Roots, rel: Path, name: str) -> dict[str, Any]:
         "captions": {r.kind: caps[r.kind].is_file() for r in CAPTION_LADDER},
         "resized": _sibling_image(roots.dst / rel.parent, rel.stem) is not None,
         "mask": mask_path(roots, rel) is not None,
+        "excluded": excluded,
     }
 
 
@@ -457,6 +540,7 @@ def item_rows(roots: Roots, rels: list[str]) -> list[dict[str, Any]]:
     """:func:`list_items` rows for named images only, so a run that touched 40
     captions costs 40 stats rather than a walk of the source root. An unreadable
     or vanished rel is dropped."""
+    entries = excluded_entries(roots)
     out = []
     for raw in rels:
         try:
@@ -465,7 +549,7 @@ def item_rows(roots: Roots, rels: list[str]) -> list[dict[str, Any]]:
             continue
         if not (roots.src / rel).is_file():
             continue
-        out.append(_row(roots, rel, rel.name))
+        out.append(_row(roots, rel, rel.name, excluded=rel.as_posix() in entries))
     return out
 
 
@@ -699,12 +783,16 @@ def item_detail(
     if not src_image.is_file():
         raise DatasetError(f"not in the dataset: {rel.as_posix()}")
     parent = rel.parent.as_posix()
+    entry = excluded_entries(roots).get(rel.as_posix())
     return {
         "rel": rel.as_posix(),
         "dir": "" if parent == "." else parent,
         "name": src_image.name,
         "stem": rel.stem,
         "min_pixels": int(min_pixels),
+        # The whole ledger row, not a flag: the panel says when it was excluded
+        # and why, which is the part a curator coming back to it needs.
+        "excluded": entry.to_dict() if entry else None,
         "image": _image_info(src_image, min_pixels=min_pixels),
         "resized": _image_info(_sibling_image(roots.dst / rel.parent, rel.stem)),
         "mask": _image_info(mask_path(roots, rel)),

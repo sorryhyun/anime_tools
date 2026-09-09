@@ -66,6 +66,8 @@ const zh: Dict = {
     flagPending: "上一次运行改动了这张图片",
     flagResized: "resized — workspace/resized 中有这张图",
     flagMask: "有掩膜",
+    flagExcluded:
+      "已排除 — 文件已移到 workspace/_excluded，resize 会跳过它，导出会发布到 _excluded/ 下",
     root: "（根目录）",
     group: (id) => `分组 ${id}`,
     groupHint: (id, cos) => `分组 ${id} — 两两 CLS 余弦均值 ${cos}`,
@@ -98,6 +100,18 @@ const zh: Dict = {
     belowFloor: (floor: string) =>
       `低于 ${floor} 的缩放下限 — 该图片不会被缩放，因此遍历 workspace/resized 的各个阶段根本看不到它。请在 ⚙ 设置 › Preprocess 中调低下限。`,
     zoomHint: "⌘/Ctrl+滚轮放大 · 拖动平移 · 双击恢复",
+    exclude: "排除",
+    excludeHint:
+      "把这张图片移出流水线：缩放副本、掩膜和 OCR 边车文件都会移到 workspace/_excluded，此后 resize 会跳过它，导出也会发布到 <out>/_excluded 而不是训练器读取的那棵树。源图片和 master 描述不会被动。",
+    restore: "放回去",
+    restoreHint: "把所有文件移回原来的树，并把这张图片从台账中删除，各阶段就又能看到它了。",
+    excluded: "已排除",
+    /** {0} 是排除时间，已格式化。 */
+    excludedAt: (when: string) => `于 ${when} 移出流水线`,
+    /** {0} 是移进 workspace/_excluded 的文件数。 */
+    excludedFiles: (n: number) => `workspace/_excluded 中有 ${n} 个文件`,
+    /** 因原位置已被占用而留下的文件。 */
+    excludeKept: (n: number) => `有 ${n} 个文件留在 _excluded — 原路径已被占用`,
   },
   ocr: {
     title: "图像中的文字",

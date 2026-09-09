@@ -98,6 +98,8 @@ const en = {
     flagPending: "the last run changed this image",
     flagResized: "resized — workspace/resized has this image",
     flagMask: "has a mask",
+    flagExcluded:
+      "excluded — its files moved to workspace/_excluded, resize skips it, and Export publishes it under _excluded/",
     root: "(root)",
     group: (id: number) => `group ${id}`,
     groupHint: (id: number, cos: number | string) =>
@@ -135,6 +137,20 @@ const en = {
     belowFloor: (floor: string) =>
       `below the ${floor} resize floor — this image is never resized, so the stages, which walk workspace/resized, see nothing for it. Lower it in ⚙ Settings › Preprocess.`,
     zoomHint: "⌘/Ctrl+scroll magnifies · drag to pan · double-click fits again",
+    exclude: "exclude",
+    excludeHint:
+      "Take this image out of the pipeline: its resized copy, mask and OCR sidecar move to workspace/_excluded, resize skips it from now on, and Export publishes it under <out>/_excluded instead of into the tree the trainer reads. The source image and its master caption are not touched.",
+    restore: "put back",
+    restoreHint:
+      "Move every file back to the tree it came from and take this image out of the ledger, so the stages see it again.",
+    excluded: "excluded",
+    /** {0} is when it was excluded, already formatted. */
+    excludedAt: (when: string) => `taken out of the pipeline on ${when}`,
+    /** {0} is how many files moved into workspace/_excluded. */
+    excludedFiles: (n: number) => `${n} file${n === 1 ? "" : "s"} in workspace/_excluded`,
+    /** Files left behind because the live path is occupied again. */
+    excludeKept: (n: number) =>
+      `${n} file${n === 1 ? "" : "s"} stayed in _excluded — the live path is taken`,
   },
   ocr: {
     title: "text in the image",

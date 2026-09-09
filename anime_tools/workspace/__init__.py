@@ -11,9 +11,12 @@
         captions/<stage>/report.json    the diffs
         groups/groups.json
         export/report.json              the export ledger
+        _excluded/excluded.json         what was taken out of the pipeline
+        _excluded/{resized,masks,ocr}/    and the files it was taken out of
       post_image_dataset/             OUTPUT -- written only by Export (the
                                       ``out`` root's default name)
         resized/  masks/
+        _excluded/                      the excluded tree, republished as it is
 
 The invariant: **no stage writes outside** ``workspace/``; Export is the only
 thing that touches the ``src`` or ``out`` roots.
@@ -98,6 +101,36 @@ root would have the second run overwrite the first. :data:`MASKS` holds the
 merge (a pixel-wise minimum over the inputs, i.e. the union of what they mask)
 and is the root the sidebar joins and Export publishes.
 """
+
+EXCLUDED_SUBDIR = "_excluded"
+EXCLUDED = f"{WORKSPACE}/{EXCLUDED_SUBDIR}"
+"""Where an image the curator took *out* of the dataset goes.
+
+Not a root and not a stage output: a tree the GUI's Exclude gesture moves files
+into, holding one mirror per tree it took them from
+(:data:`EXCLUDED_TREES`) plus the ledger that says which source image each came
+from. The ledger is the state — a rel listed in it is skipped by ``resize``,
+which is the only stage that could put the image back in
+:data:`RESIZED` and so the one chokepoint every later stage is downstream of.
+
+The leading underscore keeps it out of the way of a dataset subfolder and sorts
+it to the top of ``workspace/``; Export republishes the whole tree under
+``<out>/_excluded/``, so an excluded image is still *there* — beside the
+trainer's tree rather than inside it.
+"""
+
+EXCLUDED_TREES: tuple[str, ...] = ("resized", "masks", "ocr")
+"""The subdirectories of :data:`EXCLUDED`, one per tree an exclusion empties.
+
+Named rather than merged flat because the three collide: a mask is
+``{stem}_mask.png``, which is a legal image name in the resized tree. Each holds
+the same relative path its own tree used, which is what makes putting one back a
+move and not a lookup.
+"""
+
+EXCLUDED_MANIFEST = "excluded.json"
+"""The ledger, at the root of :data:`EXCLUDED`. Inside the tree rather than
+beside it, so moving the directory moves the record of what is in it."""
 
 LEGACY_ROOTS: dict[str, str] = {
     # root name -> where its default pointed before the workspace.

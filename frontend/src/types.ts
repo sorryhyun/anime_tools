@@ -264,6 +264,11 @@ export interface DatasetItem {
       tree, so a row without it is invisible to every stage. */
   resized: boolean;
   mask: boolean;
+  /** Curation took this image out of the pipeline: its files have moved to
+      `workspace/_excluded/` and `resize` skips it, so no stage will touch it
+      again and Export publishes it under `<out>/_excluded/`. Which is also why
+      `resized` and `mask` are false on such a row — they moved with it. */
+  excluded: boolean;
 }
 
 /** One rung of the server's caption ladder (`dataset.CAPTION_LADDER`). The
@@ -487,6 +492,34 @@ export interface ItemDetail {
   /** The text found *in* the picture, in reading order. Empty both for an image
       the OCR stage never ran on and for one it found no text in. */
   ocr: OcrLine[];
+  /** The exclusion ledger's row, or `null` for an image still in the pipeline.
+      The whole row rather than a flag, because the panel says when it was
+      excluded and why. */
+  excluded: ExcludedEntry | null;
+}
+
+/** One row of `workspace/_excluded/excluded.json` (`anime_tools.exclude.Entry`). */
+export interface ExcludedEntry {
+  rel: string;
+  /** Unix seconds; when the image first left the dataset. */
+  at: number;
+  note: string;
+  /** `<tree>/<path under it>` for every file that moved — what going back would
+      put where. */
+  moved: string[];
+}
+
+/** What one exclude or restore did (`/api/dataset/exclude`). `row` is the
+    sidebar row as it now is, so the listing folds the answer in rather than
+    re-walking the tree. */
+export interface ExcludeResult {
+  rel: string;
+  action: "excluded" | "restored" | "already-excluded" | "not-excluded";
+  moved: string[];
+  /** Files left under `_excluded` because the live path is occupied again. */
+  skipped: string[];
+  entry: ExcludedEntry | null;
+  row: DatasetItem;
 }
 
 /** One Danbooru tag as the KB knows it — `/api/tags/describe`, behind a click

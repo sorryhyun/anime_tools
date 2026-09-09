@@ -4,6 +4,7 @@ import type {
   DatasetItem,
   DatasetList,
   DatasetRoots,
+  ExcludeResult,
   Guidebook,
   Info,
   ItemDetail,
@@ -98,6 +99,11 @@ export const api = {
   item: (rel: string) => req<ItemDetail>(`/api/dataset/item?rel=${encodeURIComponent(rel)}`),
   items: (rels: string[]) =>
     req<{ items: DatasetItem[] }>("/api/dataset/items", json("POST", { rels })),
+  /** Take one image out of the pipeline, or put it back. Instant, not a job:
+      it moves the image's files between `workspace/` and `workspace/_excluded/`
+      and answers with the row as it now is. */
+  setExcluded: (rel: string, excluded: boolean, note = "") =>
+    req<ExcludeResult>("/api/dataset/exclude", json("POST", { rel, excluded, note })),
   /** Parse an unsaved caption server-side; the grammar has one implementation. */
   parse: (text: string) => req<Parsed>("/api/dataset/parse", json("POST", { text })),
   describeTag: (tag: string) => req<TagInfo>(`/api/tags/describe?tag=${encodeURIComponent(tag)}`),

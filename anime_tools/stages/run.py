@@ -729,13 +729,23 @@ def run_ocr(req: OcrRequest):
 
 def run_resize(req: ResizeRequest):
     """Resize the master into the bucket tree. Always writes. Returns the
-    :class:`~anime_tools.stages.resize.ResizeStats`."""
+    :class:`~anime_tools.stages.resize.ResizeStats`.
+
+    The exclusion ledger joins ``--skip`` here, which is where an exclusion is
+    enforced: every other stage walks the resized tree, so leaving an excluded
+    image out of it is the whole of "no further preprocessing"
+    (:mod:`anime_tools.exclude`).
+    """
+    from anime_tools.exclude import excluded_rels
     from anime_tools.stages.resize import ResizeOptions, run_resize_images
 
     src = resolve_path(req.src)
     dst = resolve_path(req.dst)
     if not src.is_dir():
         raise FileNotFoundError(f"source dir not found: {src}")
+
+    ledger = excluded_rels(resolve_path(req.excluded_dir))
+    skip = tuple(dict.fromkeys((*req.skip, *ledger)))
 
     options = ResizeOptions.build(
         target_res=req.target_res,
@@ -753,7 +763,7 @@ def run_resize(req: ResizeRequest):
         copy_captions=req.copy_captions,
         overwrite=req.overwrite,
         workers=req.workers,
-        skip=req.skip,
+        skip=skip,
         # Every line: there is no other per-image output.
         progress=make_progress(1),
     )
@@ -770,7 +780,8 @@ def run_resize(req: ResizeRequest):
             "max_ratio": options.max_ratio,
             "min_pixels": req.min_pixels,
             "overwrite": req.overwrite,
-            "skip": list(req.skip),
+            "skip": list(skip),
+            "excluded": list(ledger),
             "stats": {
                 "seen": stats.seen,
                 "written": stats.written,
@@ -789,7 +800,8 @@ def run_resize(req: ResizeRequest):
         f"Resized: {stats.written} written, "
         f"{stats.skipped_current} already current, "
         f"{stats.skipped_small} below {req.min_pixels:,} px, "
-        f"{stats.skipped_excluded} excluded by --skip, "
+        f"{stats.skipped_excluded} excluded "
+        f"(--skip + {len(ledger)} in the ledger), "
         f"{stats.failed} failed ({stats.seen} images seen)"
     )
     for line in stats.failures:
@@ -821,6 +833,7 @@ def run_export(req: ExportRequest):
         index=resolve_path(req.index),
         src=resolve_path(req.src),
         out=resolve_path(req.out),
+        excluded=resolve_path(req.excluded_dir),
         ocr=resolve_path(req.ocr_dir) if req.combine_ocr else None,
         ocr_min_det=req.ocr_min_det,
         ocr_min_glyph=req.ocr_min_glyph,
@@ -840,6 +853,7 @@ def run_export(req: ExportRequest):
                 src=paths.src, dst=paths.resized, path_pattern=pattern, apply=req.apply
             ),
             "out": str(paths.out),
+            "excluded_dir": str(paths.excluded),
             "combine_ocr": req.combine_ocr,
             "ocr_dir": str(paths.ocr) if paths.ocr is not None else None,
             "ocr_min_det": req.ocr_min_det,
@@ -850,8 +864,10 @@ def run_export(req: ExportRequest):
     )
     print(f"\nreport → {path}")
     combined = f", {stats.combined} with OCR attached" if req.combine_ocr else ""
+    excluded = f", {stats.excluded} under _excluded/" if stats.excluded else ""
     print_dry_run_footer(
         req.apply,
-        f"published: {stats.created} created, {stats.overwrote} overwritten{combined}",
+        f"published: {stats.created} created, "
+        f"{stats.overwrote} overwritten{combined}{excluded}",
     )
     return rows, stats

@@ -42,7 +42,12 @@ field and an already-hidden field are never folded — the server settles that, 
   `revised@2`…). The sidebar draws one listing in two orderings, `tree` and `groups`;
   `load_groups` reads `<report_root>/<GROUPS_SUBPATH>` and answers rels only, so filters and
   pending dots mean the same thing in both modes. A missing groups manifest is not an error; an
-  unparseable one is a 400.
+  unparseable one is a 400. `POST /api/dataset/exclude` is the ⊘ button:
+  `anime_tools.exclude` seen from the server, an instant move rather than a job (there is
+  nothing to run and no report to undo), answering with the ledger row and the sidebar row it
+  left behind so the listing folds the result in. The ledger is read once per listing rather
+  than stat'd per row — it is one small JSON file and the flag is a set membership — and one
+  that will not parse is a 400, never an empty listing.
 - The browser never splits a caption: clause structure and every tag's `[start, end)` come from
   `/api/dataset/item` and `/api/dataset/parse` via `position_clauses.tag_spans`, which is what lets
   the editor stay a real `<textarea>` with boxes painted behind it.
