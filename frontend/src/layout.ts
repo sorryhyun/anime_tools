@@ -36,6 +36,9 @@ export function createLayout() {
       look at the run happening now, not a preference about the layout, and a
       reload has no job of its own to open it on. */
   const [logOpen, setLogOpen] = createSignal(false);
+  /** The guidebook window. Not `persisted` either, and for the same reason: a
+      manual is opened to read something, not left open across reloads. */
+  const [guideOpen, setGuideOpen] = createSignal(false);
   /** Which explanations are open, off by default. A (?) speaks for its own
       area only — pressing the stage bar's does not light up the caption panel
       or the Settings blurbs — and the ☰ menu's row is the one that opens every
@@ -68,6 +71,8 @@ export function createLayout() {
     grip,
     logOpen,
     setLogOpen,
+    guideOpen,
+    setGuideOpen,
     helpOpen: (a: HelpArea) => helpAreas().includes(a),
     toggleHelp: (a: HelpArea) =>
       setHelpAreas((v) => (v.includes(a) ? v.filter((x) => x !== a) : [...v, a])),

@@ -66,7 +66,7 @@ they arrive.
    `derived`.
 4. Tests: `test_downloads.py` — `test_rows_land_where_the_loaders_look` gets the new loader
    pair; a derived row gets a build test that writes its product and asserts the probe flips.
-5. `docs/guidelines/guidebook.md` lists what the Models pane installs.
+5. `anime_tools/gui/guidebooks/guidebook.md` lists what the Models pane installs.
 
 **Every model here runs on torch.** onnxruntime, `onnx` and `onnxscript` were dropped 2026-09-09:
 the tagger's exported graph existed only to beat timm on an Apple CPU, and `mps` beats them both

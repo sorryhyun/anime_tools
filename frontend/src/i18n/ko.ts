@@ -31,6 +31,7 @@ const ko: Dict = {
     updateReady: "새 버전",
     hfToken: "HF 토큰",
     notSet: "⚠ 미설정",
+    guidebook: "📖 가이드북",
     showHelp: "설명 전부 보이기",
     language: "언어",
   },
@@ -312,6 +313,10 @@ const ko: Dict = {
     undone: (restored, removed) => `되돌림: ${restored}개 복원, ${removed}개 삭제`,
     skipped: (what) => `— 건너뜀 ${what}`,
     logClosed: "로그 스트림이 닫혔습니다",
+  },
+  guide: {
+    title: "가이드북",
+    loading: "가이드북을 읽는 중…",
   },
   job: {
     log: "로그",

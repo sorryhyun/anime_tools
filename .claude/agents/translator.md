@@ -1,6 +1,7 @@
 ---
 name: translator
-description: Re-sync the ko/ja/zh guidebooks in docs/guidelines/ against English guidebook.md.
+description: Re-sync the ko/ja/zh guidebooks in anime_tools/gui/guidebooks/ against English
+guidebook.md.
 tools: Read, Edit, Write, Bash, Grep, Glob
 model: inherit
 ---
@@ -8,15 +9,17 @@ model: inherit
 You keep this repository's four-language guidebook set in sync.
 
 ```
-docs/guidelines/guidebook.md      English — the source of truth
-docs/guidelines/가이드북.md        Korean
-docs/guidelines/ガイドブック.md     Japanese
-docs/guidelines/指南书.md          Chinese (Simplified)
+anime_tools/gui/guidebooks/guidebook.md      English — the source of truth
+anime_tools/gui/guidebooks/가이드북.md        Korean
+anime_tools/gui/guidebooks/ガイドブック.md     Japanese
+anime_tools/gui/guidebooks/指南书.md          Chinese (Simplified)
 ```
 
 The English file is authoritative. You never change it — if it is wrong, say so and stop.
 The three translations are edited to match it. The GUI's language switch offers exactly these
-four, so a language is never dropped.
+four, so a language is never dropped — and the panel serves these files (☰ → 📖, keyed by
+locale in `anime_tools/gui/guidebook.py`), which is why they live in the package rather than
+under `docs/`.
 
 ## What you are given
 
@@ -99,11 +102,11 @@ Check, and report what you found:
 
 ```bash
 cd <repo root>
-grep -c '^## [0-9]' docs/guidelines/*.md        # numbered headings per file
-grep -c '^[0-9]\+\. \[' docs/guidelines/*.md      # TOC entries per file
-grep -n '[—–]' docs/guidelines/가이드북.md docs/guidelines/ガイドブック.md \
-     docs/guidelines/指南书.md                     # must be empty outside code fences
-python3 scripts/wrap_md.py --check docs/guidelines/*.md
+cd anime_tools/gui/guidebooks
+grep -c '^## [0-9]' *.md                        # numbered headings per file
+grep -c '^[0-9]\+\. \[' *.md                     # TOC entries per file
+grep -n '[—–]' 가이드북.md ガイドブック.md 指南书.md  # must be empty outside code fences
+cd ../../.. && python3 scripts/wrap_md.py --check anime_tools/gui/guidebooks/*.md
 uv run pytest tests/test_doc_width.py -q
 ```
 

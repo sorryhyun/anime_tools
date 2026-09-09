@@ -28,6 +28,7 @@ from anime_tools import downloads as DL
 from anime_tools._env import curation_home, models_dir, resolve_path, workspace_dir
 from anime_tools._json import read_json
 from anime_tools.gui import dataset as D
+from anime_tools.gui import guidebook as GB
 from anime_tools.gui import nativepick as NP
 from anime_tools.gui import proposals as P
 from anime_tools.gui import stages as S
@@ -436,6 +437,16 @@ def create_app(
         except RuntimeError as e:
             raise HTTPException(409, str(e)) from e
         return job.to_dict()
+
+    @app.get("/api/guidebook")
+    def guidebook(lang: str = "en") -> dict[str, str]:
+        """The manual the menu opens, as markdown; the browser renders it.
+
+        Unrendered on purpose: the server has no markdown library and the page
+        already owns how the panel looks, so a book stays one plain file that
+        GitHub and the modal both read.
+        """
+        return GB.load(lang)
 
     # ---- self-update (the Settings dialog's Update pane) -----------------
 

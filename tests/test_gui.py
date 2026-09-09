@@ -1198,3 +1198,30 @@ def test_an_image_that_is_not_in_the_dataset_is_a_404(client):
     r = c.get("/api/dataset/item", params={"rel": "nope.png"})
     assert r.status_code == 404
     assert "not in the dataset" in r.json()["detail"]
+
+
+def test_every_ui_language_has_a_guidebook_that_ships():
+    """The menu row is in four languages, so four books must be in the wheel.
+
+    ``packages.find`` ships only ``anime_tools*``, which is why the books live
+    beside the module rather than under ``docs/``: a ``uv tool`` install has no
+    checkout to read them out of.
+    """
+    from anime_tools.gui import guidebook as GB
+
+    assert set(GB.BOOKS) == {"en", "ko", "ja", "zh"}
+    for name in GB.BOOKS.values():
+        assert (GB.DIR / name).is_file(), name
+
+
+def test_the_guidebook_route_answers_in_the_language_it_read(client):
+    """An unknown locale reads English rather than 404ing, and says so."""
+    c, *_ = client
+    r = c.get("/api/guidebook", params={"lang": "ko"})
+    assert r.status_code == 200
+    body = r.json()
+    assert body["lang"] == "ko"
+    assert body["markdown"].startswith("#")
+    # What a book's own `../../../docs/x.md` links resolve against.
+    assert body["base"].endswith("/anime_tools/gui/guidebooks/")
+    assert c.get("/api/guidebook", params={"lang": "xx"}).json()["lang"] == "en"

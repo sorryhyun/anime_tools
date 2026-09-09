@@ -85,6 +85,15 @@ field and an already-hidden field are never folded — the server settles that, 
   `PACKS` order, only packs that have rows, each model carrying its `pack` — and
   `POST /api/models/download {ids}` takes row or pack ids, expanding a pack before the job is named
   so the job stays `download:<row ids>`.
+- `guidebook.py` + `guidebooks/*.md` are the manual the panel opens (☰ → 📖). One book per UI
+  language, keyed by the same locale ids `frontend/src/i18n/` uses, and a locale with no book of
+  its own reads the English one rather than 404ing. They sit in the package because
+  `packages.find` ships only `anime_tools*`: an installed copy has no `docs/` tree, so a book
+  under it would open an empty window everywhere but a checkout. `GET /api/guidebook?lang=` sends
+  the markdown unrendered — the server has no markdown library and the page already owns how the
+  panel looks — plus `base`, the book's own directory on GitHub, which is what the browser
+  resolves a book's relative `../../../docs/x.md` links against so a click leaves for GitHub
+  instead of dying inside a `<dialog>`. The `translator` agent owns keeping the four in step.
 - `updates.py` is the Update pane's half of `anime_tools/update.py` (which owns what an update
   *is*): `GET /api/update` answers the version row — installed (`/api/info`'s `version`), the latest
   release, their ordering, the notes, and which of the three install shapes this is — and
@@ -107,6 +116,7 @@ field and an already-hidden field are never folded — the server settles that, 
 `static/` is the committed bundle built from `frontend/` by `make frontend`; never edit it by
 hand, and CI fails on drift.
 
-Tests: `test_gui`, `test_gui_dataset`, `test_gui_proposals`, `test_gui_nativepick`,
+Tests: `test_gui` (the guidebook route and that every UI language has a book that ships
+included), `test_gui_dataset`, `test_gui_proposals`, `test_gui_nativepick`,
 `test_gui_updates` (version ordering, the cached check, the refused install shapes — never the
 network), `test_boundary` (`create_app()` without torch).

@@ -11,6 +11,7 @@ import { createUpdates, isUpdateJob } from "./updates";
 import type { Stage } from "./types";
 import { DatasetTree } from "./components/DatasetTree";
 import { Dock } from "./components/Dock";
+import { Guidebook } from "./components/Guidebook";
 import { Header } from "./components/Header";
 import { ItemView } from "./components/ItemView";
 import { JobBar, JobLog } from "./components/JobLog";
@@ -83,6 +84,7 @@ export default function App() {
         list={dataset.list()}
         help={layout.allHelp()}
         onHelp={layout.toggleAllHelp}
+        onGuide={() => layout.setGuideOpen(true)}
         downloading={downloads.busy()}
         missingModels={(config.models()?.models ?? []).filter((m) => !m.installed).length}
         updateReady={updates.info()?.status === "available"}
@@ -190,6 +192,10 @@ export default function App() {
         onCancel={runner.cancel}
         onClose={() => layout.setLogOpen(false)}
       />
+
+      {/* The manual, over everything: it is read *about* the panel behind it,
+          so it is a window of its own and not a pane of Settings. */}
+      <Guidebook open={layout.guideOpen()} onClose={() => layout.setGuideOpen(false)} />
 
       {/* One card for every tag chip in the app; it floats, so it is mounted at
           the root. */}

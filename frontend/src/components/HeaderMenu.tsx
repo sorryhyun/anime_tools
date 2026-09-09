@@ -2,12 +2,12 @@ import { createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import { locale, localeName, LOCALES, setLocale, t } from "../i18n";
 import type { SettingsPane } from "../config";
 
-/** The ☰ menu: the four Settings dialogs, the Hub token they all need, and the
-    row that opens every explanation at once — each (?) on the page speaks for
-    its own spot, so this is the only thing that reaches all of them. The three
-    four Settings rows are the only way to each dialog, since they are separate
-    windows rather than tabs. The sidebar fold is not here — it lives on the edge
-    it moves. */
+/** The ☰ menu: the four Settings dialogs, the Hub token they all need, the
+    guidebook, and the row that opens every explanation at once — each (?) on the
+    page speaks for its own spot, so this is the only thing that reaches all of
+    them. The four Settings rows are the only way to each dialog, since they are
+    separate windows rather than tabs. The sidebar fold is not here — it lives on
+    the edge it moves. */
 export function HeaderMenu(props: {
   hasToken: boolean;
   /** Catalog rows still to download — the badge the Models tab used to carry. */
@@ -17,6 +17,7 @@ export function HeaderMenu(props: {
   /** Every help area is open — what the row's on/off reports. */
   help: boolean;
   onHelp: () => void;
+  onGuide: () => void;
   onSettings: (pane?: SettingsPane) => void;
 }) {
   const [open, setOpen] = createSignal(false);
@@ -77,6 +78,9 @@ export function HeaderMenu(props: {
             </span>
           </button>
           <hr />
+          {/* The manual and the (?) prose are the same shelf: one explains the
+              whole workflow, the other the spot under the cursor. */}
+          <button onClick={pick(props.onGuide)}>{t().menu.guidebook}</button>
           <button onClick={pick(props.onHelp)}>
             <span>{t().menu.showHelp}</span>
             <span class={props.help ? "ok" : "dim"}>

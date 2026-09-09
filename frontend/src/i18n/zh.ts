@@ -31,6 +31,7 @@ const zh: Dict = {
     updateReady: "有新版",
     hfToken: "HF 令牌",
     notSet: "⚠ 未设置",
+    guidebook: "📖 指南书",
     showHelp: "显示全部说明",
     language: "语言",
   },
@@ -301,6 +302,10 @@ const zh: Dict = {
     undone: (restored, removed) => `已撤销：恢复 ${restored} 项，删除 ${removed} 项`,
     skipped: (what) => `— 跳过 ${what}`,
     logClosed: "日志流已关闭",
+  },
+  guide: {
+    title: "指南书",
+    loading: "正在读取指南书…",
   },
   job: {
     log: "日志",

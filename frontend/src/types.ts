@@ -211,6 +211,17 @@ export interface UpdateInfo {
   error: string;
 }
 
+/** One language's guidebook, straight off `anime_tools/gui/guidebooks/`
+    (`GET /api/guidebook`). The markdown is rendered in the browser. */
+export interface Guidebook {
+  /** The language actually read -- `en` when the asked-for one has no book. */
+  lang: string;
+  markdown: string;
+  /** What the book's own relative links resolve against: its directory on
+      GitHub, so a link out of it opens the file instead of dying in a dialog. */
+  base: string;
+}
+
 export interface Listing {
   /** Home-relative inside the curation home, absolute outside it, `""` at the
       home itself. */

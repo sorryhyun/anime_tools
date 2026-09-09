@@ -61,6 +61,7 @@ const en = {
     updateReady: "new",
     hfToken: "HF token",
     notSet: "⚠ not set",
+    guidebook: "📖 Guidebook",
     showHelp: "Show every explanation",
     language: "Language",
   },
@@ -326,6 +327,10 @@ const en = {
       `undone: ${restored} restored, ${removed} removed`,
     skipped: (what: string) => `— skipped ${what}`,
     logClosed: "log stream closed",
+  },
+  guide: {
+    title: "Guidebook",
+    loading: "reading the guidebook…",
   },
   job: {
     log: "log",

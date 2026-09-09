@@ -4,6 +4,7 @@ import type {
   DatasetItem,
   DatasetList,
   DatasetRoots,
+  Guidebook,
   Info,
   ItemDetail,
   Job,
@@ -55,6 +56,8 @@ export const api = {
   /** Install a release as a job; a blank tag lets the child resolve the latest. */
   runUpdate: (version?: string) =>
     req<Job>("/api/update/run", json("POST", { version: version ?? "" })),
+  /** The manual, in one language; the browser renders the markdown. */
+  guidebook: (lang: string) => req<Guidebook>(`/api/guidebook?lang=${lang}`),
   jobs: () => req<Job[]>("/api/jobs"),
   job: (id: string) => req<Job>(`/api/jobs/${id}`),
   /** `rel` narrows the run to that one dataset image (the stage's own

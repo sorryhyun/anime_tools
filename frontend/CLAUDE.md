@@ -128,6 +128,18 @@ imports from `components/`. `FieldRow.tsx` (`FieldRow`, `grouped`, `str`) is the
 one argparse-field input, shared by `StageForm` and the Advanced dialog's
 preflight block.
 
+`Guidebook.tsx` is the ☰ menu's 📖: the book for the current locale, fetched only while the
+window is open (`createResource` over `props.open && locale()`, so a language switch re-reads it)
+and drawn by `Markdown.tsx`. That renderer covers exactly what the four books under
+`anime_tools/gui/guidebooks/` are written in — headings with GitHub's anchor slugs, paragraphs,
+fenced code, tables, blockquotes, lists, `hr`, and inline code / links / bold / italic — and
+nothing else: a book that grows a construct is a reason to extend it, not to add a markdown
+dependency to a bundle that has one. It never builds HTML from the text; every node is a JSX
+element with the text as a child, so a `<script>` written into a book renders as the words
+`<script>`. A link out of a book is resolved against the `base` the server sent and opens on
+GitHub in a new tab; a link into it is a heading id, caught by the dialog and answered by
+scrolling its own box (following it would put `#…` where `dataset.ts` keeps the selection).
+
 `i18n/` is the GUI's own text, one file per language — `en.ts` / `ko.ts` /
 `ja.ts` / `zh.ts`, with `index.ts` holding the locale signal, `t()` and
 `slots()` and nothing else, so a translator edits one table and touches no

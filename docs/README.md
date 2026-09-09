@@ -15,12 +15,15 @@ architecture), `frontend/CLAUDE.md` for the browser half, and `.claude/skills/` 
 
 ## Guidelines
 
+The four books live in the package (`anime_tools/gui/guidebooks/`), not here: the GUI serves them
+behind ☰ → 📖 in the language the panel is in, and only `anime_tools*` ships in the wheel.
+
 | Doc | Description |
 |-----|-------------|
-| [guidelines/guidebook.md](guidelines/guidebook.md) | The guidebook — install, the curation home, the web panel, every stage in the order you run it, troubleshooting |
-| [guidelines/가이드북.md](guidelines/가이드북.md) | 가이드북 (Korean) |
-| [guidelines/ガイドブック.md](guidelines/ガイドブック.md) | ガイドブック (Japanese) |
-| [guidelines/指南书.md](guidelines/指南书.md) | 指南书 (Chinese) |
+| [guidebook.md](../anime_tools/gui/guidebooks/guidebook.md) | The guidebook — install, the curation home, the web panel, every stage in the order you run it, troubleshooting |
+| [가이드북.md](../anime_tools/gui/guidebooks/가이드북.md) | 가이드북 (Korean) |
+| [ガイドブック.md](../anime_tools/gui/guidebooks/ガイドブック.md) | ガイドブック (Japanese) |
+| [指南书.md](../anime_tools/gui/guidebooks/指南书.md) | 指南书 (Chinese) |
 
 ## Stages
 

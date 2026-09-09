@@ -32,6 +32,7 @@ const ja: Dict = {
     updateReady: "新着",
     hfToken: "HF トークン",
     notSet: "⚠ 未設定",
+    guidebook: "📖 ガイドブック",
     showHelp: "説明をすべて表示",
     language: "言語",
   },
@@ -316,6 +317,10 @@ const ja: Dict = {
     undone: (restored, removed) => `戻しました: ${restored} 件復元、${removed} 件削除`,
     skipped: (what) => `— 飛ばした ${what}`,
     logClosed: "ログのストリームが閉じました",
+  },
+  guide: {
+    title: "ガイドブック",
+    loading: "ガイドブックを読み込み中…",
   },
   job: {
     log: "ログ",

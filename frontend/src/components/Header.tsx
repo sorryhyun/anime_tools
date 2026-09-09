@@ -13,6 +13,8 @@ export function Header(props: {
   /** Every help area is open; the ☰ row toggles all of them. */
   help: boolean;
   onHelp: () => void;
+  /** Open the guidebook window; the ☰ menu is its only entry point. */
+  onGuide: () => void;
   /** A weights pull is never shown in the dock, so this badge is the only sign
       of one while the dialog it belongs to is closed. */
   downloading: boolean;
@@ -32,6 +34,7 @@ export function Header(props: {
         updateReady={props.updateReady}
         help={props.help}
         onHelp={props.onHelp}
+        onGuide={props.onGuide}
         onSettings={props.onSettings}
       />
       {/* The home every path in the panel is written against, on the name. */}

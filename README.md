@@ -109,7 +109,8 @@ home: `ANIME_TOOLS_HOME` → `ANIMA_HOME` → current directory
 ## Docs
 
 [`docs/README.md`](docs/README.md) is the index. Start with the
-[guidebook](docs/guidelines/guidebook.md) (end-to-end walkthrough for users); the
+[guidebook](anime_tools/gui/guidebooks/guidebook.md) (end-to-end walkthrough for users, and
+what the GUI's ☰ → 📖 opens); the
 rest are per-piece references:
 
 - [`docs/anima_tagger.md`](docs/anima_tagger.md) — the tagger: vocab build, dbv4 backend,

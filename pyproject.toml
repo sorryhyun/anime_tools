@@ -100,7 +100,7 @@ include = ["anime_tools*"]
 
 [tool.setuptools.package-data]
 "anime_tools.captions" = ["data/*.yaml"]
-"anime_tools.gui" = ["static/*"]
+"anime_tools.gui" = ["static/*", "guidebooks/*.md"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

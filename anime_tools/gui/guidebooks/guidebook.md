@@ -328,7 +328,7 @@ generals` — per image. Three modes:
 
 Only `missing` is non-destructive; the other two are undoable through the history rung and
 Undo. Treat the output as a starting point — check names, series and artists before training.
-See [`docs/anima_tagger.md`](../anima_tagger.md) for the tagger itself.
+See [`docs/anima_tagger.md`](../../../docs/anima_tagger.md) for the tagger itself.
 
 ### 7.3 Correct + mirror captions
 
@@ -363,7 +363,7 @@ invented beyond a small allowance. Single-subject images are skipped and say why
 An apply drops any stale `.variants.txt` beside the captions it rewrote. Backing it out is
 its own mode, `--flatten`, which merges every clause back into the flat bag with no model
 loaded — or Undo. The full grammar, the gates and every knob are in
-[`docs/position_captions.md`](../position_captions.md).
+[`docs/position_captions.md`](../../../docs/position_captions.md).
 
 ### 7.5 Multiview audit
 
@@ -377,7 +377,7 @@ default; a weak finding has only the geometry behind it, so review its sheet fir
 
 > The hand-written master is never touched. The text an apply replaces is kept as a history
 > version, and Undo replays the report. See
-> [`docs/multiview_audit.md`](../multiview_audit.md).
+> [`docs/multiview_audit.md`](../../../docs/multiview_audit.md).
 
 ### 7.6 OCR text
 
@@ -404,7 +404,7 @@ is easy to thin out. Filters and pending dots mean the same thing in both orderi
 Re-running is cheap: features are cached under `~/.cache/near_twin/` (`NEAR_TWIN_CACHE`
 overrides) and stamped with the file's size and mtime, so a re-resize recomputes exactly the
 images that changed. Tighten or loosen the clustering with the two match thresholds on the
-form. See [`docs/grouping.md`](../grouping.md).
+form. See [`docs/grouping.md`](../../../docs/grouping.md).
 
 ### 7.8 Masks: Subject, Merge
 
@@ -421,7 +421,7 @@ Read resized images. Write `workspace/masks_sam/` and its merge under
 The two directories are one setting, not two fields, because a second tree merged in beside
 the generator's would name a mask identically and overwrite it in a shared tree. Masks always write;
 regenerate to
-change one. See [`docs/masking.md`](../masking.md).
+change one. See [`docs/masking.md`](../../../docs/masking.md).
 
 ### 7.9 Export workspace
 
@@ -473,7 +473,7 @@ python -m anime_tools.stages.cli.autotag_captions --mode merge --apply    # writ
 python -m anime_tools.stages.cli.export_workspace --apply                 # publish
 ```
 
-The Python API is the same object: [`examples/`](../../examples/README.md) has one runnable
+The Python API is the same object: [`examples/`](../../../examples/README.md) has one runnable
 script per feature, API beside CLI.
 
 ---
@@ -526,9 +526,10 @@ value and moving it moves them all. Leave it blank to keep reports beside the `d
 
 ## 11. Further reading
 
-- [`docs/anima_tagger.md`](../anima_tagger.md) — the tagger, its vocab and calibration.
-- [`docs/position_captions.md`](../position_captions.md) — the clause grammar, gates and knobs.
-- [`docs/multiview_audit.md`](../multiview_audit.md) — the audit's verdicts and sheets.
-- [`docs/grouping.md`](../grouping.md) — near-twin grouping.
-- [`docs/masking.md`](../masking.md) — subject masks and their merge.
-- [`examples/README.md`](../../examples/README.md) — the Python API, one script per feature.
+- [`docs/anima_tagger.md`](../../../docs/anima_tagger.md) — the tagger, its vocab and calibration.
+- [`docs/position_captions.md`](../../../docs/position_captions.md) — the clause grammar, gates and
+  knobs.
+- [`docs/multiview_audit.md`](../../../docs/multiview_audit.md) — the audit's verdicts and sheets.
+- [`docs/grouping.md`](../../../docs/grouping.md) — near-twin grouping.
+- [`docs/masking.md`](../../../docs/masking.md) — subject masks and their merge.
+- [`examples/README.md`](../../../examples/README.md) — the Python API, one script per feature.

@@ -334,6 +334,30 @@ dialog h3 { margin:0 0 10px }
    the three are separate windows and nothing is mounted-but-hidden. */
 .spane { max-height:62vh; overflow:auto }
 .spane > h4:first-child { margin-top:2px }
+/* The guidebook window: prose read from the top, not a form, so it is wider
+   than a pane and scrolls as one page. */
+dialog.guide { width:820px }
+.guidebox { max-height:74vh; overflow:auto; padding-right:8px }
+/* Markdown as the books write it (components/Markdown.tsx). Most of this undoes
+   what a dialog's own defaults do to those tags -- an <h4> in Settings is a
+   small-caps block label and a <td> there is clipped to a path's width -- and
+   the rest is the measure of a page of prose. */
+.md { line-height:1.62 }
+.md h1 { font-size:20px; margin:0 0 12px }
+.md h2 { font-size:17px; margin:26px 0 8px; padding-top:10px; border-top:1px solid var(--line) }
+.md h3 { font-size:14px; margin:18px 0 6px }
+.md h4 { display:block; font-size:13px; margin:14px 0 4px; color:var(--fg); text-transform:none; letter-spacing:0 }
+.md p { margin:8px 0 }
+.md ul, .md ol { margin:8px 0; padding-left:20px } .md li { margin:3px 0 }
+.md a { color:var(--accent); text-decoration:none } .md a:hover { text-decoration:underline }
+.md code { font:12px var(--font-mono); background:var(--input); border-radius:3px; padding:1px 4px }
+.md pre { margin:10px 0; padding:8px 10px; background:var(--input); border:1px solid var(--line); border-radius:5px; overflow:auto }
+.md pre code { padding:0; background:none }
+.md blockquote { margin:10px 0; padding:2px 0 2px 12px; border-left:2px solid var(--line); color:var(--dim) }
+.md hr { border:0; border-top:1px solid var(--line); margin:18px 0 }
+.md table { font-size:12.5px; margin:10px 0 }
+.md th { position:static; background:none }
+.md td, .md th { max-width:none; overflow:visible; text-overflow:clip; white-space:normal }
 .picker ul { list-style:none; padding:0; margin:8px 0; max-height:50vh; overflow:auto; font-family:var(--font-mono); font-size:13px }
 .picker li { padding:3px 6px; cursor:pointer; border-radius:3px } .picker li:hover { background:var(--sel) }
 /* Settings runs two label/value pairs per line. Everything below (.kv, the
