@@ -31,8 +31,14 @@ irm https://github.com/sorryhyun/anime_tools/releases/latest/download/install.ps
 
 `ANIME_TOOLS_VERSION=v0.3.1` pins a tag, `TORCH_INDEX=https://download.pytorch.org/whl/cu130` picks
 a torch
-index (PyPI's Linux wheel is already CUDA; Windows defaults to CPU). Update
-with `uv tool upgrade anime-tools`.
+index (PyPI's Linux wheel is already CUDA; Windows defaults to CPU).
+
+Updating: the GUI's **☰ → Update** pane compares the installed version with the latest release,
+shows its notes and installs it in place (`python -m anime_tools.update`, which is the installer's
+own `uv tool install --force` at the new tag); it checks GitHub on startup unless you turn that off,
+and the GUI needs a restart afterwards. From a terminal, `uv tool upgrade anime-tools` does the same
+thing. A git checkout updates with `git pull && uv sync`, and the pane says so instead of offering a
+button.
 
 As a library dependency:
 

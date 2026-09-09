@@ -77,13 +77,25 @@ field and an already-hidden field are never folded — the server settles that, 
   saved settings pin outside it (`reachable()`, lexical). What it may create is narrower —
   `owned()`, under the home only — so a typo in an external root is a missing root, not a new empty
   directory.
-- ⚙ Settings is three dialogs, not one tabbed one (`SETTINGS_PANES` in `settings.py`): roots,
-  stage defaults + preflight, models. Only the open pane is mounted, so `SettingsOut` carries
-  `null` for the other two. The Models pane runs `python -m anime_tools.downloads` (the
-  `model-catalog` skill): `/api/models` answers `{packs: [{id, title, description}], models:
-  [Asset.to_dict()…], models_dir}` — `packs` in `PACKS` order, only packs that have rows, each
-  model carrying its `pack` — and `POST /api/models/download {ids}` takes row or pack ids,
-  expanding a pack before the job is named so the job stays `download:<row ids>`.
+- ⚙ Settings is four dialogs, not one tabbed one (`SETTINGS_PANES` in `frontend/src/config.ts`):
+  roots, stage defaults + preflight, models, update. Only the open pane is mounted, so
+  `SettingsOut` carries `null` for the other three. The Models pane runs
+  `python -m anime_tools.downloads` (the `model-catalog` skill): `/api/models` answers
+  `{packs: [{id, title, description}], models: [Asset.to_dict()…], models_dir}` — `packs` in
+  `PACKS` order, only packs that have rows, each model carrying its `pack` — and
+  `POST /api/models/download {ids}` takes row or pack ids, expanding a pack before the job is named
+  so the job stays `download:<row ids>`.
+- `updates.py` is the Update pane's half of `anime_tools/update.py` (which owns what an update
+  *is*): `GET /api/update` answers the version row — installed (`/api/info`'s `version`), the latest
+  release, their ordering, the notes, and which of the three install shapes this is — and
+  `POST /api/update/run {version}` starts it as `update:<tag>`, one `python -m anime_tools.update`
+  step in the same single job slot the stages and downloads share. GitHub's answer is cached six
+  hours in the settings file (`update_check`), and the network is touched only on `?force=true`
+  ("Check now") or when the `auto_update` checkbox is on and the cache has aged out — so an offline
+  or opted-out panel still renders what it knows. Only the installer's `uv tool` environment may be
+  rewritten; a checkout or a venv install gets the refusal (`refusal()`, the same answer the pane
+  greys its button on) as a 409. The route is a plain `def`: FastAPI runs it in the threadpool, so
+  the GitHub call cannot stall a streaming job.
 - The panel's own chrome is translated (`frontend/src/i18n/`), and so is the dock's navigation —
   the panel buttons and the stage names on them, keyed by the registry's own ids. Everything else
   the server owns (a stage's doc and notes, argparse labels and help, the model catalog) ships as it
@@ -93,4 +105,5 @@ field and an already-hidden field are never folded — the server settles that, 
 hand, and CI fails on drift.
 
 Tests: `test_gui`, `test_gui_dataset`, `test_gui_proposals`, `test_gui_nativepick`,
-`test_boundary` (`create_app()` without torch).
+`test_gui_updates` (version ordering, the cached check, the refused install shapes — never the
+network), `test_boundary` (`create_app()` without torch).

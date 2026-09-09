@@ -23,6 +23,7 @@ from typing import Any
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, JSONResponse, Response, StreamingResponse
 
+from anime_tools import __version__
 from anime_tools import downloads as DL
 from anime_tools._env import curation_home, models_dir, resolve_path, workspace_dir
 from anime_tools._json import read_json
@@ -31,6 +32,7 @@ from anime_tools.gui import nativepick as NP
 from anime_tools.gui import proposals as P
 from anime_tools.gui import stages as S
 from anime_tools.gui import tags as T
+from anime_tools.gui import updates as UP
 from anime_tools.gui.jobs import JobManager, Step
 from anime_tools.gui.settings import load_settings, save_settings
 from anime_tools.stages.resize import DEFAULT_MIN_PIXELS
@@ -350,6 +352,7 @@ def create_app(
         return {
             "home": str(curation_home()),
             "models_dir": str(models_dir()),
+            "version": __version__,
             "hf_token": _hf_token_present(),
             "running": mgr.running.id if mgr.running else None,
             "schemas_ready": store.ready,
@@ -428,6 +431,39 @@ def create_app(
             job = mgr.start(
                 f"download:{','.join(ids) or 'missing'}",
                 [Step(DL.__name__, ids, label="download")],
+                home=curation_home(),
+            )
+        except RuntimeError as e:
+            raise HTTPException(409, str(e)) from e
+        return job.to_dict()
+
+    # ---- self-update (the Settings dialog's Update pane) -----------------
+
+    @app.get("/api/update")
+    def update_status(force: bool = False) -> dict[str, Any]:
+        """Installed vs latest, cached six hours (:mod:`gui.updates`).
+
+        A plain ``def`` on purpose: FastAPI runs it in the threadpool, so the
+        GitHub call cannot stall the event loop while a job is streaming.
+        """
+        return UP.check(force=force)
+
+    @app.post("/api/update/run")
+    async def run_update(request: Request) -> dict[str, Any]:
+        """Install a release as a normal job, so it shares the one slot with the
+        stages -- an upgrade must not land under a running Run.
+
+        A blank ``version`` lets the child resolve the latest tag itself.
+        """
+        body = await request.json()
+        tag = str(body.get("version") or "").strip()
+        why = UP.refusal()
+        if why is not None:
+            raise HTTPException(409, why)
+        try:
+            job = mgr.start(
+                f"{UP.JOB_PREFIX}{tag or 'latest'}",
+                UP.steps(tag or None),
                 home=curation_home(),
             )
         except RuntimeError as e:

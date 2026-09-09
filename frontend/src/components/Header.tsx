@@ -19,6 +19,9 @@ export function Header(props: {
   /** How many catalog models are not downloaded; badged on the menu row that
       opens the Models dialog. */
   missingModels: number;
+  /** A newer release is out; badged on the menu row that opens the Update
+      dialog. */
+  updateReady: boolean;
   onSettings: (pane?: SettingsPane) => void;
 }) {
   return (
@@ -26,6 +29,7 @@ export function Header(props: {
       <HeaderMenu
         hasToken={!!props.info?.hf_token}
         missingModels={props.missingModels}
+        updateReady={props.updateReady}
         help={props.help}
         onHelp={props.onHelp}
         onSettings={props.onSettings}

@@ -19,6 +19,7 @@ import type {
   Stage,
   TagInfo,
   UndoResult,
+  UpdateInfo,
   Values,
 } from "./types";
 
@@ -48,6 +49,12 @@ export const api = {
   models: () => req<ModelCatalog>("/api/models"),
   /** Fetch weights as a job; `[]` means every missing model. */
   downloadModels: (ids: string[]) => req<Job>("/api/models/download", json("POST", { ids })),
+  /** Installed vs latest. Cached six hours server-side; `force` is "Check
+      now" and is the only thing that always goes out to GitHub. */
+  update: (force = false) => req<UpdateInfo>(`/api/update${force ? "?force=true" : ""}`),
+  /** Install a release as a job; a blank tag lets the child resolve the latest. */
+  runUpdate: (version?: string) =>
+    req<Job>("/api/update/run", json("POST", { version: version ?? "" })),
   jobs: () => req<Job[]>("/api/jobs"),
   job: (id: string) => req<Job>(`/api/jobs/${id}`),
   /** `rel` narrows the run to that one dataset image (the stage's own

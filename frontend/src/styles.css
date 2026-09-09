@@ -360,6 +360,11 @@ dialog h3 { margin:0 0 10px }
 .modelrow .badge { flex:none }
 .modelrow a { color:var(--accent) }
 .badge.miss { color:var(--warn) }
+/* Settings > Update: the auto-check checkbox, its label and the aside on one
+   baseline -- the only checkbox row in a Settings dialog. */
+.urow { display:flex; align-items:baseline; gap:8px; margin-top:10px; font-size:13px; cursor:pointer }
+.urow input { flex:none; align-self:center }
+.urow .dim { font-size:12px }
 /* Settings > Models: the download's own run bar -- the dock never shows one. */
 .dlbar { display:flex; align-items:center; gap:8px; margin-top:8px; min-width:0 }
 .dlbar .status { flex:1; color:var(--dim); font-size:12px; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap }

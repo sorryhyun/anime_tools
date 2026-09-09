@@ -120,6 +120,9 @@ export interface Job {
 export interface Info {
   home: string;
   models_dir: string;
+  /** The installed package version (`anime_tools.__version__`); the Update pane
+      compares it with the latest release. */
+  version: string;
   hf_token: boolean;
   running: string | null;
   /** False while the server's background stage-schema build is still running,
@@ -173,6 +176,39 @@ export interface ModelCatalog {
   packs: ModelPack[];
   models: ModelAsset[];
   models_dir: string;
+}
+
+// ---- self-update (mirrors anime_tools/gui/updates.py check()) ----
+
+/** How the installed version compares with the latest release. `unknown` is
+    what an unorderable pair answers -- a checkout's `0+unknown`, a pre-release
+    tag, or a check that has never got through. */
+export type UpdateState = "current" | "available" | "ahead" | "unknown";
+
+/** Which of the three install shapes this server is running out of; only
+    `uv-tool` (what install.sh makes) may be rewritten from the panel. */
+export type InstallKind = "uv-tool" | "checkout" | "other";
+
+export interface UpdateInfo {
+  current: string;
+  /** The latest release tag, or `""` if no check has ever landed. */
+  latest: string;
+  status: UpdateState;
+  /** The release body, as written; rendered verbatim, never as markdown. */
+  notes: string;
+  /** The release page (or the releases index before a first check). */
+  url: string;
+  install: InstallKind;
+  can_update: boolean;
+  /** Why not, when `can_update` is false -- server text, shown as it arrives. */
+  hint: string;
+  auto_check: boolean;
+  /** Unix seconds of the answer being shown, or null if none ever was. */
+  checked_at: number | null;
+  /** Did *this* response go to GitHub, or is it the cache? */
+  checked: boolean;
+  /** A failed check, beside whatever stale answer is still being shown. */
+  error: string;
 }
 
 export interface Listing {

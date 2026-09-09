@@ -7,6 +7,7 @@ import { t } from "./i18n";
 import { createLayout } from "./layout";
 import { createRunner } from "./runner";
 import { createStages } from "./stages";
+import { createUpdates, isUpdateJob } from "./updates";
 import type { Stage } from "./types";
 import { DatasetTree } from "./components/DatasetTree";
 import { Dock } from "./components/Dock";
@@ -16,13 +17,15 @@ import { JobBar, JobLog } from "./components/JobLog";
 import { SettingsAdvanced } from "./components/SettingsAdvanced";
 import { SettingsGeneral } from "./components/SettingsGeneral";
 import { SettingsModels } from "./components/SettingsModels";
+import { SettingsUpdate } from "./components/SettingsUpdate";
 import { StagePanel } from "./components/StagePanel";
 import { TagLens } from "./components/TagLens";
 
-/** Wiring only: creates the five state modules and hands their signals to the
+/** Wiring only: creates the state modules and hands their signals to the
  * components. A stage start opens the dock, so `runner` is given `openDock`;
- * the server has a single job slot shared by stage runs and weights downloads,
- * so an adopted job has to be told apart before it is followed.
+ * the server has a single job slot shared by stage runs, weights downloads and
+ * the self-update, so an adopted job has to be told apart before it is
+ * followed.
  */
 export default function App() {
   const config = createConfig();
@@ -36,6 +39,7 @@ export default function App() {
     openDock: () => layout.setDockOpen(true),
   });
   const downloads = createDownloads(config);
+  const updates = createUpdates(config);
 
   // Adopt a job the page did not start (already running on load, or started
   // from another tab). Keyed on `running`, not the ids: an id is kept after its
@@ -43,12 +47,17 @@ export default function App() {
   createEffect(
     on(config.info, (i) => {
       const id = i?.running;
-      if (!id || runner.busy() || downloads.busy()) return;
+      if (!id || runner.busy() || downloads.busy() || updates.busy()) return;
       // Only the id comes back on /api/info, so ask what it is before deciding
-      // which follower gets it -- a download must not land in the dock.
+      // which follower gets it -- a download or an upgrade must not land in the
+      // dock.
       void api
         .job(id)
-        .then((j) => (isDownloadJob(j) ? downloads.adopt(j) : runner.attach(id)))
+        .then((j) => {
+          if (isDownloadJob(j)) downloads.adopt(j);
+          else if (isUpdateJob(j)) updates.adopt(j);
+          else runner.attach(id);
+        })
         .catch(() => runner.attach(id));
     }),
   );
@@ -76,6 +85,7 @@ export default function App() {
         onHelp={layout.toggleAllHelp}
         downloading={downloads.busy()}
         missingModels={(config.models()?.models ?? []).filter((m) => !m.installed).length}
+        updateReady={updates.info()?.status === "available"}
         onSettings={config.openSettings}
       />
 
@@ -145,7 +155,7 @@ export default function App() {
           setValue={stages.setValue}
           reset={stages.resetForm}
           busy={runner.busy()}
-          locked={downloads.busy()}
+          locked={downloads.busy() || updates.busy()}
           rel={dataset.rel()}
           onRun={runner.run}
           onUndo={runner.undo}
@@ -185,7 +195,7 @@ export default function App() {
           the root. */}
       <TagLens onInstall={() => config.openSettings("models")} />
 
-      {/* Three dialogs, not one with tabs: each entry point opens the one that
+      {/* Four dialogs, not one with tabs: each entry point opens the one that
           fixes what it was pointing at, and OK writes only that one's blocks. */}
       <SettingsGeneral
         open={config.paneOpen("general")}
@@ -218,6 +228,23 @@ export default function App() {
         onHelp={layout.toggleHelp}
         onDownload={downloads.start}
         onCancelDownload={downloads.cancel}
+        onClose={config.closeSettings}
+      />
+      <SettingsUpdate
+        open={config.paneOpen("update")}
+        info={updates.info()}
+        checking={updates.checking()}
+        busy={runner.busy() || downloads.busy() || updates.busy()}
+        updating={updates.busy()}
+        restart={updates.restart()}
+        progress={updates.status()}
+        log={updates.lines()}
+        helpOpen={layout.helpOpen}
+        onHelp={layout.toggleHelp}
+        onCheck={updates.check}
+        onAuto={updates.setAuto}
+        onUpdate={() => updates.start(updates.info()?.latest)}
+        onCancelUpdate={updates.cancel}
         onClose={config.closeSettings}
       />
     </>

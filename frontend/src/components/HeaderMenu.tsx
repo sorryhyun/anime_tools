@@ -2,16 +2,18 @@ import { createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import { locale, localeName, LOCALES, setLocale, t } from "../i18n";
 import type { SettingsPane } from "../config";
 
-/** The ☰ menu: the three Settings dialogs, the Hub token they all need, and the
+/** The ☰ menu: the four Settings dialogs, the Hub token they all need, and the
     row that opens every explanation at once — each (?) on the page speaks for
     its own spot, so this is the only thing that reaches all of them. The three
-    Settings rows are the only way to each dialog, since they are separate
+    four Settings rows are the only way to each dialog, since they are separate
     windows rather than tabs. The sidebar fold is not here — it lives on the edge
     it moves. */
 export function HeaderMenu(props: {
   hasToken: boolean;
   /** Catalog rows still to download — the badge the Models tab used to carry. */
   missingModels: number;
+  /** A newer release exists — the only sign of one while the dialog is shut. */
+  updateReady: boolean;
   /** Every help area is open — what the row's on/off reports. */
   help: boolean;
   onHelp: () => void;
@@ -59,6 +61,12 @@ export function HeaderMenu(props: {
             <span>{t().menu.models}</span>
             <Show when={props.missingModels}>
               <span class="badge miss">{props.missingModels}</span>
+            </Show>
+          </button>
+          <button onClick={pick(() => props.onSettings("update"))}>
+            <span>{t().menu.update}</span>
+            <Show when={props.updateReady}>
+              <span class="badge running">{t().menu.updateReady}</span>
             </Show>
           </button>
           <hr />

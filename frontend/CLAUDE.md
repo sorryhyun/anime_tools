@@ -92,7 +92,10 @@ nothing fetched, no business rule lives there. The state is five composables at
   something is running.
 
 Plus `downloads.ts` (a weights fetch: the same job slot, but it reports into
-the Settings dialog rather than the dock) and `state.ts`, the primitives
+the Settings dialog rather than the dock), `updates.ts` (the same shape again
+for the self-update: `/api/update` once on load and again on Check now — the
+six-hour cache is the server's, so nothing here polls — and the upgrade as a job
+followed into the Update dialog) and `state.ts`, the primitives
 that outlive a render: `persisted`, `createJobFollower`, `debounced` and
 `trackPointer` (the one pointer-drag loop; every grip in the page is it). The
 follower is also where the log is read: two line formats, one writer each —
@@ -112,11 +115,13 @@ and `createFolding` is the open/paged state both views share; the rows are
 builds. None of the three fetches anything but what it says (`captionEditor`
 parses and saves; the other two are pure over their inputs).
 
-Settings is three dialogs, not one with tabs, and the code says so:
-`SettingsGeneral` / `SettingsAdvanced` / `SettingsModels` are each their own
-`<dialog>` over the shared `SettingsShell` frame, mounted side by side in
-`App()` on `config.paneOpen(pane)`, and each hands `config.closeSettings` only
-the `SettingsOut` blocks it showed. `SettingsPane` / `SettingsOut` live in
+Settings is four dialogs, not one with tabs, and the code says so:
+`SettingsGeneral` / `SettingsAdvanced` / `SettingsModels` / `SettingsUpdate` are
+each their own `<dialog>` over the shared `SettingsShell` frame, mounted side by
+side in `App()` on `config.paneOpen(pane)`, and each hands `config.closeSettings`
+only the `SettingsOut` blocks it showed — `SettingsUpdate` none at all, which is
+why its closing button says Close rather than Save (`SettingsShell`'s `ok`
+label): its checkbox saves on click and its upgrade is a job. `SettingsPane` / `SettingsOut` live in
 `config.ts`, since that is what owns which dialog is open — a state module never
 imports from `components/`. `FieldRow.tsx` (`FieldRow`, `grouped`, `str`) is the
 one argparse-field input, shared by `StageForm` and the Advanced dialog's

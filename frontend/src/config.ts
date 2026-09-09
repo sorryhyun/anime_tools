@@ -3,11 +3,13 @@ import { createStore } from "solid-js/store";
 import { api } from "./api";
 import type { DatasetRoots, Info, ModelCatalog, Settings } from "./types";
 
-/** The three Settings dialogs. Each entry point opens *one* of them: the ☰ menu
-    lists them separately and a missing-weights hint opens `models`. A pane is
-    also the unit of what OK writes — only the open one's inputs exist, so its
-    `SettingsOut` carries only the blocks it holds. */
-export const SETTINGS_PANES = ["general", "advanced", "models"] as const;
+/** The four Settings dialogs. Each entry point opens *one* of them: the ☰ menu
+    lists them separately, a missing-weights hint opens `models` and the update
+    badge opens `update`. A pane is also the unit of what OK writes — only the
+    open one's inputs exist, so its `SettingsOut` carries only the blocks it
+    holds, and `update` (whose checkbox saves on click and whose upgrade is a
+    job) writes nothing at all. */
+export const SETTINGS_PANES = ["general", "advanced", "models", "update"] as const;
 export type SettingsPane = (typeof SETTINGS_PANES)[number];
 
 /** What a Settings dialog hands back on OK: only the blocks it showed, and each

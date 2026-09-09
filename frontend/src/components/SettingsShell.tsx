@@ -13,6 +13,10 @@ export function SettingsShell(props: {
   open: boolean;
   pane: SettingsPane;
   onClose: (ok: boolean) => void;
+  /** The label on the closing button. Defaults to Save; a pane that writes
+      nothing on OK (Update) says Close instead, so the button does not promise
+      a write it has no inputs for. */
+  ok?: string;
   children: JSX.Element;
 }) {
   return (
@@ -30,7 +34,7 @@ export function SettingsShell(props: {
       <div class="spane">{props.children}</div>
       <div class="dlg-actions">
         <button value="ok" class="primary">
-          {t().common.save}
+          {props.ok ?? t().common.save}
         </button>
       </div>
     </Dialog>

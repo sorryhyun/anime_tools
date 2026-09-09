@@ -138,6 +138,12 @@ Each of these is implemented in one package but bites from any of them.
   implementation), `_progress.py` (with `ANIMA_DAEMON_JOB_DIR` set, `step()` appends to the daemon's
   `progress.jsonl` and `phase(name)` brackets a model load with a 30 s heartbeat; without the
   variable it is a no-op).
+- `update.py` (torch-free, stdlib-only): the self-update — what is installed
+  (`__version__`), what GitHub's latest release is, which of the three install shapes this
+  process runs out of (`uv tool` / checkout / other) and the one `uv tool install --force` that
+  moves between them. Only the shape `install.sh` makes is ever rewritten; the GUI runs it as a
+  job (`gui/updates.py`, the Update pane), and `make update` is not a target here — the trainer's
+  `scripts/update.py` merges a tarball over a working tree, which this package does not have.
 - `comfyui/anima_tagger/` (not installed — `packages.find` only includes `anime_tools*`): the
   ComfyUI node, importing `AnimaTagger` from the installed package and vendoring nothing.
 - `design/` (not installed, no runtime role): the GUI's design system as a published Claude
@@ -158,6 +164,7 @@ Each of these is implemented in one package but bites from any of them.
 | `frontend/` — the Solid browser half | `frontend/CLAUDE.md` |
 | `anime_tools/ocr/` + `stages/ocr.py` — the AnimeText text-block detector over the resized tree, every box read by `ocr/sfx.py`, the manga VL crop reader (fine-tuned PaddleOCR-VL-1.6, decode guard built in) | `anime_tools/stages/CLAUDE.md`; the sidecar rule in the `captions` skill; `ocr/sfx.py`'s module doc |
 | `anime_tools/downloads.py` — adding or moving a weight | the `model-catalog` skill |
+| `anime_tools/update.py` — the self-update and its GUI pane | the `release` skill; `anime_tools/gui/CLAUDE.md` |
 | A new stage, a renamed flag, a GUI knob | the `add-stage` skill |
 | A version bump, the installer, `release.yml` | the `release` skill |
 | An edit to `docs/guidelines/guidebook.md` | the `translator` agent — it re-syncs the ko/ja/zh guidebooks beside it |

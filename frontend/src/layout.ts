@@ -14,6 +14,7 @@ export const HELP_AREAS = [
   "preprocess",
   "token",
   "models",
+  "update",
 ] as const;
 export type HelpArea = (typeof HELP_AREAS)[number];
 
