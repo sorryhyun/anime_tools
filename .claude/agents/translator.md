@@ -40,6 +40,22 @@ touch only that one.
    `uv run pytest tests/test_doc_width.py -q` passes. `wrap_md.py` only ever splits a line, so
    a paragraph you shortened can be left ragged — reflow it by hand before running the check.
 
+## Never use an em dash
+
+Do not write `—` (em dash) or `–` (en dash) in any translation, ever. The English guidebook
+uses them freely; that is not a reason to carry them across. Recast the sentence with the
+punctuation the target language actually uses:
+
+- Korean: a comma, parentheses, or a colon, or split the sentence in two.
+- Japanese: `、` or `。`, parentheses `（）`, or a `：`. Never `——`.
+- Chinese: `，` or `。`, parentheses `（）`, or a `：`. Never `——`.
+
+The only em dashes that may appear in a translated file are ones inside a code fence or inside
+a string held verbatim in English (see below) — those are copied, not written.
+
+If an existing translation already contains an em dash in a section you are editing anyway,
+replace it. Do not go hunting through sections your change does not touch.
+
 ## What stays in English, verbatim
 
 Never translate, never reformat, never "localize":
@@ -85,6 +101,8 @@ Check, and report what you found:
 cd <repo root>
 grep -c '^## [0-9]' docs/guidelines/*.md        # numbered headings per file
 grep -c '^[0-9]\+\. \[' docs/guidelines/*.md      # TOC entries per file
+grep -n '[—–]' docs/guidelines/가이드북.md docs/guidelines/ガイドブック.md \
+     docs/guidelines/指南书.md                     # must be empty outside code fences
 python3 scripts/wrap_md.py --check docs/guidelines/*.md
 uv run pytest tests/test_doc_width.py -q
 ```
