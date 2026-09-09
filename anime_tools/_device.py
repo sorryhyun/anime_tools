@@ -1,16 +1,22 @@
-"""Torch device selection.
+"""Torch device selection — the one probe, for every stage.
 
 Every stage CLI's ``--device`` defaults to ``None`` = *auto*: the GUI is a
 torch-free process and does not expose the flag, so the child decides for
 itself. ``torch`` is imported inside the function to keep this module
 importable without it.
+
+Since 2026-09-09 there is nothing left that runs on anything but torch, so this
+is the only device question the package asks. ``anime_tools._onnx`` used to hold
+a second one for the stages on onnxruntime; the tagger's exported backbone and
+the OCR detector both moved onto torch, which is faster than onnxruntime
+everywhere a GPU exists and no slower on a CPU.
 """
 
 from __future__ import annotations
 
 import argparse
 
-DEVICE_HELP = "cuda|cpu (default: auto)"
+DEVICE_HELP = "cuda|mps|cpu (default: auto)"
 """The help every ``device`` field and flag carries. Its dest is in
 :data:`anime_tools.gui.stages.AUTO_FIELDS`, neither shown on the form nor sent
 on the argv, so every stage must spell it identically and default it to
@@ -25,22 +31,26 @@ def add_device_arg(p: argparse._ActionsContainer) -> None:
 
 
 def resolve_device(name: str | None = None) -> str:
-    """``name`` when the caller asked for one, else ``cuda`` if torch sees a
-    GPU and ``cpu`` otherwise.
+    """``name`` when the caller asked for one, else the best device torch sees:
+    ``cuda``, then ``mps``, then ``cpu``.
 
     An unimportable torch, or a probe that raises on a broken driver, resolves
     to ``cpu``; the caller imports torch itself and fails with a better message.
 
-    **Only for a stage that runs on torch.** The probe is not free where the model
-    does not: it initialises CUDA, and torch's context then time-shares the GPU with
-    whatever else holds one. A stage on onnxruntime asks
-    :func:`anime_tools._onnx.resolve_onnx_device` instead.
+    MPS comes second and not first because a machine with both is a machine with
+    a real GPU. It is worth reaching for over a CPU by a wide margin — measured
+    2026-09-09: the dbv4 tagger backbone 1799 → 87 ms an image, PE-Spatial
+    2606 → 117, the AnimeText detector 392 → 75.
     """
     if name:
         return str(name)
     try:
         import torch
 
-        return "cuda" if torch.cuda.is_available() else "cpu"
+        if torch.cuda.is_available():
+            return "cuda"
+        if torch.backends.mps.is_available():
+            return "mps"
     except Exception:  # noqa: BLE001 - a failed probe is just "no GPU"
         return "cpu"
+    return "cpu"

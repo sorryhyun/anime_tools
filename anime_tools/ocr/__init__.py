@@ -3,8 +3,8 @@
 Two models, one seam. :func:`load_ocr` builds the detect-only
 :class:`OcrEngine` over the AnimeText text-block detector
 (:mod:`anime_tools.ocr.animetext`, ``AnimeTextDetector``; YOLO12 on
-onnxruntime, weights fetched on first use under a licence this package does not
-carry): one detector for balloon lines and the SFX drawn onto the artwork,
+torch through :mod:`anime_tools.vision.yolo12`, weights fetched on first use
+under a licence this package does not carry): one detector for balloon lines and the SFX drawn onto the artwork,
 answering every box as an empty :class:`~anime_tools.captions.ocr_sidecar.OcrLine`
 in reading order. The manga VL reader — a fine-tuned PaddleOCR-VL-1.6 that reads
 hand-lettered onomatopoeia, hearts and small kana natively — is
@@ -19,12 +19,8 @@ returns a bare string, and the content floors — ``min_chars`` / ``skip_en`` �
 are read off the string itself in :mod:`anime_tools.ocr._text`.
 """
 
-# `resolve_onnx_device` is not OCR's own: the tagger's exported backbone asks the
-# same question. It lives in `anime_tools._onnx` and is re-exported here, where
-# every caller already looks for it.
-from anime_tools._onnx import resolve_onnx_device
-from anime_tools.ocr._onnx import Detector, OcrEngine, load_ocr, reading_order
 from anime_tools.ocr.animetext import AnimeTextDetector, AnimeTextWeightsMissing
+from anime_tools.ocr.engine import Detector, OcrEngine, load_ocr, reading_order
 
 __all__ = [
     "AnimeTextDetector",
@@ -33,5 +29,4 @@ __all__ = [
     "OcrEngine",
     "load_ocr",
     "reading_order",
-    "resolve_onnx_device",
 ]

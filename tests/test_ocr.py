@@ -7,12 +7,8 @@ argument, and the floors run against hand-built lines.
 
 from __future__ import annotations
 
-import sys
 from pathlib import Path
 
-import pytest
-
-import anime_tools
 from anime_tools.captions.ocr_sidecar import (
     OCR_SIDECAR_SUFFIX,
     OcrLine,
@@ -261,53 +257,29 @@ def test_a_result_is_written_before_the_reader_has_finished(tmp_path: Path):
     assert seen == [[], ["a.ocr.txt"], ["a.ocr.txt", "b.ocr.txt"]]
 
 
-def test_resolving_the_ocr_device_never_imports_torch():
-    """Asking torch whether there is a GPU costs the run 1.8x.
+def test_the_ocr_stage_resolves_one_device_and_gives_it_to_both_models():
+    """The detector and the VL reader both run on torch, so the stage asks once.
 
-    The probe initialises CUDA, and torch's context then time-shares the device
-    with ORT's for the life of the process — measured on the OCR detector at
-    23 ms an image against 40. This stage runs on onnxruntime, so onnxruntime is what it
-    asks. A subprocess, because another test may already have imported torch.
+    Until 2026-09-09 the detector was an ONNX session and this stage resolved
+    *two* devices — ``resolve_onnx_device`` for the detector, ``resolve_device``
+    for the reader — because a torch CUDA probe cost an onnxruntime run 1.8x. Both
+    halves are torch now, and the whole point of the single answer is that the two
+    models cannot land on different devices.
     """
-    import subprocess
-
-    pytest.importorskip("onnxruntime")
-    code = (
-        "import sys;"
-        "from anime_tools.ocr import resolve_onnx_device;"
-        "d = resolve_onnx_device();"
-        "print(d, 'torch' in sys.modules)"
-    )
-    r = subprocess.run(
-        [sys.executable, "-c", code], capture_output=True, text=True, check=False
-    )
-    assert r.returncode == 0, r.stderr
-    device, torch_seen = r.stdout.split()
-    assert device in {"cuda", "cpu"}
-    assert torch_seen == "False"
-
-
-def test_an_explicit_device_is_taken_as_given():
-    """``--device`` set means no probe at all, on either resolver."""
-    from anime_tools.ocr import resolve_onnx_device
-
-    assert resolve_onnx_device("cpu") == "cpu"
-    assert resolve_onnx_device("cuda") == "cuda"
-
-
-def test_the_ocr_stage_asks_onnxruntime_not_torch_for_its_device():
-    """Pinned in the runner too: the torch resolver is the one every *torch*
-    stage uses, and reaching for it here is the whole regression."""
     import inspect
 
     from anime_tools.stages import run
 
     src = inspect.getsource(run.run_ocr)
-    assert "device = resolve_onnx_device(req.device)" in src
-    assert "resolve_device(" not in src
-    # The request declares the flag as every stage does — a `device` field
-    # carrying `_device.DEVICE_HELP` — and neither it nor the CLI shell touches
-    # the torch resolver.
+    assert src.count("resolve_device(req.device)") == 1
+    assert "resolve_onnx_device" not in src
+    # The one resolved device reaches the reader too, rather than being probed
+    # again inside `_vl_engine`.
+    assert "_vl_engine(req, engine, resized_dir, device)" in src
+    assert "resolve_device" not in inspect.getsource(run._vl_engine)
+
+
+def test_the_ocr_request_declares_the_device_flag_like_every_stage():
     import dataclasses
 
     from anime_tools._device import DEVICE_HELP
@@ -315,14 +287,19 @@ def test_the_ocr_stage_asks_onnxruntime_not_torch_for_its_device():
 
     device = next(f for f in dataclasses.fields(OcrRequest) if f.name == "device")
     assert device.metadata["help"] == DEVICE_HELP and device.default is None
-    cli = (
-        Path(anime_tools.__file__).parent / "stages" / "cli" / "ocr_captions.py"
-    ).read_text(encoding="utf-8")
-    assert "resolve_device" not in cli
+
+
+def test_an_explicit_device_is_taken_as_given():
+    """``--device`` set means no probe at all."""
+    from anime_tools._device import resolve_device
+
+    assert resolve_device("cpu") == "cpu"
+    assert resolve_device("cuda") == "cuda"
+    assert resolve_device("mps") == "mps"
 
 
 def test_reading_order_runs_across_a_row_before_down_the_page():
-    from anime_tools.ocr._onnx import reading_order
+    from anime_tools.ocr.engine import reading_order
 
     lines = [
         line("bottom", box=(10, 200, 90, 230)),
@@ -477,7 +454,7 @@ def test_the_speech_clause_says_a_repeated_line_once():
 
 
 def test_speech_folds_nothing_the_sfx_key_would():
-    from anime_tools.captions.ocr_sfx import dedupe_speech, dedupe_sfx
+    from anime_tools.captions.ocr_sfx import dedupe_sfx, dedupe_speech
 
     # the SFX key would make these one sound; as dialogue they are three lines
     said = ["はっ", "はー", "はっ"]

@@ -244,11 +244,8 @@ def build_tag_fn(
     def tag_fn(image: Image.Image) -> str:
         return tagger.predict_caption(image, min_confidence=float(min_confidence))
 
-    # ``tagger.device`` is a ``torch.device``; the report is JSON. ``runtime`` is
-    # "onnx" or "torch": the exported graph is picked up by its presence alone, so
-    # the report is where a run says which backbone actually produced these tags.
+    # ``tagger.device`` is a ``torch.device``; the report is JSON.
     return tag_fn, {
         "tagger_dir": str(resolved),
         "device": str(tagger.device),
-        "runtime": tagger.dbv4_runtime,
     }

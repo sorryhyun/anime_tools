@@ -14,10 +14,11 @@ pre-seeds that one module with a stand-in that refuses to run. It stubs the *sam
 module, never ``triton`` itself: torch guards its own ``import triton`` and would take a
 fake one for the real thing.
 
-**The CPU shim runs at the model build**: the image model's builder takes
-``device="cpu"``, but two of its constant caches are built on a literal ``"cuda"`` and
-its processor defaults to one. :func:`shim_sam3_for_cpu` redirects those to CPU when
-torch has no CUDA and is inert otherwise, so a Mac runs the same model, slowly.
+**The off-CUDA shim runs at the model build**: the image model's builder honours
+``device`` only when it is ``"cuda"``, and two of its constant caches are built on a
+literal ``"cuda"`` besides. :func:`shim_sam3_off_cuda` points those at the device
+actually in use and is inert on CUDA, so the same model runs on an Apple MPS device
+or on a CPU. :func:`load_sam3` does the ``.to(device)`` the builder skips.
 """
 
 from __future__ import annotations
@@ -66,19 +67,23 @@ def stub_edt_kernel() -> bool:
     return True
 
 
-def shim_sam3_for_cpu() -> bool:
-    """Make ``build_sam3_image_model(device="cpu")`` true to its word: the
-    position-encoding precompute and the decoder's coordinate cache are built on a
-    literal ``"cuda"`` (``position_encoding.py`` / ``decoder.py``), which a torch without
-    CUDA cannot allocate. The precompute exists to keep ``torch.compile`` from tracing
-    symbolic shapes, so on CPU the cache fills lazily instead; the coordinate cache is
-    simply built on CPU. The ViT's fused ``addmm_act`` (``perflib/fused.py``) casts its
-    operands to bf16 unconditionally, which an fp32 CPU graph cannot take, so off CUDA it
-    is the plain ``activation(linear(x))``. ``Tensor.pin_memory`` becomes a no-op: the
-    geometry encoder pins a vector bound for the model's device, and pinning serves
-    host→CUDA copies only (on a Mac it pins to MPS and the copy to CPU is refused).
-    Every wrapper checks at call time, so a process with CUDA is untouched. Returns
-    whether the shim was installed."""
+def shim_sam3_off_cuda(device: str = "cpu") -> bool:
+    """Make ``build_sam3_image_model`` true to a non-CUDA ``device``.
+
+    The position-encoding precompute and the decoder's coordinate cache are built on
+    a literal ``"cuda"`` (``position_encoding.py`` / ``decoder.py``), which a torch
+    without CUDA cannot allocate. The precompute exists to keep ``torch.compile``
+    from tracing symbolic shapes, so off CUDA the cache fills lazily instead; the
+    coordinate cache is built on ``device`` — **on the model's device, not on CPU**,
+    since it is indexed against tensors that live there and a CPU index into an MPS
+    tensor is refused outright. The ViT's fused ``addmm_act`` (``perflib/fused.py``)
+    casts its operands to bf16 unconditionally, which only a CUDA autocast graph is
+    already in, so off CUDA it is the plain ``activation(linear(x))``.
+    ``Tensor.pin_memory`` becomes a no-op: the geometry encoder pins a vector bound
+    for the model's device, and pinning serves host→CUDA copies only (on a Mac it
+    pins to MPS and the copy to CPU is refused). Every wrapper checks at call time,
+    so a process with CUDA is untouched. Returns whether the shim was installed.
+    """
     import torch
 
     if torch.cuda.is_available():
@@ -87,7 +92,9 @@ def shim_sam3_for_cpu() -> bool:
     from sam3.model.position_encoding import PositionEmbeddingSine
 
     if getattr(PositionEmbeddingSine, "__anime_tools_shim__", False):
+        _COORD_DEVICE["device"] = str(device)
         return False
+    _COORD_DEVICE["device"] = str(device)
 
     sine_init = PositionEmbeddingSine.__init__
 
@@ -101,7 +108,7 @@ def shim_sam3_for_cpu() -> bool:
 
     def _get_coords(H, W, device):
         if str(device).startswith("cuda") and not torch.cuda.is_available():
-            device = "cpu"
+            device = _COORD_DEVICE["device"]
         return get_coords(H, W, device)
 
     from sam3.model import vitdet
@@ -135,6 +142,14 @@ def shim_sam3_for_cpu() -> bool:
     PositionEmbeddingSine.__anime_tools_shim__ = True  # type: ignore[attr-defined]
     TransformerDecoder._get_coords = staticmethod(_get_coords)  # type: ignore[method-assign]
     return True
+
+
+_COORD_DEVICE: dict[str, str] = {"device": "cpu"}
+"""Where :func:`shim_sam3_off_cuda` sends the decoder's ``"cuda"`` coordinate cache.
+A dict rather than a closure variable because the shim is installed once per process
+and the device is per :func:`load_sam3` call — two models on two devices in one
+interpreter is not a thing any stage does, but the last build winning is at least a
+rule, and it is the device the next forward runs on."""
 
 
 SUBJECT_PROMPT = "girl"
@@ -188,10 +203,15 @@ def prompt_list(spec: str) -> tuple[str, ...]:
 
 
 def autocast(device: str):
-    """The half-precision context a SAM3 pass runs under, or nothing on CPU.
+    """The half-precision context a SAM3 pass runs under, or nothing off CUDA.
 
     ``torch.autocast(device_type="cuda")`` on a machine without one only warns and
     disables itself, so this is a warning suppressed, not a correctness fix.
+
+    MPS is deliberately not autocast. It has the context, but SAM3 off CUDA already
+    runs through :func:`shim_sam3_off_cuda`'s unfused ``addmm_act``, and half
+    precision on top of that is a second dtype seam through the same graph for a
+    saving nobody has measured. fp32 there is the conservative default.
     """
     import torch
 
@@ -206,12 +226,13 @@ _LOADED: dict[tuple, tuple] = {}
 
 def load_sam3(
     checkpoint: str | Path | None = None,
-    device: str = "cuda",
+    device: str | None = None,
     *,
     confidence_threshold: float | None = None,
     disable_act_ckpt: bool = False,
 ):
-    """Build a frozen SAM3 image model and its processor.
+    """Build a frozen SAM3 image model and its processor on ``device`` (auto when
+    ``None``).
 
     ``checkpoint`` names a local ``.pt``; ``None`` lets sam3 fetch its own weights from
     HF. ``confidence_threshold`` is the processor's *own* floor, applied before the caller
@@ -225,6 +246,9 @@ def load_sam3(
     text-mask pass that follows a subject-mask pass (or a position pass) in one
     interpreter reuses the model instead of reading the weights again.
     """
+    from anime_tools._device import resolve_device
+
+    device = resolve_device(device)
     key = (
         None if checkpoint is None else str(checkpoint),
         device,
@@ -238,7 +262,7 @@ def load_sam3(
     stub_edt_kernel()
     from sam3.model_builder import build_sam3_image_model
 
-    shim_sam3_for_cpu()
+    shim_sam3_off_cuda(device)
 
     build_kwargs: dict = {"device": device, "eval_mode": True}
     if checkpoint is not None:
@@ -248,6 +272,10 @@ def load_sam3(
     # keeps it from reading as a stall (``_progress``).
     with phase("load sam3"):
         model = build_sam3_image_model(**build_kwargs)
+    # The builder moves the weights itself only for "cuda" (`_setup_device_and_mode`),
+    # so anything else — MPS above all — is still on CPU here.
+    if not str(device).startswith("cuda"):
+        model = model.to(device)
 
     if disable_act_ckpt:
         n = 0

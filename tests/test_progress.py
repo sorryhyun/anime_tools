@@ -95,7 +95,7 @@ def test_a_write_that_fails_is_swallowed(job_dir, monkeypatch):
 def test_the_module_is_stdlib_only():
     code = (
         "import sys, anime_tools._progress; "
-        "heavy = {'torch', 'numpy', 'cv2', 'sam3', 'onnxruntime', 'timm'} & set(sys.modules); "
+        "heavy = {'torch', 'numpy', 'cv2', 'sam3', 'timm'} & set(sys.modules); "
         "assert not heavy, heavy"
     )
     r = subprocess.run(

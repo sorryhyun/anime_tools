@@ -395,7 +395,7 @@ def test_schemas_build_in_process_without_a_model_library():
         "schemas = S.load_schemas(); "
         "assert set(schemas) == {s.id for s in S.STAGES}, set(schemas); "
         "assert all(sc['available'] for sc in schemas.values()); "
-        "heavy = {'torch', 'cv2', 'sam3', 'onnxruntime', 'timm'} & set(sys.modules); "
+        "heavy = {'torch', 'cv2', 'sam3', 'timm'} & set(sys.modules); "
         "assert not heavy, heavy"
     )
     r = subprocess.run(

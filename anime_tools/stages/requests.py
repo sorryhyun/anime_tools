@@ -753,7 +753,7 @@ class OcrRequest(StageRequest):
     """Read the text in each image and record what it says.
 
     Walks the resized tree, boxes every text block with the AnimeText detector
-    (``anime_tools.ocr.animetext``, YOLO12 on onnxruntime; 106 MB fetched on first
+    (``anime_tools.ocr.animetext``, YOLO12 on torch; 54 MB fetched on first
     use, GPL-3.0 weights — never bundled), reads every box with the manga VL reader
     (``anime_tools.ocr.sfx``, PaddleOCR-VL-1.6 fine-tuned on hand-lettered SFX; torch,
     ~2.8 GB fetched on first use) and writes ``{stem}.ocr.txt`` into the OCR tree,

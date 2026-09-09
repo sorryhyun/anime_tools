@@ -28,7 +28,7 @@ caches per process on its arguments, so a second pass in one interpreter reuses 
   alias sam3 needs as an import side effect, with sam3 imports deferred into functions so
   importing it stays torch-free. Two more shims run inside those functions: `stub_edt_kernel`
   pre-seeds `sam3.model.edt` (the one module that imports triton, which has no macOS build) with a
-  stand-in that refuses to run, and `shim_sam3_for_cpu` redirects the image model's two build-time
+  stand-in that refuses to run, and `shim_sam3_off_cuda` redirects the image model's two build-time
   `"cuda"` literals to CPU when torch has none. Neither fakes `triton` itself: torch guards its own
   import of it and would take a fake one for real. `tests/test_sam3_import.py` pins the shims.
 - `_masks.py` owns the mask layout — `plan_mask_jobs`, `write_mask`/`write_ignore_mask`

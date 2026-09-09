@@ -1,4 +1,4 @@
-"""The OCR engine: the detector's pass over a tree of images, on onnxruntime.
+"""The OCR engine: the detector's pass over a tree of images.
 
 :class:`OcrEngine` runs *a* detector through a small protocol (:class:`Detector`)
 — the AnimeText text-block detector (:mod:`anime_tools.ocr.animetext`), the one
@@ -6,11 +6,11 @@ the package ships — and is **detect-only**: every box the detector keeps becom
 a line with no text, in reading order, for the re-reader
 (:mod:`anime_tools.ocr.reread`, the manga VL reader) to fill. The recognition
 half that used to live here (a CTC line recognizer and its DB line detector)
-was retired 2026-09-07; the module keeps its name because the engine is still
-the package's ONNX session over a page.
+was retired 2026-09-07, and the engine moved off onnxruntime onto torch
+2026-09-09 (it was ``_onnx.py`` until then).
 
 What the engine owns is the batching: a chunk of images decoded and letterboxed
-on a thread pool, detected one image per forward on the calling thread, the
+on a thread pool, detected one forward per chunk on the calling thread, the
 boxes settled on the pool again, with the next chunk decoding meanwhile. Every
 heavy import is deferred into a function, so importing this module stays cheap
 and torch-free.
@@ -96,7 +96,7 @@ class Detector(Protocol):
     """What :class:`OcrEngine` asks of a detector, split the way its threads are.
 
     :meth:`prepare` and :meth:`boxes` are pure CPU and run on the pool;
-    :meth:`forward_batch` is the one call that touches the session and runs on
+    :meth:`forward_batch` is the one call that touches the model and runs on
     the calling thread. ``boxes`` answers ``(quad, score)`` pairs: a ``(4, 2)``
     float quad in image pixels, TL-TR-BR-BL — the shape :func:`crop_quad` and
     the size filters take — and the detector's confidence in it, which the line
@@ -152,8 +152,8 @@ class OcrEngine:
     def read_iter(self, image_paths: Sequence[Path]) -> Iterator[list[OcrLine]]:
         """:meth:`read` over many images, batching what is batchable.
 
-        A chunk is decoded and prepared on the pool, detected one image per
-        forward, and post-processed on the pool. Results are scattered back by
+        A chunk is decoded and prepared on the pool, detected in one forward,
+        and post-processed on the pool. Results are scattered back by
         index, so this yields what a ``read``-per-path loop would have, in the
         order the paths arrived.
 
@@ -195,7 +195,7 @@ class OcrEngine:
     def _read_chunk(
         self, paths: Sequence[Path], loaded: list, pool
     ) -> list[list[OcrLine]]:
-        # Only the `session.run` loop stays on this thread; the detector's box
+        # Only the forward stays on this thread; the detector's box
         # pass goes to the pool, and the decode came off it a chunk ago.
         live = [i for i, item in enumerate(loaded) if item is not None]
         prepared = [loaded[i][1] for i in live]

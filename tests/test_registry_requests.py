@@ -213,7 +213,7 @@ REQUIRED: dict[str, list[str]] = {
 """The stages that require a root rather than defaulting it: the shortest
 argv their parser accepts."""
 
-HEAVY = ("torch", "cv2", "sam3", "onnxruntime", "timm")
+HEAVY = ("torch", "cv2", "sam3", "timm")
 
 stages = pytest.mark.parametrize("stage", STAGES, ids=lambda s: s.id)
 

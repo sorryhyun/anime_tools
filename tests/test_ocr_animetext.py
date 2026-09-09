@@ -1,14 +1,13 @@
 """The AnimeText text-block detector (``anime_tools.ocr.animetext``) without
 its weights: the head decode and NMS, the nesting policy, the letterbox, the
 engine's detect-only path over a fake detector, the reread seam over its
-empty lines, the catalog row, the request, and the bounded CUDA arena every
-ONNX session gets. Nothing here loads a model."""
+empty lines, the catalog row and the request. Nothing here loads a model —
+the torch graph behind it is ``tests/test_vision_yolo12.py``."""
 
 from __future__ import annotations
 
 import subprocess
 import sys
-import types
 from pathlib import Path
 
 import numpy as np
@@ -146,52 +145,70 @@ def test_as_quad_is_the_engine_shape():
     assert q.tolist() == [[10, 20], [30, 20], [30, 40], [10, 40]]
 
 
-# ---- the detector over a fake session ------------------------------------
+# ---- the detector over a fake graph ---------------------------------------
 
 
-class _Session:
-    """Answers one anchor per call — a box at the canvas centre — and records
-    every input shape it was fed."""
+class _Graph:
+    """Answers one anchor per image — a box at the canvas centre — and records
+    the shape of every batch it was called on."""
 
     def __init__(self):
         self.shapes = []
 
-    def get_inputs(self):
-        return [types.SimpleNamespace(name="images")]
+    def __call__(self, x):
+        import torch
 
-    def run(self, _outputs, feeds):
-        x = feeds["images"]
-        self.shapes.append(x.shape)
+        self.shapes.append(tuple(x.shape))
         s = x.shape[-1]
-        return [_head([(s / 2, s / 2, s / 4, s / 4, 0.9)])[None]]
+        head = _head([(s / 2, s / 2, s / 4, s / 4, 0.9)])
+        return torch.from_numpy(np.stack([head] * x.shape[0]))
 
 
 def test_the_detector_maps_the_canvas_box_back_onto_the_page():
     pytest.importorskip("cv2")
-    sess = _Session()
-    det = animetext.AnimeTextDetector(session=sess, imgsz=640)
+    pytest.importorskip("torch")
+    g = _Graph()
+    det = animetext.AnimeTextDetector(model=g, imgsz=640)
     page = np.zeros((1280, 1280, 3), np.uint8)  # r = 0.5: canvas (240..400)² → page
     assert det.detect(page) == [(480, 480, 800, 800)]
     assert det.detect_scored(page)[0][4] == pytest.approx(0.9)
-    assert sess.shapes == [(1, 3, 640, 640)] * 2  # one forward per call
+    assert g.shapes == [(1, 3, 640, 640)] * 2  # one forward per call
 
 
-def test_every_page_reaches_the_session_at_one_shape():
+def test_every_page_reaches_the_graph_in_one_batch_at_one_shape():
+    """A fixed ``imgsz`` letterboxes every page onto the same canvas, so a chunk
+    of pages is a single forward rather than one per page."""
     pytest.importorskip("cv2")
-    sess = _Session()
-    det = animetext.AnimeTextDetector(session=sess, imgsz=640)
+    pytest.importorskip("torch")
+    g = _Graph()
+    det = animetext.AnimeTextDetector(model=g, imgsz=640)
     det.detect_batch(
         [
             np.zeros((h, w, 3), np.uint8)
             for h, w in [(1200, 880), (600, 600), (300, 900)]
         ]
     )
-    assert set(sess.shapes) == {(1, 3, 640, 640)}
+    assert g.shapes == [(3, 3, 640, 640)]
+
+
+def test_native_size_letterboxing_falls_back_to_a_forward_per_shape():
+    """``imgsz=0`` keeps each page at its own size, which cannot be one batch —
+    the run groups by shape rather than refusing."""
+    pytest.importorskip("cv2")
+    pytest.importorskip("torch")
+    g = _Graph()
+    det = animetext.AnimeTextDetector(model=g, imgsz=0)
+    det.detect_batch(
+        [np.zeros((h, w, 3), np.uint8) for h, w in [(64, 64), (96, 96), (64, 64)]]
+    )
+    # The two 64² pages share a forward; the 96² page gets its own.
+    assert sorted(g.shapes) == [(1, 3, 96, 96), (2, 3, 64, 64)]
 
 
 def test_the_protocol_halves_agree_with_detect():
     pytest.importorskip("cv2")
-    det = animetext.AnimeTextDetector(session=_Session(), imgsz=640)
+    pytest.importorskip("torch")
+    det = animetext.AnimeTextDetector(model=_Graph(), imgsz=640)
     page = np.zeros((640, 640, 3), np.uint8)
     prepared = det.prepare(page)
     raw = det.forward_batch([prepared])[0]
@@ -232,7 +249,7 @@ def test_the_engine_emits_every_box_as_an_empty_line_in_reading_order(
 ):
     from PIL import Image
 
-    from anime_tools.ocr._onnx import NO_TEXT_SCORE, OcrEngine
+    from anime_tools.ocr.engine import NO_TEXT_SCORE, OcrEngine
 
     for name, size in (("a.png", (200, 300)), ("b.png", (200, 100))):
         Image.new("RGB", size, "white").save(tmp_path / name)
@@ -256,7 +273,7 @@ def test_the_engine_emits_every_box_as_an_empty_line_in_reading_order(
 def test_the_engine_still_applies_the_size_filters(tmp_path: Path):
     from PIL import Image
 
-    from anime_tools.ocr._onnx import OcrEngine
+    from anime_tools.ocr.engine import OcrEngine
 
     Image.new("RGB", (300, 200), "white").save(tmp_path / "a.png")
     engine = OcrEngine(
@@ -311,7 +328,7 @@ def test_the_row_lands_where_the_loader_looks_and_names_the_stage(home):
     row = DL.by_id()["animetext_det"]
     assert row.dest == DL.default_animetext_dir() == home / "models" / "animetext"
     assert row.subfolder == "yolo12l_animetext"
-    assert DL.ANIMETEXT_ONNX in row.files and "threshold.json" in row.files
+    assert DL.ANIMETEXT_WEIGHTS in row.files and "threshold.json" in row.files
     # The stage's one detector, so the stage bar warns before a run; the VL
     # reader's two rows are the stage's too, and all three sit in the ocr pack.
     assert row.stages == ("ocr",) and row.pack == "ocr"
@@ -343,7 +360,7 @@ def test_load_ocr_builds_the_detect_only_engine_over_the_animetext_detector(
 
     def fake_load(cls, model_dir=None, *, device, conf, nest, **_):
         built.update(device=device, conf=conf, nest=nest)
-        return cls(session=object())
+        return cls(model=object())
 
     monkeypatch.setattr(animetext.AnimeTextDetector, "load", classmethod(fake_load))
     engine = load_ocr(device="cpu", det_conf=0.4, max_boxes=8)
@@ -376,45 +393,6 @@ def test_the_request_refuses_bad_values():
         OcrRequest(det_conf=1.5)
     with pytest.raises(ValueError, match="--min_chars"):
         OcrRequest(min_chars=-1)
-
-
-# ---- the bounded CUDA arena -----------------------------------------------
-
-
-def test_every_gpu_session_gets_the_bounded_arena(monkeypatch, tmp_path):
-    from anime_tools import _onnx
-
-    seen = {}
-
-    class Ort:
-        @staticmethod
-        def get_available_providers():
-            return ["CUDAExecutionProvider", "CPUExecutionProvider"]
-
-        @staticmethod
-        def preload_dlls():
-            pass
-
-        @staticmethod
-        def InferenceSession(path, providers):
-            seen["providers"] = providers
-            return "session"
-
-    monkeypatch.setitem(sys.modules, "onnxruntime", Ort)
-    monkeypatch.setenv("ANIME_TOOLS_ORT_GPU_MEM_GB", "2")
-    assert _onnx.make_session(tmp_path / "m.onnx", "cuda", what="x") == "session"
-    cuda, cpu = seen["providers"]
-    assert cpu == "CPUExecutionProvider"
-    assert cuda[0] == "CUDAExecutionProvider"
-    assert cuda[1] == {
-        "arena_extend_strategy": "kSameAsRequested",
-        "cudnn_conv_algo_search": "HEURISTIC",
-        "gpu_mem_limit": 2 * 1024**3,
-    }
-    # The CPU build gets a plain provider list, as before.
-    seen.clear()
-    _onnx.make_session(tmp_path / "m.onnx", "cpu", what="x")
-    assert seen["providers"] == ["CPUExecutionProvider"]
 
 
 def test_the_detector_answers_scored_pairs_and_the_stage_floor_admits_two_glyphs():

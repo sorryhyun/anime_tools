@@ -1,15 +1,20 @@
 """AnimeText text-block detection: ``deepghs/AnimeText_yolo`` in front of a reader.
 
 The OCR stage's one detector: a YOLO12 trained on AnimeText (735k anime / manga
-pages, one class, ``text_block``), run from its ONNX export on onnxruntime. It
-finds balloon lines and the sound effects drawn onto the artwork alike, so the
+pages, one class, ``text_block``), run on torch through the vendored graph in
+:mod:`anime_tools.vision.yolo12`. It finds balloon lines and the sound effects drawn onto the artwork alike, so the
 extra layers the stage once needed to reach the SFX (VL Spotting, the text
 mask's components) are optional at most. Measured on the sincos shard (the
 trainer's ``project/cjk_aware_anima_dit``, 2026-09-06): every one of the
 previous line detector's 237 lines covered, 98 % of the hand-labelled SFX boxed,
-the masked-but-no-box floor 38 → 3 pages, 26 ms a page on the CUDA provider.
-The line-detector-plus-CTC-recognizer stack it replaced was retired outright
-2026-09-07.
+the masked-but-no-box floor 38 → 3 pages. The line-detector-plus-CTC-recognizer
+stack it replaced was retired outright 2026-09-07.
+
+It ran on onnxruntime until 2026-09-09. Torch answers the same boxes — the two
+graphs agree to 3.0e-03 on a box coordinate in canvas pixels at 640², and CPU and
+MPS agree exactly on the boxes a page yields — at the same speed on a CPU (392 ms
+a page against 357) and 4.8x faster wherever there is a GPU: 75 ms on an Apple MPS
+device, where onnxruntime had no provider at all.
 
 What it emits is an **axis-aligned box per text block**, not a line quad. A
 vertical balloon comes back as the block *and* each of its columns — nested
@@ -22,8 +27,9 @@ detector pairs with the manga VL reader (:mod:`anime_tools.ocr.sfx`) through
 
 Weights are a catalog row (``animetext_det``, :mod:`anime_tools.downloads`),
 fetched on first use and **never bundled**: the model card is GPL-3.0 and the
-dataset CC-BY-NC-SA-4.0, neither of which this MIT package may carry. Torch-free;
-``cv2`` and ``numpy`` load inside the functions that need them.
+dataset CC-BY-NC-SA-4.0, neither of which this MIT package may carry. The pre- and
+post-processing here is torch-free — ``cv2``, ``numpy`` and ``torch`` load inside
+the functions that need them, so importing this module stays cheap.
 """
 
 from __future__ import annotations
@@ -33,8 +39,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from anime_tools._onnx import make_session
-from anime_tools.downloads import ANIMETEXT_ONNX, default_animetext_dir
+from anime_tools.downloads import ANIMETEXT_WEIGHTS, default_animetext_dir
 
 DEFAULT_IMGSZ = 640
 """Letterbox side. The card exports at 640; measured against 1024 and native
@@ -161,8 +166,8 @@ def denest(boxes: Sequence, policy: str = "inner", th: float = NEST_TH) -> list:
 
 def as_quad(box: Sequence[int]):
     """An axis-aligned box as the ``(4, 2)`` TL-TR-BR-BL quad the engine's size
-    filters and :func:`~anime_tools.ocr._onnx.crop_quad` take — the
-    :class:`~anime_tools.ocr._onnx.Detector` protocol's one box shape."""
+    filters and :func:`~anime_tools.ocr.engine.crop_quad` take — the
+    :class:`~anime_tools.ocr.engine.Detector` protocol's one box shape."""
     import numpy as np
 
     x0, y0, x1, y1 = (float(v) for v in box[:4])
@@ -185,11 +190,12 @@ class AnimeTextDetector:
     """YOLO12 text blocks: a page in, axis-aligned boxes out.
 
     Speaks the engine's detector protocol (:meth:`prepare` / :meth:`forward_batch`
-    / :meth:`boxes`) so :class:`~anime_tools.ocr._onnx.OcrEngine` runs it one
-    image per forward at one canvas shape.
+    / :meth:`boxes`) so :class:`~anime_tools.ocr.engine.OcrEngine` runs it over a
+    chunk of pages at one canvas shape.
     """
 
-    session: Any
+    model: Any
+    device: str = "cpu"
     imgsz: int = DEFAULT_IMGSZ
     conf: float = DEFAULT_CONF
     nms: float = DEFAULT_NMS
@@ -200,41 +206,67 @@ class AnimeTextDetector:
         cls,
         model_dir: Path | None = None,
         *,
-        device: str = "cpu",
+        device: str | None = None,
         imgsz: int = DEFAULT_IMGSZ,
         conf: float = DEFAULT_CONF,
         nms: float = DEFAULT_NMS,
         nest: str = "inner",
         fetch: bool = True,
     ) -> AnimeTextDetector:
-        """The session on ``device``. ``model_dir`` defaults to the catalog
-        row's directory, fetched when missing (``fetch=False`` raises
+        """The graph on ``device`` (auto when ``None``). ``model_dir`` defaults to
+        the catalog row's directory, fetched when missing (``fetch=False`` raises
         :class:`AnimeTextWeightsMissing` instead); a dir passed explicitly is
         used as is."""
+        from anime_tools._device import resolve_device
+        from anime_tools.vision.yolo12 import load_yolo12
+
         if nest not in NEST_POLICIES:
             raise ValueError(f"nest policy must be one of {list(NEST_POLICIES)}")
         if model_dir is None:
             model_dir = _ensure(fetch)
-        onnx = Path(model_dir) / ANIMETEXT_ONNX
-        if not onnx.is_file():
-            raise AnimeTextWeightsMissing(onnx.parent)
-        session = make_session(onnx, device, what="the AnimeText detector")
-        return cls(session=session, imgsz=int(imgsz), conf=conf, nms=nms, nest=nest)
+        weights = Path(model_dir) / ANIMETEXT_WEIGHTS
+        if not weights.is_file():
+            raise AnimeTextWeightsMissing(weights.parent)
+        dev = resolve_device(device)
+        model = load_yolo12(weights, nc=1, device=dev)
+        return cls(
+            model=model, device=dev, imgsz=int(imgsz), conf=conf, nms=nms, nest=nest
+        )
 
     # ---- the engine's detector protocol ---------------------------------
 
     def prepare(self, bgr):
-        """The tensor for one image plus what maps its boxes back: the
-        letterbox scale. Pure CPU, pool-safe."""
+        """The array for one image plus what maps its boxes back: the
+        letterbox scale. Pure CPU and numpy, pool-safe — torch is not touched
+        until :meth:`forward_batch` stacks the chunk."""
         canvas, r = letterbox(bgr, self.imgsz)
         return to_tensor(canvas), r
 
     def forward_batch(self, prepared: Sequence[tuple]) -> list:
-        """The raw ``(5, N)`` head per prepared image — forward passes only,
-        on the calling thread. One image per forward: every canvas is the
-        same shape, so the session never re-plans."""
-        name = self.session.get_inputs()[0].name
-        return [self.session.run(None, {name: x})[0][0] for x, _ in prepared]
+        """The raw ``(5, N)`` head per prepared image — forward passes only, on
+        the calling thread.
+
+        One forward over the whole chunk when every canvas agrees on its shape,
+        which at a fixed ``imgsz`` is always. ``imgsz=0`` letterboxes each page
+        at its own native size, so there the run falls back to a forward per
+        shape rather than refusing.
+        """
+        import numpy as np
+        import torch
+
+        out: list = [None] * len(prepared)
+        by_shape: dict[tuple, list[int]] = {}
+        for i, (x, _) in enumerate(prepared):
+            by_shape.setdefault(x.shape[1:], []).append(i)
+        with torch.inference_mode():
+            for idx in by_shape.values():
+                batch = torch.from_numpy(
+                    np.concatenate([prepared[i][0] for i in idx], 0)
+                ).to(self.device)
+                heads = self.model(batch).float().cpu().numpy()
+                for slot, head in zip(idx, heads, strict=True):
+                    out[slot] = head
+        return out
 
     def boxes(self, raw, prepared: tuple, shape: tuple[int, int]) -> list:
         """One image's boxes from its head, as ``(quad, score)`` pairs, nesting
@@ -258,8 +290,27 @@ class AnimeTextDetector:
         return [b[:4] for b in self.detect_scored(bgr)]
 
     def detect_batch(self, bgrs: Sequence) -> list[list[Box]]:
-        """:meth:`detect` over many images, in order."""
-        return [self.detect(bgr) for bgr in bgrs]
+        """:meth:`detect` over many images, in one forward where the canvases
+        agree."""
+        prepared = [self.prepare(bgr) for bgr in bgrs]
+        raws = self.forward_batch(prepared)
+        return [
+            [
+                b[:4]
+                for b in denest(
+                    decode(
+                        raw,
+                        p[1],
+                        bgr.shape[1],
+                        bgr.shape[0],
+                        conf=self.conf,
+                        nms=self.nms,
+                    ),
+                    self.nest,
+                )
+            ]
+            for raw, p, bgr in zip(raws, prepared, bgrs, strict=True)
+        ]
 
 
 def _ensure(fetch: bool) -> Path:

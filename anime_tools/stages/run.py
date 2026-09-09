@@ -619,21 +619,16 @@ def run_correct(req: CorrectRequest):
 # ---- OCR -----------------------------------------------------------------
 
 
-def _vl_engine(req: OcrRequest, engine, resized_dir: Path):
+def _vl_engine(req: OcrRequest, engine, resized_dir: Path, device: str):
     """The engine's boxes read by the manga VL reader, the text mask's uncovered
     components read too when ``--mask_dir`` names one
-    (:class:`anime_tools.ocr.reread.RereadEngine`). Torch lives here, not in
-    :func:`run_ocr`: the ONNX detector never probes it."""
-    # The VL reader runs on torch; its device is torch's answer, not
-    # onnxruntime's (a CUDA-less torch beside a CUDA onnxruntime is possible).
-    from anime_tools._device import resolve_device
+    (:class:`anime_tools.ocr.reread.RereadEngine`)."""
     from anime_tools.ocr.reread import RereadEngine
     from anime_tools.ocr.sfx import SfxReader
 
-    vl_device = resolve_device(req.device)
-    print(f"Loading the manga VL reader ({vl_device})...", flush=True)
+    print(f"Loading the manga VL reader ({device})...", flush=True)
     with phase("load vl reader"):
-        reader = SfxReader.load(device=vl_device, batch_size=req.vl_batch_size)
+        reader = SfxReader.load(device=device, batch_size=req.vl_batch_size)
     mask_dir = resolve_path(req.mask_dir) if req.mask_dir else None
     if mask_dir is not None and not mask_dir.is_dir():
         raise FileNotFoundError(f"--mask_dir {mask_dir} is not a directory")
@@ -653,20 +648,20 @@ def run_ocr(req: OcrRequest):
     """Read the text in every resized image and (with ``apply``) write the
     ``{stem}.ocr.txt`` sidecars. Returns ``(rows, stats)``.
 
-    One path: the AnimeText detector boxes every page (detect-only, ONNX), the
-    manga VL reader reads every box (torch), and what came back is the sidecar.
+    One path: the AnimeText detector boxes every page (detect-only), the manga
+    VL reader reads every box, and what came back is the sidecar. Both run on
+    torch, so both take the one device this run resolved.
     """
     resized_dir = _resized(req.dst)
     ocr_dir = resolve_path(req.ocr_dir)
     report_dir = resolve_path(req.report_dir)
 
-    # Deferred: onnxruntime is the heaviest thing the detector touches.
-    from anime_tools.ocr import load_ocr, resolve_onnx_device
+    # Deferred: torch is the heaviest thing either model touches.
+    from anime_tools._device import resolve_device
+    from anime_tools.ocr import load_ocr
     from anime_tools.stages.ocr import run_ocr as read_tree
 
-    # Not `_device.resolve_device`: its torch probe would cost this run 1.8x for an
-    # answer onnxruntime already has.
-    device = resolve_onnx_device(req.device)
+    device = resolve_device(req.device)
     print(f"Loading the AnimeText detector ({device})...", flush=True)
     with phase("load ocr"):
         engine = load_ocr(
@@ -675,7 +670,7 @@ def run_ocr(req: OcrRequest):
             max_boxes=req.max_boxes,
             det_conf=req.det_conf,
         )
-    engine = _vl_engine(req, engine, resized_dir)
+    engine = _vl_engine(req, engine, resized_dir, device)
 
     rows, stats = read_tree(
         resized_dir=resized_dir,

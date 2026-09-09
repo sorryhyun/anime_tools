@@ -1,6 +1,6 @@
 """``import sam3`` on a platform without triton goes through
 ``_sam3.stub_edt_kernel``, and a build without CUDA through
-``_sam3.shim_sam3_for_cpu``."""
+``_sam3.shim_sam3_off_cuda``."""
 
 from __future__ import annotations
 
@@ -64,8 +64,8 @@ def test_the_cpu_shim_moves_the_build_time_caches_off_cuda(monkeypatch):
     from sam3.model.position_encoding import PositionEmbeddingSine
 
     monkeypatch.setattr(torch.cuda, "is_available", lambda: False)
-    _sam3.shim_sam3_for_cpu()  # idempotent: a second call is a no-op
-    assert _sam3.shim_sam3_for_cpu() is False
+    _sam3.shim_sam3_off_cuda()  # idempotent: a second call is a no-op
+    assert _sam3.shim_sam3_off_cuda() is False
 
     # The precompute (a literal "cuda" allocation) is skipped; the cache fills lazily.
     sine = PositionEmbeddingSine(64, precompute_resolution=64)

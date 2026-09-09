@@ -55,11 +55,14 @@ def resolve_prompt_embed(spec: str | None) -> Path | None:
 SOFT_PROMPT_KEYS = ("language_features", "language_mask", "language_embeds")
 
 
-def load_soft_prompt(path: str | Path, device: str = "cuda") -> dict:
-    """The three prompt tensors from a saved soft prompt, on ``device``."""
+def load_soft_prompt(path: str | Path, device: str | None = None) -> dict:
+    """The three prompt tensors from a saved soft prompt, on ``device`` (auto
+    when ``None``)."""
     from safetensors.torch import load_file
 
-    tensors = load_file(str(path), device=device)
+    from anime_tools._device import resolve_device
+
+    tensors = load_file(str(path), device=resolve_device(device))
     return {k: tensors[k] for k in SOFT_PROMPT_KEYS}
 
 

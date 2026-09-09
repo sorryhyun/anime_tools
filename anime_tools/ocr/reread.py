@@ -1,7 +1,7 @@
 """The VL pass over a page: every detected box read by the manga reader, plus
 what the text mask boxed that no detector did.
 
-:mod:`anime_tools.ocr._onnx` finds the boxes and reads nothing;
+:mod:`anime_tools.ocr.engine` finds the boxes and reads nothing;
 :mod:`anime_tools.ocr.sfx` reads a crop — hearts, small kana, hand-lettered
 onomatopoeia — but detects nothing. This module is the seam between them, and
 what the OCR stage runs:
@@ -15,7 +15,7 @@ what the OCR stage runs:
   connected components that no box already covers become crops too, held to the
   same floors. Reading order is settled afterwards, since a component may sit
   anywhere.
-* :class:`RereadEngine` — the :class:`~anime_tools.ocr._onnx.OcrEngine` shape
+* :class:`RereadEngine` — the :class:`~anime_tools.ocr.engine.OcrEngine` shape
   (``read`` / ``read_iter``) over an engine and a reader, so the stage runs it
   without knowing.
 
@@ -273,7 +273,7 @@ def _read_mask(path: Path):
 
 @dataclass
 class RereadEngine:
-    """An :class:`~anime_tools.ocr._onnx.OcrEngine` with the VL pass behind it.
+    """An :class:`~anime_tools.ocr.engine.OcrEngine` with the VL pass behind it.
 
     ``read`` / ``read_iter`` answer the engine's boxes, each page then run
     through :func:`reread_lines`. The page is decoded a second time here (the

@@ -36,8 +36,9 @@ python3 scripts/wrap_md.py **/*.md                    # semantic-wrap markdown a
 ```
 
 Python >= 3.13. `[tool.uv] override-dependencies = ["numpy>=2.0"]` overrides sam3's stale `numpy<2`
-pin. `onnx` + `onnxscript` and the marker-split `onnxruntime` are plain dependencies for reasons
-the `model-catalog` skill explains.
+pin. **Every model in this package runs on torch** — onnxruntime, `onnx` and `onnxscript` were
+dropped 2026-09-09 along with the tagger's exported graph, and the AnimeText detector moved onto
+the vendored `vision/yolo12.py`; the `model-catalog` skill has the why.
 
 `make hooks` points `core.hooksPath` at `scripts/hooks`. Pre-commit formats staged files only
 (`ruff check --fix --exit-zero` + `ruff format`, prettier on `frontend/`, `scripts/wrap_md.py` on
@@ -106,6 +107,10 @@ Each of these is implemented in one package but bites from any of them.
   bodies. `tests/test_boundary.py` and `tests/test_registry_requests.py` pin it.
 - Weight locations are spelled once, in `downloads.py`; loaders import their defaults from
   it. Procedure: the `model-catalog` skill.
+- One device answer, `_device.py::resolve_device`: `cuda`, then `mps`, then `cpu`, and
+  whatever `--device` said if it said anything. Every stage's model takes the device its
+  runner resolved rather than probing again — the OCR stage's two models are the case
+  that made it a rule.
 - Progress is stdout. `stages/cli/_args.py::make_progress` prints `  [done/total] detail`,
   which is what the GUI's bar parses and what `_progress.py` forwards to the trainer's daemon
   under `ANIMA_DAEMON_JOB_DIR`; a stage that prints nothing else has no bar.
@@ -128,10 +133,9 @@ Each of these is implemented in one package but bites from any of them.
   `glob_images_pathlib` / `walk_images`), `_json.py` (UTF-8 both ways, `ensure_ascii=False`,
   `indent=2` — a bare `open()` reads in the platform codepage, which isn't UTF-8 on Windows),
   `_device.py` (`DEVICE_HELP` for the request fields, `add_device_arg` for the hand-written
-  CLIs, and the one `cuda if available` probe; the flag literal exists once), `_hf.py` (tests
-  patch this path), `path_filter.py` (the one `path_pattern` implementation), `_onnx.py` (the one
-  ORT provider choice, shared by OCR and the tagger's exported backbone; CPU and CUDA only, never
-  CoreML), `_progress.py` (with `ANIMA_DAEMON_JOB_DIR` set, `step()` appends to the daemon's
+  CLIs, and the one device probe — `cuda`, then `mps`, then `cpu`; the flag literal exists
+  once), `_hf.py` (tests patch this path), `path_filter.py` (the one `path_pattern`
+  implementation), `_progress.py` (with `ANIMA_DAEMON_JOB_DIR` set, `step()` appends to the daemon's
   `progress.jsonl` and `phase(name)` brackets a model load with a 30 s heartbeat; without the
   variable it is a no-op).
 - `comfyui/anima_tagger/` (not installed — `packages.find` only includes `anime_tools*`): the
@@ -149,6 +153,7 @@ Each of these is implemented in one package but bites from any of them.
 | `anime_tools/tagger/` — checkpoint, backends, feature cache, calibration | `anime_tools/tagger/CLAUDE.md`; `docs/anima_tagger.md` |
 | `anime_tools/masking/` — SAM3 construction, mask layout, drawers | `anime_tools/masking/CLAUDE.md`; `docs/masking.md` |
 | `anime_tools/grouping/` — embedders, feature cache, `groups.json` | `anime_tools/grouping/CLAUDE.md`; `docs/grouping.md` |
+| `anime_tools/vision/` — the vendored towers: PE-Spatial (`pe.py`), YOLO12 (`yolo12.py`) | each module's own doc |
 | `anime_tools/gui/` — schema/argv binding, dataset ladder, jobs, settings | `anime_tools/gui/CLAUDE.md` |
 | `frontend/` — the Solid browser half | `frontend/CLAUDE.md` |
 | `anime_tools/ocr/` + `stages/ocr.py` — the AnimeText text-block detector over the resized tree, every box read by `ocr/sfx.py`, the manga VL crop reader (fine-tuned PaddleOCR-VL-1.6, decode guard built in) | `anime_tools/stages/CLAUDE.md`; the sidecar rule in the `captions` skill; `ocr/sfx.py`'s module doc |

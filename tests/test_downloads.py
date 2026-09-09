@@ -148,48 +148,9 @@ def test_a_built_row_runs_its_build_after_fetching(home, monkeypatch):
     assert seen["built"] == home / "models"
 
 
-def test_the_onnx_row_builds_the_graph_beside_the_checkpoint(home):
-    """``tagger_onnx`` downloads nothing into the checkpoint dir: its inputs are
-    the backbone's hub-cache files and its product is the exported graph, which is
-    the only thing its probe asks for."""
-    from anime_tools.tagger.dbv4_meta import DBV4_ONNX_NAME, dbv4_onnx_path
-
-    by = DL.by_id()
-    row, ckpt = by["tagger_onnx"], by["tagger"].dest
-    assert row.dest == ckpt and row.derived == (DBV4_ONNX_NAME,)
-    assert row.build is not None
-    assert row.files == DL.DBV4_BACKBONE_FILES == by["tagger_backbone"].files
-    assert row.repo == by["tagger_backbone"].repo  # traced from those weights
-    assert row.missing() == [DBV4_ONNX_NAME]
-
-    graph = dbv4_onnx_path(ckpt)
-    graph.parent.mkdir(parents=True)
-    graph.write_bytes(b"graph")
-    assert DL.by_id()["tagger_onnx"].installed
-
-    # `main()` fetches in catalog order, and the export reads the config.json the
-    # `tagger` row lands.
-    ids = [a.id for a in DL.catalog()]
-    assert ids.index("tagger") < ids.index("tagger_onnx")
-
-    # No stage claims it: the stage bar's missing-model warning says the first Run
-    # will fetch what it names, and nothing auto-builds this. Without it the three
-    # stages it speeds up run on timm and emit the same tags.
-    assert row.stages == ()
-
-
-def test_the_onnx_build_refuses_without_a_checkpoint(home):
-    """No config.json = nothing to export against, said before torch is imported."""
-    with pytest.raises(FileNotFoundError) as e:
-        DL._export_dbv4_onnx(DL.by_id()["tagger"].dest, lambda _msg: None)
-    assert "python -m anime_tools.downloads tagger" in str(e.value)
-
-
 def test_gated_rows_carry_their_accept_terms_url(home):
     gated = {a.id for a in DL.catalog() if a.gated}
-    # The export row is gated too: it traces the same weights, so a missing token
-    # has to fail with the accept-the-terms hint rather than inside timm.
-    assert gated == {"tagger_backbone", "tagger_onnx", "sam3"}
+    assert gated == {"tagger_backbone", "sam3"}
     for a in DL.catalog():
         if a.gated:
             assert a.gated == f"https://huggingface.co/{a.repo}"
@@ -266,7 +227,7 @@ def test_expand_accepts_rows_and_packs_and_raises_on_unknown():
     ]
     # `tagger` is both a row and a pack: the pack wins, so the plain word on
     # the command line installs the whole tagger, not just its checkpoint.
-    assert DL.expand(["tagger"]) == ["tagger", "tagger_backbone", "tagger_onnx"]
+    assert DL.expand(["tagger"]) == ["tagger", "tagger_backbone"]
     assert DL.expand([]) == []
     with pytest.raises(KeyError, match="unknown model or pack id 'craft'"):
         DL.expand(["craft"])

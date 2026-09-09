@@ -7,7 +7,7 @@ instances → reading order → mask-blanked crops → tagger → clause rewrite
 (`docs/multiview_audit.md`), `ocr.py` (one path: the AnimeText
 text-block detector, detect-only, every box read by the manga VL reader through
 `anime_tools.ocr.reread.RereadEngine`, plus the optional `--mask_dir` components as `0.000`-score
-lines; torch lives in `run.py::_vl_engine`, never in the ONNX detector load),
+lines; the detector and the VL reader share the one device `run_ocr` resolves),
 `export_workspace.py`. Adding one is the `add-stage`
 skill; the caption grammar these stages write is the `captions` skill.
 

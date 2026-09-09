@@ -1,7 +1,7 @@
 ---
 name: model-catalog
 description: The model catalog (anime_tools/downloads.py) — every checkpoint's repo, files,
-destination and installed probe; derived rows that build (ONNX graph, English tag CSV); the rule
+destination and installed probe; derived rows that build (the English tag CSV); the rule
 that loaders import their paths from here. Load before adding a weight, moving one, changing a
 loader's default path, or touching the GUI Models pane.
 ---
@@ -9,7 +9,7 @@ loader's default path, or touching the GUI Models pane.
 # The model catalog
 
 `anime_tools/downloads.py` (torch-free) is one `Asset` per checkpoint: the tagger + gated dbv4
-backbone + the ONNX graph traced from it, SAM3, PE-Spatial,
+backbone, SAM3, PE-Spatial,
 the SAM3 subject soft prompt, the OCR trio (AnimeText detector, PaddleOCR-VL-1.6 base, the manga
 SFX reader), the Danbooru tag KB and its English build. Each row carries repo, files, destination,
 `used_by` / `stages`, a `pack`, and an offline `installed` probe.
@@ -34,11 +34,10 @@ could point elsewhere is a Download button that writes where the loader doesn't 
   `Asset._fetch_http`, with the recovery text on failure.
 - Derived rows (`derived=(<input row ids>,)` + `build=callable`): the downloads are inputs
   that stay in the hub cache, and the probe asks for the file `build` writes, so a hub sweep can't
-  turn a built row back to "missing". Two exist: `danbooru_tags_en` builds its CSV from the 45 MB
-  Danbooru wiki mirror; `tagger_onnx` traces `dbv4.onnx` beside the tagger checkpoint out of the
-  gated backbone (`_export_dbv4_onnx`) — a build and not a download because GPL weights can't be
-  redistributed, so every user exports their own. It reads the `tagger` row's `config.json`, so it
-  sits after it in catalog order, and refuses without a checkpoint.
+  turn a built row back to "missing". One exists: `danbooru_tags_en` builds its CSV from the 45 MB
+  Danbooru wiki mirror. `tagger_onnx` was the other until 2026-09-09, when the tagger's exported
+  graph went — see `anime_tools/tagger/CLAUDE.md` for why. A derived row that reads another row's
+  product sits after it in catalog order and refuses when the input is absent.
 
 ## Packs
 
@@ -66,12 +65,12 @@ they arrive.
 3. If the row is derived, write the `build(dest, log)` callable here and list its inputs in
    `derived`.
 4. Tests: `test_downloads.py` — `test_rows_land_where_the_loaders_look` gets the new loader
-   pair; a derived row gets a build test like
-   `test_the_onnx_row_builds_the_graph_beside_the_checkpoint`.
-5. `docs/guidelines/guidebook.md` lists what the Models pane installs; the tagger's ONNX
-   backend rule is in `anime_tools/tagger/CLAUDE.md`.
+   pair; a derived row gets a build test that writes its product and asserts the probe flips.
+5. `docs/guidelines/guidebook.md` lists what the Models pane installs.
 
-The `onnx` + `onnxscript` dependencies exist only because the `tagger_onnx` build needs the
-exporter; running a graph needs neither. `onnxruntime` is split by marker (`onnxruntime` on
-macOS, `onnxruntime-gpu` elsewhere) because the OCR detector has no fallback without it; the ORT
-provider choice is `anime_tools/_onnx.py` (CPU and CUDA only, never CoreML).
+**Every model here runs on torch.** onnxruntime, `onnx` and `onnxscript` were dropped 2026-09-09:
+the tagger's exported graph existed only to beat timm on an Apple CPU, and `mps` beats them both
+(`anime_tools/tagger/CLAUDE.md`), while the AnimeText detector moved to the vendored
+`anime_tools/vision/yolo12.py` and now fetches the upstream `model.pt` instead of its
+`model.onnx`. A new row that would want an ONNX runtime back should say why torch cannot serve
+it — the answer so far has always been that torch can.

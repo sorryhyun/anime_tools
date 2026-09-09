@@ -152,7 +152,7 @@ move the wait.
 The same model runs without CUDA, slowly. Two shims in `_sam3.py` make that true:
 `stub_edt_kernel` pre-seeds the one sam3 module that imports triton (which has no macOS build)
 with a stand-in that refuses to run, since that kernel belongs to the video tracker the image
-model never calls; and `shim_sam3_for_cpu` redirects the image model's two build-time
+model never calls; and `shim_sam3_off_cuda` redirects the image model's two build-time
 `"cuda"` literals, its bf16-only fused linear and `Tensor.pin_memory` to CPU when torch has no
 CUDA. Both are inert on a machine with a GPU. The half-precision autocast a SAM3 pass runs
 under is simply skipped on CPU.

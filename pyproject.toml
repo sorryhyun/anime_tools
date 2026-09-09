@@ -51,22 +51,6 @@ dependencies = [
     "psutil",
     "matplotlib",
     "opencv-python>=4.11",
-    # The AnimeText text-block detector (OCR) and the tagger's exported dbv4 graph (OCR has
-    # no cv2.dnn fallback). The CPU and GPU builds are the same `import
-    # onnxruntime` from two conflicting distributions, so the marker picks one per platform
-    # rather than leaving it to the installer: onnxruntime-gpu publishes no macOS wheel, and
-    # on linux/windows its CUDA + cuDNN libraries come from the nvidia-* wheels torch already
-    # pulls in, which `_preload_cuda_libs` puts on the loader path. >=1.21 for `preload_dlls`.
-    "onnxruntime>=1.21; sys_platform == 'darwin'",
-    "onnxruntime-gpu>=1.21; sys_platform != 'darwin'",
-    # Exporting the tagger's dbv4 backbone to ONNX. torch's exporter serializes through
-    # `onnx` and traces through `onnxscript`; neither is needed to *run* the graph (that is
-    # onnxruntime, above). They are plain dependencies rather than an opt-in group because
-    # `downloads.py`'s `tagger_onnx` row builds the graph as part of fetching the tagger --
-    # the weights are gated and GPL, so the graph can only ever be built locally, and a
-    # build step nobody has the tools for is a Download button that fails.
-    "onnx>=1.17",
-    "onnxscript>=0.5",
     # Web GUI (`anime-tools-gui`): FastAPI + uvicorn; the server process never imports torch.
     "fastapi>=0.115",
     "uvicorn>=0.30",

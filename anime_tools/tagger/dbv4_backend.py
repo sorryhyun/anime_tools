@@ -65,6 +65,11 @@ def default_dtype(device: torch.device | str) -> torch.dtype:
     the tagger can make. (``bench/tagger_external/probe_position_rescore.py`` has
     picked per device this way all along; this is that rule, in the one place every
     caller goes through.)
+
+    MPS is the same story and stays on the ``cuda``-only side of the test: measured
+    2026-09-09 at batch 4, float32 87 ms/img against bfloat16's 102 and 1.3e-02 off.
+    float16 is the one that would be faster there (77 ms), but at 2.4e-03 on the
+    scores for a 12 % saving — not a trade this stage wants made for it silently.
     """
     return torch.bfloat16 if torch.device(device).type == "cuda" else torch.float32
 

@@ -4,7 +4,7 @@
     python examples/ocr.py --home ~/data --apply      # write workspace/ocr/**/{stem}.ocr.txt
     python examples/ocr.py --image page.png           # one image, straight through the engine
 
-The stage is the AnimeText text-block detector (ONNX, fetched on first use)
+The stage is the AnimeText text-block detector (torch, fetched on first use)
 with every box read by the manga VL reader (torch, fetched on first use;
 ``python -m anime_tools.downloads ocr`` pre-fetches the pack). The ``--image``
 path below runs the detector alone through ``load_ocr()`` — boxes only, no
@@ -34,9 +34,10 @@ def main() -> None:
 
     if args.image:
         # --- the engine by itself ------------------------------------------
-        from anime_tools.ocr import load_ocr, resolve_onnx_device
+        from anime_tools._device import resolve_device
+        from anime_tools.ocr import load_ocr
 
-        engine = load_ocr(device=resolve_onnx_device())
+        engine = load_ocr(device=resolve_device())
         for line in engine.read(Path(args.image)):  # empty OcrLine per text block
             x0, y0, x1, y1 = line.box
             print(f"{line.seq:3d} ({x0},{y0})-({x1},{y1})")
