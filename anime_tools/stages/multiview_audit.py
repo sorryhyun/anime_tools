@@ -512,8 +512,13 @@ def run_multiview_audit(
             if finding.instances < max(2, options.min_instances):
                 stats.skip("single-instance")
                 continue
-        finding.image = str(image_path.relative_to(resized_dir))
-        finding.caption_path = str(rel)
+        # Both rels go into audit_report.json and come back as dict keys and
+        # `resized_dir / …` joins, so they are spelled posix like every other
+        # rel the package persists (see `exclude.rel_key`). `str()` on a
+        # Windows path would key the report on backslashes, and the sweep
+        # that looks a promotion up by rel would miss every row.
+        finding.image = image_path.relative_to(resized_dir).as_posix()
+        finding.caption_path = rel.as_posix()
         stats.findings += 1
         stats.verdicts[finding.verdict] += 1
         rows.append(finding)

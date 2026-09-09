@@ -566,7 +566,7 @@ def run_position_captions(
     for index, (image_path, rel, dst_caption, caption) in enumerate(walked, 1):
         if progress is not None:
             progress(index, len(walked), str(rel))
-        promotion = promoted.get(str(rel))
+        promotion = promoted.get(rel.as_posix())
         if promotion is not None and promotion != caption:
             caption = promotion
             stats.promoted += 1
