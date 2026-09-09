@@ -77,6 +77,13 @@ Export is the only thing that writes outside the workspace. Six artifact kinds
 `--from_report`, and `revert_export` restores text it overwrote — an overwritten pixel reports
 `not-undoable`.
 
+The `caption` row reads the ladder, not one file (`_caption_source`): the revised caption, else the
+master — overlay (`workspace/master/`) first, hand-written (`--src`) behind it, the same
+overlay-first rule `gui.dataset.caption_paths` and `resolve_caption` read. Nothing copies a master
+into the resized tree, so an image no caption stage has touched would otherwise publish
+captionless, which the trainer reads as unlabelled. The `variants` sidecar stays a revised-tree
+artifact and is looked up there whichever rung the caption came from.
+
 It also takes no `--path_pattern` — `ExportRequest` is the one stage request that is not a
 `DatasetRequest`, and `plan_export` walks the whole resized tree. A publish is the workspace or
 it is a partial dataset landing beside a stale tree the trainer reads as all of it. That is also

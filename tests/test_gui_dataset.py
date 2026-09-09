@@ -63,10 +63,10 @@ def test_listing_joins_the_three_trees(client):
         "dir": "",
         "name": "a.png",
         "stem": "a",
-        # One flag per ladder rung: the sidebar's dot strip.
+        # One flag per dotted ladder rung: the sidebar's dot strip. No
+        # `history` — that rung is a change, not a text this row could say.
         "captions": {
             "master": True,
-            "history": False,
             "revised": False,
             "variants": False,
         },
@@ -87,12 +87,14 @@ def test_the_listing_carries_the_caption_ladder(client):
 
     c, _ = client
     body = c.get("/api/dataset").json()
+    # The dotted rungs only: `history` is the record of a change rather than a
+    # text, drawn as a diff in the panel and given no dot out here.
     assert body["ladder"] == [
         {"kind": "master", "editable": True},
-        {"kind": "history", "editable": False},
         {"kind": "revised", "editable": True},
         {"kind": "variants", "editable": False},
     ]
+    assert "history" not in {r["kind"] for r in body["ladder"]}
     assert [r["kind"] for r in body["ladder"]] == list(body["items"][0]["captions"])
     assert D.CAPTION_KINDS == ("master", "revised")
     # A missing root still says what the rungs are, so the strip has a shape.
@@ -174,7 +176,7 @@ def test_item_detail_parses_the_caption_grammar(client):
     it = c.get("/api/dataset/item", params={"rel": "a.png"}).json()
     assert it["image"]["width"] == 8 and it["mask"]["path"].endswith("a_mask.png")
     assert it["resized"] is None
-    master, history, revised, variants = it["versions"]
+    master, revised, variants, history = it["versions"]
     assert master["kind"] == "master" and master["exists"] and master["editable"]
     # Clauses come parsed: the browser never splits a caption on commas.
     assert master["parsed"] == {
@@ -214,12 +216,12 @@ def test_item_detail_matches_a_re_encoded_resized_image(client):
     # The sidecar rung expands into one badge per label, each already parsed.
     assert [v["kind"] for v in it["versions"]] == [
         "master",
-        "history",
         "revised",
         "v0",
         "v1",
+        "history",
     ]
-    v0 = it["versions"][3]
+    v0 = it["versions"][2]
     assert v0["exists"] and not v0["editable"]
     assert v0["path"].endswith("sub/b.variants.txt")
     assert v0["parsed"]["flat_tags"] == ["1boy", "solo", "night"]
@@ -238,11 +240,11 @@ def test_every_badge_has_the_same_keys_however_it_was_read(client, home):
     versions = it["versions"]
     assert [v["kind"] for v in versions] == [
         "master",
-        "revised@1",
-        "revised@2",
         "revised",
         "v0",
         "v1",
+        "revised@1",
+        "revised@2",
     ]
     shapes = {tuple(v) for v in versions}
     assert len(shapes) == 1
@@ -259,13 +261,13 @@ def test_every_badge_has_the_same_keys_however_it_was_read(client, home):
     )
     # An expanded entry's ``kind`` is its badge and its ``rung`` the ladder row it
     # came from; an unexpanded one is its own rung.
-    assert [(v["kind"], v["rung"]) for v in versions[1:3]] == [
+    assert [(v["kind"], v["rung"]) for v in versions[4:]] == [
         ("revised@1", "history"),
         ("revised@2", "history"),
     ]
-    assert all(v["kind"] == v["rung"] for v in (versions[0], versions[3]))
+    assert all(v["kind"] == v["rung"] for v in (versions[0], versions[1]))
     # Read once for the whole sidecar: every row wears the file's name and mtime.
-    hist = versions[1:3]
+    hist = versions[4:]
     assert {v["path"] for v in hist} == {"workspace/resized/sub/b.history.txt"}
     assert len({v["mtime"] for v in hist}) == 1
     assert [v["note"] for v in hist] == [

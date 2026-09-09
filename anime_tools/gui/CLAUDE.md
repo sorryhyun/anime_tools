@@ -39,7 +39,14 @@ field and an already-hidden field are never folded — the server settles that, 
   `revised` are writable. An image's captions are a ladder (`CAPTION_LADDER`, one `Rung` per
   caption kind), shipped to the browser as per-row dot flags and as `caption_versions`' ordered
   list, where a sidecar rung expands into one entry per caption it holds (`v0`, `v1`,
-  `revised@2`…). The sidebar draws one listing in two orderings, `tree` and `groups`;
+  `revised@2`…). `master` → `revised` → `variants` is the order a caption becomes those texts;
+  `history` comes after all three despite holding the oldest text of any, because it is the
+  record of a change rather than a text — the panel draws that rung as a diff, and between the
+  two writable rungs it read as a third one. It is also the one rung with `dot=False`: the
+  sidebar strip says what an image *says*, one dot per text, so `ladder_schema` and `_row`'s
+  `captions` map both skip it (a stat per row saved), and it exists only as a badge in the panel.
+  The sidebar draws one listing in two orderings,
+  `tree` and `groups`;
   `load_groups` reads `<report_root>/<GROUPS_SUBPATH>` and answers rels only, so filters and
   pending dots mean the same thing in both modes. A missing groups manifest is not an error; an
   unparseable one is a 400. `POST /api/dataset/exclude` is the ⊘ button:

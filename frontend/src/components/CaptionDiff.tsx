@@ -1,13 +1,14 @@
 import { createMemo, For, Show } from "solid-js";
 import { t } from "../i18n";
-import type { Clause, Parsed, Proposal } from "../types";
+import type { Clause, Parsed } from "../types";
 import { ClauseRow } from "./ClauseRow";
 import { Tag } from "./TagLens";
 
-/** What a finished **Run** changed about this caption; the version it replaced
-    is a badge above. Both sides arrive already parsed
-    (`/api/jobs/{id}/proposal`), so the diff compares tags and clauses rather
-    than characters of a line the browser may not split. */
+/** One change to this caption, as tags and clauses rather than characters: what
+    a finished **Run** wrote, or the change a history badge stands for (that
+    version against the one that replaced it). Both sides arrive already
+    parsed — by `/api/jobs/{id}/proposal` for a run and by `/api/dataset/item`
+    for a version — since the browser never splits a caption. */
 
 /** A clause keyed the way the grammar keys it: its header names the position,
     so two clauses with the same header are the same clause, changed. */
@@ -51,24 +52,35 @@ function rows(before: Parsed | null, after: Parsed | null) {
 }
 
 export function CaptionDiff(props: {
-  proposal: Proposal;
-  /** The stage that wrote it, for the header. */
-  stage: string;
-  /** True once the caption on disk no longer holds what the Run wrote. */
+  /** The two sides, as the server parsed them. */
+  before: Parsed | null;
+  after: Parsed | null;
+  /** The text the after side holds, printed whole under the deltas. */
+  text: string;
+  /** The header: what this change is, and the dim line saying whose it was. */
+  title: string;
+  note: string;
+  /** The dot's hue — the rung this change belongs to. */
+  hue: string;
+  /** Whether the after side is still what the file holds: `false` draws the
+      "on disk" badge, `true` the "superseded" one, and `undefined` no badge —
+      a change read off the ladder is on disk by construction. */
   stale?: boolean;
 }) {
-  const d = createMemo(() => rows(props.proposal.before_parsed, props.proposal.after_parsed));
+  const d = createMemo(() => rows(props.before, props.after));
   return (
-    <div classList={{ diff: true, stale: !!props.stale }}>
+    <div classList={{ diff: true, stale: !!props.stale, past: props.stale === undefined }}>
       <div class="card-h">
-        <span class="dot proposal" />
-        <b>{t().diff.written}</b>
-        <span class="dim">{t().diff.by(props.stage)}</span>
+        <span class={`dot ${props.hue}`} />
+        <b>{props.title}</b>
+        <span class="dim">{props.note}</span>
         <span class="sp" />
-        <Show when={props.stale} fallback={<span class="badge">{t().diff.onDisk}</span>}>
-          <span class="badge miss" title={t().diff.staleHint}>
-            {t().diff.stale}
-          </span>
+        <Show when={props.stale !== undefined}>
+          <Show when={props.stale} fallback={<span class="badge">{t().diff.onDisk}</span>}>
+            <span class="badge miss" title={t().diff.staleHint}>
+              {t().diff.stale}
+            </span>
+          </Show>
         </Show>
       </div>
       <Show when={d().length} fallback={<div class="dim hint">{t().diff.reordered}</div>}>
@@ -83,7 +95,7 @@ export function CaptionDiff(props: {
           </For>
         </div>
       </Show>
-      <div class="proposed mono">{props.proposal.after}</div>
+      <div class="proposed mono">{props.text}</div>
     </div>
   );
 }

@@ -93,6 +93,43 @@ def test_an_unrevised_master_is_not_a_row(ws):
     assert _by(plan_export(ws), "master") == []
 
 
+def test_an_image_with_only_a_master_publishes_the_master(ws):
+    """Nothing copies the master into the resized tree, so an image no caption
+    stage has touched has only its hand-written one — publishing it captionless
+    would hand the trainer an unlabelled image."""
+    _txt(ws.src / "sub" / "b.txt", "1boy, solo")
+    rows = plan_export(ws)
+    (caption,) = [r for r in _by(rows, "caption") if r.rel == "sub/b.png"]
+    assert Path(caption.src) == ws.src / "sub" / "b.txt"
+    assert Path(caption.dst) == ws.out / "resized" / "sub" / "b.txt"
+    run_export(ws, apply=True)
+    text = (ws.out / "resized" / "sub" / "b.txt").read_text(encoding="utf-8")
+    assert text == "1boy, solo"
+
+
+def test_the_revised_caption_wins_over_the_master(ws):
+    """`a` has both; the ladder is read from the bottom."""
+    (caption,) = _by(plan_export(ws), "caption")
+    assert Path(caption.src) == ws.resized / "a.txt"
+
+
+def test_an_edited_master_shadows_the_hand_written_one(ws):
+    """The overlay is what the master row is about to publish over `--src`, so
+    it is also what an image with no revised caption exports."""
+    (ws.resized / "a.txt").unlink()
+    (caption,) = _by(plan_export(ws), "caption")
+    assert Path(caption.src) == ws.master / "a.txt"
+
+
+def test_the_variants_sidecar_stays_a_revised_tree_artifact(ws):
+    """A caption read from the master does not go looking for variants beside
+    it: the sidecar is written by the caption stages, into the resized tree."""
+    (ws.resized / "a.txt").unlink()
+    _txt(ws.src / "a.variants.txt", "# generated\nv0\tnope\n")
+    (variants,) = _by(plan_export(ws), "variants")
+    assert Path(variants.src) == ws.resized / "a.variants.txt"
+
+
 def test_a_flat_legacy_mask_still_publishes(ws):
     """A flat `masks/{stem}_mask.png` is still a mask."""
     _png(ws.masks / "b_mask.png", 180)

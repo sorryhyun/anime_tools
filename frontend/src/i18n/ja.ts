@@ -60,7 +60,6 @@ const ja: Dict = {
     truncated: (shown, total) => `${total} 件中 ${shown} 件を表示 — 絞り込みで狭めてください`,
     more: (n) => `+ 他 ${n} 件`,
     capMaster: "master — 手書きのキャプション; 編集は workspace/master に保存されます",
-    capHistory: "history — .history.txt、revised キャプションが以前言っていたこと",
     capRevised: "revised — workspace/resized、ステージの出力",
     capVariants: "variants — .variants.txt、自動生成で読み取り専用",
     onDisk: "ディスク上にあり",
@@ -145,6 +144,7 @@ const ja: Dict = {
     savedStale:
       "保存しました — .variants.txt が古くなりました; correct とトレーナーの TE 再エンコードをやり直してください",
     noCaption: "キャプションなし",
+    noHistory: "記録された変更はありません — このキャプションは一度しか書かれていません",
     tags: (n) => `タグ ${n} 個`,
     clauses: (n) => `節 ${n} 個`,
     unsaved: "未保存のプレビュー",
@@ -153,6 +153,8 @@ const ja: Dict = {
   },
   diff: {
     written: "書き込み済み",
+    changed: "変更内容",
+    from: (before, after) => `${before} → ${after}`,
     by: (stage) => `${stage} による`,
     lastRun: "直前の実行",
     onDisk: "ディスク上",

@@ -90,7 +90,6 @@ const en = {
       `showing ${shown} of ${total} — narrow it with the filter`,
     more: (n: number) => `+ ${n} more`,
     capMaster: "master — the hand-written caption; an edit lands in workspace/master",
-    capHistory: "history — .history.txt, what the revised caption used to say",
     capRevised: "revised — workspace/resized, the stage output",
     capVariants: "variants — .variants.txt, generated and read-only",
     onDisk: "on disk",
@@ -182,6 +181,7 @@ const en = {
     saved: "saved — the previous text is a version above; follow with the trainer's TE re-encode",
     savedStale: "saved — .variants.txt is now stale; re-run correct + the trainer's TE re-encode",
     noCaption: "no caption",
+    noHistory: "no change recorded — this caption has only ever been written once",
     tags: (n: number) => `${n} tag${n === 1 ? "" : "s"}`,
     clauses: (n: number) => `${n} clause${n === 1 ? "" : "s"}`,
     unsaved: "unsaved preview",
@@ -190,6 +190,11 @@ const en = {
   },
   diff: {
     written: "written",
+    changed: "the change",
+    /** The header of the change a history badge stands for: which two
+        versions it is between. Who replaced the first one and when is the
+        badge's own note, already under the title. */
+    from: (before: string, after: string) => `${before} → ${after}`,
     by: (stage: string) => `by ${stage}`,
     lastRun: "the last run",
     onDisk: "on disk",

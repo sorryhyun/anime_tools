@@ -80,7 +80,9 @@ aside { grid-column:1; grid-row:2/4; border-right:1px solid var(--line); backgro
 .tn .tl .dim { font-size:inherit }
 .dot { width:7px; height:7px; flex:none; border-radius:50%; background:var(--dim) }
 .dot.master { background:var(--accent) } .dot.revised { background:var(--ok) } .dot.variants { background:var(--warn) }
-/* History keeps the dim default rather than a hue of its own. */
+/* History keeps the dim default rather than a hue of its own. It is a panel
+   badge only -- the sidebar strip has no history dot (`Rung.dot`), so no
+   `.caps` rule for it. */
 .dot.history { background:var(--dim) }
 .dot.proposal { background:var(--warn) }
 /* An image's caption ladder, as a strip on its own row: filled is a file on
@@ -91,7 +93,6 @@ aside { grid-column:1; grid-row:2/4; border-right:1px solid var(--line); backgro
 .caps .dot:hover { box-shadow:0 0 0 3px #ffffff14 }
 .caps .dot.on { box-shadow:0 0 0 2px var(--bg), 0 0 0 3px currentColor }
 .caps .dot.master.on { color:var(--accent) } .caps .dot.revised.on { color:var(--ok) } .caps .dot.variants.on { color:var(--warn) }
-.caps .dot.history.on { color:var(--dim) }
 .caps .dot.off.on { box-shadow:inset 0 0 0 1px var(--line), 0 0 0 2px var(--bg), 0 0 0 3px var(--dim) }
 .flags { margin-left:auto; display:flex; gap:4px; align-items:center }
 /* The mask flag is an emoji, which draws well inside its em box, so it is set a
@@ -163,8 +164,8 @@ button.excl.on { color:var(--warn); border-color:#5c4a2a }
 /* The caption ladder, as the badges over the one editor. Same readout as the
    sidebar's dot strip -- filled dot = on disk, hollow = not. An expanded rung's
    badges wear their *rung's* colour (`CaptionEntry.rung`), so `revised@2` is a
-   history dot; a rung added to `dataset.CAPTION_LADDER` wants one `.dot.<kind>`
-   colour here. */
+   history dot -- which is a badge here and nothing in the strip. A rung added to
+   `dataset.CAPTION_LADDER` wants one `.dot.<kind>` colour here. */
 .vbs { display:flex; flex-wrap:wrap; align-items:center; gap:4px }
 .vb { display:flex; align-items:center; gap:5px; padding:2px 8px; border-radius:10px; background:none; border:1px solid transparent; color:var(--dim); font-size:11px }
 /* Background-only: the base `button:hover` accent ring wins on source order
@@ -216,10 +217,12 @@ textarea.cap { display:block; position:relative; z-index:1; min-height:78px; ove
 .tlcat { color:var(--accent); font-size:12px; margin-top:4px }
 .tlbody { font-size:12px; line-height:1.55; margin-top:4px; max-height:40vh; overflow:auto; overflow-wrap:anywhere }
 .tlsrc { font-size:10px; margin-top:6px; border-top:1px solid var(--line); padding-top:4px }
-/* The last Run's diff for this caption, under the editor holding what is on
-   disk. */
+/* One change to this caption, under the editor: the last Run's (warn, the
+   proposal hue), or -- on the history rung alone -- the change that badge
+   stands for, itself against what replaced it (.past, the history hue). */
 .diff { margin-top:10px; border:1px solid var(--line); border-left:2px solid var(--warn); border-radius:6px; padding:8px 10px; background:#ffffff05 }
 .diff.stale { border-left-color:var(--dim); opacity:.75 }
+.diff.past { border-left-color:var(--dim) }
 .diff .parsed { margin-top:4px }
 .tag.add { color:var(--ok); border-color:#2f4a2a; background:#9ece6a14 }
 .tag.del { color:var(--err); border-color:#553039; background:#f7768e14; text-decoration:line-through }

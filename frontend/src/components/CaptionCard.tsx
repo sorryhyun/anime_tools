@@ -25,7 +25,9 @@ const where = (e: CaptionEntry) =>
 
 export function CaptionCard(props: {
   rel: string;
-  /** The ladder, oldest first, as `/api/dataset/item` sent it. */
+  /** The ladder as `/api/dataset/item` sent it: master, revised, its variants,
+      and last the history versions — the record of a change rather than a
+      text, which is why it sits past the texts. */
   versions: CaptionEntry[];
   /** The selected node. A caption rung puts that version in the editor;
       anything else (an image row was clicked) leaves the choice to the editor. */
@@ -68,6 +70,45 @@ export function CaptionCard(props: {
       the rung on screen; from any other the badge above is the way to it. */
   const diffHere = () => !!props.proposal && props.proposal.kind === ed.entry()?.kind;
 
+  /** The change a **history** badge stands for: what that version said, against
+      what replaced it — the next history version, or the revised caption
+      itself.
+
+      The *hollow* history badge (an image with no superseded versions) stands
+      for the change that made the revised caption out of the master: a revised
+      caption **created** out of a master (autotag on an image nobody had
+      revised) replaced no text, so it pushed no version, and the master is what
+      it changed. That badge is drawn live rather than hollow when this answers,
+      since there is something behind it to read.
+
+      Only ever this rung. The master and revised badges are texts, and show
+      their text; history is the record of a change, so it is the one that draws
+      a diff — and the only one, or the panel would say the same thing twice.
+      Undefined when there is nothing to compare: no revised caption, or a
+      version equal to what followed it. */
+  const changeFor = (e: CaptionEntry) => {
+    if (e.rung !== "history") return undefined;
+    const revised = props.versions.find((v) => v.kind === "revised");
+    if (!revised?.exists) return undefined;
+    const past = props.versions.filter((v) => v.rung === "history" && v.exists);
+    const i = past.findIndex((v) => v.kind === e.kind);
+    // `i < 0` is the hollow badge: no version of this caption was ever
+    // superseded, so the change to show is the one out of the master.
+    const before = i < 0 ? props.versions.find((v) => v.kind === "master") : past[i];
+    const after = i < 0 ? revised : (past[i + 1] ?? revised);
+    if (!before?.exists || before.text.trim() === after.text.trim()) return undefined;
+    return { before, after };
+  };
+
+  /** The history rung has no file to edit — it *is* the diff below. The editor,
+      the "new" badge and the tag count all speak about a caption you write, and
+      none of the three means anything here. */
+  const past = () => ed.entry()?.rung === "history";
+  const ladderDiff = () => {
+    const e = ed.entry();
+    return e ? changeFor(e) : undefined;
+  };
+
   return (
     <div classList={{ card: true, sel: props.kind !== "image" }} ref={card}>
       {/* The ladder. A filled dot is a file on disk and a hollow one is not,
@@ -80,12 +121,18 @@ export function CaptionCard(props: {
               classList={{
                 vb: true,
                 on: v.kind === ed.entry()?.kind,
-                off: !v.exists,
+                off: !v.exists && !changeFor(v),
                 mod: ed.dirtyIn(v.kind),
               }}
-              title={`${v.path} — ${v.exists ? t().tree.onDisk : t().tree.capMissing}${
-                v.note ? ` · ${v.note}` : ""
-              }${ed.dirtyIn(v.kind) ? ` · ${t().caption.unsaved}` : ""}`}
+              title={`${v.path} — ${
+                v.exists
+                  ? t().tree.onDisk
+                  : changeFor(v)
+                    ? t().caption.where_history
+                    : t().tree.capMissing
+              }${v.note ? ` · ${v.note}` : ""}${
+                ed.dirtyIn(v.kind) ? ` · ${t().caption.unsaved}` : ""
+              }`}
               onClick={() => props.onSelect(v.kind)}
             >
               <span class={`dot ${hue(v)}`} />
@@ -103,7 +150,7 @@ export function CaptionCard(props: {
           <>
             <div class="card-h" style="margin-top:8px">
               <b title={e().path}>{vlabel(e())}</b>
-              <Show when={!e().exists}>
+              <Show when={!e().exists && !past()}>
                 <span class="badge">{t().caption.new}</span>
               </Show>
               <Show when={!e().editable}>
@@ -134,57 +181,86 @@ export function CaptionCard(props: {
                 {where(e())} · {root()}
               </div>
             </Show>
-            <BoxedCaption
-              text={ed.text()}
-              spans={ed.parsed()?.spans ?? []}
-              parsedText={ed.snap().text}
-              dirty={ed.dirty()}
-              readOnly={!e().editable}
-              placeholder={e().exists ? "" : t().caption.empty}
-              onInput={ed.setText}
-              onKeyDown={(ev) => {
-                // Cmd/Ctrl+Enter saves; Cmd/Ctrl+S is caught too, or the
-                // browser offers to save the page.
-                if (
-                  (ev.metaKey || ev.ctrlKey) &&
-                  (ev.key === "Enter" || ev.key.toLowerCase() === "s")
-                ) {
-                  ev.preventDefault();
-                  void ed.save();
-                }
-              }}
-            />
+            <Show when={!past()}>
+              <BoxedCaption
+                text={ed.text()}
+                spans={ed.parsed()?.spans ?? []}
+                parsedText={ed.snap().text}
+                dirty={ed.dirty()}
+                readOnly={!e().editable}
+                placeholder={e().exists ? "" : t().caption.empty}
+                onInput={ed.setText}
+                onKeyDown={(ev) => {
+                  // Cmd/Ctrl+Enter saves; Cmd/Ctrl+S is caught too, or the
+                  // browser offers to save the page.
+                  if (
+                    (ev.metaKey || ev.ctrlKey) &&
+                    (ev.key === "Enter" || ev.key.toLowerCase() === "s")
+                  ) {
+                    ev.preventDefault();
+                    void ed.save();
+                  }
+                }}
+              />
+            </Show>
           </>
         )}
       </Show>
-      <Show when={ed.parsed()} fallback={<div class="dim hint">{t().caption.noCaption}</div>}>
-        {(pp) => (
-          <div class="dim hint">
-            {t().caption.tags(pp().flat_tags.length)} · {t().caption.clauses(pp().clauses.length)}
-            <Show when={props.help}> · {t().caption.lookUpHint}</Show>
-            <Show when={ed.dirty()}> · {t().caption.unsaved}</Show>
-          </div>
-        )}
+      <Show when={!past()}>
+        <Show when={ed.parsed()} fallback={<div class="dim hint">{t().caption.noCaption}</div>}>
+          {(pp) => (
+            <div class="dim hint">
+              {t().caption.tags(pp().flat_tags.length)} · {t().caption.clauses(pp().clauses.length)}
+              <Show when={props.help}> · {t().caption.lookUpHint}</Show>
+              <Show when={ed.dirty()}> · {t().caption.unsaved}</Show>
+            </div>
+          )}
+        </Show>
+      </Show>
+      {/* The rung says a change happened and there is none to show: an image
+          whose caption has only ever been written once, and by hand. */}
+      <Show when={past() && !ladderDiff()}>
+        <div class="dim hint">{t().caption.noHistory}</div>
       </Show>
       <Show when={ed.msg()}>
         {(m) => <div classList={{ hint: true, err: !!m().bad, ok: !m().bad }}>{m().text}</div>}
       </Show>
-      <Show when={props.proposal}>
-        {(p) => (
-          <Show
-            when={diffHere()}
-            fallback={
-              <button class="link hint" onClick={() => props.onSelect(p().kind)}>
-                {t().caption.diffElsewhere(label(p().kind) ?? p().kind)}
-              </button>
-            }
-          >
-            <CaptionDiff
-              proposal={p()}
-              stage={props.proposalStage ?? t().diff.lastRun}
-              stale={(ed.entry()?.text ?? "").trim() !== p().after.trim()}
-            />
+      <Show
+        when={ladderDiff()}
+        fallback={
+          <Show when={props.proposal}>
+            {(p) => (
+              <Show
+                when={diffHere()}
+                fallback={
+                  <button class="link hint" onClick={() => props.onSelect(p().kind)}>
+                    {t().caption.diffElsewhere(label(p().kind) ?? p().kind)}
+                  </button>
+                }
+              >
+                <CaptionDiff
+                  before={p().before_parsed}
+                  after={p().after_parsed}
+                  text={p().after}
+                  title={t().diff.written}
+                  note={t().diff.by(props.proposalStage ?? t().diff.lastRun)}
+                  hue="proposal"
+                  stale={(ed.entry()?.text ?? "").trim() !== p().after.trim()}
+                />
+              </Show>
+            )}
           </Show>
+        }
+      >
+        {(c) => (
+          <CaptionDiff
+            before={c().before.parsed}
+            after={c().after.parsed}
+            text={c().before.text}
+            title={t().diff.changed}
+            note={t().diff.from(vlabel(c().before), vlabel(c().after))}
+            hue="history"
+          />
         )}
       </Show>
     </div>

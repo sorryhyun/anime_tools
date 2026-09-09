@@ -21,11 +21,12 @@ export interface TreeCtx {
 
 /** The caption ladder, as the dots on an image row: a filled dot is a file on
     disk, a hollow one is not, and clicking either opens that version in the
-    panel. Which rungs there are is the server's answer (`DatasetList.ladder`);
-    only what to *call* one is ours, and a rung with no name wears its own id. */
+    panel. Which rungs there are is the server's answer (`DatasetList.ladder`),
+    which sends the rungs that are *texts* and not the history one — a strip
+    saying what an image says has nothing to say about a change. Only what to
+    *call* a rung is ours, and one with no name wears its own id. */
 const CAP_HINT: Record<string, () => string> = {
   master: () => t().tree.capMaster,
-  history: () => t().tree.capHistory,
   revised: () => t().tree.capRevised,
   variants: () => t().tree.capVariants,
 };

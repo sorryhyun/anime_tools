@@ -58,7 +58,6 @@ const ko: Dict = {
     truncated: (shown, total) => `${total}개 중 ${shown}개 표시 — 필터로 좁히세요`,
     more: (n) => `+ ${n}개 더`,
     capMaster: "master — 손으로 쓴 캡션; 편집은 workspace/master 에 저장됩니다",
-    capHistory: "history — .history.txt, revised 캡션이 예전에 뭐라고 했는지",
     capRevised: "revised — workspace/resized, 스테이지 출력",
     capVariants: "variants — .variants.txt, 자동 생성이라 읽기 전용",
     onDisk: "디스크에 있음",
@@ -143,6 +142,7 @@ const ko: Dict = {
     savedStale:
       "저장됨 — .variants.txt가 오래되었습니다; correct와 트레이너의 TE 재인코딩을 다시 돌리세요",
     noCaption: "캡션 없음",
+    noHistory: "기록된 변경 없음 — 이 캡션은 한 번만 쓰였습니다",
     tags: (n) => `태그 ${n}개`,
     clauses: (n) => `절 ${n}개`,
     unsaved: "저장하지 않은 미리보기",
@@ -151,6 +151,8 @@ const ko: Dict = {
   },
   diff: {
     written: "기록됨",
+    changed: "변경 내용",
+    from: (before, after) => `${before} → ${after}`,
     by: (stage) => `${stage} 실행 결과`,
     lastRun: "마지막 실행",
     onDisk: "디스크에 있음",

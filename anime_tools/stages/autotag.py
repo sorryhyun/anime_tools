@@ -6,10 +6,13 @@ under ``source_dir`` is read (as ``resolve_caption``'s fallback) and never
 written, so a run cannot lose text nobody can get back: what it replaces is
 pushed onto ``{stem}.history.txt`` and is one badge away in the GUI.
 
-A tagged image always ends up with a revised caption. "Unchanged" is measured
-against the file the write lands on, so a proposal equal to the master — which
-is what tagging an image whose master the tagger itself wrote produces — still
-creates the revised caption it was missing.
+"Unchanged" is measured against what already *speaks* for the image — the
+revised caption, or the master behind it — so a proposal equal to the master
+(which is what tagging an image whose master the tagger itself wrote produces)
+writes nothing at all. A revised copy of an identical master is a second
+spelling of one caption for a later hand-edit of the master to go stale behind,
+and it buys nothing: Export reads the same ladder, publishing the master for an
+image that has no revised caption.
 
 Three modes:
 
@@ -207,13 +210,13 @@ def run_autotag_captions(
             proposal.proposed = tagged
             proposal.added = tuple(t.strip() for t in tagged.split(",") if t.strip())
 
-        # Against the **write target**, never against ``existing``: the two
-        # are different files whenever the revised caption does not exist yet.
-        # A proposal that matches a source caption the resized tree does not
-        # hold still has to be written, or the run tags an image and leaves
-        # nothing behind — and Export, which publishes the revised caption
-        # only, would ship that image with no caption at all.
-        if proposal.proposed == proposal.target_before:
+        # Against what already **speaks** for the image, which is the master
+        # when there is no revised caption yet: a proposal equal to it says
+        # nothing new, and a revised copy of a master is a second spelling of
+        # one caption for a hand-edit of the master to go stale behind. Export
+        # reads the same ladder (`export_workspace._caption_source`), so the
+        # image publishes that text either way.
+        if proposal.proposed == proposal.existing:
             proposal.status = "skip:unchanged"
             stats.skip("unchanged")
             rows.append(proposal)

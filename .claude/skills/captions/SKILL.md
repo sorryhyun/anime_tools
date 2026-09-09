@@ -62,6 +62,13 @@ and writes beside it; the hand-written master is read (`resolve_caption`'s fallb
 written. What a write replaces is pushed onto `{stem}.history.txt` under `by=autotag`, so no mode
 loses text outright.
 
+"Unchanged" is measured against what *speaks* for the image, master included: a proposal equal to
+the master (what tagging an image whose master the tagger itself wrote produces) is
+`skip:unchanged` and writes no revised copy of it — that copy says nothing new and only gives a
+later hand-edit of the master a second spelling to go stale behind. Export reads the same ladder
+(`export_workspace._caption_source` publishes the master for an image with no revised caption), so
+the image publishes that text either way.
+
 Three `--mode`s:
 
 - `missing` (default) — only images no caption speaks for, revised or master.

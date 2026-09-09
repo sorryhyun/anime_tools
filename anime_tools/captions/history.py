@@ -2,7 +2,9 @@
 
 Every write pushes the text it replaced here, oldest first, and the GUI's
 caption ladder expands them into one badge apiece (``revised@1``,
-``revised@2`` …). It uses :mod:`anime_tools.captions._sidecar`'s format; what is
+``revised@2`` …) at the end of the badge row, each drawn as the diff of what it
+changed into rather than as a text. It uses
+:mod:`anime_tools.captions._sidecar`'s format; what is
 local is the vocabulary — a record is a superseded caption, carrying a sequence,
 a moment and a hand — and the fact that a file with no entries left is deleted
 rather than written empty. The sidecar sits beside the caption, so a writer

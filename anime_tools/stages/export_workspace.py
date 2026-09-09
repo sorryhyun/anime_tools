@@ -9,6 +9,14 @@ Six artifact kinds, and where each lands:
 ``master``    ``workspace/master/<rel>.txt``        → ``--src/<rel>.txt``
 ``index``     ``workspace/captions/caption_index.json`` → ``--out/captions/…``
 
+The ``caption`` row reads the caption ladder rather than one file
+(:func:`_caption_source`): the revised caption when there is one, the master
+otherwise — the overlay, then the hand-written original under ``--src``. Nothing
+copies a master into the resized tree, so an image no caption stage has touched
+would otherwise publish captionless, which the trainer reads as unlabelled. The
+``variants`` sidecar stays a revised-tree artifact and is looked up there
+whichever rung the caption came from.
+
 and once more for what curation took *out*::
 
 ``image`` …   ``workspace/_excluded/resized/<rel>``  → ``--out/_excluded/resized/<rel>``
@@ -293,6 +301,27 @@ def _mask_source(masks: Path, images: Path, image: Path, rel: Path) -> Path:
     return masks / mask_name(rel.stem)
 
 
+def _caption_source(paths: ExportPaths, image: Path, rel: Path) -> Path | None:
+    """The caption that speaks for ``rel``, or ``None`` if none does.
+
+    The caption ladder, read from the bottom: the **revised** caption
+    (``workspace/resized/<rel>.txt``), then the **master** — the workspace
+    overlay first, the hand-written original under ``--src`` behind it, the
+    same overlay-first rule ``gui.dataset.caption_paths`` and
+    ``_walk_captions.resolve_caption`` read.
+
+    Falling back matters because nothing copies the master into the resized
+    tree: an image no caption stage has touched has only its hand-written
+    master, and publishing it captionless is publishing a dataset the trainer
+    reads as unlabelled.
+    """
+    txt = rel.with_suffix(".txt")
+    for path in (image.with_suffix(".txt"), paths.master / txt, paths.src / txt):
+        if path.is_file():
+            return path
+    return None
+
+
 def plan_export(paths: ExportPaths) -> list[ExportRow]:
     """Every artifact this export would publish, decided against disk.
 
@@ -309,8 +338,8 @@ def plan_export(paths: ExportPaths) -> list[ExportRow]:
         rows.append(_row(rel, "image", image, out_image))
 
         ocr = ocr_sidecar_path(paths.ocr / rel) if paths.ocr is not None else None
-        caption = image.with_suffix(".txt")
-        if caption.is_file():
+        caption = _caption_source(paths, image, rel)
+        if caption is not None:
             rows.append(
                 _row(
                     rel,
@@ -323,7 +352,7 @@ def plan_export(paths: ExportPaths) -> list[ExportRow]:
                 )
             )
 
-        variants = variants_sidecar_path(caption)
+        variants = variants_sidecar_path(image.with_suffix(".txt"))
         if variants.is_file():
             rows.append(
                 _row(

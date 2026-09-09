@@ -114,7 +114,16 @@ Three more `.ts` files at `src/` are view-scoped state: created per
 component rather than once in `App()`, but holding the rules the markup would
 otherwise carry. `captionEditor.ts` is the caption panel's brain — which
 version is on screen, the unsaved draft per rung, the debounced live parse and
-Save — and `CaptionCard` only draws it. `zoomPan.ts` is the preview's
+Save — and `CaptionCard` only draws it. The one thing that card derives is
+`changeFor`: the **history** rung, and no other, draws a diff — that version
+against the one that replaced it (the next history version, or the revised
+caption), and for the hollow badge of an image nothing has ever superseded, the
+master against the revised caption. That rung has no editor, no "new" badge and
+no tag count: it is not a caption you write, it is the record of a change, and
+the diff is the whole of it — the version the badge stands for is the text
+printed under the deltas, so the panel never shows two captions at once. The
+badge is drawn live rather than hollow whenever `changeFor` answers, since there
+is then something behind it to read. `zoomPan.ts` is the preview's
 Ctrl+wheel zoom and drag-to-pan. `tree.ts` is the sidebar's model: `build`
 nests the listing into folders, `regroup` joins the grouping manifest onto it,
 `drawOrder` flattens either one back into the sequence the rows appear in, and

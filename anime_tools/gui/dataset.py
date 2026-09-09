@@ -16,11 +16,13 @@ put it back — but wearing ``excluded``, and every one of its files has left th
 three trees above.
 
 An image's captions are a **ladder** (:data:`CAPTION_LADDER`): the hand-written
-master, the versions the revised caption used to be, that caption itself, then the
-generated variants. That order feeds both the dots on a sidebar row (:func:`_row`)
-and the badges over the caption editor (:func:`caption_versions`). Only rungs marked
-``editable`` can be written; editing the caption above ``.variants.txt`` makes that
-sidecar stale, which :func:`write_caption` reports.
+master, the revised caption, the variants generated beside it, and last the
+versions that caption used to be. That order feeds both the dots on a sidebar row
+(:func:`_row`) and the badges over the caption editor (:func:`caption_versions`).
+The last rung is last because it is not a text among texts: the panel draws it as
+the diff of what changed. Only rungs marked ``editable`` can be written; editing
+the caption beside ``.variants.txt`` makes that sidecar stale, which
+:func:`write_caption` reports.
 """
 
 from __future__ import annotations
@@ -72,8 +74,8 @@ class Rung:
     ``root`` names the :class:`Roots` field the file lives in. ``expand`` marks a
     rung that is a *sidecar* of many captions rather than one: ``"variants"`` holds
     the generated ``v0``/``v1``/``r1`` samples, ``"history"`` the versions a write
-    superseded. Each is one file and one sidebar dot, expanded into a badge apiece
-    by :func:`caption_versions`.
+    superseded. Each is one file, expanded into a badge apiece by
+    :func:`caption_versions`.
     """
 
     kind: str
@@ -89,20 +91,29 @@ class Rung:
     """A second root that *shadows* ``root``: read from here when it holds the
     file, and write here always. How the master rung stays editable without
     writing ``src`` — see :data:`CAPTION_LADDER`."""
+    dot: bool = True
+    """Whether this rung is one of the sidebar row's caption dots. The strip
+    answers "what does this image say?" at a glance, one dot per text; the
+    history rung is not a text but the record of a change, so it is a badge in
+    the panel and no dot out here. Costs the listing one stat per row less."""
 
 
 CAPTION_LADDER: tuple[Rung, ...] = (
     Rung("master", "src", editable=True, overlay="master"),
-    Rung("history", "dst", editable=False, expand="history", of="revised"),
     Rung("revised", "dst", editable=True),
     Rung("variants", "dst", editable=False, expand="variants"),
+    Rung("history", "dst", editable=False, expand="history", of="revised", dot=False),
 )
-"""The captions of one image, oldest first.
+"""The captions of one image: the texts first, in the order a caption becomes
+them, and the record of what changed after them.
 
-``history`` sits above ``revised`` because it holds the versions that caption used
-to be. The run bar has no Apply gate, so the text a run replaces survives as a
-badge here. The sidebar strip, the panel's badges and :func:`write_caption`'s guard
-all read this tuple.
+``master`` → ``revised`` is the pipeline, and ``variants`` is the sidecar
+generated beside the second. ``history`` comes **last** even though it holds the
+oldest text of all: it is not a caption you read or write but the record of a
+change, and the panel draws it as a diff rather than as a text. Between the two
+writable rungs it read as a third one and confused them. The run bar has no
+Apply gate, so the text a run replaces survives as a badge here. The sidebar
+strip, the panel's badges and :func:`write_caption`'s guard all read this tuple.
 
 The master rung carries an ``overlay``: ``src`` is the INPUT tree and
 **read-only for the tools** (``anime_tools.workspace``), so editing a master
@@ -130,9 +141,10 @@ def ladder_schema() -> list[dict[str, Any]]:
     """:data:`CAPTION_LADDER` as the listing hands it to the browser.
 
     The sidebar's dot strip is drawn from this, so it cannot come apart from
-    :func:`_row`'s ``captions`` map. The ``root`` stays server-side.
+    :func:`_row`'s ``captions`` map — both are ``Rung.dot``, which is why the
+    history rung is in neither. The ``root`` stays server-side.
     """
-    return [{"kind": r.kind, "editable": r.editable} for r in CAPTION_LADDER]
+    return [{"kind": r.kind, "editable": r.editable} for r in CAPTION_LADDER if r.dot]
 
 
 GROUPS_SUBPATH = "groups/groups.json"
@@ -513,8 +525,8 @@ def _row(
 ) -> dict[str, Any]:
     """One sidebar row: the image plus which of its siblings exist.
 
-    ``captions`` is one flag per :data:`CAPTION_LADDER` rung, one stat apiece so
-    this stays cheap for a whole-dataset listing. ``resized`` is matched on *stem*
+    ``captions`` is one flag per dotted :data:`CAPTION_LADDER` rung, one stat
+    apiece so this stays cheap for a whole-dataset listing. ``resized`` is matched on *stem*
     (:func:`_sibling_image`) and is a row flag rather than a caption dot: it says
     whether the stages downstream of resize can see this image.
 
@@ -529,7 +541,7 @@ def _row(
         "dir": "" if parent == "." else parent,
         "name": name,
         "stem": rel.stem,
-        "captions": {r.kind: caps[r.kind].is_file() for r in CAPTION_LADDER},
+        "captions": {r.kind: caps[r.kind].is_file() for r in CAPTION_LADDER if r.dot},
         "resized": _sibling_image(roots.dst / rel.parent, rel.stem) is not None,
         "mask": mask_path(roots, rel) is not None,
         "excluded": excluded,

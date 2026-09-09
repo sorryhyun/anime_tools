@@ -178,16 +178,16 @@ def test_an_edit_is_a_version_and_the_badge_row_says_what_it_was(client):
     it = c.get("/api/dataset/item", params={"rel": "a.png"}).json()
     assert [v["kind"] for v in it["versions"]] == [
         "master",
-        "revised@1",
         "revised",
         "variants",
+        "revised@1",
     ]
-    was = it["versions"][1]
+    was = it["versions"][-1]
     assert was["text"] == "1girl, solo" and not was["editable"]
     assert was["rung"] == "history" and was["note"].startswith("edit · ")
     # Already parsed: the browser splits no caption.
     assert was["parsed"]["flat_tags"] == ["1girl", "solo"]
-    assert it["versions"][2]["text"] == "1girl, solo, smile"
+    assert it["versions"][1]["text"] == "1girl, solo, smile"
 
 
 def test_a_save_answers_with_the_whole_ladder_not_just_the_rung_written(client):
@@ -202,9 +202,9 @@ def test_a_save_answers_with_the_whole_ladder_not_just_the_rung_written(client):
     assert saved["kind"] == "revised" and saved["text"] == "1girl, solo, smile"
     assert [v["kind"] for v in saved["versions"]] == [
         "master",
-        "revised@1",
         "revised",
         "variants",
+        "revised@1",
     ]
     # …and it is the same ladder a re-read would give.
     it = c.get("/api/dataset/item", params={"rel": "a.png"}).json()
@@ -218,11 +218,20 @@ def test_the_master_rung_keeps_no_history(client):
     assert not (home / "image_dataset" / ("a" + HISTORY_SIDECAR_SUFFIX)).exists()
 
 
-def test_the_history_dot_is_a_row_flag_like_every_other_rung(client):
+def test_the_history_rung_is_no_sidebar_dot(client):
+    """The strip says what an image *says*, one dot per text. History is not a
+    text but the record of a change — a badge in the panel, and out here not
+    even a stat per row."""
     c, _home = client
-    assert c.get("/api/dataset").json()["items"][0]["captions"]["history"] is False
+    body = c.get("/api/dataset").json()
+    assert "history" not in body["items"][0]["captions"]
+    assert "history" not in {r["kind"] for r in body["ladder"]}
     c.put(
         "/api/dataset/item",
         json={"rel": "a.png", "kind": "revised", "text": "1girl, solo, smile"},
     )
-    assert c.get("/api/dataset").json()["items"][0]["captions"]["history"] is True
+    # Written now, and still not a dot — but a badge on the ladder.
+    body = c.get("/api/dataset").json()
+    assert "history" not in body["items"][0]["captions"]
+    it = c.get("/api/dataset/item", params={"rel": "a.png"}).json()
+    assert [v["kind"] for v in it["versions"]][-1] == "revised@1"
