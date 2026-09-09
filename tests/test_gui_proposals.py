@@ -246,6 +246,75 @@ def test_undoing_the_clause_rewrite_drops_the_stale_sidecar(home, roots):
     assert not (dst / "a.variants.txt").exists()
 
 
+_VARIANTS = "v0\t1boy.\n"
+
+
+def _position_report(home: Path, rows: list[dict]) -> Path:
+    p = home / "pos_apply.json"
+    p.write_text(
+        json.dumps({"summary": {"apply": True}, "images": rows}), encoding="utf-8"
+    )
+    return p
+
+
+def test_undoing_a_created_revised_caption_leaves_only_the_master(home, roots):
+    """The sweep read the master (there was no revised caption) and wrote one.
+    Taking that back deletes the file: writing the master's text into the revised
+    tree instead would leave a second spelling of one caption behind, which is
+    the thing the undo was asked to remove."""
+    dst = home / "workspace" / "resized"
+    (dst / "sub" / "b.txt").write_text("1boy. On the left, hat.", encoding="utf-8")
+    (dst / "sub" / "b.variants.txt").write_text(_VARIANTS, encoding="utf-8")
+    report = _position_report(
+        home,
+        [
+            {
+                "image": "sub/b.png",
+                "caption_path": "sub/b.txt",
+                # What spoke for the image was the master; the write target held
+                # nothing.
+                "original": "1boy, hat",
+                "target_before": "",
+                "proposed": "1boy. On the left, hat.",
+                "status": "proposed",
+            }
+        ],
+    )
+
+    out = P.undo(report, roots, "position")
+
+    assert not (dst / "sub" / "b.txt").exists()
+    assert not (dst / "sub" / "b.variants.txt").exists()
+    assert (home / "image_dataset" / "a.txt").exists()  # no master was touched
+    assert out["removed"] == 1 and out["restored"] == 0
+    assert out["written"] == ["sub/b.jpg"]
+
+
+def test_undo_refuses_a_report_that_never_recorded_the_targets_own_text(home, roots):
+    """A report from before the stage recorded ``target_before``: its rows say
+    what spoke for the image, which is not what the target held. Read as an empty
+    baseline it would delete a caption that had a text — so it is skipped."""
+    dst = home / "workspace" / "resized"
+    (dst / "a.txt").write_text("1girl. On the left, solo.", encoding="utf-8")
+    report = _position_report(
+        home,
+        [
+            {
+                "image": "a.png",
+                "caption_path": "a.txt",
+                "original": "1girl, solo",
+                "proposed": "1girl. On the left, solo.",
+                "status": "proposed",
+            }
+        ],
+    )
+
+    out = P.undo(report, roots, "position")
+
+    assert (dst / "a.txt").read_text(encoding="utf-8") == "1girl. On the left, solo."
+    assert out["skipped"] == {"no-baseline": 1}
+
+
 # ---- the shapes stay in step with the stages they mirror ---------------
 
 

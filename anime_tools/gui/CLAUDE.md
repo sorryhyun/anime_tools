@@ -59,8 +59,12 @@ field and an already-hidden field are never folded — the server settles that, 
   `/api/dataset/item` and `/api/dataset/parse` via `position_clauses.tag_spans`, which is what lets
   the editor stay a real `<textarea>` with boxes painted behind it.
 - `proposals.py` is `stages/replay.py` seen from the server: `load_report` / `report_rows` /
-  `apply_one` are imported; an Undo is `apply_one` with the two texts swapped, and Export branches
-  to `revert_export` at the top. `proposals.SHAPES` is `contract.REPLAY_SHAPES`, the same objects
+  `undo_one` are imported; an Undo is `apply_one` with the two texts swapped, except for a row
+  whose before-text is empty — the run created that revised caption out of a master, so taking it
+  back deletes the file and leaves the master alone. Export branches to `revert_export` at the
+  top. A row that records no before-text *at all* (a report older than its stage's
+  `target_before`) is skipped as `no-baseline` rather than read as an empty one, which would
+  delete a caption that had a text. `proposals.SHAPES` is `contract.REPLAY_SHAPES`, the same objects
   the three stage CLIs bind as their `REPLAY_SPEC` (importing a stage CLI would pull torch in);
   `tests/test_gui_proposals.py` pins the identity.
 - `jobs.py` runs one `python -m` subprocess at a time over SSE. A job is a sequence of `Step`s

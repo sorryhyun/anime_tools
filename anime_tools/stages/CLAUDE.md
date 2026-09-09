@@ -124,9 +124,15 @@ Settings value each.
   read-only fallback. `autotag` walks images rather than captions, so it calls `resolve_caption`
   itself; `cli/ab_position_captions` deliberately reads the master only.
 - `replay.apply_one` — the one drift-guarded write: `no-proposal` → `missing-caption` →
-  `already-applied` → `drifted` → `would-write`/`written`. The GUI's Undo is this call with the
-  two texts swapped (`gui/proposals.py`); the replay shapes are `contract.REPLAY_SHAPES`, bound by
-  the three stage CLIs as `REPLAY_SPEC`.
+  `already-applied` → `drifted` → `would-write`/`written`. Its baseline is what the *write
+  target* held, which is why every row records `target_before` beside the caption that spoke for
+  the image (`existing` / `original` / `caption`): those differ exactly when the stage read the
+  master, and an empty `target_before` is the row whose write CREATES the revised caption.
+  `replay.undo_one` is the inverse — `apply_one` with the two texts swapped, except for that row,
+  where the inverse of a create is a delete (the caption and its sidecars go, leaving the master
+  as the ladder had it). The GUI's Undo (`gui/proposals.py`) and the audit's `revert_curated` are
+  both that call; the replay shapes are `contract.REPLAY_SHAPES`, bound by the three stage CLIs as
+  `REPLAY_SPEC`.
 
 Every `--apply` that touches captions must be followed by the trainer's TE re-encode.
 

@@ -1148,6 +1148,7 @@ def test_apply_replays_a_dry_run_end_to_end(tmp_path, monkeypatch):
                         "image": f"{n}.png",
                         "caption_path": f"{n}.txt",
                         "original": "1girl, solo.",
+                        "target_before": "1girl, solo.",
                         "proposed": f"1girl, solo, {n}_tag.",
                         "status": "proposed",
                     }

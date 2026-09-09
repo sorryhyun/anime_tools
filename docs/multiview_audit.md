@@ -111,7 +111,10 @@ Verdicts: `multiple views` / `extra-character` / `unsure` / `count-explained`.
 
 Writes: `--apply` writes the revised caption (`--dst`), like every other
 caption stage; the hand-written master is never touched, and revised-first
-`resolve_caption` would read past a master write anyway. The tag is appended at
+`resolve_caption` would read past a master write anyway. An image audited on its
+master has no revised caption yet, so the write creates one — the drift baseline
+is `target_before` (empty for exactly those images), never the `caption`
+audited. The tag is appended at
 the end of the flat bag, via `compose_caption` so trailing clauses survive. Default
 `--apply_verdicts` is `multiple views` only, `--apply_confidence` is `strong`
 only. The replaced text goes onto `{stem}.history.txt` (the undo) and the stale
@@ -121,8 +124,9 @@ downstream before the next training run.
 
 `--from_report <report.json>`: replay a dry run's findings instead of
 re-auditing — the report already holds `caption_path`, the before-text
-(`caption`) and the `proposed` caption, so the write needs no SAM3 and no
-tagger (the run does not import `torch`; pinned by
+(`target_before`, what the revised caption held; `caption` is what was audited,
+which is the master for an image nobody has revised) and the `proposed` caption,
+so the write needs no SAM3 and no tagger (the run does not import `torch`; pinned by
 `tests/test_stage_replay.py`). The verdict/confidence gate is still applied at
 replay time, so one audit pass can be replayed at several tiers:
 

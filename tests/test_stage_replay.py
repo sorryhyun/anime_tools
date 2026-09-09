@@ -336,12 +336,18 @@ def test_replay_report_names_the_written_images(tmp_path: Path):
 # ---------------------------------------------------------------------------
 
 
-def _clause_proposal(stem: str, original: str, proposed: str) -> ImageProposal:
+def _clause_proposal(
+    stem: str, original: str, proposed: str, *, target_before: str | None = None
+) -> ImageProposal:
+    """One proposed rewrite. ``target_before`` defaults to the caption the sweep
+    read — the image already has a revised one — and ``""`` is the other case:
+    the sweep read the master, so the write creates the revised caption."""
     return ImageProposal(
         image=f"{stem}.png",
         caption_path=f"{stem}.txt",
         status="proposed",
         original=original,
+        target_before=original if target_before is None else target_before,
         proposed=proposed,
     )
 
@@ -381,6 +387,29 @@ def test_position_replay_drops_the_stale_variants_sidecar(tmp_path: Path):
     replay_rows(report, spec=POSITION_SPEC, src=source, dst=resized, apply=True)
 
     assert not sidecar.exists()
+
+
+def test_position_replay_creates_the_revised_caption_a_master_never_had(
+    tmp_path: Path,
+):
+    """The sweep composed the clauses off the master, so the row's ``original``
+    is a text the write target never held. ``target_before`` says the target held
+    nothing, and the replay writes rather than reporting ``missing-caption``."""
+    original = "safe, 2girls, blue hair"
+    proposed = "safe, 2girls. On the left, blue hair."
+    resized, source = _dataset(tmp_path, {"a": None})
+    (source / "a.txt").write_text(original, encoding="utf-8")
+    report = _position_report(
+        resized, source, [_clause_proposal("a", original, proposed, target_before="")]
+    )
+
+    _, stats = replay_rows(
+        report, spec=POSITION_SPEC, src=source, dst=resized, apply=True
+    )
+
+    assert stats.written == 1
+    assert (resized / "a.txt").read_text(encoding="utf-8") == proposed
+    assert (source / "a.txt").read_text(encoding="utf-8") == original
 
 
 def test_position_replay_keeps_the_sidecar_on_a_dry_replay(tmp_path: Path):
@@ -468,6 +497,7 @@ def test_replay_cli_does_not_import_torch(tmp_path: Path, module: str, repo_root
                     "verdict": "multiple views",
                     "confidence": "strong",
                     "caption": "safe, 2girls, blue hair",
+                    "target_before": "safe, 2girls, blue hair",
                     "proposed": proposed,
                 }
             ],

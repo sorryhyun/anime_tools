@@ -325,10 +325,18 @@ summary: {applied, rewrite, src, dst, path_pattern, prompt, prompt_embed,
           written, rewritten, moved_tags, max_novel_tags, clause_tags,
           novel_tags, reuse_ratio, pinned_tags{rule: n}, skipped{reason: n},
           part_prompts, part_recovered, max_tokens, over_token_budget[]}
-images[]: {image, caption_path, status, detected, expected, original, proposed,
-           tokens, instances[{position, box, score, tags, crop}],
+images[]: {image, caption_path, status, detected, expected, original,
+           target_before, proposed, tokens,
+           instances[{position, box, score, tags, crop}],
            moved[{tag, position, margin}], pinned{tag: rule}}
 ```
+
+`original` is the caption the clauses were composed from — the revised one, or
+the master when there is no revised caption yet. `target_before` is what the
+*write target* held, which is the same text except in that second case, where it
+is empty: the sweep is about to create a revised caption that was never there.
+That is the drift baseline, and an empty one is what makes the GUI's Undo delete
+the file rather than fill it with the master's own text.
 
 `summary.src` / `dst` / `path_pattern` exist so `--from_report` can refuse to
 replay a report against a different pair of trees. `--crops` exports the exact
@@ -396,10 +404,11 @@ No model is loaded on that second line — the run does not even import `torch`
 | Situation | Result |
 |---|---|
 | Report's `summary.src`/`dst` ≠ this run's `--src`/`--dst`, or absent | refused (`SystemExit`) — the row paths are relative to those roots |
-| Report's own `applied` is true | refused — its `original` describes the pre-apply world, so every row would read as drifted |
-| Caption on disk ≠ the row's `original` | row skipped, `skip:drifted`, counted — a hand edit between the passes is never overwritten |
+| Report's own `applied` is true | refused — its `target_before` describes the pre-apply world, so every row would read as drifted |
+| Caption on disk ≠ the row's `target_before` | row skipped, `skip:drifted`, counted — a hand edit between the passes is never overwritten |
 | Caption on disk already == `proposed` | row skipped, `skip:already-applied` — replays are idempotent, so a crashed one can be re-run |
-| Caption file gone | row skipped, `skip:missing-caption` |
+| Caption file gone, `target_before` empty | written — the row is one the sweep read off the master, and the revised caption it creates is exactly what the live pass would have written |
+| Caption file gone, `target_before` set | row skipped, `skip:missing-caption` |
 | Row status ≠ `proposed`, or `--path_pattern` excludes it | counted, not written (the pattern is matched as the live pass matches it) |
 
 Without `--apply` it is a re-play dry run. The replay writes

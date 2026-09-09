@@ -160,7 +160,9 @@ followed by the trainer's `make preprocess-te` — nothing re-encodes on its own
 bump the caption mtime, so the cache is correctly stale, and the apply pass unlinks the now-stale
 `.variants.txt` sidecar, which would otherwise override `{stem}.txt` at encode time). The GUI
 needs no Apply gate: the replaced text is a history version, and Undo replays the report
-backwards through `replay.apply_one`.
+backwards through `replay.undo_one` — putting the replaced text back, or, for a run that
+*created* the revised caption (the row's `target_before` is empty because the stage read the
+master), deleting it, so an image that had only a master is left with only a master.
 
 The correction pass (`stages/captions.py::write_corrected_preprocess_captions`, `CorrectRequest`)
 reads the revised caption first and corrects it in place — the flat bag is reordered around

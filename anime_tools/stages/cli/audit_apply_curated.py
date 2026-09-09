@@ -3,7 +3,9 @@
 Writes exactly the findings a human hand-picked across verdict tiers, rather than
 every finding a tier admits. Every run writes a manifest of verbatim before/after
 text next to the report, and ``--revert <manifest>`` restores it, refusing any
-caption edited since.
+caption edited since. A manifest entry with an empty ``before`` is one the apply
+created a revised caption for (the audit read the master), and reverting it
+deletes that caption rather than writing the master's text into the revised tree.
 
 Dry-run by default; a real apply or revert changes the revised captions, so run
 ``make preprocess-te`` after.

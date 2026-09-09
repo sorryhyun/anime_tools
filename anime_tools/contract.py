@@ -78,6 +78,12 @@ class ReplaySpec:
     ok_status: str | None = None
     row_filter: Callable[[Mapping[str, object]], bool] | None = None
     before_field: str = "existing"
+    """The row key holding the *write target's* own text — the drift baseline,
+    which is not the caption that spoke for the image: every caption stage reads
+    revised-first with the master as a fallback, so a run that acts on a master
+    writes a revised caption that was never there. Empty says exactly that, and
+    is what makes the inverse of such a write a delete
+    (``replay.undo_one``)."""
     after_field: str = "proposed"
     target_root: str = "src"
     # Passed straight to ``_caption_io.write_caption``; ``history_by`` names who
@@ -88,10 +94,12 @@ class ReplaySpec:
     history_by: str | None = None
 
 
+# Every proposal lands on the **revised** caption (``--dst``), and every stage
+# reads the master as a fallback when there is no revised one, so all three name
+# ``target_before`` — what the write target itself held — rather than the text
+# that spoke for the image (``existing`` / ``original`` / ``caption``, still in
+# the rows for the reader).
 REPLAY_SHAPES: dict[str, ReplaySpec] = {
-    # The proposal lands on the **revised** caption (``--dst``); the master is the
-    # read-only fallback the tagger merged into, so the drift baseline is the
-    # target's own text (``target_before``), not what spoke for the image.
     "autotag": ReplaySpec(
         stage="autotag_captions",
         rows_key="rows",
@@ -110,7 +118,7 @@ REPLAY_SHAPES: dict[str, ReplaySpec] = {
         rows_key="images",
         stats_key="summary",
         ok_status="proposed",
-        before_field="original",
+        before_field="target_before",
         after_field="proposed",
         target_root="dst",
         drop_variants=True,
@@ -124,7 +132,7 @@ REPLAY_SHAPES: dict[str, ReplaySpec] = {
         stage="audit_multiview",
         rows_key="images",
         stats_key="summary",
-        before_field="caption",
+        before_field="target_before",
         after_field="proposed",
         target_root="dst",
         drop_variants=True,

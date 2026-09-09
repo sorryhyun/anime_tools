@@ -20,12 +20,11 @@ from typing import Any
 
 from anime_tools.contract import REPLAY_SHAPES, ReplaySpec
 from anime_tools.gui import dataset as D
-from anime_tools.stages._caption_io import read_caption
 from anime_tools.stages.replay import (
     StaleReportError,
-    apply_one,
     load_report,
     report_rows,
+    undo_one,
 )
 
 # Statuses a replayed row carries (``stages.replay.ReplayRow``); both mean
@@ -39,7 +38,8 @@ SHAPES = REPLAY_SHAPES
 CAPTION_KIND: dict[str, str] = {"src": "master", "dst": "revised"}
 """Which of the two editable captions a stage's ``target_root`` names."""
 
-# ``apply_one``'s statuses, renamed for the undo side.
+# ``undo_one``'s statuses, renamed for the undo side. ``written`` and
+# ``removed`` are the two that are not a skip.
 _UNDO_STATUS = {
     "already-applied": "already-undone",
     "missing-caption": "missing",
@@ -96,6 +96,18 @@ def _texts(row: Mapping[str, Any], shape: ReplaySpec) -> tuple[str, str]:
     if before is None and after is None:
         before, after = row.get("before"), row.get("after")
     return str(before or "").strip(), str(after or "").strip()
+
+
+def _records_baseline(row: Mapping[str, Any], shape: ReplaySpec) -> bool:
+    """Does the row say what the write target held, even to say "nothing"?
+
+    An empty before-text is what tells :func:`~anime_tools.stages.replay.undo_one`
+    the run *created* the caption, so an undo deletes it. A report written before
+    its stage recorded ``target_before`` has no such key, and reading its absence
+    as an empty one would delete a caption that had a text before the run. Hence
+    presence, not truthiness.
+    """
+    return shape.before_field in row or "before" in row
 
 
 def _proposes(row: Mapping[str, Any], shape: ReplaySpec) -> bool:
@@ -187,8 +199,12 @@ def undo(report_path: Path, roots: D.Roots, stage: str) -> dict[str, Any]:
     """Put back what the ``--apply`` run in ``report_path`` wrote.
 
     Only rows the file still agrees with are touched: a caption edited since the
-    apply reads as ``drifted`` and is left alone. Returns the images restored —
-    what the caller reloads — plus a count per skip reason.
+    apply reads as ``drifted`` and is left alone. A row whose before-text is
+    empty is one the run *created* a revised caption for — an image that had
+    only a master — and taking that back deletes the file rather than filling it
+    with the master's own text, leaving the ladder as the run found it. Returns
+    the images restored and removed — what the caller reloads — plus a count per
+    skip reason.
     """
     if stage == EXPORT_STAGE:
         return _undo_export(report_path, roots)
@@ -215,47 +231,28 @@ def undo(report_path: Path, roots: D.Roots, stage: str) -> dict[str, Any]:
             skipped["outside-dataset"] += 1
             continue
         image = str(row.get("image") or "")
-        if before:
-            # An undo is an apply with the two texts swapped: same drift ladder,
-            # same write, and the same drop of the variants sidecar (which wins
-            # over the caption at encode time and would be stale against the text
-            # being put back). The undone text is filed under ``undo`` in history.
-            status = apply_one(
-                target,
-                after,
-                before,
-                apply=True,
-                newline=shape.newline,
-                drop_variants=shape.drop_variants,
-                history_by="undo" if shape.history_by else None,
-            )
-            if status != "written":
-                skipped[_UNDO_STATUS.get(status, status)] += 1
-                continue
+        if not before and not _records_baseline(row, shape):
+            skipped["no-baseline"] += 1
+            continue
+        # Restore, or — for the caption this run created — delete. Both ride the
+        # stage's own drift ladder and drop the variants sidecar, which wins over
+        # the caption at encode time and would be stale against either outcome.
+        # A restored text is filed under ``undo`` in history.
+        status = undo_one(
+            target,
+            after,
+            before,
+            apply=True,
+            newline=shape.newline,
+            drop_variants=shape.drop_variants,
+            history_by="undo" if shape.history_by else None,
+        )
+        if status == "written":
             restored.append(image)
-        else:
-            # An empty before-text means the run *created* the file (autotag's
-            # ``missing`` mode), so the inverse is a delete, gated the same way.
-            if not target.is_file():
-                skipped["already-undone"] += 1
-                continue
-            if read_caption(target) != after:
-                skipped["drifted"] += 1
-                continue
-            target.unlink()
+        elif status == "removed":
             removed.append(image)
-            if shape.drop_variants:
-                from anime_tools.captions.variants import variants_sidecar_path
-
-                sidecar = variants_sidecar_path(target)
-                if sidecar.is_file():
-                    sidecar.unlink()
-            if shape.history_by:
-                # This run created the caption, so its history describes no
-                # earlier text and goes with the file.
-                from anime_tools.captions.history import drop_history
-
-                drop_history(target)
+        else:
+            skipped[_UNDO_STATUS.get(status, status)] += 1
 
     images = [*restored, *removed]
     return {

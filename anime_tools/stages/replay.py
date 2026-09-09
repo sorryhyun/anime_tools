@@ -191,7 +191,8 @@ def apply_one(
         Nothing to write, or the proposal equals the before-text.
     ``missing-caption``
         The target is gone. An absent target with a non-empty before-text is
-        refused; only autotag's ``missing`` mode legitimately creates one.
+        refused; a run that legitimately *creates* the caption records an empty
+        one (``target_before``), so it lands on ``would-write``/``written``.
     ``already-applied``
         The file already holds the proposal, so a crashed apply can be re-run.
     ``drifted``
@@ -227,6 +228,73 @@ def apply_one(
         history_by=history_by,
     )
     return "written"
+
+
+# What :func:`undo_one` adds to :data:`APPLY_STATUSES` — the two outcomes of
+# taking back a write that created the file.
+UNDO_STATUSES = APPLY_STATUSES + ("would-remove", "removed")
+
+
+def undo_one(
+    target: Path,
+    applied: str,
+    before: str,
+    *,
+    apply: bool = True,
+    newline: bool = False,
+    drop_variants: bool = False,
+    history_by: str | None = None,
+) -> str:
+    """Take one write back: restore ``before``, or delete what the write created.
+
+    An undo is :func:`apply_one` with the two texts swapped — same drift ladder,
+    same write, same sidecar drop — except when ``before`` is empty. That names
+    the run that *created* the caption (its ``target_before`` was empty because
+    the file was not there), and the inverse of a create is a delete: writing the
+    master's text into the revised tree instead would leave a second spelling of
+    one caption behind, which is exactly what the undo was asked to remove.
+
+    The delete is gated like the write it takes back — the file must still hold
+    exactly ``applied`` — and takes the sidecars with it: a ``{stem}.variants.txt``
+    generated from the deleted text is an orphan, and a history that records no
+    text older than the deleted one has nothing left to say.
+
+    Returns an :func:`apply_one` status (read from the undo direction: the file
+    already gone is ``already-applied``), plus ``would-remove`` / ``removed``.
+    """
+    if before:
+        return apply_one(
+            target,
+            applied,
+            before,
+            apply=apply,
+            newline=newline,
+            drop_variants=drop_variants,
+            history_by=history_by,
+        )
+
+    applied = (applied or "").strip()
+    if not applied:
+        return "no-proposal"
+    if not target.is_file():
+        return "already-applied"
+    if read_caption(target) != applied:
+        return "drifted"
+    if not apply:
+        return "would-remove"
+
+    target.unlink()
+    if drop_variants:
+        from anime_tools.captions.variants import variants_sidecar_path
+
+        sidecar = variants_sidecar_path(target)
+        if sidecar.is_file():
+            sidecar.unlink()
+    if history_by is not None:
+        from anime_tools.captions.history import drop_history
+
+        drop_history(target)
+    return "removed"
 
 
 def replay_rows(

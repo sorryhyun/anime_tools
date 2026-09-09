@@ -17,7 +17,16 @@ CAPTION = "1girl, solo, blue eyes"
 PROPOSED = f"1girl, solo, blue eyes, {MULTIPLE_VIEWS}"
 
 
-def _finding(rel: str, *, caption: str = CAPTION, proposed: str = PROPOSED):
+def _finding(
+    rel: str,
+    *,
+    caption: str = CAPTION,
+    proposed: str = PROPOSED,
+    target_before: str | None = None,
+):
+    """One admitted finding. ``target_before`` defaults to the audited caption —
+    the image already has a revised one — and ``""`` is the other case: only a
+    master spoke for it, so the write creates the revised caption."""
     return MultiviewFinding(
         image=rel.replace(".txt", ".png"),
         caption_path=rel,
@@ -27,6 +36,7 @@ def _finding(rel: str, *, caption: str = CAPTION, proposed: str = PROPOSED):
         verdict=MULTIPLE_VIEWS,
         confidence="strong",
         caption=caption,
+        target_before=caption if target_before is None else target_before,
         proposed=proposed,
     )
 
@@ -75,6 +85,26 @@ def test_apply_findings_writes_and_reports_each_skip(tmp_path: Path) -> None:
         "1girl, solo, red eyes"
     )
     assert not (src / "gone.txt").exists()
+
+
+def test_a_master_only_image_gets_its_revised_caption_created(tmp_path: Path) -> None:
+    """The audit reads revised-first with the master as the fallback, so an image
+    nobody has revised is audited on its master and written to a revised caption
+    that is not there yet. The baseline is that absence (``target_before=""``),
+    not the master's text — against which every such image read as
+    ``missing-caption`` and nothing was written."""
+    revised = tmp_path / "resized"
+    revised.mkdir()
+
+    written, skipped = apply_findings(
+        [_finding("a.txt", target_before="")], resized_dir=revised
+    )
+
+    assert written == [("a.txt", "", PROPOSED)]
+    assert not skipped
+    assert (revised / "a.txt").read_text(encoding="utf-8") == PROPOSED
+    # Nothing was replaced, so there is no superseded version to file.
+    assert not (revised / "a.history.txt").exists()
 
 
 def test_apply_findings_is_idempotent(tmp_path: Path) -> None:

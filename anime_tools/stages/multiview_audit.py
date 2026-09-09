@@ -41,9 +41,10 @@ from anime_tools.captions.position_clauses import (
 from anime_tools.captions.taxonomy import count_of, exact_count, normalize_tag
 from anime_tools.stages.instance_detection import Detection, crop_instance
 
+from ._caption_io import read_caption
 from ._walk_captions import iter_captions
 from .position_captions import PositionCaptionOptions, detect_subjects
-from .replay import apply_one
+from .replay import apply_one, undo_one
 
 # The audit population, named by `is_candidate`'s own reason string.
 AUDIT_SKIP_REASON = "single-subject"
@@ -123,6 +124,13 @@ class MultiviewFinding:
     confidence: str = "weak"
     suggested_tag: str | None = None
     caption: str = ""
+    """The caption audited — the revised one, or the master when there is no
+    revised caption yet."""
+    target_before: str = ""
+    """What the write target (the revised caption) holds right now, ``""`` when
+    it does not exist. The drift baseline for :func:`apply_findings` and for the
+    replay, which is not ``caption``: tagging a master writes a revised caption
+    that was never there, and the undo of that write is a delete."""
     proposed: str = ""
     # Contact sheet for this row, relative to the sheets dir; "" when off.
     sheet: str = ""
@@ -457,7 +465,7 @@ def run_multiview_audit(
     stats = MultiviewAuditStats()
     rows: list[MultiviewFinding] = []
 
-    for image_path, rel, _dst_caption, caption in iter_captions(
+    for image_path, rel, dst_caption, caption in iter_captions(
         resized_dir, source_dir, path_pattern, stats, progress
     ):
         ok, reason = is_audit_target(caption)
@@ -519,6 +527,9 @@ def run_multiview_audit(
         # that looks a promotion up by rel would miss every row.
         finding.image = image_path.relative_to(resized_dir).as_posix()
         finding.caption_path = rel.as_posix()
+        finding.target_before = (
+            read_caption(dst_caption) if dst_caption.exists() else ""
+        )
         stats.findings += 1
         stats.verdicts[finding.verdict] += 1
         rows.append(finding)
@@ -594,6 +605,11 @@ def apply_findings(
     revised-first, so a caption written to the master would be read past by the
     clause sweep, the correction pass and the TE step alike.
 
+    The drift baseline is ``target_before`` — what that revised caption holds —
+    not the ``caption`` audited, which is the master for an image nobody has
+    revised yet. Those are the images the write *creates* a caption for, and
+    against ``caption`` every one of them read as ``missing-caption``.
+
     Returns ``(written, skipped)``: the ``(rel, before, after)`` triples written
     and a count per :func:`~anime_tools.stages.replay.apply_one` status for the
     gated rows that were not, so a caption edited since the audit is ``drifted``
@@ -604,7 +620,7 @@ def apply_findings(
     for finding in admitted(findings, verdicts=verdicts, confidences=confidences):
         status = apply_one(
             resized_dir / finding.caption_path,
-            finding.caption,
+            finding.target_before,
             finding.proposed,
             apply=True,
             drop_variants=True,
@@ -612,7 +628,7 @@ def apply_findings(
         )
         if status == "written":
             written.append(
-                (finding.caption_path, finding.caption.strip(), finding.proposed)
+                (finding.caption_path, finding.target_before.strip(), finding.proposed)
             )
         else:
             skipped[status] += 1
@@ -638,7 +654,9 @@ def curated_proposal(row: dict) -> tuple[str, str] | None:
     return None if proposed == caption.strip() else (tag, proposed)
 
 
-# :func:`apply_one`'s statuses, named from the revert direction.
+# :func:`~anime_tools.stages.replay.undo_one`'s statuses, named from the revert
+# direction. ``removed`` keeps its own name: the caption the apply created is
+# gone, not restored to an earlier text.
 _REVERT_STATUS = {
     "written": "reverted",
     "would-write": "would-revert",
@@ -657,21 +675,23 @@ def apply_curated(
 
     Returns ``(manifest, unmatched)``: one entry per accepted row with the
     verbatim before/after and any accepted image with no finding. Same drift
-    guard as
-    :func:`apply_findings`.
+    guard as :func:`apply_findings`, and the same baseline: ``target_before``
+    when the report records one, and the audited ``caption`` for a report
+    written before it did.
     """
     by_image = {r["image"]: r for r in rows if r.get("verdict")}
     unmatched = sorted(accepted - set(by_image))
     manifest: list[dict] = []
     for image in sorted(accepted & set(by_image)):
         row = by_image[image]
+        before = row["target_before"] if "target_before" in row else row["caption"]
         entry = {
             "image": image,
             "caption_path": row["caption_path"],
             "verdict": row["verdict"],
             "confidence": row["confidence"],
             "tag": None,
-            "before": row["caption"],
+            "before": before,
             "after": None,
             "status": "pending",
         }
@@ -683,7 +703,7 @@ def apply_curated(
         entry["tag"], entry["after"] = derived
         entry["status"] = apply_one(
             resized_dir / row["caption_path"],
-            row["caption"],
+            before,
             entry["after"],
             apply=apply,
             drop_variants=True,
@@ -699,7 +719,11 @@ def revert_curated(
     apply: bool,
 ) -> list[dict]:
     """Undo :func:`apply_curated` from its manifest, restoring ``before`` only
-    where the revised caption still holds exactly ``after``."""
+    where the revised caption still holds exactly ``after``.
+
+    An entry whose ``before`` is empty is one the apply *created* a revised
+    caption for; :func:`~anime_tools.stages.replay.undo_one` deletes that file
+    rather than filling it with the master's text."""
     results: list[dict] = []
     for entry in manifest:
         outcome = {"image": entry["image"], "status": "skipped"}
@@ -709,8 +733,7 @@ def revert_curated(
         if not entry.get("after"):
             outcome["status"] = f"no-edit ({entry.get('status')})"
             continue
-        # A revert is an apply with the two texts swapped.
-        status = apply_one(
+        status = undo_one(
             resized_dir / entry["caption_path"],
             entry["after"],
             entry["before"],

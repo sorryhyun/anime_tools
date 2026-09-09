@@ -59,7 +59,7 @@ from anime_tools.stages.instance_detection import (
     merge_part_detections,
 )
 
-from ._caption_io import write_caption
+from ._caption_io import read_caption, write_caption
 from ._walk_captions import iter_captions
 
 # Convenience re-exports: canonical homes are the modules imported above, but
@@ -123,6 +123,13 @@ class ImageProposal:
     detected: int = 0
     expected: int | None = None
     original: str = ""
+    """What spoke for the image and the clauses were composed from — the revised
+    caption, or the master when there is no revised one yet."""
+    target_before: str = ""
+    """What the *write target* holds right now (``""`` when it does not exist
+    yet). The replay's drift baseline, which is not ``original``: a rewrite of a
+    master writes a revised caption that was never there, and the undo of that
+    write is a delete."""
     proposed: str | None = None
     instances: list[InstanceProposal] = field(default_factory=list)
     # Boxes as detected, recorded even when a gate rejects the image (reviewer
@@ -599,6 +606,9 @@ def run_position_captions(
         )
         proposal.image = str(image_path.relative_to(resized_dir))
         proposal.caption_path = str(rel)
+        proposal.target_before = (
+            read_caption(dst_caption) if dst_caption.exists() else ""
+        )
         rows.append(proposal)
 
         if not proposal.ok:
@@ -668,6 +678,11 @@ def flatten_captions(
             {
                 "caption_path": str(rel),
                 "original": original,
+                # Same distinction the sweep records: ``original`` may be the
+                # master, and flattening it creates a revised caption.
+                "target_before": (
+                    read_caption(dst_caption) if dst_caption.exists() else ""
+                ),
                 "proposed": flattened,
             }
         )
