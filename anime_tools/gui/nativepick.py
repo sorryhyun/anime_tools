@@ -122,6 +122,11 @@ def _argv(kind: str, start: Path | None, title: str) -> list[str] | None:
             "-NoProfile",
             "-STA",
             "-Command",
+            # The console encoding is the codepage otherwise (cp949/cp932 on
+            # a CJK Windows), and a chosen path outside it comes back
+            # mojibake or undecodable. `pick` reads UTF-8; say so here.
+            "[Console]::OutputEncoding = "
+            "[System.Text.Encoding]::UTF8;"
             "Add-Type -AssemblyName System.Windows.Forms;"
             + WIN_TOPMOST_OWNER
             + body
@@ -166,7 +171,16 @@ def pick(kind: str = "dir", start: Path | None = None, *, title: str = "") -> Pi
         return Pick(None, available=False)
     try:
         proc = subprocess.run(
-            argv, capture_output=True, text=True, timeout=TIMEOUT_S, check=False
+            argv,
+            capture_output=True,
+            text=True,
+            # Every chooser above is told to answer in UTF-8; decoding in
+            # the platform codepage instead would raise on the first CJK
+            # path. `replace` keeps an odd byte from losing the whole pick.
+            encoding="utf-8",
+            errors="replace",
+            timeout=TIMEOUT_S,
+            check=False,
         )
     except subprocess.TimeoutExpired:
         return Pick(None, available=True)

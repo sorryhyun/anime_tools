@@ -38,6 +38,14 @@ from anime_tools.gui.jobs import JobManager, Step
 from anime_tools.gui.settings import load_settings, save_settings
 from anime_tools.stages.resize import DEFAULT_MIN_PIXELS
 
+# `mimetypes` has no built-in font rows -- it learns them from /etc/mime.types,
+# which Windows has no equivalent of (it reads the registry, where woff2 is
+# absent), so `/assets/<the bundled font>` goes out as application/octet-stream
+# and the browser drops the face. Register the two we serve rather than let the
+# answer depend on what the host happens to have installed.
+mimetypes.add_type("font/woff2", ".woff2")
+mimetypes.add_type("font/woff", ".woff")
+
 STATIC = Path(__file__).parent / "static"
 
 
