@@ -21,7 +21,11 @@ def test_the_guard_is_torch_free():
         "assert 'torch' not in sys.modules, 'torch imported'"
     )
     r = subprocess.run(
-        [sys.executable, "-c", code], capture_output=True, text=True, check=False
+        [sys.executable, "-c", code],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        check=False,
     )
     assert r.returncode == 0, r.stderr
 

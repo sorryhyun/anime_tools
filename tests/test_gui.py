@@ -20,16 +20,26 @@ from anime_tools.gui import stages as S
 pytest.importorskip("fastapi")
 
 
-def _await_job(c, response, tries: int = 200) -> dict:
-    """Block until a started job leaves ``running`` (or give up and say so)."""
-    assert response.status_code == 200, response.text
-    job_id = response.json()["id"]
+def _await_id(c, job_id: str, tries: int = 200) -> dict:
+    """Block until ``job_id`` leaves ``running`` (or give up and say so).
+
+    A cancel only *asks* the child to stop, so the slot it holds is still taken
+    when the POST returns -- on Windows the terminate/reap round trip is slow
+    enough that the next job reliably collides with it (409). Whoever wants the
+    slot next waits here.
+    """
     for _ in range(tries):
         job = c.get(f"/api/jobs/{job_id}").json()
         if job["state"] != "running":
             return job
         time.sleep(0.05)
     raise AssertionError(f"job {job_id} still running")
+
+
+def _await_job(c, response, tries: int = 200) -> dict:
+    """Block until a started job leaves ``running`` (or give up and say so)."""
+    assert response.status_code == 200, response.text
+    return _await_id(c, response.json()["id"], tries)
 
 
 def _opt(argv: list[str], flag: str) -> str:
@@ -400,7 +410,11 @@ def test_schemas_build_in_process_without_a_model_library():
         "assert not heavy, heavy"
     )
     r = subprocess.run(
-        [sys.executable, "-c", code], capture_output=True, text=True, check=False
+        [sys.executable, "-c", code],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        check=False,
     )
     assert r.returncode == 0, r.stderr
 
@@ -463,7 +477,8 @@ def client(tmp_path, monkeypatch):
         "    for i in range(a.n): print('line', i, flush=True)\n"
         "    time.sleep(a.sleep)\n"
         "    d = pathlib.Path(os.environ['ANIME_TOOLS_HOME'], a.report_dir); d.mkdir(exist_ok=True)\n"
-        "    (d/'report.json').write_text(json.dumps({'apply': a.apply, 'rows': [{'k': 1}]}))\n"
+        "    (d/'report.json').write_text(json.dumps({'apply': a.apply, 'rows': [{'k': 1}]}))\n",
+        encoding="utf-8",
     )
     monkeypatch.syspath_prepend(str(tmp_path))
     monkeypatch.setenv("PYTHONPATH", str(tmp_path))
@@ -539,7 +554,7 @@ def test_files_reject_dotdot_traversal(client):
     before the textual `is_relative_to`."""
     c, home = client
     outside = home.parent / "gui_traversal_target.txt"
-    outside.write_text("secret")
+    outside.write_text("secret", encoding="utf-8")
     try:
         traversal = f"image_dataset/../../{outside.name}"
         assert outside.is_file()  # the target really exists — 404 is the guard
@@ -737,8 +752,10 @@ def test_a_failing_step_stops_the_chain(tmp_path):
     """A failing step stops the chain."""
     from anime_tools.gui.jobs import JobManager, Step
 
-    (tmp_path / "boom_step.py").write_text("import sys; print('first'); sys.exit(3)")
-    (tmp_path / "ok_step.py").write_text("print('second')")
+    (tmp_path / "boom_step.py").write_text(
+        "import sys; print('first'); sys.exit(3)", encoding="utf-8"
+    )
+    (tmp_path / "ok_step.py").write_text("print('second')", encoding="utf-8")
     mgr = JobManager(log_dir=tmp_path / "logs")
 
     job = mgr.start(
@@ -759,8 +776,8 @@ def test_a_failing_step_stops_the_chain(tmp_path):
 def test_steps_run_in_order_in_one_stream(tmp_path):
     from anime_tools.gui.jobs import JobManager, Step
 
-    (tmp_path / "one_step.py").write_text("print('first')")
-    (tmp_path / "two_step.py").write_text("print('second')")
+    (tmp_path / "one_step.py").write_text("print('first')", encoding="utf-8")
+    (tmp_path / "two_step.py").write_text("print('second')", encoding="utf-8")
     mgr = JobManager(log_dir=tmp_path / "logs")
 
     job = mgr.start(
@@ -777,7 +794,9 @@ def test_steps_run_in_order_in_one_stream(tmp_path):
     assert job.exit_code == 0
     assert [ln for ln in job.lines if not ln.startswith("──")] == ["first", "second"]
     # One log file for the whole chain, not one per step.
-    assert (tmp_path / "logs" / f"{job.id}.log").read_text().count("second") == 1
+    assert (tmp_path / "logs" / f"{job.id}.log").read_text(encoding="utf-8").count(
+        "second"
+    ) == 1
 
 
 def test_scoping_an_unscopable_stage_is_refused(client, monkeypatch):
@@ -894,6 +913,7 @@ def test_model_catalog_and_download_job(client, monkeypatch):
     j = c.post("/api/jobs", json={"stage": "stub", "values": {"sleep": 30}}).json()
     assert c.post("/api/models/download", json={"ids": ["sam3"]}).status_code == 409
     c.post(f"/api/jobs/{j['id']}/cancel")
+    _await_id(c, j["id"])
 
     # HF_HUB_OFFLINE keeps the test off the wire; it fails fast, which is enough
     # to see the child ran.
@@ -1068,7 +1088,7 @@ def test_dataset_items_refreshes_only_what_it_is_asked_for(client):
     # A caption written since the listing shows up on the refreshed row.
     dst = tmp_path / "workspace" / "resized" / "sub"
     dst.mkdir(parents=True)
-    (dst / "b.txt").write_text("1girl.")
+    (dst / "b.txt").write_text("1girl.", encoding="utf-8")
     assert c.post("/api/dataset/items", json={"rels": ["sub/b.png"]}).json()["items"][
         0
     ]["captions"]["revised"]
@@ -1103,11 +1123,11 @@ def test_apply_replays_a_dry_run_end_to_end(tmp_path, monkeypatch):
     src, dst = tmp_path / "image_dataset", tmp_path / "workspace" / "resized"
     for n in ("a", "b", "c"):
         (src / f"{n}.png").write_bytes(b"\x89PNG\r\n\x1a\n")
-        (src / f"{n}.txt").write_text("1girl, solo.")
+        (src / f"{n}.txt").write_text("1girl, solo.", encoding="utf-8")
         (dst / f"{n}.png").write_bytes(b"\x89PNG\r\n\x1a\n")
         # The stage writes the revised caption, so that is what a replay of it
         # gates on and what comes out the other end.
-        (dst / f"{n}.txt").write_text("1girl, solo.")
+        (dst / f"{n}.txt").write_text("1girl, solo.", encoding="utf-8")
 
     # What the detect+tag pass left behind.
     rdir = tmp_path / "workspace" / "captions" / "position"
@@ -1134,10 +1154,11 @@ def test_apply_replays_a_dry_run_end_to_end(tmp_path, monkeypatch):
                     for n in ("a", "b", "c")
                 ],
             }
-        )
+        ),
+        encoding="utf-8",
     )
     # Hand-edited after the dry run: its proposal is stale, so it is skipped.
-    (dst / "c.txt").write_text("1girl, solo, hand edited.")
+    (dst / "c.txt").write_text("1girl, solo, hand edited.", encoding="utf-8")
 
     job = c.post(
         "/api/jobs",
@@ -1162,10 +1183,10 @@ def test_apply_replays_a_dry_run_end_to_end(tmp_path, monkeypatch):
 
     report = c.get(f"/api/jobs/{job['id']}/report").json()["report"]
     assert report["written"] == ["a.png", "b.png"]
-    assert (dst / "a.txt").read_text() == "1girl, solo, a_tag."
-    assert (dst / "c.txt").read_text() == "1girl, solo, hand edited."
+    assert (dst / "a.txt").read_text(encoding="utf-8") == "1girl, solo, a_tag."
+    assert (dst / "c.txt").read_text(encoding="utf-8") == "1girl, solo, hand edited."
     # The master is not the stage's to write.
-    assert (src / "a.txt").read_text() == "1girl, solo."
+    assert (src / "a.txt").read_text(encoding="utf-8") == "1girl, solo."
     # …and that list is all the sidebar has to re-stat.
     rows = c.post("/api/dataset/items", json={"rels": report["written"]}).json()[
         "items"

@@ -403,7 +403,7 @@ def merge_apply(
     preserved_keys: set[str] = set()
 
     if existing_yaml and existing_yaml.exists():
-        existing = yaml.safe_load(existing_yaml.read_text()) or {}
+        existing = yaml.safe_load(existing_yaml.read_text(encoding="utf-8")) or {}
         existing.pop("version", None)
         for key, body in existing.items():
             preserved_keys.add(key)

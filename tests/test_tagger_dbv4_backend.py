@@ -104,12 +104,13 @@ def _write_ckpt(tmp_path, groups: bool = True):
         "ratings": list(at.RATINGS),
         "people_count_labels": list(at.PEOPLE_COUNT_LABELS),
     }
-    (tmp_path / "vocab.json").write_text(json.dumps(vocab))
+    (tmp_path / "vocab.json").write_text(json.dumps(vocab), encoding="utf-8")
     (tmp_path / "rules.yaml").write_text(
-        "replacements:\n  black footwear: black shoes\nremove: []\n"
+        "replacements:\n  black footwear: black shoes\nremove: []\n", encoding="utf-8"
     )
     (tmp_path / "config.json").write_text(
-        json.dumps({"backend": "dbv4", "dbv4": {"repo": "fake/dbv4", "arch": "fake"}})
+        json.dumps({"backend": "dbv4", "dbv4": {"repo": "fake/dbv4", "arch": "fake"}}),
+        encoding="utf-8",
     )
     thr = torch.full((N,), 1.01)
     for n in ("1girl", "1boy", "solo", "black hair", "blonde hair", "hakurei reimu"):
@@ -119,7 +120,8 @@ def _write_ckpt(tmp_path, groups: bool = True):
         (tmp_path / "groups.yaml").write_text(
             "version: 1\n"
             "hair_color:\n  mode: softmax_when_solo\n  tags: [black hair, blonde hair]\n"
-            "artist:\n  mode: softmax\n  tags: ['@someone', '@other']\n"
+            "artist:\n  mode: softmax\n  tags: ['@someone', '@other']\n",
+            encoding="utf-8",
         )
     return tmp_path
 
@@ -272,13 +274,18 @@ def test_sidecar_round_trip(tmp_path):
     assert back.bce_indices == (3, 7)
     assert back.people_count_labels == ("a", "b")
     assert torch.equal(back.fc.weight, head.fc.weight)
-    assert json.loads((tmp_path / "sidecar.json").read_text())["note"] == "x"
+    assert (
+        json.loads((tmp_path / "sidecar.json").read_text(encoding="utf-8"))["note"]
+        == "x"
+    )
     assert db.SidecarHead.load(tmp_path / "nope") is None
 
 
 def test_unknown_backend_rejected(tmp_path):
     _write_ckpt(tmp_path)
-    (tmp_path / "config.json").write_text(json.dumps({"backend": "wat"}))
+    (tmp_path / "config.json").write_text(
+        json.dumps({"backend": "wat"}), encoding="utf-8"
+    )
     with pytest.raises(ValueError, match="unsupported tagger backend"):
         at.AnimaTagger(tmp_path, device="cpu")
 
@@ -287,7 +294,7 @@ def test_legacy_pe_backend_rejected(tmp_path):
     """A legacy checkpoint (``backend`` absent or ``"pe"``) fails loudly at load."""
     _write_ckpt(tmp_path)
     for cfg in ({}, {"backend": "pe"}):
-        (tmp_path / "config.json").write_text(json.dumps(cfg))
+        (tmp_path / "config.json").write_text(json.dumps(cfg), encoding="utf-8")
         with pytest.raises(ValueError, match="'pe' dual-encoder head was removed"):
             at.AnimaTagger(tmp_path, device="cpu")
 

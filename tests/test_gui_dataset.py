@@ -377,7 +377,9 @@ def test_writing_creates_the_destination_folder(client, home):
     c.put(
         "/api/dataset/item", json={"rel": "a.png", "kind": "revised", "text": "1girl"}
     )
-    assert (home / "workspace" / "resized" / "a.txt").read_text() == "1girl"
+    assert (home / "workspace" / "resized" / "a.txt").read_text(
+        encoding="utf-8"
+    ) == "1girl"
 
 
 def test_caption_writes_are_confined_and_validated(client):

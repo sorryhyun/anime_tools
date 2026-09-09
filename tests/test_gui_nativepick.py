@@ -7,7 +7,7 @@ rather than run.
 
 from __future__ import annotations
 
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 import pytest
 
@@ -18,7 +18,12 @@ from anime_tools.gui import nativepick as NP
 
 @pytest.fixture
 def linux(monkeypatch):
+    # `os.sep` goes with the platform: faking linux on a Windows host and
+    # leaving the separator at "\\" builds an argv no Linux would ever see.
+    # The paths below are PurePosixPath for the same reason -- a plain Path is
+    # a WindowsPath here and renders "/data/set" as "\data\set".
     monkeypatch.setattr(NP.sys, "platform", "linux")
+    monkeypatch.setattr(NP.os, "sep", "/")
     monkeypatch.setenv("DISPLAY", ":0")
     monkeypatch.delenv("WAYLAND_DISPLAY", raising=False)
 
@@ -29,7 +34,7 @@ def _which(monkeypatch, found: dict[str, str]):
 
 def test_zenity_opens_in_the_directory_it_was_given(linux, monkeypatch):
     _which(monkeypatch, {"zenity": "/usr/bin/zenity"})
-    argv = NP._argv("dir", Path("/data/set"), "Choose a path")
+    argv = NP._argv("dir", PurePosixPath("/data/set"), "Choose a path")
     assert argv[:2] == ["/usr/bin/zenity", "--file-selection"]
     assert "--directory" in argv
     # The trailing separator is what opens *in* the directory.
@@ -44,7 +49,7 @@ def test_a_file_field_asks_for_a_file(linux, monkeypatch):
 
 def test_kdialog_is_the_second_choice(linux, monkeypatch):
     _which(monkeypatch, {"kdialog": "/usr/bin/kdialog"})
-    argv = NP._argv("dir", Path("/data"), "t")
+    argv = NP._argv("dir", PurePosixPath("/data"), "t")
     assert argv[:3] == ["/usr/bin/kdialog", "--getexistingdirectory", "/data"]
 
 

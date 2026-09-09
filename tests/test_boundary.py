@@ -45,7 +45,11 @@ def test_captions_core_is_torch_free():
         "assert 'torch' not in sys.modules"
     )
     r = subprocess.run(
-        [sys.executable, "-c", code], capture_output=True, text=True, check=False
+        [sys.executable, "-c", code],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        check=False,
     )
     assert r.returncode == 0, r.stderr
 
@@ -63,7 +67,11 @@ def test_contract_is_torch_free():
         "assert loaded == ['anime_tools', 'anime_tools.contract'], loaded"
     )
     r = subprocess.run(
-        [sys.executable, "-c", code], capture_output=True, text=True, check=False
+        [sys.executable, "-c", code],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        check=False,
     )
     assert r.returncode == 0, r.stderr
 
@@ -80,6 +88,10 @@ def test_gui_server_is_torch_free():
         "assert 'torch' not in sys.modules, 'torch imported'"
     )
     r = subprocess.run(
-        [sys.executable, "-c", code], capture_output=True, text=True, check=False
+        [sys.executable, "-c", code],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        check=False,
     )
     assert r.returncode == 0, r.stderr

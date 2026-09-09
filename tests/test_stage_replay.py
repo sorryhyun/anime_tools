@@ -489,6 +489,7 @@ def test_replay_cli_does_not_import_torch(tmp_path: Path, module: str, repo_root
         [sys.executable, "-c", code],
         capture_output=True,
         text=True,
+        encoding="utf-8",
         cwd=str(repo_root),
         check=False,
     )

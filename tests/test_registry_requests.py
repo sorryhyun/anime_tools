@@ -317,7 +317,11 @@ for name in anime_tools.masking.__all__:
 anime_tools.grouping.GroupRequest
 """
     r = subprocess.run(
-        [sys.executable, "-c", code], capture_output=True, text=True, check=False
+        [sys.executable, "-c", code],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        check=False,
     )
     assert r.returncode == 0, r.stderr
 

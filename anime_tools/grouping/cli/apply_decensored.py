@@ -69,7 +69,7 @@ def main() -> None:
     manifest = OUT_DIR / "matches.csv"
     if not manifest.exists():
         raise SystemExit(f"missing {manifest}; run match_decensored.py first")
-    rows = list(csv.DictReader(manifest.open()))
+    rows = list(csv.DictReader(manifest.open(encoding="utf-8")))
 
     tiers = {"auto"} | ({"review"} if args.include_review else set())
     only = {s for s in args.only.split(",") if s}
@@ -113,7 +113,7 @@ def main() -> None:
             shutil.copy2(src, dst)
 
     if args.apply:
-        with (OUT_DIR / "applied.csv").open("w", newline="") as f:
+        with (OUT_DIR / "applied.csv").open("w", newline="", encoding="utf-8") as f:
             if log:
                 w = csv.DictWriter(f, fieldnames=list(log[0].keys()))
                 w.writeheader()

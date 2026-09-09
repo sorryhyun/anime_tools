@@ -12,7 +12,7 @@ from anime_tools.captions import tag_groups as tg
 
 def _write(tmp_path, body: str):
     p = tmp_path / "tag_groups.yaml"
-    p.write_text(textwrap.dedent(body))
+    p.write_text(textwrap.dedent(body), encoding="utf-8")
     return p
 
 

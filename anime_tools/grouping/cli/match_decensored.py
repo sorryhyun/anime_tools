@@ -224,7 +224,7 @@ def main() -> None:
     rows.sort(key=lambda r: (r["hamming"], -r["score"]))  # best first
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     csv_path = OUT_DIR / "matches.csv"
-    with csv_path.open("w", newline="") as f:
+    with csv_path.open("w", newline="", encoding="utf-8") as f:
         w = csv.DictWriter(f, fieldnames=list(rows[0].keys()))
         w.writeheader()
         w.writerows(rows)
@@ -257,7 +257,7 @@ def main() -> None:
                 f"<img src='file://{rel_c(r['match'])}' title='{r['match']}'></div>"
             )
     html.append("</body></html>")
-    (OUT_DIR / "review.html").write_text("\n".join(html))
+    (OUT_DIR / "review.html").write_text("\n".join(html), encoding="utf-8")
 
     print(f"\nwrote {csv_path}")
     print(f"wrote {OUT_DIR / 'review.html'}  (open in a browser)")

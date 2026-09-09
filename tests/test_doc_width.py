@@ -26,7 +26,10 @@ def _tracked_markdown() -> list[Path]:
     out = subprocess.run(
         ["git", "-C", str(ROOT), "ls-files", "-z", "*.md"],
         capture_output=True,
-        text=True,
+        # git writes paths as UTF-8; `text=True` would decode them in the
+        # platform codepage, and the CJK guidebook filenames are undecodable in
+        # cp949/cp932 -- the reader thread dies and `.stdout` comes back None.
+        encoding="utf-8",
         check=True,
     ).stdout
     return [ROOT / rel for rel in out.split("\0") if rel and "node_modules/" not in rel]

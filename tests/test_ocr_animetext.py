@@ -6,6 +6,7 @@ the torch graph behind it is ``tests/test_vision_yolo12.py``."""
 
 from __future__ import annotations
 
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -25,7 +26,11 @@ def test_the_module_is_torch_free():
         "a.containment((0,0,1,1),(0,0,2,2)); print('torch' in sys.modules)"
     )
     r = subprocess.run(
-        [sys.executable, "-c", code], capture_output=True, text=True, check=False
+        [sys.executable, "-c", code],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        check=False,
     )
     assert r.returncode == 0, r.stderr
     assert r.stdout.strip() == "False"
@@ -344,7 +349,9 @@ def test_the_row_lands_where_the_loader_looks_and_names_the_stage(home):
 def test_load_without_weights_names_the_row(home):
     with pytest.raises(animetext.AnimeTextWeightsMissing, match="animetext_det"):
         animetext.AnimeTextDetector.load(fetch=False)
-    with pytest.raises(animetext.AnimeTextWeightsMissing, match=str(home)):
+    # `match` is a regex, and a Windows home ("C:\Users\...") is full of
+    # escapes -- "\U" alone is a bad-escape error before the assert runs.
+    with pytest.raises(animetext.AnimeTextWeightsMissing, match=re.escape(str(home))):
         animetext.AnimeTextDetector.load(home / "elsewhere")
     with pytest.raises(ValueError, match="nest policy"):
         animetext.AnimeTextDetector.load(nest="middle", fetch=False)

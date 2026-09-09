@@ -92,7 +92,7 @@ def main() -> None:
     )
     accepted = {
         line.strip()
-        for line in resolve_path(args.accept).read_text().splitlines()
+        for line in resolve_path(args.accept).read_text(encoding="utf-8").splitlines()
         if line.strip() and not line.strip().startswith("#")
     }
 

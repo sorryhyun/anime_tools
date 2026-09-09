@@ -143,7 +143,11 @@ def test_reading_a_checkpoint_never_imports_ultralytics_even_when_installed():
         "print(L.__module__)"
     )
     r = subprocess.run(
-        [sys.executable, "-c", code], capture_output=True, text=True, check=False
+        [sys.executable, "-c", code],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        check=False,
     )
     assert r.returncode == 0, r.stderr
     assert r.stdout.strip() == "anime_tools.vision.yolo12"
