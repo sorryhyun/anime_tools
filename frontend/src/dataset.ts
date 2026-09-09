@@ -70,11 +70,32 @@ export function createDataset(config: Config) {
   };
   window.addEventListener("hashchange", onHash);
 
+  const refresh = () => setReload((n) => n + 1);
+
   /** ↑/↓ (and j/k) walk the images in the order the sidebar draws them,
       outside text fields. The flat listing is not that order -- a folder's
       subfolders are drawn before its own files, and group view is a different
-      sequence entirely -- so the walk is over `order`, not `list().items`. */
+      sequence entirely -- so the walk is over `order`, not `list().items`.
+
+      ⌘/Ctrl+R and F5 re-walk the listing instead of reloading the page, and
+      ⌘/Ctrl+W is swallowed. The page is a chromeless app window over a local
+      server: a reload throws away the caption being typed and the running
+      job's log to arrive back at the same URL, and there is no tab to close.
+      Both are answered above the text-field guard, since the editor is exactly
+      where the reflex costs the most. (Chrome reserves ⌘/Ctrl+W, so that half
+      is best-effort.) */
   const onKey = (e: KeyboardEvent) => {
+    const mod = e.metaKey || e.ctrlKey;
+    const k = e.key.toLowerCase();
+    if (e.key === "F5" || (mod && k === "r")) {
+      e.preventDefault();
+      refresh();
+      return;
+    }
+    if (mod && k === "w") {
+      e.preventDefault();
+      return;
+    }
     const t = e.target as HTMLElement | null;
     if (t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))) return;
     const step =
@@ -89,10 +110,10 @@ export function createDataset(config: Config) {
     // Keep the caption kind, so arrowing down a column compares the same file.
     setSel({ rel: rels[at], kind: sel()?.kind ?? "image" });
   };
-  window.addEventListener("keydown", onKey);
+  window.addEventListener("keydown", onKey, true);
   onCleanup(() => {
     window.removeEventListener("hashchange", onHash);
-    window.removeEventListener("keydown", onKey);
+    window.removeEventListener("keydown", onKey, true);
   });
 
   /** Fold a just-saved caption back into the loaded item and its tree row,
@@ -163,7 +184,7 @@ export function createDataset(config: Config) {
     setQuery,
     debouncedQuery,
     reload,
-    refresh: () => setReload((n) => n + 1),
+    refresh,
     sel,
     setSel,
     rel: () => sel()?.rel ?? null,
