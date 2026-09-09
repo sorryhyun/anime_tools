@@ -1,5 +1,5 @@
 import { createEffect, createMemo, createSignal, on } from "solid-js";
-import type { DatasetGroups, DatasetItem } from "./types";
+import type { DatasetGroups, DatasetItem, TreeMode } from "./types";
 
 /** The shapes the sidebar draws the listing as, and the fold/paging state over
  * them. Pure model: nothing here knows a row is a `<div>`. `build` nests the
@@ -107,6 +107,40 @@ export function regroup(items: DatasetItem[], groups?: DatasetGroups): Grouped {
     a.count += rows.length;
   }
   return { artists, ungrouped: items.filter((it) => !seen.has(it.rel)) };
+}
+
+/** The rels in the order the sidebar *draws* them, which is not the order the
+ * flat listing arrives in: a folder's subfolders come before its own files, and
+ * group view is a different sequence altogether. ↑/↓ walk this, so the keyboard
+ * and the eye agree on what "the next image" is.
+ *
+ * Fold and paging state are deliberately not consulted. A collapsed folder and
+ * a row past a "N more" are still rows of the listing; skipping them would make
+ * an image the arrows cannot reach, and the order of what is on screen is the
+ * same either way.
+ */
+export function drawOrder(mode: TreeMode, tree: Folder, grouped: Grouped): string[] {
+  const out: string[] = [];
+  const seen = new Set<string>();
+  // A rel can be drawn twice (the manifest may cluster one image under two
+  // components); the walk is a permutation of the listing, so first place wins.
+  const push = (it: DatasetItem) => {
+    if (!seen.has(it.rel)) {
+      seen.add(it.rel);
+      out.push(it.rel);
+    }
+  };
+  if (mode === "groups") {
+    for (const a of grouped.artists) for (const c of a.comps) c.items.forEach(push);
+    grouped.ungrouped.forEach(push);
+  } else {
+    const walk = (f: Folder) => {
+      f.folders.forEach(walk);
+      f.items.forEach(push);
+    };
+    walk(tree);
+  }
+  return out;
 }
 
 /** Which nodes are unfolded and how many rows of each are shown. A node is

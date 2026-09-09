@@ -1,6 +1,7 @@
-import { createEffect, createResource, createSignal, on, onCleanup } from "solid-js";
+import { createEffect, createMemo, createResource, createSignal, on, onCleanup } from "solid-js";
 import { api } from "./api";
 import { persisted } from "./state";
+import { build, drawOrder, regroup } from "./tree";
 import type { ItemDetail, NodeKind, SavedCaption, Sel, TreeMode } from "./types";
 import type { Config } from "./config";
 
@@ -44,6 +45,13 @@ export function createDataset(config: Config) {
     string
   >(() => sel()?.rel, api.item);
 
+  /** The two shapes the sidebar draws the listing as, built here rather than in
+      the component: the keyboard walks the same model the eye reads, so there
+      is one answer to what order the images are in. */
+  const tree = createMemo(() => build(list()?.items ?? []));
+  const grouped = createMemo(() => regroup(list()?.items ?? [], groups()));
+  const order = createMemo(() => drawOrder(treeMode(), tree(), grouped()));
+
   let queryTimer: ReturnType<typeof setTimeout> | undefined;
   createEffect(
     on(query, (q) => {
@@ -62,21 +70,24 @@ export function createDataset(config: Config) {
   };
   window.addEventListener("hashchange", onHash);
 
-  /** ↑/↓ (and j/k) walk the images in listing order, outside text fields. */
+  /** ↑/↓ (and j/k) walk the images in the order the sidebar draws them,
+      outside text fields. The flat listing is not that order -- a folder's
+      subfolders are drawn before its own files, and group view is a different
+      sequence entirely -- so the walk is over `order`, not `list().items`. */
   const onKey = (e: KeyboardEvent) => {
     const t = e.target as HTMLElement | null;
     if (t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))) return;
     const step =
       e.key === "ArrowDown" || e.key === "j" ? 1 : e.key === "ArrowUp" || e.key === "k" ? -1 : 0;
     if (!step) return;
-    const items = list()?.items ?? [];
-    if (!items.length) return;
-    const i = items.findIndex((x) => x.rel === sel()?.rel);
+    const rels = order();
+    if (!rels.length) return;
+    const i = rels.indexOf(sel()?.rel ?? "");
     const at =
-      i < 0 ? (step > 0 ? 0 : items.length - 1) : Math.min(items.length - 1, Math.max(0, i + step));
+      i < 0 ? (step > 0 ? 0 : rels.length - 1) : Math.min(rels.length - 1, Math.max(0, i + step));
     e.preventDefault();
     // Keep the caption kind, so arrowing down a column compares the same file.
-    setSel({ rel: items[at].rel, kind: sel()?.kind ?? "image" });
+    setSel({ rel: rels[at], kind: sel()?.kind ?? "image" });
   };
   window.addEventListener("keydown", onKey);
   onCleanup(() => {
@@ -159,6 +170,8 @@ export function createDataset(config: Config) {
     treeMode,
     setTreeMode,
     groups,
+    tree,
+    grouped,
     item,
     onSaved,
     setExcluded,

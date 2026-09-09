@@ -112,6 +112,8 @@ export default function App() {
         groups={dataset.groups()}
         groupsLoading={dataset.groups.loading}
         groupsError={dataset.groups.error ? String(dataset.groups.error) : undefined}
+        tree={dataset.tree()}
+        grouped={dataset.grouped()}
         resetKey={`${dataset.treeMode()}|${dataset.debouncedQuery()}|${dataset.reload()}`}
         sel={dataset.sel()}
         onSelect={dataset.setSel}

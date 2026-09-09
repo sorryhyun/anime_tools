@@ -1,6 +1,6 @@
 import { createMemo, Show } from "solid-js";
 import { slots, t } from "../i18n";
-import { build, createFolding, regroup } from "../tree";
+import { createFolding, type Folder, type Grouped } from "../tree";
 import type { DatasetGroups, DatasetList, Rung, Sel, TreeMode } from "../types";
 import { FolderNode, GroupView, type TreeCtx } from "./TreeNodes";
 
@@ -18,6 +18,10 @@ export function DatasetTree(props: {
   onMode: (mode: TreeMode) => void;
   /** The grouping manifest, fetched only while group view is up. */
   groups?: DatasetGroups;
+  /** The listing as the two shapes this draws it in. Both are built in
+      `dataset.ts`, since ↑/↓ walk the same order the rows are drawn in. */
+  tree: Folder;
+  grouped: Grouped;
   groupsLoading: boolean;
   groupsError?: string;
   sel: Sel | null;
@@ -30,8 +34,6 @@ export function DatasetTree(props: {
   /** Collapse the tree; the rail's ⟩ on the left edge brings it back. */
   onCollapse: () => void;
 }) {
-  const tree = createMemo(() => build(props.list?.items ?? []));
-  const grouped = createMemo(() => regroup(props.list?.items ?? [], props.groups));
   const fold = createFolding({
     size: () => props.list?.items.length ?? 0,
     resetKey: () => props.resetKey,
@@ -70,7 +72,7 @@ export function DatasetTree(props: {
                 <span class="warn">{t().tree.staleLabel}</span> {t().tree.staleHint}
               </div>
             </Show>
-            <Show when={!grouped().artists.length}>
+            <Show when={!props.grouped.artists.length}>
               <div class="dim pad">
                 {slots(t().tree.clustersNothing, () => (
                   <code>{m().path}</code>
@@ -144,10 +146,10 @@ export function DatasetTree(props: {
                 <Show when={l().total} fallback={<div class="dim pad">{t().tree.noImages}</div>}>
                   <Show
                     when={props.mode === "groups"}
-                    fallback={<FolderNode ctx={ctx} f={tree()} depth={0} />}
+                    fallback={<FolderNode ctx={ctx} f={props.tree} depth={0} />}
                   >
                     <GroupNotice />
-                    <GroupView ctx={ctx} grouped={grouped()} />
+                    <GroupView ctx={ctx} grouped={props.grouped} />
                   </Show>
                   <Show when={l().truncated}>
                     <div class="dim pad">{t().tree.truncated(l().items.length, l().total)}</div>

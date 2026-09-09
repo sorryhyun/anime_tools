@@ -63,7 +63,10 @@ nothing fetched, no business rule lives there. The state is five composables at
   just-saved caption back into the row rather than re-walking the tree, and
   `setExcluded` — the ⊘ on the address line — folds in the row the server sends
   back, then re-fetches the item, since what moved is what the panel was
-  reporting on.
+  reporting on. It also owns the sidebar's two shapes and the `drawOrder` over
+  them, which is what ↑/↓ (and j/k) walk: the flat listing is not the order the
+  rows are drawn in, since a folder's subfolders come before its own files and
+  group view is a different sequence entirely.
 - `stages.ts` — the stage registry and the form over the open one, including
   how the dock's buttons bucket stages into panels. Every field comes from the
   stage's request dataclass (`gui/stages.py` walks the same field list the CLI
@@ -114,9 +117,13 @@ version is on screen, the unsaved draft per rung, the debounced live parse and
 Save — and `CaptionCard` only draws it. `zoomPan.ts` is the preview's
 Ctrl+wheel zoom and drag-to-pan. `tree.ts` is the sidebar's model: `build`
 nests the listing into folders, `regroup` joins the grouping manifest onto it,
-and `createFolding` is the open/paged state both views share; the rows are
+`drawOrder` flattens either one back into the sequence the rows appear in, and
+`createFolding` is the open/paged state both views share; the rows are
 `components/TreeNodes.tsx`, each reading one `TreeCtx` that `DatasetTree`
-builds. None of the three fetches anything but what it says (`captionEditor`
+builds. `build`, `regroup` and `drawOrder` are called in `dataset.ts` and
+handed to `DatasetTree` as props, because the arrow keys and the eye must agree
+on what the next image is; only the fold state is the component's.
+None of the three files fetches anything but what it says (`captionEditor`
 parses and saves; the other two are pure over their inputs).
 
 Settings is four dialogs, not one with tabs, and the code says so:
