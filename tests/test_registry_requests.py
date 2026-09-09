@@ -72,7 +72,6 @@ CASES: dict[str, Request] = {
         target_res=(1024, 768),
         min_pixels=0,
         recursive=False,
-        copy_captions=True,
         overwrite=True,
         workers=1,
         resize_crop_anchor="top",

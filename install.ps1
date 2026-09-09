@@ -51,7 +51,7 @@ Write-Host "✓ anime-tools $Version installed" -ForegroundColor Green
 Write-Host @"
 
 Next steps:
-  cd <your dataset folder>      # image_dataset\, post_image_dataset\, models\ live here
+  cd <your dataset folder>      # (source_dir)\, (export_target_dir)\, models\ live here
   anime-tools-gui --open        # web GUI on http://127.0.0.1:8790
 
 Update:   uv tool upgrade anime-tools

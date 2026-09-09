@@ -124,7 +124,7 @@ for that server.
 
 ```
 <home>/
-  image_dataset/                  INPUT  — your images + hand-written captions; the tools only read it
+  (source_dir)/                   INPUT  — your images + hand-written captions; the tools only read it
   workspace/                      everything the tools produce
     resized/<rel>.png               bucket-resized image — the tree every stage reads
     resized/<rel>.txt               the revised caption (stage output)
@@ -137,7 +137,7 @@ for that server.
     groups/groups.json              the grouping manifest
     _excluded/excluded.json         images you took out of the pipeline
     _excluded/{resized,masks,ocr}/    and the files that moved out with them
-  post_image_dataset/             OUTPUT — the published dataset; written only by Export
+  (export_target_dir)/            OUTPUT — the published dataset; written only by Export
   models/                         model weights (ANIME_TOOLS_MODELS overrides)
 ```
 
@@ -146,24 +146,24 @@ roots, and ⚙ Settings (§6.4) points either one at a folder you already have.
 
 Three rules explain most of what you will see:
 
-- `image_dataset/` is read-only for the stages. Your captions there are the *master*. Every
+- `(source_dir)/` is read-only for the stages. Your captions there are the *master*. Every
   stage writes a *revised* caption under `workspace/resized/` instead, falling back to the master
   when no revised caption exists yet. Only two things ever write the master: the caption editor
   in the GUI when you edit that rung by hand, and Export.
 - Every stage that opens an image opens it under `workspace/resized/` — masking and grouping
   included, so the whole pipeline shares one geometry. An image that exists only in
-  `image_dataset/` is invisible to them. That is why the GUI runs Resize automatically before
+  `(source_dir)/` is invisible to them. That is why the GUI runs Resize automatically before
   any stage that needs it (§7.1).
 - Nothing writes outside `workspace/` except Export (§7.9). You can delete the workspace and
   regenerate it; you cannot lose a master caption to a stage.
 - `workspace/_excluded/` is the exception you make on purpose: the images you took out of the
   dataset (§6.5). Nothing in it is read by a stage, and Export publishes it under
-  `post_image_dataset/_excluded/` — beside the tree the trainer reads rather than inside it.
+  `(export_target_dir)/_excluded/` — beside the tree the trainer reads rather than inside it.
 
 Image files are matched to captions by stem: `chars/alice/001.png` reads `chars/alice/001.txt`.
 Subfolders are kept as-is through the whole pipeline (`<rel>` above).
 
-> Upgrading from a pre-workspace install (one that wrote `post_image_dataset/resized/`
+> Upgrading from a pre-workspace install (one that wrote `(export_target_dir)/resized/`
 > directly): `python -m anime_tools.workspace.migrate` prints what it would move and
 > `--apply` moves it. It renames directories and never merges: an existing destination is
 > reported and skipped. A dataset root you had pinned to the old path in ⚙ Settings is named
@@ -224,13 +224,13 @@ as the server, since that is where the window would appear; over the LAN there i
 
 ### 6.1 The sidebar is the dataset
 
-Every image under `image_dataset/`, in its folders, with dots on the row for what exists:
+Every image under `(source_dir)/`, in its folders, with dots on the row for what exists:
 resized, has a mask, and one dot per caption rung. Under each image its captions form a
 ladder, oldest first:
 
 | Rung | File | Editable |
 |---|---|---|
-| master | `image_dataset/<rel>.txt` — hand-written; the stages only read it | yes |
+| master | `(source_dir)/<rel>.txt` — hand-written; the stages only read it | yes |
 | history (`revised@1`, `revised@2`, …) | `<rel>.history.txt` — what the revised caption used to say, before each run that replaced it | no |
 | revised | `workspace/resized/<rel>.txt` — the stage output; the next run rewrites it and keeps this text as a version | yes |
 | variants (`v0`, `v1`, …) | `<rel>.variants.txt` — generated; `v0` is the pristine revised caption | no |
@@ -311,10 +311,10 @@ the image goes into the ledger there, and from then on:
 
 - Resize skips it, so it never comes back into `workspace/resized/`;
 - every other stage therefore never sees it, since they all walk that tree;
-- Export publishes it under `post_image_dataset/_excluded/` instead of into `resized/`, so
+- Export publishes it under `(export_target_dir)/_excluded/` instead of into `resized/`, so
   the trainer never reads it but you still have it.
 
-Your source image under `image_dataset/` and its hand-written master caption are **not**
+Your source image under `(source_dir)/` and its hand-written master caption are **not**
 touched. `↩ put back` on the same button moves every file back where it came from and takes
 the image out of the ledger, and the stages see it again on the next run.
 
@@ -331,7 +331,7 @@ Resize once, and each caption stage reads the revised caption the previous one w
 
 ### 7.1 Resize (automatic)
 
-Reads `image_dataset/`. Writes `workspace/resized/<rel>.png`.
+Reads `(source_dir)/`. Writes `workspace/resized/<rel>.png`.
 
 Every image lands in the bucket tier that resizes it the least, keeping its native aspect
 inside that tier's token band. The geometry is deterministic, so a re-run finds every image
@@ -460,8 +460,8 @@ change one. See [`docs/masking.md`](../../../docs/masking.md).
 
 ### 7.9 Export workspace
 
-Reads the workspace. Writes `post_image_dataset/` — and, for a revised master,
-`image_dataset/`.
+Reads the workspace. Writes `(export_target_dir)/` — and, for a revised master,
+`(source_dir)/`.
 
 The only stage that writes outside the workspace. It publishes six artifact kinds — resized
 image, revised caption, variants sidecar, mask, revised master, caption index — each decided on

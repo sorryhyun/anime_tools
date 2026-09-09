@@ -12,6 +12,9 @@ from pathlib import Path
 
 from anime_tools.path_filter import filter_paths_by_glob
 
+CAPTION_EXTENSIONS = (".txt", ".caption")
+"""The sidecar suffixes a caption can wear beside its image."""
+
 IMAGE_EXTENSIONS: list[str] = [".png", ".jpg", ".jpeg", ".webp", ".bmp"]
 IMAGE_EXTENSIONS.extend([ext.upper() for ext in IMAGE_EXTENSIONS])
 

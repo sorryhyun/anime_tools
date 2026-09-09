@@ -128,7 +128,7 @@ External corpus paths are routed via one `.env` key —
 | `<corpus>/tag_groups.yaml` | Typed groupings (`eye_color`, `hair_color`, `hair_length`, `rating`, `top_garment`, …) | Group routing at train + inference. Snapshotted into the checkpoint. |
 | `<corpus>/selected/` (optional) | Curated subset (already deduped) | Additional caption source. |
 
-The `src` root — the caption master, `image_dataset/` by default — is also
+The `src` root — the caption master, `(source_dir)/` by default — is also
 scanned.
 `CAPTION_CORPUS_DIR` is not committed — it's per-user. The checkpoint
 snapshots `rules.yaml` + `groups.yaml`, so inference has zero runtime

@@ -1,7 +1,7 @@
 """The workspace layout: where the tools write, and where Export publishes to::
 
     <home>/
-      image_dataset/                  INPUT -- read-only for the tools (the
+      (source_dir)/                   INPUT -- read-only for the tools (the
                                       ``src`` root's default name)
       workspace/                      everything the tools produce
         master/<rel>.txt                revised master
@@ -13,7 +13,7 @@
         export/report.json              the export ledger
         _excluded/excluded.json         what was taken out of the pipeline
         _excluded/{resized,masks,ocr}/    and the files it was taken out of
-      post_image_dataset/             OUTPUT -- written only by Export (the
+      (export_target_dir)/            OUTPUT -- written only by Export (the
                                       ``out`` root's default name)
         resized/  masks/
         _excluded/                      the excluded tree, republished as it is

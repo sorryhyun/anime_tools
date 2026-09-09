@@ -1,7 +1,8 @@
-"""Mirror the caption master into bucket-resolution resized images.
+"""Mirror the source images into bucket-resolution resized images.
 
-Every later stage walks ``workspace/resized/``, so an image that exists only
-under the master is invisible to all of them.
+Images only — captions are written by the caption stages, into the same
+tree. Every later stage walks ``workspace/resized/``, so an image that
+exists only under the source root is invisible to all of them.
 
 Two things are interop with the trainer's resize pass: the chosen ``(W, H)``
 (same tier, band and solver) and the ``anima_resize_*`` PNG text keys
@@ -13,7 +14,6 @@ Torch-free — PIL only.
 
 from __future__ import annotations
 
-import shutil
 from collections.abc import Callable, Collection, Iterable
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from dataclasses import dataclass, field
@@ -29,8 +29,6 @@ from anime_tools.buckets import (
     freefit_band_for_edge,
     freefit_bucket,
 )
-
-CAPTION_EXTENSIONS = (".txt", ".caption")
 
 DEFAULT_MIN_PIXELS = 500_000
 """0.5MP. Below this an image cannot fill a 1024 tier without visible upscale."""
@@ -309,7 +307,6 @@ def process_image(
     out_dir: Path,
     options: ResizeOptions,
     rel_dir: str = "",
-    copy_captions: bool = False,
     overwrite: bool = False,
     size_hint: tuple[int, int] | None = None,
 ) -> tuple[str, tuple[int, int], bool]:
@@ -368,13 +365,6 @@ def process_image(
     # compress_level=1: resized PNGs are an intermediate the VAE latent step
     # re-reads, so trade slightly larger files for a much faster zlib encode.
     out_img.save(out_path, format="PNG", compress_level=1, **save_kwargs)
-
-    if copy_captions:
-        for ext in CAPTION_EXTENSIONS:
-            sidecar = image_path.with_suffix(ext)
-            if sidecar.exists():
-                shutil.copy2(sidecar, target_dir / f"{image_path.stem}{ext}")
-
     return out_path.name, bucket, False
 
 
@@ -432,7 +422,6 @@ def run_resize_images(
     path_pattern: str | None = None,
     recursive: bool = True,
     min_pixels: int = DEFAULT_MIN_PIXELS,
-    copy_captions: bool = False,
     overwrite: bool = False,
     workers: int = 4,
     skip: Collection[str] | None = None,
@@ -488,8 +477,7 @@ def run_resize_images(
             progress(index, total, f"{name} {'skip' if skipped else '→ ' + key}")
 
     args = [
-        (p, dst, options, _rel_dir_of(p, src), copy_captions, overwrite, size)
-        for p, size in pending
+        (p, dst, options, _rel_dir_of(p, src), overwrite, size) for p, size in pending
     ]
 
     if workers <= 1:

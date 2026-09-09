@@ -890,12 +890,6 @@ class ResizeRequest(DatasetRequest):
     recursive: bool = arg(
         True, help="Walk subfolders, mirroring the layout under --dst (default: on)"
     )
-    copy_captions: bool = arg(
-        False,
-        help="Also copy .txt / .caption sidecars next to the resized image. Off by "
-        "default: the revised caption is written by the correct stage, which would "
-        "otherwise be overwritten by the raw master.",
-    )
     overwrite: bool = arg(
         False, help="Re-resize even images already at their target bucket"
     )

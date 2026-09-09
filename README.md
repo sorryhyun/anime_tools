@@ -63,7 +63,7 @@ The installers above pass the same override on the command line.
 ## Web GUI
 
 ```bash
-cd <your dataset folder>   # image_dataset/, workspace/, models/ live here
+cd <your dataset folder>   # (source_dir)/, workspace/, models/ live here
 anime-tools-gui --open     # http://127.0.0.1:8790
 ```
 
@@ -87,13 +87,13 @@ FastAPI + uvicorn are plain dependencies.
 ## Layout of a curated dataset
 
 ```
-image_dataset/**/{stem}.png + {stem}.txt        caption master   ← hand-written; read-only for the tools
+(source_dir)/**/{stem}.png + {stem}.txt         caption master   ← hand-written; read-only for the tools
 workspace/                                       everything the tools write
   resized/{stem}.{png,txt,variants.txt}            resized image, revised caption, shuffle / dropout variants
   master/{stem}.txt                                revised master (Export publishes it back over the source tree)
   masks_sam/ masks/                                the SAM3 generator's tree, and the merge
   captions/<stage>/report.json  groups/groups.json  ocr/  export/report.json
-post_image_dataset/resized/ masks/               the published dataset    ← written only by Export (--combine_ocr attaches ocr/ lines to each published caption)
+(export_target_dir)/resized/ masks/              the published dataset    ← written only by Export (--combine_ocr attaches ocr/ lines to each published caption)
 models/captioners/anima-tagger-dbv4/            tagger checkpoint (auto-fetched from sorryhyun/anima-tagger)
 models/sam3/  models/pe/  models/animetext/       SAM3 / PE-Spatial / OCR text-block detector
 models/paddleocr_vl_1.6*/                             the manga VL reader (VL-1.6 base + LoRA/tower)

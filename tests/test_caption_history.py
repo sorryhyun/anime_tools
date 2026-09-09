@@ -212,7 +212,7 @@ def test_a_save_answers_with_the_whole_ladder_not_just_the_rung_written(client):
 
 
 def test_the_master_rung_keeps_no_history(client):
-    """``image_dataset/`` is the input tree: no history sidecar lands in it."""
+    """The source root is the input tree: no history sidecar lands in it."""
     c, home = client
     c.put("/api/dataset/item", json={"rel": "a.png", "kind": "master", "text": "1boy"})
     assert not (home / "image_dataset" / ("a" + HISTORY_SIDECAR_SUFFIX)).exists()

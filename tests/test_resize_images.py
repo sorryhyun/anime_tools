@@ -275,16 +275,18 @@ def test_path_pattern_narrows_to_one_image(tmp_path):
     assert (dst / "001.png").is_file() and not (dst / "002.png").exists()
 
 
-def test_captions_are_not_copied_unless_asked(tmp_path):
-    src, dst = tmp_path / "master", tmp_path / "resized"
+def test_captions_are_never_copied(tmp_path):
+    """Resize moves images. The caption stages are the only caption writers, so
+    a source caption never lands in the resized tree by this route."""
+    src, dst = tmp_path / "source", tmp_path / "resized"
     _write_image(src / "0001.png", (1600, 900))
     (src / "0001.txt").write_text("1girl, solo", encoding="utf-8")
 
     run_resize_images(src=src, dst=dst, workers=1)
     assert not (dst / "0001.txt").exists()
 
-    run_resize_images(src=src, dst=dst, workers=1, copy_captions=True, overwrite=True)
-    assert (dst / "0001.txt").read_text(encoding="utf-8") == "1girl, solo"
+    run_resize_images(src=src, dst=dst, workers=1, overwrite=True)
+    assert not (dst / "0001.txt").exists()
 
 
 def test_non_recursive_ignores_subdirs(tmp_path):

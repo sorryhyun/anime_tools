@@ -326,7 +326,7 @@ def test_item_detail_rejects_unknown_and_escaping_paths(client):
 
 def test_writing_a_caption_round_trips(client, home):
     """A master edit lands in the workspace overlay, never in the input tree:
-    `image_dataset/` is read-only for the tools and Export publishes the
+    the source root is read-only for the tools and Export publishes the
     overlay back to it."""
     c, _ = client
     before = (home / "image_dataset" / "a.txt").read_text(encoding="utf-8")

@@ -36,12 +36,11 @@ from typing import Any
 from anime_tools import workspace as WS
 from anime_tools._env import resolve_path
 from anime_tools._json import read_json, write_json
-from anime_tools._walk import IMAGE_EXTENSIONS
+from anime_tools._walk import CAPTION_EXTENSIONS, IMAGE_EXTENSIONS
 from anime_tools.captions.history import history_sidecar_path
 from anime_tools.captions.ocr_sidecar import ocr_sidecar_path
 from anime_tools.captions.variants import variants_sidecar_path
 from anime_tools.masking._masks import mask_name
-from anime_tools.stages.resize import CAPTION_EXTENSIONS
 
 __all__ = [
     "Entry",

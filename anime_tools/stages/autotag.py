@@ -6,6 +6,11 @@ under ``source_dir`` is read (as ``resolve_caption``'s fallback) and never
 written, so a run cannot lose text nobody can get back: what it replaces is
 pushed onto ``{stem}.history.txt`` and is one badge away in the GUI.
 
+A tagged image always ends up with a revised caption. "Unchanged" is measured
+against the file the write lands on, so a proposal equal to the master — which
+is what tagging an image whose master the tagger itself wrote produces — still
+creates the revised caption it was missing.
+
 Three modes:
 
 ``missing``
@@ -202,7 +207,13 @@ def run_autotag_captions(
             proposal.proposed = tagged
             proposal.added = tuple(t.strip() for t in tagged.split(",") if t.strip())
 
-        if proposal.proposed == existing:
+        # Against the **write target**, never against ``existing``: the two
+        # are different files whenever the revised caption does not exist yet.
+        # A proposal that matches a source caption the resized tree does not
+        # hold still has to be written, or the run tags an image and leaves
+        # nothing behind — and Export, which publishes the revised caption
+        # only, would ship that image with no caption at all.
+        if proposal.proposed == proposal.target_before:
             proposal.status = "skip:unchanged"
             stats.skip("unchanged")
             rows.append(proposal)

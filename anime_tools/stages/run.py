@@ -760,7 +760,6 @@ def run_resize(req: ResizeRequest):
         path_pattern=req.path_pattern or "*",
         recursive=req.recursive,
         min_pixels=req.min_pixels,
-        copy_captions=req.copy_captions,
         overwrite=req.overwrite,
         workers=req.workers,
         skip=skip,

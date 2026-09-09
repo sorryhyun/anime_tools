@@ -8,6 +8,8 @@
 5. The write lands on the **revised** caption beside the resized image; the
    master is read as the fallback and never written, and what a write replaced
    stays in ``{stem}.history.txt``.
+6. A tagged image always ends up with a revised caption: "unchanged" is measured
+   against the file being written, not against the master that spoke for it.
 """
 
 from __future__ import annotations
@@ -178,9 +180,11 @@ def test_overwrite_mode_replaces_every_caption(tmp_path):
     assert (source / "a.txt").read_text(encoding="utf-8") == "hand written, 1girl"
 
 
-def test_merge_mode_leaves_a_saturated_caption_untouched(tmp_path):
-    """No novel tags → no write, and the row is reported as unchanged."""
-    resized, source = _dataset(tmp_path, {"a": "safe, 1girl, smile"})
+def test_merge_mode_leaves_a_saturated_revised_caption_untouched(tmp_path):
+    """No novel tags and the revised caption already holds them → no write."""
+    resized, source = _dataset(
+        tmp_path, {"a": None}, revised={"a": "safe, 1girl, smile"}
+    )
 
     rows, stats = _run(
         resized,
@@ -193,6 +197,50 @@ def test_merge_mode_leaves_a_saturated_caption_untouched(tmp_path):
     assert stats.written == 0
     assert stats.skipped["unchanged"] == 1
     assert rows[0].status == "skip:unchanged"
+
+
+def test_a_proposal_equal_to_the_master_still_creates_the_revised_caption(tmp_path):
+    """ "Unchanged" is measured against the write target, not the fallback.
+
+    A master the tagger itself wrote reproduces itself exactly, and the old
+    comparison read that as "nothing to do" — leaving the image with no revised
+    caption at all, which Export publishes as no caption.
+    """
+    resized, source = _dataset(tmp_path, {"a": "safe, 1girl, smile"})
+
+    rows, stats = _run(
+        resized,
+        source,
+        "safe, 1girl, smile",
+        options=AutotagOptions(mode="overwrite"),
+        apply=True,
+    )
+
+    assert stats.written == 1
+    assert rows[0].status == "ok"
+    assert (resized / "a.txt").read_text(encoding="utf-8") == "safe, 1girl, smile"
+    # Nothing was replaced, so there is no history version to keep, and the
+    # master stays the read-only fallback it was.
+    assert not (resized / "a.history.txt").exists()
+    assert (source / "a.txt").read_text(encoding="utf-8") == "safe, 1girl, smile"
+
+
+def test_a_saturated_merge_into_a_master_still_creates_the_revised_caption(tmp_path):
+    """The merge adds nothing, but the revised caption it merged into did not
+    exist — the merged text is what has to land there."""
+    resized, source = _dataset(tmp_path, {"a": "safe, 1girl, smile"})
+
+    rows, stats = _run(
+        resized,
+        source,
+        "safe, 1girl, smile",
+        options=AutotagOptions(mode="merge"),
+        apply=True,
+    )
+
+    assert stats.written == 1
+    assert rows[0].added == ()
+    assert (resized / "a.txt").read_text(encoding="utf-8") == "safe, 1girl, smile"
 
 
 def test_dry_run_writes_nothing(tmp_path):

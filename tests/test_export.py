@@ -80,7 +80,7 @@ def test_plan_finds_every_artifact_and_invents_none(ws):
 
 
 def test_the_master_publishes_back_over_the_input_tree(ws):
-    """The master row writes outside `--out`, into `image_dataset/`."""
+    """The master row writes outside `--out`, into the source root."""
     (master,) = _by(plan_export(ws), "master")
     assert Path(master.dst) == ws.src / "a.txt"
     # It can overwrite hand-written text, so `before` is kept for the revert.
@@ -339,7 +339,7 @@ def test_revert_checks_a_combined_row_against_what_it_recorded(ocr):
 
 def test_a_gui_master_edit_is_what_fills_the_overlay(tmp_path):
     """The producer end of the `master` row: the GUI caption editor writes
-    `workspace/master/`, never `image_dataset/`, and Export publishes it back.
+    `workspace/master/`, never the source root, and Export publishes it back.
 
     Closes the loop the overlay only had a consumer for — before this, nothing
     wrote the tree the master row reads, so the row never had a file to publish.
