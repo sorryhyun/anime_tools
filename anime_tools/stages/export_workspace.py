@@ -244,7 +244,7 @@ def _decide(row: ExportRow) -> ExportRow:
         row.status = "would-overwrite"
         if text:
             try:
-                row.before = dst.read_text(encoding="utf-8")
+                row.before = dst.read_text(encoding="utf-8", newline="")
             except OSError:
                 row.before = ""
     return row
@@ -443,7 +443,11 @@ def export_one(row: ExportRow, *, apply: bool) -> str:
     dst = Path(row.dst)
     dst.parent.mkdir(parents=True, exist_ok=True)
     if row.combined:
-        dst.write_text(row.text, encoding="utf-8")
+        # `_published` is the comparison, so it is also the write: text mode
+        # translates LF to CRLF on Windows, and then no combined row with a
+        # newline in it (every variants sidecar) ever compares identical --
+        # it republishes every run and reverts as drifted.
+        dst.write_bytes(_published(row))
     else:
         shutil.copy2(row.src, dst)
     row.status = "created" if row.status == "would-create" else "overwrote"
@@ -564,7 +568,7 @@ def revert_export(
             row.status = "removed"
             stats.removed += 1
         else:
-            dst.write_text(row.before, encoding="utf-8")
+            dst.write_text(row.before, encoding="utf-8", newline="")
             row.status = "restored"
             stats.restored += 1
 
