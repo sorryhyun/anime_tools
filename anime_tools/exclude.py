@@ -30,7 +30,7 @@ import sys
 import time
 from collections.abc import Iterator
 from dataclasses import dataclass
-from pathlib import Path
+from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import Any
 
 from anime_tools import workspace as WS
@@ -235,10 +235,21 @@ def rel_key(rel: str | Path) -> str:
     """A caller's rel as the ledger spells it: forward slashes, relative, no
     ``..``. Refused rather than normalised, since a rel is a dataset path and a
     surprising one would move the wrong file."""
-    p = Path(str(rel).replace("\\", "/"))
-    if p.is_absolute() or not p.parts or any(part in ("..", ".") for part in p.parts):
+    s = str(rel).replace("\\", "/")
+    win, posix = PureWindowsPath(s), PurePosixPath(s)
+    # The anchor test is Windows' on every host, because it is the strict one:
+    # `Path("/abs").is_absolute()` is False on Windows (no drive), so a rooted
+    # rel slips past `is_absolute` there and `tree / rel` then lands on the
+    # drive root -- outside the dataset. Windows rules refuse a drive ("C:/x"),
+    # a UNC share ("//srv/x") and a bare leading slash alike.
+    if (
+        win.drive
+        or win.root
+        or not posix.parts
+        or any(part in ("..", ".") for part in posix.parts)
+    ):
         raise ExclusionError(f"bad relative path: {rel!r}")
-    return p.as_posix()
+    return posix.as_posix()
 
 
 # ---- what an image is made of -------------------------------------------
