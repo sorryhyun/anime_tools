@@ -84,12 +84,28 @@ index-strategy = "unsafe-best-match"
 # sam3.model_builder / sam3.model.sam3_image_processor under numpy 2.4.
 override-dependencies = ["numpy>=2.0"]
 
-# No torch index is pinned here on purpose. Windows has no CUDA wheels on PyPI, but a
-# `[tool.uv.sources]` torch index in this file leaks into every consumer that installs the
-# package by path (the trainer's `anime-tools-dev` group) and collides with the consumer's
-# own Windows backend selection (anima_lora resolves torch from cu132 or ROCm per group).
-# The trainer owns the Windows backend; a standalone Windows install passes the index at
-# sync time: `uv sync --index https://download.pytorch.org/whl/cu132`.
+# Windows draws torch from the pytorch index, because PyPI carries no win32 CUDA wheels -- a
+# plain `uv sync` there lands `torch==...+cpu`, and then every stage silently runs on the CPU
+# (`_device.py::resolve_device` probes `torch.cuda.is_available()`, gets False, falls through).
+# Nothing in the package reports that; it just gets slow, so pin it here rather than rely on
+# each install remembering `--index` at sync time.
+#
+# cu132 is the channel: it covers sm_120, and a 50-series card will not run on anything below
+# cu128. The index is `explicit = true`, so it serves only the two packages bound to it below
+# and the rest of the resolution never sees it -- that is what keeps the iopath dead end above
+# from coming back through a second mirror. Both sources are `sys_platform == 'win32'`, so
+# Linux and macOS still resolve torch from PyPI and CI's `--index .../whl/cpu` is untouched.
+#
+# For a CPU or ROCm environment on Windows, delete these two tables: an explicit source wins
+# over an index passed at sync time, so `--index` alone cannot override it.
+[[tool.uv.index]]
+name = "pytorch-cu132"
+url = "https://download.pytorch.org/whl/cu132"
+explicit = true
+
+[tool.uv.sources]
+torch = [{ index = "pytorch-cu132", marker = "sys_platform == 'win32'" }]
+torchvision = [{ index = "pytorch-cu132", marker = "sys_platform == 'win32'" }]
 
 [build-system]
 requires = ["setuptools>=68.0"]
