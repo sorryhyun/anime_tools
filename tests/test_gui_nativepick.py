@@ -1,6 +1,8 @@
-"""The `…` on a path field: which chooser :mod:`anime_tools.gui.nativepick`
-builds for a desktop, and what ``POST /api/pick`` does with the answer. No
-dialog is opened: ``_argv`` is inspected rather than run.
+"""The two gestures that reach the host's desktop: the `…` on a path field
+(``POST /api/pick``) and the ↗ beside a name (``POST /api/reveal``). Which
+command :mod:`anime_tools.gui.nativepick` builds for a desktop, and what the two
+routes do with it. Nothing is opened: ``_argv`` / ``_reveal_argv`` are inspected
+rather than run.
 """
 
 from __future__ import annotations
@@ -187,3 +189,124 @@ def test_a_browser_on_another_machine_gets_the_fallback(home, calls):
     with _client(home, host="10.0.0.7") as c:
         body = c.post("/api/pick", json={"kind": "dir", "path": ""}).json()
     assert body == {"available": False, "path": None} and not seen
+
+
+# ---- reveal: the ↗ beside a name ------------------------------------------
+
+
+def test_a_folder_is_opened_and_a_file_is_revealed(monkeypatch, tmp_path):
+    """The two are different commands: `open` shows the folder, `open -R` shows
+    the file *inside* its folder rather than handing it to Preview."""
+    monkeypatch.setattr(NP.sys, "platform", "darwin")
+    f = tmp_path / "a.png"
+    f.write_bytes(b"")
+    assert NP._reveal_argv(tmp_path) == ["open", str(tmp_path)]
+    assert NP._reveal_argv(f) == ["open", "-R", str(f)]
+
+
+def test_explorer_takes_select_as_one_token(monkeypatch, tmp_path):
+    monkeypatch.setattr(NP.sys, "platform", "win32")
+    monkeypatch.setattr(NP.shutil, "which", lambda n: rf"C:\w\{n}.exe")
+    f = tmp_path / "a.png"
+    f.write_bytes(b"")
+    argv = NP._reveal_argv(f)
+    assert argv[1] == f"/select,{f}" and " " not in argv[1][:8]
+    assert NP._reveal_argv(tmp_path)[1] == str(tmp_path)
+
+
+def test_a_file_goes_to_the_file_manager_not_to_an_image_viewer(
+    linux, monkeypatch, tmp_path
+):
+    """``xdg-open`` on a PNG opens the PNG; only ShowItems selects it in a
+    folder, so the bus call wins for a file and xdg-open gets the parent."""
+    f = tmp_path / "a.png"
+    f.write_bytes(b"")
+    _which(
+        monkeypatch,
+        {"dbus-send": "/usr/bin/dbus-send", "xdg-open": "/usr/bin/xdg-open"},
+    )
+    argv = NP._reveal_argv(f)
+    assert argv[0] == "/usr/bin/dbus-send" and f"array:string:{f.as_uri()}" in argv
+    _which(monkeypatch, {"xdg-open": "/usr/bin/xdg-open"})
+    assert NP._reveal_argv(f) == ["/usr/bin/xdg-open", str(tmp_path)]
+    assert NP._reveal_argv(tmp_path) == ["/usr/bin/xdg-open", str(tmp_path)]
+
+
+def test_a_headless_host_reveals_nothing(linux, monkeypatch):
+    _which(monkeypatch, {})
+    assert not NP.can_reveal()
+    monkeypatch.delenv("DISPLAY", raising=False)
+    _which(monkeypatch, {"xdg-open": "/usr/bin/xdg-open"})
+    assert not NP.can_reveal()
+
+
+def test_explorer_exiting_nonzero_is_still_a_reveal(monkeypatch, tmp_path):
+    """`explorer` returns 1 on success, so the return code is never read."""
+    monkeypatch.setattr(NP.sys, "platform", "darwin")
+
+    class _Proc:
+        returncode = 1
+
+    monkeypatch.setattr(NP.subprocess, "run", lambda *a, **k: _Proc())
+    assert NP.reveal(tmp_path) is True
+
+
+def test_a_desktop_that_never_answers_is_a_failure(monkeypatch, tmp_path):
+    monkeypatch.setattr(NP.sys, "platform", "darwin")
+
+    def _boom(*a, **k):
+        raise NP.subprocess.TimeoutExpired("open", NP.REVEAL_TIMEOUT_S)
+
+    monkeypatch.setattr(NP.subprocess, "run", _boom)
+    assert NP.reveal(tmp_path) is False
+
+
+@pytest.fixture
+def revealed(monkeypatch):
+    """Record what the route handed the desktop, without opening anything."""
+    seen: list[Path] = []
+    from anime_tools.gui import server as SV
+
+    monkeypatch.setattr(SV.NP, "reveal", lambda p: (seen.append(p), True)[1])
+    monkeypatch.setattr(SV.NP, "can_reveal", lambda: True)
+    return seen
+
+
+def test_reveal_resolves_against_the_home(home, revealed):
+    with _client(home) as c:
+        assert c.post("/api/reveal", json={"path": "image_dataset"}).json() == {
+            "revealed": True
+        }
+    assert revealed == [home / "image_dataset"]
+
+
+def test_reveal_stays_inside_the_dataset(home, revealed):
+    """The same containment rule as every other read: `..` is collapsed first,
+    so a path that climbs out is a 404 and never reaches the desktop."""
+    with _client(home) as c:
+        assert (
+            c.post("/api/reveal", json={"path": "image_dataset/../.."}).status_code
+            == 404
+        )
+        # Inside, but not there: nothing to show.
+        assert c.post("/api/reveal", json={"path": "nope"}).status_code == 404
+    assert not revealed
+
+
+def test_only_this_machine_may_open_a_window_on_it(home, revealed):
+    """The window opens where the server is, so a remote browser is refused --
+    and told so before it draws a button, by ``/api/info``."""
+    with _client(home, host="10.0.0.7") as c:
+        assert c.post("/api/reveal", json={"path": "image_dataset"}).status_code == 403
+        assert c.get("/api/info").json()["can_reveal"] is False
+    assert not revealed
+    with _client(home) as c:
+        assert c.get("/api/info").json()["can_reveal"] is True
+
+
+def test_a_headless_host_says_so_to_a_local_browser(home, monkeypatch):
+    from anime_tools.gui import server as SV
+
+    monkeypatch.setattr(SV.NP, "can_reveal", lambda: False)
+    with _client(home) as c:
+        assert c.get("/api/info").json()["can_reveal"] is False

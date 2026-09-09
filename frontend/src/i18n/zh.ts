@@ -15,6 +15,9 @@ const zh: Dict = {
     missing: "缺失",
     present: "已设置",
     dragToResize: "拖动调整大小",
+    revealFile: "在文件管理器中显示此文件",
+    revealDir: "在文件管理器中打开此文件夹",
+    revealFailed: "主机上没有可打开的文件管理器",
   },
   header: {
     images: (n, root) => `${root} 中有 ${n} 张图片`,

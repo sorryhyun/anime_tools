@@ -15,6 +15,9 @@ const ko: Dict = {
     missing: "없음",
     present: "있음",
     dragToResize: "드래그해서 크기 조절",
+    revealFile: "이 파일을 파일 관리자에서 보기",
+    revealDir: "이 폴더를 파일 관리자에서 열기",
+    revealFailed: "호스트에 열 수 있는 파일 관리자가 없습니다",
   },
   header: {
     images: (n, root) => `${root}에 이미지 ${n}장`,

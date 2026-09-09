@@ -212,6 +212,11 @@ authentication** — put your own tunnel in front of it. The server itself never
 every stage runs as a `python -m …` subprocess, one at a time, and its output streams into the
 panel.
 
+The ↗ beside the dataset name in the title bar, and beside an image's name above the preview,
+hands that folder or file to your own file manager — a folder opened, a file selected inside its
+folder (never opened in an image viewer). It is drawn only when the browser is on the same machine
+as the server, since that is where the window would appear; over the LAN there is no ↗.
+
 ### 6.1 The sidebar is the dataset
 
 Every image under `image_dataset/`, in its folders, with dots on the row for what exists:

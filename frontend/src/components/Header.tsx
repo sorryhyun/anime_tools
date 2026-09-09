@@ -2,6 +2,7 @@ import { Show } from "solid-js";
 import { t } from "../i18n";
 import type { DatasetList, Info } from "../types";
 import { HeaderMenu } from "./HeaderMenu";
+import { RevealButton } from "./RevealButton";
 import type { SettingsPane } from "../config";
 
 /** The title bar: where the dataset is, how big it is, and the two things that
@@ -40,7 +41,14 @@ export function Header(props: {
       {/* The home every path in the panel is written against, on the name. */}
       <b title={props.info?.home}>anime_tools</b>
       <Show when={props.list}>
-        {(l) => <span class="dim">{t().header.images(l().total, l().root)}</span>}
+        {(l) => (
+          <>
+            <span class="dim">{t().header.images(l().total, l().root)}</span>
+            {/* On the root itself, not on the count: a root that is not there
+                has nothing to open. */}
+            <RevealButton path={l().root} can={!!props.info?.can_reveal && !l().missing} dir />
+          </>
+        )}
       </Show>
       <span class="sp" />
       {/* A set token is a menu row; a missing one is a blocker, so it stays in

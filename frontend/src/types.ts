@@ -128,6 +128,11 @@ export interface Info {
   /** False while the server's background stage-schema build is still running,
       during which `/api/stages` answers 503 — poll info and refetch stages then. */
   schemas_ready: boolean;
+  /** `/api/reveal` would work for this client: the host has a file manager and
+      this browser is on the host. False on a headless box and from any other
+      machine, where the window would open where nobody is sitting — the reveal
+      buttons are simply not drawn. */
+  can_reveal: boolean;
 }
 
 export interface Settings {

@@ -290,6 +290,10 @@ button:hover { border-color:var(--accent) } button:disabled { opacity:.45; curso
 button.primary { background:var(--accent); color:var(--input); border-color:transparent; font-weight:600 }
 button.primary:disabled { background:#2a2f3a; color:var(--dim); border-color:var(--line) }
 button.link { background:none; border:none; color:var(--accent); padding:0; font-size:inherit }
+/* The reveal arrow rides inside a text line (the crumbs, the header count),
+   so it is sized off that line rather than off the button scale. */
+button.link.reveal { color:var(--dim); font-size:13px; line-height:1 }
+button.link.reveal:hover { color:var(--accent) }
 .tabs { display:flex; align-items:center; gap:2px; padding:6px 12px 0; border-bottom:1px solid var(--line) }
 .tabs.sub { padding:6px 10px 0 }
 .tabs a.na { color:#5a606b; cursor:default }

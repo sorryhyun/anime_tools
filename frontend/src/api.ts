@@ -77,6 +77,9 @@ export const api = {
       only, by the server's rule. */
   pick: (kind: "dir" | "file", path: string, title: string) =>
     req<PickResult>("/api/pick", json("POST", { kind, path, title })),
+  /** Show a path in the host's file manager — a folder opened, a file selected
+      inside its own. Localhost only, and only when `Info.can_reveal` said so. */
+  reveal: (path: string) => req<{ revealed: boolean }>("/api/reveal", json("POST", { path })),
   fileUrl: (path: string) => `/api/files?path=${encodeURIComponent(path)}`,
   thumbUrl: (path: string, size = 96) => `/api/thumb?path=${encodeURIComponent(path)}&size=${size}`,
 

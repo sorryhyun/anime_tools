@@ -45,6 +45,9 @@ const en = {
     missing: "missing",
     present: "present",
     dragToResize: "Drag to resize",
+    revealFile: "Show this file in the file manager",
+    revealDir: "Open this folder in the file manager",
+    revealFailed: "The host has no file manager to open",
   },
   header: {
     images: (n: number, root: string) => `${n} image${n === 1 ? "" : "s"} in ${root}`,

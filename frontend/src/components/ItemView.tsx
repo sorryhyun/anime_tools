@@ -5,6 +5,7 @@ import { trackPointer } from "../state";
 import { createZoomPan } from "../zoomPan";
 import { CaptionCard } from "./CaptionCard";
 import { OcrPanel } from "./OcrPanel";
+import { RevealButton } from "./RevealButton";
 import type {
   ImageInfo,
   ItemDetail,
@@ -73,6 +74,9 @@ export function ItemView(props: {
       the editor when the version it rewrote is the one on screen. */
   proposal?: Proposal;
   proposalStage?: string;
+  /** The host can show a file in its own file manager (`Info.can_reveal`);
+      false hides the ↗ on the address line. */
+  canReveal: boolean;
   /** The caption panel's own explanations, and the (?) in its header. */
   help: boolean;
   onHelp: () => void;
@@ -144,6 +148,10 @@ export function ItemView(props: {
                 <span class="dim">{it().dir}/</span>
               </Show>
               <b>{it().name}</b>
+              {/* The source file, or the resized copy for an image that only
+                  exists in the workspace -- the address line names one image
+                  and this opens the file it stands for, whichever tab is up. */}
+              <RevealButton path={(it().image ?? it().resized)?.path} can={props.canReveal} />
             </div>
 
             <div class="split" ref={split} style={{ "--cap-w": `${capW()}px` }}>

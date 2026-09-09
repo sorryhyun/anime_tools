@@ -349,7 +349,7 @@ def create_app(
         return FileResponse(p, media_type=mime)
 
     @app.get("/api/info")
-    def info() -> dict[str, Any]:
+    def info(request: Request) -> dict[str, Any]:
         return {
             "home": str(curation_home()),
             "models_dir": str(models_dir()),
@@ -357,6 +357,11 @@ def create_app(
             "hf_token": _hf_token_present(),
             "running": mgr.running.id if mgr.running else None,
             "schemas_ready": store.ready,
+            # Whether ``POST /api/reveal`` would do anything for *this* client:
+            # a desktop to open, and a browser on the machine holding it. The
+            # panel draws no reveal button when it is false, which is the whole
+            # of what it is for.
+            "can_reveal": _is_loopback(request) and NP.can_reveal(),
         }
 
     @app.get("/api/stages")
@@ -848,6 +853,31 @@ def create_app(
             "available": res.available,
             "path": D.rel_to_home(Path(res.path)) if res.path else None,
         }
+
+    @app.post("/api/reveal")
+    async def reveal_path(request: Request) -> dict[str, Any]:
+        """Show a path in the *host's* file manager: a folder opened, a file
+        selected inside its own.
+
+        The same machine rule as ``/api/pick`` — the window opens where the
+        server is — and the same reachability rule as every other read: only the
+        home and the roots pinned outside it (:func:`D.reachable`), so the button
+        cannot be talked into revealing ``/etc``. Nothing is opened *with* an
+        app: a file goes to the file manager selected, never to whatever claims
+        its type, so a click here can only ever show a folder.
+        """
+        if not _is_loopback(request):
+            raise HTTPException(403, "not this machine")
+        body = await request.json()
+        try:
+            p = D.reachable(str(body.get("path") or ""))
+        except D.DatasetError as e:
+            raise HTTPException(404, "not found") from e
+        if not p.exists():
+            raise HTTPException(404, "not found")
+        # The desktop returns at once, but a cold file manager may not; the
+        # thread keeps a slow launch off the loop.
+        return {"revealed": await asyncio.to_thread(NP.reveal, p)}
 
     @app.get("/api/ls")
     def ls(request: Request, path: str = "") -> dict[str, Any]:

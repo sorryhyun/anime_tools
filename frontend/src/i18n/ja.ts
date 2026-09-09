@@ -15,6 +15,9 @@ const ja: Dict = {
     missing: "未取得",
     present: "あり",
     dragToResize: "ドラッグでサイズ変更",
+    revealFile: "このファイルをファイルマネージャーで表示",
+    revealDir: "このフォルダーをファイルマネージャーで開く",
+    revealFailed: "ホストに開けるファイルマネージャーがありません",
   },
   header: {
     images: (n, root) => `${root} に画像 ${n} 枚`,

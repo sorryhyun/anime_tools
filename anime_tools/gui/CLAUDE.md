@@ -71,8 +71,16 @@ field and an already-hidden field are never folded — the server settles that, 
 - `tags.py` merges the two Danbooru KB files (base CSV = taxonomy; optional `.en.csv` replaces only
   the description) for `/api/tags/describe`, cached on both mtimes; a missing KB answers
   `installed: false` rather than erroring.
-- `nativepick.py` opens the host's file chooser (zenity/kdialog/osascript/PowerShell) as a
-  subprocess for `POST /api/pick`. `/api/ls` is the fallback for headless or remote browsers.
+- `nativepick.py` is both gestures that reach the host's desktop, each a subprocess and neither
+  through a shell: the file chooser (zenity/kdialog/osascript/PowerShell) behind `POST /api/pick`,
+  and `reveal()` behind `POST /api/reveal` — the ↗ beside a name in the panel, which opens a folder
+  in the host's file manager or selects a file inside its own (`open -R`, `explorer /select,`,
+  freedesktop `ShowItems`, else the parent folder via `xdg-open`). A file is never handed to the app
+  that claims its type, so the button can only ever show a folder. Both are localhost-only
+  (`_is_loopback` — the window opens where the *server* is), and reveal is `D.reachable`-guarded
+  like every other read. `/api/info`'s `can_reveal` is the pair of those two conditions answered up
+  front, so the panel draws no button it cannot honour; `/api/ls` is the chooser's fallback for
+  headless or remote browsers, and reveal simply has none.
 - What the panel may read is `dataset.dataset_bases()`: the curation home plus any root the
   saved settings pin outside it (`reachable()`, lexical). What it may create is narrower —
   `owned()`, under the home only — so a typo in an external root is a missing root, not a new empty

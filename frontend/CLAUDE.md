@@ -128,6 +128,15 @@ imports from `components/`. `FieldRow.tsx` (`FieldRow`, `grouped`, `str`) is the
 one argparse-field input, shared by `StageForm` and the Advanced dialog's
 preflight block.
 
+`RevealButton.tsx` is the ↗ beside a path — the dataset root in the header, the
+image name on the address line — and the two spots share it rather than each
+posting to `/api/reveal` themselves. It draws nothing unless `Info.can_reveal`,
+the server's own answer to "is there a desktop, and is this browser on the
+machine holding it": a headless box or a remote browser gets no button instead
+of one that opens a window nobody can see. Its only state is the failed flag,
+which is the request not launching and never a claim about what the file manager
+did next.
+
 `Guidebook.tsx` is the ☰ menu's 📖: the book for the current locale, fetched only while the
 window is open (`createResource` over `props.open && locale()`, so a language switch re-reads it)
 and drawn by `Markdown.tsx`. That renderer covers exactly what the four books under
