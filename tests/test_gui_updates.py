@@ -74,6 +74,15 @@ def test_update_argv_is_the_installers_command():
     assert argv[-1] == f"{U.PACKAGE} @ git+{U.REPO_URL}@v0.6.0"
 
 
+def test_windows_update_defaults_to_the_installers_torch_index():
+    """`uv tool install` enables no dependency group, so the cu132 binding the
+    checkout gets from `cuda-windows` has to ride the argv on Windows -- the
+    same `--index` install.ps1 passes. Elsewhere torch comes from PyPI."""
+    assert U.default_index("win32") == U.WINDOWS_TORCH_INDEX
+    assert U.default_index("linux") is None
+    assert U.default_index("darwin") is None
+
+
 @pytest.fixture
 def home(tmp_path, monkeypatch):
     """A curation home of its own: the check writes its cache into the settings

@@ -27,6 +27,7 @@ both repos in step.
 ```bash
 uv sync                       # torch/sam3 are plain dependencies (no extras); on CPU add
                               #   --index https://download.pytorch.org/whl/cpu
+                              # Windows: the default `cuda-windows` group binds torch to cu132
 make install                  # bun (frontend bundler) + uv sync + git hooks
 make gui                      # anime-tools-gui dev server (GUI_HOST / GUI_PORT / GUI_ARGS)
 make frontend                 # rebuild the committed anime_tools/gui/static/ bundle; CI fails on drift

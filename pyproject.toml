@@ -1,6 +1,6 @@
 [project]
 name = "anime-tools"
-version = "0.6.1"
+version = "0.6.2"
 description = "Dataset curation for anime diffusion training: caption grammar + polishing, the Anima Tagger (dbv4), position clauses, multiview audit, PE-Spatial grouping, SAM3 masking."
 readme = "README.md"
 license = { file = "LICENSE" }
@@ -66,9 +66,13 @@ dev = ["pytest>=8", "pytest-xdist", "ruff", "httpx"]  # httpx: fastapi TestClien
 # bench/ scripts (not installed; run from a checkout): scipy for the soft-prompt Hungarian match,
 # cv2 / matplotlib for the text-target rows and contact sheets.
 bench = ["scipy>=1.12"]
+# Windows checkout: torch from the cu132 index (see [tool.uv.sources]). A dependency
+# group, not a bare source, so the index binds only when this project is the root --
+# a consumer that installs anime-tools as a dependency never sees it.
+cuda-windows = ["torch; sys_platform == 'win32'", "torchvision; sys_platform == 'win32'"]
 
 [tool.uv]
-default-groups = ["dev"]
+default-groups = ["dev", "cuda-windows"]
 # A torch index passed at sync time (`--index https://download.pytorch.org/whl/cpu`,
 # what CI and the standalone Windows install use) becomes the FIRST index, and uv's
 # default first-index-wins rule then pins every package that index happens to mirror
@@ -90,7 +94,7 @@ override-dependencies = ["numpy>=2.0"]
 # plain `uv sync` there lands `torch==...+cpu`, and then every stage silently runs on the CPU
 # (`_device.py::resolve_device` probes `torch.cuda.is_available()`, gets False, falls through).
 # Nothing in the package reports that; it just gets slow, so pin it here rather than rely on
-# each install remembering `--index` at sync time.
+# each checkout remembering `--index` at sync time.
 #
 # cu132 is the channel: it covers sm_120, and a 50-series card will not run on anything below
 # cu128. The index is `explicit = true`, so it serves only the two packages bound to it below
@@ -98,16 +102,24 @@ override-dependencies = ["numpy>=2.0"]
 # from coming back through a second mirror. Both sources are `sys_platform == 'win32'`, so
 # Linux and macOS still resolve torch from PyPI and CI's `--index .../whl/cpu` is untouched.
 #
-# For a CPU or ROCm environment on Windows, delete these two tables: an explicit source wins
-# over an index passed at sync time, so `--index` alone cannot override it.
+# Both sources are bound to the `cuda-windows` dependency group (default-on, so a checkout's
+# `uv sync` gets them) and NOT declared bare: uv honors a git/path dependency's own
+# `[tool.uv.sources]`, so a bare source here leaks into every consumer's resolution -- the
+# trainer (anima_lora) locks anime-tools as a git dependency and selects its own Windows
+# torch backend per group (cu132 or ROCm), and 0.6.1's bare source collided with its ROCm
+# split at `uv lock`. Groups of a dependency are never enabled, so the group form cannot
+# leak. The standalone install (`uv tool install`, which ignores groups) passes the index on
+# the argv instead: `install.ps1` and `update.py` on win32.
+#
+# For a CPU or ROCm checkout on Windows: `uv sync --no-group cuda-windows --index <index>`.
 [[tool.uv.index]]
 name = "pytorch-cu132"
 url = "https://download.pytorch.org/whl/cu132"
 explicit = true
 
 [tool.uv.sources]
-torch = [{ index = "pytorch-cu132", marker = "sys_platform == 'win32'" }]
-torchvision = [{ index = "pytorch-cu132", marker = "sys_platform == 'win32'" }]
+torch = [{ index = "pytorch-cu132", marker = "sys_platform == 'win32'", group = "cuda-windows" }]
+torchvision = [{ index = "pytorch-cu132", marker = "sys_platform == 'win32'", group = "cuda-windows" }]
 
 [build-system]
 requires = ["setuptools>=68.0"]

@@ -55,6 +55,20 @@ TOOL_PYTHON = "3.13"
 """Kept in step with ``install.sh``; ``requires-python`` is >= 3.13."""
 
 NUMPY_OVERRIDE = "numpy>=2.0"
+
+WINDOWS_TORCH_INDEX = "https://download.pytorch.org/whl/cu132"
+"""The index a Windows install draws torch from (PyPI has no win32 CUDA wheels).
+`install.ps1` passes it on the argv; `pyproject.toml` binds it to the checkout's
+default `cuda-windows` group, which `uv tool install` does not enable -- so an
+update has to spell it the same way the installer did."""
+
+
+def default_index(platform: str = sys.platform) -> str | None:
+    """The torch index an update passes when none was given: cu132 on Windows,
+    none elsewhere (Linux resolves CUDA torch from PyPI; macOS has no CUDA)."""
+    return WINDOWS_TORCH_INDEX if platform == "win32" else None
+
+
 """sam3's ``numpy<2`` pin is stale and ``[tool.uv] override-dependencies`` says
 so — but uv reads ``tool.uv`` only from a workspace root, and installed this way
 anime-tools is a dependency rather than the root. ``install.sh`` hands uv the
@@ -219,6 +233,8 @@ def run_update(
     """
     kind = install_kind()
     fallback = f'uv tool install --force "{PACKAGE} @ git+{REPO_URL}@<tag>"'
+    if index is None:
+        index = default_index()
 
     if tag is None:
         try:
@@ -299,7 +315,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--index",
         default=os.environ.get("TORCH_INDEX"),
         help="Extra package index for torch (CPU-only or Windows hosts); "
-        "defaults to $TORCH_INDEX",
+        "defaults to $TORCH_INDEX, else the cu132 index on Windows",
     )
     return p
 

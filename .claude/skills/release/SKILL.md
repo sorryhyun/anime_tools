@@ -54,5 +54,8 @@ ordering, the cache and the refusals, and never touches the network.
 - The package is consumed as a git dependency by the trainer; a change to anything on the shared
   surface — file formats, the caption grammar, `contract.py`, `buckets.py` — needs the trainer
   bumped in step, and `contract.CONTRACT_VERSION` moved.
+- **No bare `[tool.uv.sources]`.** uv honors a git dependency's own sources, so a bare torch
+  index here lands in the trainer's lock and collides with its Windows backend groups (0.6.1
+  did; 0.6.2 bound it to the `cuda-windows` group). Sources stay group- or extra-conditioned.
 - `packages.find` includes only `anime_tools*`: `comfyui/`, `design/`, `examples/` and
   `frontend/` sources are not in the wheel; `anime_tools/gui/static/*` is.
