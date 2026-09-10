@@ -58,6 +58,8 @@ dependencies = [
 
 [project.scripts]
 anime-tools-gui = "anime_tools.gui:main"
+# The double-clickable launcher for a dataset folder; the installers run it in theirs.
+anime-tools-shortcut = "anime_tools.shortcut:main"
 
 [dependency-groups]
 dev = ["pytest>=8", "pytest-xdist", "ruff", "httpx"]  # httpx: fastapi TestClient

@@ -22,6 +22,8 @@ post_image_dataset/
 bench/*/results/
 _archive/
 
-# GUI settings written into the curation home (= the checkout during dev).
+# GUI settings written into the curation home (= the checkout during dev), and
+# the launcher `anime-tools-shortcut` drops in one.
 .anime_tools_gui.json
+/Anime Tools GUI.*
 .DS_Store

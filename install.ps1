@@ -2,8 +2,9 @@
 #
 #   irm https://github.com/sorryhyun/anime_tools/releases/latest/download/install.ps1 | iex
 #
-# Installs uv if missing, then `uv tool install`s anime-tools (torch + sam3 included)
-# and puts `anime-tools-gui` on PATH.
+# Installs uv if missing, then `uv tool install`s anime-tools (torch + sam3 included),
+# puts `anime-tools-gui` on PATH and drops an 'Anime Tools GUI.lnk' in the folder
+# this runs in.
 #
 # Options (env vars):
 #   $env:ANIME_TOOLS_VERSION = "v0.3.0"     specific tag (default: latest release)
@@ -46,6 +47,24 @@ try {
 }
 uv tool update-shell | Out-Null
 
+# Launcher (best-effort -- never fail a finished install over a convenience).
+# An 'Anime Tools GUI.lnk' in the directory this ran in, pinning it as that
+# shortcut's curation home; run `anime-tools-shortcut` inside any other dataset
+# folder for one there. Releases older than that script just skip this.
+$Launcher = $null
+if (Get-Command anime-tools-shortcut -ErrorAction SilentlyContinue) {
+  Say "creating the GUI launcher in $((Get-Location).Path)"
+  try {
+    $out = anime-tools-shortcut 2>$null
+    if ($LASTEXITCODE -eq 0) {
+      $line = $out | Where-Object { $_ -match '^launcher: ' } | Select-Object -First 1
+      if ($line) { $Launcher = $line -replace '^launcher: ', '' }
+    }
+  } catch {
+    Say "launcher skipped; run 'anime-tools-shortcut' in your dataset folder for one"
+  }
+}
+
 Write-Host ""
 Write-Host "✓ anime-tools $Version installed" -ForegroundColor Green
 Write-Host @"
@@ -57,3 +76,12 @@ Next steps:
 Update:   uv tool upgrade anime-tools
 Remove:   uv tool uninstall anime-tools
 "@
+
+if ($Launcher) {
+  Write-Host @"
+Launcher: $Launcher
+          Double-click it to open the GUI on that folder (copy it to the desktop
+          if you like). Run 'anime-tools-shortcut' inside another dataset folder
+          for one there.
+"@
+}

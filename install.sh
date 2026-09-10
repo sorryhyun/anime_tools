@@ -5,8 +5,9 @@
 #
 # Installs uv if missing, then `uv tool install`s anime-tools (torch + sam3 included)
 # (tagger, SAM3 stages, grouping, masking, web GUI) into an isolated venv and
-# puts `anime-tools-gui` on PATH. No git checkout, no CUDA toolkit: the torch
-# wheel bundles its CUDA runtime.
+# puts `anime-tools-gui` on PATH, plus a double-clickable launcher in the folder
+# this runs in. No git checkout, no CUDA toolkit: the torch wheel bundles its
+# CUDA runtime.
 #
 # Options (env vars, since args are awkward through a pipe):
 #   ANIME_TOOLS_VERSION=v0.3.0   install a specific tag      (default: latest release)
@@ -57,6 +58,16 @@ set -- --python 3.13 --overrides "$OVERRIDES"
 uv tool install --force "$@" "anime-tools @ git+https://github.com/$REPO@$VERSION"
 uv tool update-shell >/dev/null 2>&1 || true
 
+# 4. launcher (best-effort -- never fail a finished install over a convenience) ----
+# A double-clickable file in the directory the installer ran in, pinning it as that
+# launcher's curation home. 'anime-tools-shortcut' makes one inside any other dataset
+# folder; releases older than it have no such script, hence the quiet skip.
+LAUNCHER=""
+if command -v anime-tools-shortcut >/dev/null 2>&1; then
+  say "creating the GUI launcher in $(pwd)"
+  LAUNCHER=$(anime-tools-shortcut 2>/dev/null | sed -n 's/^launcher: //p')
+fi
+
 cat <<MSG
 
 $(printf '\033[1;32m✓ anime-tools %s installed\033[0m' "$VERSION")
@@ -67,7 +78,11 @@ Next steps:
                                 #   (sign in to Hugging Face under ⚙ Settings — the
                                 #    tagger backbone and SAM3 weights are gated)
 
-CLI:      python -m anime_tools.tagger.cli --help   (inside: uv tool run --from anime-tools python …)
+${LAUNCHER:+Launcher: $LAUNCHER
+          Double-click it to open the GUI on that folder. Run
+          'anime-tools-shortcut' inside another dataset folder for one there.
+
+}CLI:      python -m anime_tools.tagger.cli --help   (inside: uv tool run --from anime-tools python …)
 Update:   uv tool upgrade anime-tools
 Remove:   uv tool uninstall anime-tools
 MSG

@@ -5,13 +5,11 @@ sidecar a training run reads, produced from a folder of images. It installs on
 its own — no DiT, no VAE, no training stack — and everything it writes is a
 plain file on disk.
 
-| Sub-package | What | Install |
-|---|---|---|
-| `anime_tools.captions` | The caption grammar (`parse_caption` / `compose_caption` — never `split(",")` a caption), tag taxonomy + Danbooru-KB correction, `--caption_drop_groups`, shuffle/dropout variants sidecars, `caption_index.json` builder | base (torch-free) |
-| `anime_tools.tagger` | Anima Tagger — a vocab/threshold/sidecar head over the external `animetimm/*.dbv4-full` caformer tagger, emitting Anima-format tags (`rating, count, characters, copyrights, @artists, generals`). CLIs: `python -m anime_tools.tagger.cli --mode …`, `…cli.autotag`, `…cli.autotag_server`, `…cli.train_sidecar` |
-| `anime_tools.stages` | Caption stages: batch autotag, position clauses (SAM3 crops → tagger → v2 rewrite), correction + variants mirror, multiview audit |
-| `anime_tools.grouping` | Near-twin / same-concept grouping on PE-Spatial-B16-512 features (`anime_tools.vision.pe`, weights fetched from the Hub) → `groups.json`; decensor match tools. CLI: `python -m anime_tools.grouping.cli.build_groups --source-dir …` |
-| `anime_tools.masking` | Training masks: SAM3 subject masks (balloons / lettering as ignore prompts), merge. CLIs: `python -m anime_tools.masking.cli.{generate_masks,merge_masks}` |
+New here? Start with the **[guidebook](anime_tools/gui/guidebooks/guidebook.md)** — the end-to-end
+walkthrough from a folder of images to a published dataset, and what the GUI's ☰ → 📖 opens
+([한국어](anime_tools/gui/guidebooks/가이드북.md) ·
+[日本語](anime_tools/gui/guidebooks/ガイドブック.md) ·
+[中文](anime_tools/gui/guidebooks/指南书.md)).
 
 ## Install
 
@@ -32,6 +30,17 @@ irm https://github.com/sorryhyun/anime_tools/releases/latest/download/install.ps
 `ANIME_TOOLS_VERSION=v0.3.1` pins a tag, `TORCH_INDEX=https://download.pytorch.org/whl/cu130` picks
 a torch
 index (PyPI's Linux wheel is already CUDA; Windows defaults to CPU).
+
+Then, in your dataset folder:
+
+```bash
+anime-tools-gui --open     # http://127.0.0.1:8790
+```
+
+The installer also leaves a double-clickable **Anime Tools GUI** launcher in the folder it ran in —
+a `.lnk` on Windows, a `.command` on macOS, a `.desktop` entry elsewhere.
+It opens the GUI on that folder no matter where you move the file (the desktop, say),
+and `anime-tools-shortcut` makes one inside any other dataset folder.
 
 Updating: the GUI's **☰ → Update** pane compares the installed version with the latest release,
 shows its notes and installs it in place (`python -m anime_tools.update`, which is the installer's
@@ -60,6 +69,20 @@ override-dependencies = ["numpy>=2.0"]
 
 The installers above pass the same override on the command line.
 
+## What's in it
+
+| Sub-package | What it does | CLI |
+|---|---|---|
+| `captions` | The caption grammar, tag taxonomy, Danbooru-KB correction, shuffle/dropout variants. Torch-free. | `…captions.index` |
+| `tagger` | The Anima Tagger: a vocab/threshold/sidecar head over the dbv4 caformer, emitting Anima-format tags. | `…tagger.cli` |
+| `stages` | The pipeline itself — resize, autotag, position clauses, correction, multiview audit, OCR, export. | `…stages.cli.*` |
+| `grouping` | Near-twin and same-concept grouping on PE-Spatial features. | `…grouping.cli.*` |
+| `masking` | SAM3 subject masks, with balloons and lettering as ignore prompts, and their merge. | `…masking.cli.*` |
+| `ocr` | The AnimeText text-block detector and the manga VL reader behind the OCR stage. | `…stages.cli.ocr_captions` |
+| `gui` | The web panel over all of the above. | `anime-tools-gui` |
+
+Each CLI is a `python -m anime_tools.…` module; `--help` lists its flags.
+
 ## Web GUI
 
 ```bash
@@ -83,6 +106,26 @@ LAN for a headless GPU box (no auth — use your own tunnel), `--home` overrides
 the curation home.
 
 FastAPI + uvicorn are plain dependencies.
+
+## From Python
+
+Every stage is a frozen dataclass whose fields are its CLI flags, plus a `run_<stage>` that takes
+it. The request modules are torch-free; the model loads inside the runner.
+
+```python
+from anime_tools.stages import AutotagRequest, run_autotag
+
+req = AutotagRequest(mode="merge", min_confidence=0.35)  # dry run: report.json only
+rows, stats = run_autotag(req)
+req.to_argv()  # ['--mode', 'merge', '--min_confidence', '0.35'] — the CLI is a shell over this
+```
+
+`apply=True` writes. The library calls under the stages are usable on their own —
+`captions.parse_caption` / `compose_caption` (never `split(",")` a caption),
+`tagger.AnimaTagger.predict`, `ocr.load_ocr().read()`, `masking._masks.mask_path_for`.
+
+[`examples/`](examples/) is one runnable script per feature, API beside CLI, with the GUI panel that
+runs the same thing named.
 
 ## Layout of a curated dataset
 
@@ -112,9 +155,8 @@ home: `ANIME_TOOLS_HOME` → `ANIMA_HOME` → current directory
 
 ## Docs
 
-[`docs/README.md`](docs/README.md) is the index. Start with the
-[guidebook](anime_tools/gui/guidebooks/guidebook.md) (end-to-end walkthrough for users, and
-what the GUI's ☰ → 📖 opens); the
+[`docs/README.md`](docs/README.md) is the index; the
+[guidebook](anime_tools/gui/guidebooks/guidebook.md) is the walkthrough, and the
 rest are per-piece references:
 
 - [`docs/anima_tagger.md`](docs/anima_tagger.md) — the tagger: vocab build, dbv4 backend,

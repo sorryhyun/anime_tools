@@ -158,6 +158,12 @@ Each of these is implemented in one package but bites from any of them.
   moves between them. Only the shape `install.sh` makes is ever rewritten; the GUI runs it as a
   job (`gui/updates.py`, the Update pane), and `make update` is not a target here — the trainer's
   `scripts/update.py` merges a tarball over a working tree, which this package does not have.
+- `shortcut.py` (torch-free, stdlib-only): the double-clickable GUI launcher, one file per platform
+  — a `.lnk` written through `WScript.Shell`, a `chmod +x` `.command`, or a `Terminal=true`
+  `.desktop` — each pinning the folder it lands in as that launcher's curation home, since the GUI
+  reads the home from its working directory. `anime-tools-shortcut` is the console script;
+  both bootstrap installers run it best-effort in the directory they ran in and parse `launcher:
+  <path>` off its stdout for the closing message.
 - `comfyui/anima_tagger/` (not installed — `packages.find` only includes `anime_tools*`): the
   ComfyUI node, importing `AnimaTagger` from the installed package and vendoring nothing.
 - `design/` (not installed, no runtime role): the GUI's design system as a published Claude
