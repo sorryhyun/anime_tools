@@ -51,6 +51,11 @@ adds ~15 % more boxes on a manga page, nearly all of them real (the hand
 SFX rows go 98 % → 100 % boxed) at a handful more guard rejections."""
 
 DEFAULT_NMS = 0.5
+DEFAULT_MAX_BATCH = 16
+"""Pages per forward (:attr:`AnimeTextDetector.max_batch`). Measured on the
+heaviest 128 pages of a 3k tree: 64 → 12 GB peak, 32 → 6, 16 → 3.1, 8 → 1.6,
+wall flat to slightly faster as it drops."""
+
 NEST_TH = 0.85
 """A box ≥ this share inside another is *nested* in it (:func:`denest`)."""
 
@@ -200,6 +205,11 @@ class AnimeTextDetector:
     conf: float = DEFAULT_CONF
     nms: float = DEFAULT_NMS
     nest: str = "inner"
+    max_batch: int = DEFAULT_MAX_BATCH
+    """Pages per forward. The engine's chunk is its decode / prefetch unit, not
+    this: at 640² every page costs ~0.19 GB of activations, so a 64-page chunk
+    in one forward peaked at 12 GB for a 54 MB graph (2026-09-10). Sixteen is
+    3 GB, and no slower."""
 
     @classmethod
     def load(
@@ -211,6 +221,7 @@ class AnimeTextDetector:
         conf: float = DEFAULT_CONF,
         nms: float = DEFAULT_NMS,
         nest: str = "inner",
+        max_batch: int = DEFAULT_MAX_BATCH,
         fetch: bool = True,
     ) -> AnimeTextDetector:
         """The graph on ``device`` (auto when ``None``). ``model_dir`` defaults to
@@ -230,7 +241,13 @@ class AnimeTextDetector:
         dev = resolve_device(device)
         model = load_yolo12(weights, nc=1, device=dev)
         return cls(
-            model=model, device=dev, imgsz=int(imgsz), conf=conf, nms=nms, nest=nest
+            model=model,
+            device=dev,
+            imgsz=int(imgsz),
+            conf=conf,
+            nms=nms,
+            nest=nest,
+            max_batch=int(max_batch),
         )
 
     # ---- the engine's detector protocol ---------------------------------
@@ -246,10 +263,10 @@ class AnimeTextDetector:
         """The raw ``(5, N)`` head per prepared image — forward passes only, on
         the calling thread.
 
-        One forward over the whole chunk when every canvas agrees on its shape,
-        which at a fixed ``imgsz`` is always. ``imgsz=0`` letterboxes each page
-        at its own native size, so there the run falls back to a forward per
-        shape rather than refusing.
+        Pages that agree on their canvas shape — at a fixed ``imgsz``, all of
+        them — share a forward, ``max_batch`` at a time. ``imgsz=0`` letterboxes
+        each page at its own native size, so there the run falls back to a
+        forward per shape rather than refusing.
         """
         import numpy as np
         import torch
@@ -258,14 +275,17 @@ class AnimeTextDetector:
         by_shape: dict[tuple, list[int]] = {}
         for i, (x, _) in enumerate(prepared):
             by_shape.setdefault(x.shape[1:], []).append(i)
+        step = max(1, self.max_batch)
         with torch.inference_mode():
-            for idx in by_shape.values():
-                batch = torch.from_numpy(
-                    np.concatenate([prepared[i][0] for i in idx], 0)
-                ).to(self.device)
-                heads = self.model(batch).float().cpu().numpy()
-                for slot, head in zip(idx, heads, strict=True):
-                    out[slot] = head
+            for same in by_shape.values():
+                for s in range(0, len(same), step):
+                    idx = same[s : s + step]
+                    batch = torch.from_numpy(
+                        np.concatenate([prepared[i][0] for i in idx], 0)
+                    ).to(self.device)
+                    heads = self.model(batch).float().cpu().numpy()
+                    for slot, head in zip(idx, heads, strict=True):
+                        out[slot] = head
         return out
 
     def boxes(self, raw, prepared: tuple, shape: tuple[int, int]) -> list:
@@ -328,6 +348,7 @@ def _ensure(fetch: bool) -> Path:
 __all__ = [
     "DEFAULT_CONF",
     "DEFAULT_IMGSZ",
+    "DEFAULT_MAX_BATCH",
     "DEFAULT_NMS",
     "NEST_POLICIES",
     "NEST_TH",

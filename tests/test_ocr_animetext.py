@@ -196,6 +196,18 @@ def test_every_page_reaches_the_graph_in_one_batch_at_one_shape():
     assert g.shapes == [(3, 3, 640, 640)]
 
 
+def test_a_chunk_past_max_batch_is_split_into_forwards_of_that_size():
+    """The engine's chunk is a prefetch unit; the graph never sees more than
+    ``max_batch`` pages at once (activations, not weights, are the VRAM)."""
+    pytest.importorskip("cv2")
+    pytest.importorskip("torch")
+    g = _Graph()
+    det = animetext.AnimeTextDetector(model=g, imgsz=640, max_batch=2)
+    pages = [np.zeros((1280, 1280, 3), np.uint8)] * 5
+    assert det.detect_batch(pages) == [[(480, 480, 800, 800)]] * 5
+    assert g.shapes == [(2, 3, 640, 640), (2, 3, 640, 640), (1, 3, 640, 640)]
+
+
 def test_native_size_letterboxing_falls_back_to_a_forward_per_shape():
     """``imgsz=0`` keeps each page at its own size, which cannot be one batch —
     the run groups by shape rather than refusing."""
