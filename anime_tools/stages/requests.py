@@ -789,11 +789,25 @@ class OcrRequest(StageRequest):
         help="Keep ASCII-only lines. Dropped by default: on a scanned comic they are "
         "the page number, the URL and the romaji sfx, never the dialogue",
     )
+    strip_symbols: bool = _off(
+        True,
+        "--keep_symbols",
+        help="Keep pictographs (♡ ★ ♪, emoji — Unicode's other-symbol class) in "
+        "the text. Dropped by default: a heart is decoration on a line, not "
+        "something it says; punctuation (… ! ? ~ ー) always stays",
+    )
     det_conf: float = arg(
         0.25,
         help="Keep a detected box scored at least this (0-1). The model card's F1 "
         "threshold is 0.426; 0.25 boxes ~15%% more, nearly all real text on a "
         "manga page",
+        group=DETECTOR,
+    )
+    min_det: float = arg(
+        0.6,
+        help="Write a line only if the detector scored its box at least this "
+        "(0-1). --det_conf decides which boxes are read at all; a mask component "
+        "has no box score and is not held to this",
         group=DETECTOR,
     )
     min_box_px: int = arg(
@@ -809,6 +823,12 @@ class OcrRequest(StageRequest):
         group=DETECTOR,
     )
     vl_batch_size: int = arg(16, help="Crops per VL forward pass", group=VL_READER)
+    min_score: float = arg(
+        0.6,
+        help="Write a line only if the reader's mean token confidence in it is at "
+        "least this (0-1); a read with no confidence is not held to this",
+        group=VL_READER,
+    )
     mask_dir: str | None = arg(
         None,
         help="Optional: the text-mask tree (`make mask`'s {stem}_mask.png, "
@@ -836,8 +856,9 @@ class OcrRequest(StageRequest):
     device: str | None = arg(None, help=DEVICE_HELP)
 
     def __post_init__(self) -> None:
-        if not 0.0 <= self.det_conf <= 1.0:
-            raise ValueError("--det_conf must be within 0-1")
+        for name in ("det_conf", "min_det", "min_score"):
+            if not 0.0 <= getattr(self, name) <= 1.0:
+                raise ValueError(f"--{name} must be within 0-1")
         if self.min_chars < 0:
             raise ValueError("--min_chars must be 0 or more")
 

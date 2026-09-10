@@ -54,6 +54,7 @@ def test_a_default_argv_names_only_what_changed():
         detection=DetectionRequest(part_prompts=("hips",)), rewrite=False
     ).to_argv() == ["--part_prompts", "hips", "--no_rewrite"]
     assert OcrRequest(skip_en=False).to_argv() == ["--keep_en"]
+    assert OcrRequest(strip_symbols=False).to_argv() == ["--keep_symbols"]
     assert ResizeRequest(target_res=(1024,), recursive=False).to_argv() == [
         "--target_res",
         "1024",

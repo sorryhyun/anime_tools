@@ -14,6 +14,7 @@ import pytest
 
 from anime_tools.captions.ocr_sidecar import OcrLine
 from anime_tools.ocr import reread
+from anime_tools.ocr._text import drop_symbols
 from anime_tools.stages.requests import OcrRequest
 
 
@@ -69,7 +70,7 @@ def test_a_scored_read_keeps_its_confidence_and_the_box_keeps_its_det():
         OcrLine(seq=2, box=(100, 10, 130, 120), score=0.0, text="", det=0.42),
     ]
     reads = [("ぱんぱん", 0.97), "どきどき"]  # a scored read and a bare one
-    out = reread.reread_lines(page(), lines, lambda b, x: reads)
+    out = reread.reread_lines(page(), lines, lambda b, x: reads, min_det=0.0)
     assert [(ln.text, ln.score, ln.det) for ln in out] == [
         ("どきどき", reread.NO_SCORE, 0.42),  # right column first
         ("ぱんぱん", 0.97, 0.81),
@@ -91,6 +92,34 @@ def test_a_read_must_clear_the_floors_and_carry_a_letter():
     )
     # the floors off, ASCII stays; a read with no letter in it never does
     assert sorted(ln.text for ln in kept) == ["OK", "ぱんぱん"]
+
+
+def test_the_confidence_floors_and_the_symbol_strip():
+    lines = [
+        OcrLine(seq=i, box=(b, 10, b + 30, 120), score=0.0, text="", det=d)
+        for i, (b, d) in enumerate(((10, 0.9), (60, 0.5), (110, 0.9), (160, 0.9)), 1)
+    ]
+    reads = [("ぱん♡", 0.9), ("どき", 0.9), ("はあ", 0.5), ("♡♥", 0.9)]
+    out = reread.reread_lines(page(), lines, lambda b, x: reads)
+    # det 0.5 and score 0.5 sit under the 0.6 floors; the hearts go, and a read
+    # of hearts alone is no line
+    assert [ln.text for ln in out] == ["ぱん"]
+    kept = reread.reread_lines(
+        page(),
+        lines,
+        lambda b, x: reads,
+        min_det=0.0,
+        min_score=0.0,
+        strip_symbols=False,
+    )
+    assert sorted(ln.text for ln in kept) == sorted(["ぱん♡", "どき", "はあ"])
+    # an unscored read (a bare string on a box no detector scored) is held to
+    # neither floor
+    unscored = [line("", (10, 10, 40, 120), score=0.0)]
+    out = reread.reread_lines(page(), unscored, lambda b, x: ["どき"])
+    assert [ln.text for ln in out] == ["どき"]
+    # punctuation is how a line is said; pictographs are decoration on it
+    assert drop_symbols("え…っ!?♡ ★ ~ー") == "え…っ!? ~ー"
 
 
 def test_an_empty_page_calls_no_reader():

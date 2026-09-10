@@ -194,7 +194,9 @@ BASIC_FIELDS: dict[str, frozenset[str]] = {
             "caption_shuffle_variants",
         }
     ),
-    "ocr": frozenset({"det_conf", "min_chars", "skip_en"}),
+    "ocr": frozenset(
+        {"det_conf", "min_det", "min_score", "min_chars", "skip_en", "strip_symbols"}
+    ),
     "groups": frozenset({"sim_min", "min_size"}),
     "masks_sam": frozenset(
         {"prompts", "focus_prompts", "threshold", "dilate", "force"}

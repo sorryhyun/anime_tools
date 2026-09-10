@@ -9,8 +9,10 @@ what the OCR stage runs:
 * :func:`reread_lines` — one page in, one page out. Each box is cut with the
   reader's padding and read; the read *is* the line, so a read the decode guard
   rejects (``None``, the guard is inside :meth:`~anime_tools.ocr.sfx.SfxReader.read`)
-  drops its box, and a read that passes must still clear the line floors
-  (``min_chars`` / ``skip_en``) and carry a letter (:func:`has_script`). With a
+  drops its box, and a read that passes must still clear the confidence floors
+  (``min_det`` / ``min_score``), lose its pictographs (``strip_symbols``), clear
+  the line floors (``min_chars`` / ``skip_en``) and carry a letter
+  (:func:`has_script`). With a
   text mask (the MIT ``{stem}_mask.png`` :mod:`anime_tools.masking` writes) its
   connected components that no box already covers become crops too, held to the
   same floors. Reading order is settled afterwards, since a component may sit
@@ -51,7 +53,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from anime_tools.captions.ocr_sidecar import OcrLine
-from anime_tools.ocr._text import keep_line, reading_order
+from anime_tools.ocr._text import drop_symbols, keep_line, reading_order
 
 Box = tuple[int, int, int, int]
 Read = str | tuple[str, float] | None
@@ -63,6 +65,16 @@ ReadBoxes = Callable[[object, Sequence[Box]], list[Read]]
 NO_SCORE = 0.0
 """The ``score`` (or ``det``) of a line nothing stood behind — a read with no
 confidence, a box no detector scored — and ``0.000`` in the sidecar says so."""
+
+LINE_MIN_DET = 0.6
+"""The detector confidence a box needs for its read to be written
+(:func:`reread_lines`). A mask component has no ``det`` and is not held to it.
+Stricter than the export floor
+(:data:`~anime_tools.captions.ocr_sidecar.DEFAULT_MIN_DET`), which still guards
+sidecars written before this one."""
+LINE_MIN_SCORE = 0.6
+"""The reader's mean token confidence a read needs to be written. A read with
+no confidence (:data:`NO_SCORE`) is not held to it."""
 
 NESTED_CONTAINMENT = 0.85
 """A kept line's box at least this far inside another kept line's box is the
@@ -177,16 +189,22 @@ def reread_lines(
     comp_max: int = 16,
     min_chars: int = 2,
     skip_en: bool = True,
+    min_det: float = LINE_MIN_DET,
+    min_score: float = LINE_MIN_SCORE,
+    strip_symbols: bool = True,
 ) -> list[OcrLine]:
     """One page through the VL reader: the detected boxes read, the uncovered
     mask components read, reading order and numbering settled afterwards.
 
     ``read_boxes`` is called once with every crop (the lines' boxes first, then
     the components), so the reader batches the page. A box lives or dies by its
-    read: ``None`` (the guard rejected it) drops it, and a text must carry a
-    letter (:func:`has_script`) and pass the line floors (``min_chars`` /
-    ``skip_en``) to become a line, and a line read inside another surviving
-    line is the same text twice and drops (:func:`drop_nested`). The reader's
+    read: ``None`` (the guard rejected it) drops it; a box under ``min_det`` or
+    a read under ``min_score`` drops (an unscored one is not held to either);
+    with ``strip_symbols`` the text loses its pictographs (:func:`drop_symbols`)
+    before the rest is judged; a text must carry a letter (:func:`has_script`)
+    and pass the line floors (``min_chars`` / ``skip_en``) to become a line, and
+    a line read inside another surviving line is the same text twice and drops
+    (:func:`drop_nested`). The reader's
     confidence is the line's ``score`` (:data:`NO_SCORE` for a bare-string
     read); the detector's ``det`` is kept on its line, and a component has
     none. Whatever text a line arrived with is not consulted — the engine hands
@@ -204,6 +222,8 @@ def reread_lines(
     if not boxes and not comps:
         return []
     reads = [split_read(r) for r in read_boxes(bgr, boxes + comps)]
+    if strip_symbols:
+        reads = [(t if t is None else drop_symbols(t), c) for t, c in reads]
 
     def keeps(text: str | None) -> bool:
         return (
@@ -212,18 +232,23 @@ def reread_lines(
             and keep_line(text, min_chars=min_chars, skip_en=skip_en)
         )
 
+    def sure(det: float, conf: float) -> bool:
+        return (det == NO_SCORE or det >= min_det) and (
+            conf == NO_SCORE or conf >= min_score
+        )
+
     out: list[OcrLine] = drop_nested(
         [
             OcrLine(seq=0, box=box, score=conf, text=text, det=det)
             for box, det, (text, conf) in zip(
                 boxes, dets, reads[: len(boxes)], strict=True
             )
-            if keeps(text)
+            if keeps(text) and sure(det, conf)
         ]
     )
     seen = list(boxes)
     for box, (text, conf) in zip(comps, reads[len(boxes) :], strict=True):
-        if not keeps(text) or covered(box, seen):
+        if not keeps(text) or not sure(NO_SCORE, conf) or covered(box, seen):
             continue
         seen.append(box)
         out.append(OcrLine(seq=0, box=box, score=conf, text=text, det=NO_SCORE))
@@ -290,6 +315,9 @@ class RereadEngine:
     comp_max: int = 16
     min_chars: int = 2
     skip_en: bool = True
+    min_det: float = LINE_MIN_DET
+    min_score: float = LINE_MIN_SCORE
+    strip_symbols: bool = True
 
     def _page(self, path: Path, lines: list[OcrLine]) -> list[OcrLine]:
         mask = None
@@ -321,6 +349,9 @@ class RereadEngine:
             comp_max=self.comp_max,
             min_chars=self.min_chars,
             skip_en=self.skip_en,
+            min_det=self.min_det,
+            min_score=self.min_score,
+            strip_symbols=self.strip_symbols,
         )
 
     def read(self, image_path: Path) -> list[OcrLine]:
@@ -334,6 +365,8 @@ class RereadEngine:
 
 __all__ = [
     "KANA_MARKS",
+    "LINE_MIN_DET",
+    "LINE_MIN_SCORE",
     "NESTED_CONTAINMENT",
     "NO_SCORE",
     "Read",

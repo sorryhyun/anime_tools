@@ -24,6 +24,7 @@ testable on hand-built boxes.
 
 from __future__ import annotations
 
+import unicodedata
 from collections.abc import Sequence
 
 from anime_tools.captions.ocr_sidecar import OcrLine
@@ -69,6 +70,17 @@ def is_tally(text: str) -> bool:
         and "正" in stripped
         and all(ch in TALLY_STROKES for ch in stripped)
     )
+
+
+def drop_symbols(text: str) -> str:
+    """``text`` without its pictographs — ``♡`` ``★`` ``♪``, emoji, the rest of
+    Unicode's *other symbol* class (``So``) — whitespace re-collapsed.
+
+    Punctuation stays: ``…``, ``!?``, ``~`` and ``ー`` are how a line is said;
+    a heart is decoration on it. A read of hearts alone comes back empty.
+    """
+    kept = "".join(ch for ch in text if unicodedata.category(ch) != "So")
+    return " ".join(kept.split())
 
 
 def keep_line(text: str, *, min_chars: int = 0, skip_en: bool = False) -> bool:

@@ -641,6 +641,9 @@ def _vl_engine(req: OcrRequest, engine, resized_dir: Path, device: str):
         comp_max=req.comp_max,
         min_chars=req.min_chars,
         skip_en=req.skip_en,
+        min_det=req.min_det,
+        min_score=req.min_score,
+        strip_symbols=req.strip_symbols,
     )
 
 
@@ -687,6 +690,9 @@ def run_ocr(req: OcrRequest):
         {
             "min_chars": req.min_chars,
             "skip_en": bool(req.skip_en),
+            "strip_symbols": bool(req.strip_symbols),
+            "min_det": req.min_det,
+            "min_score": req.min_score,
             "min_box_px": req.min_box_px,
             "max_boxes": req.max_boxes,
             "det_conf": req.det_conf,

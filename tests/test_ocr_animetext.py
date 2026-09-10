@@ -394,13 +394,16 @@ def test_load_ocr_builds_the_detect_only_engine_over_the_animetext_detector(
 
 
 def test_the_request_has_one_path_and_round_trips_its_knobs():
-    # PP-OCRv6 was retired 2026-09-07: no detector / reader / join / score-floor /
-    # recognizer-batch / detector-side flags; the AnimeText detector's score
-    # floor is the one detector knob.
+    # PP-OCRv6 was retired 2026-09-07: no detector / reader / join /
+    # recognizer-batch / detector-side flags. The AnimeText detector's score
+    # floor is the one detector knob; min_det / min_score (2026-09-10) are the
+    # written-line floors on the det and VL-score columns, not the old
+    # recognizer's.
     req = OcrRequest()
     assert req.det_conf == 0.25
+    assert (req.min_det, req.min_score, req.strip_symbols) == (0.6, 0.6, True)
     assert "--det_conf" not in req.to_argv()
-    for gone in ("detector", "reader", "min_score", "batch_size", "det_limit_side"):
+    for gone in ("detector", "reader", "batch_size", "det_limit_side"):
         assert not hasattr(req, gone), gone
     req = OcrRequest(det_conf=0.426, mask_dir="m", max_boxes=8)
     assert "--det_conf" in req.to_argv() and "--mask_dir" in req.to_argv()
@@ -410,6 +413,10 @@ def test_the_request_has_one_path_and_round_trips_its_knobs():
 def test_the_request_refuses_bad_values():
     with pytest.raises(ValueError, match="--det_conf"):
         OcrRequest(det_conf=1.5)
+    with pytest.raises(ValueError, match="--min_det"):
+        OcrRequest(min_det=-0.1)
+    with pytest.raises(ValueError, match="--min_score"):
+        OcrRequest(min_score=1.2)
     with pytest.raises(ValueError, match="--min_chars"):
         OcrRequest(min_chars=-1)
 
