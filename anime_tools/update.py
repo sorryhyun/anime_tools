@@ -56,6 +56,16 @@ TOOL_PYTHON = "3.13"
 
 NUMPY_OVERRIDE = "numpy>=2.0"
 
+INDEX_STRATEGY = "unsafe-best-match"
+"""What `[tool.uv] index-strategy` says, spelled on the argv for the same reason
+:data:`NUMPY_OVERRIDE` is: uv reads `tool.uv` only from a workspace root. A torch
+index passed with `--index` becomes the FIRST index, and uv's default
+first-index-wins rule then pins every package that mirror happens to carry --
+the pytorch one stops at iopath 0.1.9 while sam3 needs >=0.1.10, so the default
+strategy dead-ends the whole resolution. Both indexes are equally trusted; only
+passed alongside an `--index`, since without one there is nothing to fall
+through to."""
+
 WINDOWS_TORCH_INDEX = "https://download.pytorch.org/whl/cu132"
 """The index a Windows install draws torch from (PyPI has no win32 CUDA wheels).
 `install.ps1` passes it on the argv; `pyproject.toml` binds it to the checkout's
@@ -181,7 +191,9 @@ def update_argv(
 
     ``--force`` is what makes it an upgrade rather than "already installed";
     ``overrides`` is the file holding :data:`NUMPY_OVERRIDE`, and ``index`` is
-    ``TORCH_INDEX`` for a CPU-only or Windows host.
+    ``TORCH_INDEX`` for a CPU-only or Windows host -- which rides with
+    :data:`INDEX_STRATEGY`, since a first index that is not PyPI otherwise pins
+    every package it mirrors.
     """
     argv = [
         "uv",
@@ -194,7 +206,7 @@ def update_argv(
         str(overrides),
     ]
     if index:
-        argv += ["--index", index]
+        argv += ["--index", index, "--index-strategy", INDEX_STRATEGY]
     return [*argv, f"{PACKAGE} @ git+{REPO_URL}@{tag}"]
 
 

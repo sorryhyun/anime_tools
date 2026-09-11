@@ -30,9 +30,10 @@ Windows (PowerShell)
 irm https://github.com/sorryhyun/anime_tools/releases/latest/download/install.ps1 | iex
 ```
 
-`ANIME_TOOLS_VERSION=v0.3.1` pins a tag, `TORCH_INDEX=https://download.pytorch.org/whl/cu130` picks
+`ANIME_TOOLS_VERSION=v0.3.1` pins a tag, `TORCH_INDEX=https://download.pytorch.org/whl/cu128` picks
 a torch
-index (PyPI's Linux wheel is already CUDA; Windows defaults to CPU).
+index (PyPI's Linux wheel is already CUDA; the Windows installer defaults to cu132, since PyPI's
+win32 wheel is CPU-only).
 
 Then, in your dataset folder:
 

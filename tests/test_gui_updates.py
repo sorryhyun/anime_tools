@@ -74,6 +74,15 @@ def test_update_argv_is_the_installers_command():
     assert argv[-1] == f"{U.PACKAGE} @ git+{U.REPO_URL}@v0.6.0"
 
 
+def test_an_index_carries_the_strategy_that_makes_it_resolvable():
+    """--index makes that mirror the first one, and uv's default first-index-wins
+    rule then pins every package it carries -- the pytorch mirror's iopath 0.1.9
+    against sam3's >=0.1.10 is where it bit. No index, nothing to fall through."""
+    with_index = U.update_argv("v0.6.0", overrides="o.txt", index="https://cpu")
+    assert with_index[with_index.index("--index-strategy") + 1] == U.INDEX_STRATEGY
+    assert "--index-strategy" not in U.update_argv("v0.6.0", overrides="o.txt")
+
+
 def test_windows_update_defaults_to_the_installers_torch_index():
     """`uv tool install` enables no dependency group, so the cu132 binding the
     checkout gets from `cuda-windows` has to ride the argv on Windows -- the

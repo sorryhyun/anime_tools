@@ -77,7 +77,7 @@ Two environment variables steer the installer:
 | Variable | Effect |
 |---|---|
 | `ANIME_TOOLS_VERSION=v0.3.1` | Install that tag instead of the latest release. |
-| `TORCH_INDEX=https://download.pytorch.org/whl/cu130` | Extra package index for torch. The PowerShell installer already defaults to this one; on Linux it is only needed for a CPU-only build (`…/whl/cpu`). |
+| `TORCH_INDEX=https://download.pytorch.org/whl/cu128` | Extra package index for torch. The PowerShell installer already defaults to the cu132 one (the channel a 50-series card needs); set this for an older CUDA runtime, or `…/whl/cpu` for none. On Linux it is only needed for a CPU-only build. |
 
 When it finishes, open a new shell so the PATH change is seen, then:
 
