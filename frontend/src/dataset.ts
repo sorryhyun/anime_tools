@@ -44,6 +44,14 @@ export function createDataset(config: Config) {
     ItemDetail | undefined,
     string
   >(() => sel()?.rel, api.item);
+  /** What the position stage last saw in the selected image — the caption
+      panel's analysis badge. Keyed on the item itself rather than its rel, so
+      every refetch of the item (a job that wrote it, a reload) re-reads it: a
+      run that captioned the image is the run that re-analysed it. */
+  const [analysis] = createResource(
+    () => item(),
+    (it) => api.analysis(it.rel),
+  );
 
   /** The two shapes the sidebar draws the listing as, built here rather than in
       the component: the keyboard walks the same model the eye reads, so there
@@ -180,6 +188,7 @@ export function createDataset(config: Config) {
 
   return {
     list,
+    analysis,
     query,
     setQuery,
     debouncedQuery,

@@ -17,7 +17,7 @@ Per-rule evidence and the knob table live in ``docs/position_captions.md``.
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
 from PIL import Image
@@ -59,6 +59,7 @@ from anime_tools.stages.instance_detection import (
     merge_part_detections,
 )
 
+from ._analysis import clear_analysis, write_analysis
 from ._caption_io import read_caption, write_caption
 from ._walk_captions import iter_captions
 
@@ -330,8 +331,14 @@ def propose_for_image(
     options: PositionCaptionOptions,
     crop_sink: Callable[[int, str, Image.Image], str] | None = None,
     part_detect_fn: Callable[[Image.Image, str, float], list[Detection]] | None = None,
+    mask_sink: Callable[[list[Detection]], None] | None = None,
 ) -> ImageProposal:
-    """Build the clause proposal for one image. Never writes any caption."""
+    """Build the clause proposal for one image. Never writes any caption.
+
+    ``mask_sink`` sees the detections each time their order is settled: as
+    detected (``proposal.detections``' order, which is all a skip has), then
+    reading-ordered once the gates pass (``proposal.instances``' order). The
+    last call is the one that matches the returned proposal."""
     parsed = parse_caption(caption)
     flat_bag = parsed.tag_keys
     expected = caption_subject_count(caption)
@@ -345,6 +352,8 @@ def propose_for_image(
     )
 
     dets = detect_subjects(image, detect_fn, options, expected, part_detect_fn)
+    if mask_sink is not None:
+        mask_sink(dets)
     proposal.detected = len(dets)
     proposal.detections = [
         {
@@ -380,6 +389,8 @@ def propose_for_image(
 
     order = ordered_indices([d.box for d in dets], image.size, row_tol=options.row_tol)
     dets = [dets[i] for i in order]
+    if mask_sink is not None:
+        mask_sink(dets)
     positions = assign_positions(
         [d.box for d in dets], image.size, row_tol=options.row_tol
     )
@@ -542,6 +553,7 @@ def run_position_captions(
     progress: Callable[[int, int, str], None] | None = None,
     part_detect_fn: Callable[[Image.Image, str, float], list[Detection]] | None = None,
     promoted: Mapping[str, str] | None = None,
+    analysis_dir: Path | None = None,
 ) -> tuple[list[ImageProposal], PositionCaptionStats]:
     """Walk the resized tree, propose clauses, and (with ``apply``) write them.
 
@@ -563,6 +575,10 @@ def run_position_captions(
     The stale ``{stem}.variants.txt`` sidecar, which wins over ``{stem}.txt`` at
     encode time, is dropped alongside the write. The write replaces rather than
     appends, so ``apply`` defaults off.
+
+    ``analysis_dir`` keeps each swept image's proposal and instance masks
+    (:mod:`~anime_tools.stages._analysis`) — the GUI's analysis badge; an image
+    the sweep walks but does not propose for loses the pair it had.
     """
     options = options or PositionCaptionOptions()
     stats = PositionCaptionStats()
@@ -577,8 +593,10 @@ def run_position_captions(
         if promotion is not None and promotion != caption:
             caption = promotion
             stats.promoted += 1
+        image_rel = image_path.relative_to(resized_dir).as_posix()
         ok, reason = is_candidate(caption)
         if not ok:
+            clear_analysis(analysis_dir, image_rel)
             stats.skip(reason)
             # A promotion the sweep still cannot use (the gate admitted it, but
             # the tag did not make it a candidate) is written on its own so the
@@ -592,6 +610,13 @@ def run_position_captions(
         stats.candidates += 1
 
         crop_sink = _crop_sink(crops_dir, rel) if crops_dir is not None else None
+        # What the analysis label map is drawn from: the order propose_for_image
+        # settled last, which is the order its proposal's rows are in.
+        labelled: list[Detection] = []
+
+        def hold_labels(dets: list[Detection], _held=labelled) -> None:
+            _held[:] = dets
+
         with Image.open(image_path) as handle:
             image = handle.convert("RGB")
         proposal = propose_for_image(
@@ -603,6 +628,7 @@ def run_position_captions(
             options=options,
             crop_sink=crop_sink,
             part_detect_fn=part_detect_fn,
+            mask_sink=hold_labels if analysis_dir is not None else None,
         )
         proposal.image = str(image_path.relative_to(resized_dir))
         proposal.caption_path = str(rel)
@@ -610,6 +636,10 @@ def run_position_captions(
             read_caption(dst_caption) if dst_caption.exists() else ""
         )
         rows.append(proposal)
+        if analysis_dir is not None:
+            record = asdict(proposal)
+            record["labels"] = "instances" if proposal.instances else "detections"
+            write_analysis(analysis_dir, image_rel, record, labelled, image.size)
 
         if not proposal.ok:
             stats.skip(proposal.status.removeprefix("skip:"))

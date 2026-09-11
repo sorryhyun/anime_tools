@@ -27,6 +27,7 @@ the caption beside ``.variants.txt`` makes that sidecar stale, which
 
 from __future__ import annotations
 
+import base64
 import glob
 import os
 from dataclasses import dataclass
@@ -59,6 +60,7 @@ from anime_tools.grouping.groups import MANIFEST_VERSION
 from anime_tools.gui.settings import load_settings
 from anime_tools.masking._masks import mask_name
 from anime_tools.path_filter import filter_paths_by_glob
+from anime_tools.stages._analysis import ANALYSIS_SUBDIR, analysis_paths
 from anime_tools.stages.resize import DEFAULT_MIN_PIXELS, below_min_pixels
 
 SETTINGS_KEY = "dataset"
@@ -150,6 +152,17 @@ def ladder_schema() -> list[dict[str, Any]]:
 GROUPS_SUBPATH = "groups/groups.json"
 """The grouping manifest's tail under the Settings ``report_root``; the same split
 ``stages.report_subpath`` makes of ``build_groups``' own ``--out`` default."""
+
+POSITION_SUBPATH = f"{WS.REPORTS_SUBDIR}/position"
+"""The position stage's report tail under the Settings ``report_root`` (the same
+split ``stages.report_subpath`` makes of its ``--report_dir`` default). Its
+per-image analysis hangs off it, and its audit phase's under ``audit/``."""
+
+ANALYSIS_KINDS: dict[str, str] = {
+    # what said it → its analysis tree under :data:`POSITION_SUBPATH`
+    "position": ANALYSIS_SUBDIR,
+    "audit": f"audit/{ANALYSIS_SUBDIR}",
+}
 
 MAX_ITEMS = 20000
 """Hard cap on one listing, and the default. Past this the answer is
@@ -562,6 +575,39 @@ def item_rows(roots: Roots, rels: list[str]) -> list[dict[str, Any]]:
         if not (roots.src / rel).is_file():
             continue
         out.append(_row(roots, rel, rel.name, excluded=rel.as_posix() in entries))
+    return out
+
+
+def load_analysis(report_root: str, rel: str) -> dict[str, Any]:
+    """What the position stage and its audit phase last said about one image:
+    per kind, the stage's row (``record``) and its instance label map as a PNG
+    ``data:`` URL (``mask``), or ``None`` for a kind with nothing on file.
+
+    The files are the stage's own (:mod:`anime_tools.stages._analysis`), kept
+    per image rather than per run, so a scoped Run on another image does not
+    take this one's away. An unreadable record is a 400 like an unreadable
+    groups manifest, never a silent blank.
+    """
+    key = _rel_key(rel).as_posix()
+    out: dict[str, Any] = {}
+    for kind, sub in ANALYSIS_KINDS.items():
+        root = reachable(f"{report_root}/{POSITION_SUBPATH}/{sub}")
+        record_path, mask_path = analysis_paths(root, key)
+        if not record_path.is_file():
+            out[kind] = None
+            continue
+        try:
+            record = read_json(record_path)
+        except (OSError, ValueError) as e:
+            raise DatasetError(
+                f"unreadable analysis {rel_to_home(record_path)}: {e}"
+            ) from e
+        mask = None
+        if mask_path.is_file():
+            mask = "data:image/png;base64," + base64.b64encode(
+                mask_path.read_bytes()
+            ).decode("ascii")
+        out[kind] = {"record": record, "mask": mask}
     return out
 
 

@@ -29,7 +29,7 @@ from anime_tools.masking._sam3 import (
     detect_union,
     load_sam3,
 )
-from anime_tools.masking.requests import SamMaskRequest
+from anime_tools.masking.requests import MaskPrompt, SamMaskRequest
 
 # Torch-free at import (the safetensors read is deferred); the same two helpers the
 # position stage resolves its --prompt_embed through.
@@ -40,45 +40,42 @@ def load_image(path: Path) -> Image.Image:
     return Image.open(path).convert("RGB")
 
 
+def _resolve_prompts(req: SamMaskRequest, device: str) -> tuple[list, list]:
+    """``(keep, ignore)`` as ``detect_union`` takes them: text as the string, soft
+    as its loaded tensors. A soft entry naming the shipped default that is not
+    downloaded falls back to the text it was learned from, as ``--prompt_embed``
+    always has; any other missing file is an error before a model loads."""
+    loaded: dict = {}
+
+    def resolve(m: MaskPrompt):
+        if m.kind == "text":
+            return m.value
+        path = resolve_prompt_embed(m.value)
+        if path is None:
+            return SUBJECT_PROMPT
+        if path not in loaded:
+            loaded[path] = load_soft_prompt(path, device)
+            print(f"soft prompt ({m.role}): {path}")
+        return loaded[path]
+
+    return [resolve(m) for m in req.keep], [resolve(m) for m in req.ignore]
+
+
 def run_sam_masks(req: SamMaskRequest) -> MaskRun:
     """Write ``{stem}_mask.png`` under ``req.mask_dir`` for every image the walk
     plans; returns the run (its ``items`` are what was planned)."""
     device = resolve_device(req.device)
-    ignore_prompts = req.prompts
-    focus_prompts = req.focus_prompts
     kernel = np.ones((req.dilate,) * 2, dtype=np.uint8) if req.dilate > 0 else None
 
     print("Loading SAM3 model...")
     model, processor = load_sam3(
         resolve_path(req.checkpoint) if req.checkpoint else None, device
     )
-
-    # The soft prompt stands in for the subject phrase only; every other prompt still
-    # goes through the text encoder.
-    soft_prompt = None
-    embed_path = resolve_prompt_embed(req.prompt_embed)
-    if embed_path is not None:
-        if SUBJECT_PROMPT in ignore_prompts + focus_prompts:
-            soft_prompt = load_soft_prompt(embed_path, device)
-            print(f"soft prompt: {embed_path} (replaces {SUBJECT_PROMPT!r})")
-        else:
-            print(
-                f"NOTE: --prompt_embed is the {SUBJECT_PROMPT!r} prompt, which "
-                f"neither --prompts nor --focus-prompts asks for — every prompt "
-                f"here is textual"
-            )
+    focus_prompts, ignore_prompts = _resolve_prompts(req, device)
 
     def detect(state, prompts, shape) -> np.ndarray:
-        """This run's SAM3 pass: the shared union, with the soft prompt bound."""
-        return detect_union(
-            processor,
-            model,
-            state,
-            prompts,
-            shape,
-            req.threshold,
-            soft_prompt=soft_prompt,
-        )
+        """This run's SAM3 pass: the shared union at this run's threshold."""
+        return detect_union(processor, model, state, prompts, shape, req.threshold)
 
     batch_size = req.batch_size
     amp = autocast(device)

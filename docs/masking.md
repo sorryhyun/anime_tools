@@ -45,38 +45,40 @@ output is the dataset's `masks` root; that is the tree `Export` copies to the
 Export decides a mask by `(size, mtime_ns)` against the destination and overwrites a pixel
 file without keeping the old bytes, so a mask it replaced reports `not-undoable` on Undo.
 
-## 3. Subject masks — `generate_masks`
+## 3. SAM3 masks — `generate_masks`
 
-SAM3 grounded on text prompts. Two prompt lists, opposite polarity:
+SAM3 grounded on a list of masks, `--masks`, one `ROLE:KIND:VALUE` entry each (the GUI's
+Setup form draws it as rows with + and ×):
 
-- `--focus-prompts` (default `girl`) — keep only these regions; everything outside is
-  masked out. A bare run isolates the subject from her background.
-- `--prompts` (default none) — mask these out. `speech bubble,text` is the usual spelling;
-  balloons and lettering are ordinary ignore prompts here.
+- role `keep` — keep only these regions; everything outside their union is masked out.
+- role `ignore` — mask these out. `ignore:text:speech bubble` and `ignore:text:text` are the
+  usual spellings; balloons and lettering are ordinary ignore prompts here.
+- kind `text` — the value is a SAM3 text prompt, run through its text encoder.
+- kind `soft` — the value is a learned soft prompt file (`.safetensors`): what the encoder
+  would have produced for some phrase, so the encode is skipped and the three saved tensors
+  go straight into the grounding call (`_sam3.ground_with_soft_prompt`). Each soft file is
+  loaded once per run however many rows name it.
 
-Give both and the focus region survives minus the ignore regions (`focus * (1 - ignore)`).
-Pass `none` to either to empty it; both empty is refused before a weight is read. A cleared
-field is not the same thing — the GUI omits a blank flag, so a blank prompt box reads back as
-its default, which is why `none` is a word rather than an empty string.
+Give both roles and the kept region survives minus the ignored ones (`keep * (1 - ignore)`).
+An empty list is refused before a weight is read, and the GUI reads an emptied list back as
+the default. `VALUE` is everything after the second colon, so a Windows path keeps its drive
+letter.
 
-The soft prompt. By default the word `girl` is not sent through SAM3's text encoder at
-all: `--prompt_embed` names a learned soft prompt (`networks/calibration/
-sam3_girl_prompt.safetensors`, the catalog's `soft_prompt` row) that is what the encoder
-would have produced, so the encode is skipped and the three saved tensors go straight into
-the grounding call (`_sam3.ground_with_soft_prompt`). It stands in for `girl` and for no other
-prompt; everything else in either list stays textual. `--prompt_embed none` uses the plain
-text prompt, a missing default file warns and falls back to text, and an explicit path that
-does not exist is an error. The flag keeps its underscore so ⚙ Settings can fill it, together
-with the position stage's and the audit's, from one value.
+The default is one row, `keep:soft:networks/calibration/sam3_girl_prompt.safetensors` — the
+catalog's `soft_prompt` row, the textual inversion of `girl`. When that default file is not
+downloaded it warns and falls back to the text prompt `girl`; any other soft path that does
+not exist is an error, and `soft:none` is refused (a text row is how you ask for text). The
+mask stage has no `--prompt_embed` of its own any more, so ⚙ Settings' soft prompt reaches the
+position stage and the audit only; a different soft prompt for masking is a row.
 
 What gets written. Per image, in this order:
 
 | Situation | Written | Progress line |
 |---|---|---|
-| focus prompts set, subject found | `focus - ignore` as a keep mask | `train 41.2%` (share kept) |
-| focus prompts set, subject not found | nothing — the image trains in full rather than zeroing its loss | `focus not found` |
-| only ignore prompts, something found | the inverse of the detection | `12.3%` (share ignored) |
-| only ignore prompts, nothing found | nothing | `skipped` |
+| keep rows set, something kept found | `keep - ignore` as a keep mask | `train 41.2%` (share kept) |
+| keep rows set, nothing kept found | nothing — the image trains in full rather than zeroing its loss | `focus not found` |
+| only ignore rows, something found | the inverse of the detection | `12.3%` (share ignored) |
+| only ignore rows, nothing found | nothing | `skipped` |
 
 Knobs: `--threshold` (SAM3 confidence floor, 0.5), `--dilate` (pixels, 5, `0` = off; applied to
 each detection before the two are combined), `--batch-size` (1), `--checkpoint` (SAM3 weights,
@@ -159,11 +161,11 @@ under is simply skipped on CPU.
 
 ## 7. Limits
 
-- A subject the focus prompt does not find leaves the image unmasked, silently apart from the
-  progress line; a run over a dataset of `1boy` images with the default `girl` focus is a run
-  that writes little. Change `--focus-prompts`, or `none` it and use `--prompts` alone.
-- The soft prompt is the textual inversion of one phrase. A different focus phrase is a plain
-  text prompt, and the shipped embed is not consulted.
+- A subject no keep row finds leaves the image unmasked, silently apart from the progress
+  line; a run over a dataset of `1boy` images with the default `girl` row is a run that writes
+  little. Replace the keep row, or drop it and use ignore rows alone.
+- A soft prompt is the textual inversion of one phrase. The shipped one is `girl`; any other
+  phrase is a text row, or a soft file you trained for it.
 - There is no per-image review or Undo for masks: what a run changes its mind about is
   answered by `--force` and a re-run, and Export's copy of a pixel file is not undoable.
 - The merge's minimum treats any input as an ignore mask; a keep-only subject mask and a
@@ -173,11 +175,11 @@ under is simply skipped on CPU.
 
 | File | Role |
 |---|---|
-| `anime_tools/masking/requests.py` | `SamMaskRequest` / `MergeMasksRequest` — the flags, defaults and validation |
-| `anime_tools/masking/sam.py` | `run_sam_masks`: focus / ignore passes, soft-prompt binding |
+| `anime_tools/masking/requests.py` | `SamMaskRequest` / `MergeMasksRequest` / `MaskPrompt` — the flags, defaults and validation |
+| `anime_tools/masking/sam.py` | `run_sam_masks`: keep / ignore passes, soft-prompt loading |
 | `anime_tools/masking/merge.py` | `run_merge_masks`: `(rel_dir, name)`-keyed pixel-wise minimum |
 | `anime_tools/masking/_masks.py` | Layout and polarity: `mask_name`, `mask_path_for`, `plan_mask_jobs`, `write_mask` / `write_ignore_mask`, `iter_masks`, `mask_run` |
-| `anime_tools/masking/_sam3.py` | The only SAM3 construction: `load_sam3` (cached), `detect_union`, `ground_with_soft_prompt`, `prompt_list`, the numpy / triton / CPU shims |
+| `anime_tools/masking/_sam3.py` | The only SAM3 construction: `load_sam3` (cached), `detect_union` (text and soft prompts in one list), `ground_with_soft_prompt`, `prompt_list`, the numpy / triton / CPU shims |
 | `anime_tools/masking/cli/{generate_masks,merge_masks}.py` | One-line shells over the requests |
 | `anime_tools/workspace/__init__.py` | `MASKS_SAM` / `MASKS` — the two trees |
 | `anime_tools/gui/stages.py` | `MASK_SETTING` / `MASK_FIELDS` / `mask_subpath`: the one Settings root |

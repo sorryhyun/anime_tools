@@ -63,6 +63,18 @@ The audit runs before the sweep: `multiple views` is what moves an image out of 
 `single-subject` rejection and what `is_repeated_subject_layout` reads to arm the `view_invariant`
 gate. `admitted()` is the one verdict/confidence gate the write path and the promotion path share.
 
+The dock has no audit button: `registry.py` marks the stage `hidden`, and the GUI reaches it as
+this phase through the position form's `multiview_audit`. The standalone CLI, its request and
+its replay stay; only the button went.
+
+Both phases also leave a per-image record under the report directory, for the GUI's analysis
+badge: `run_position_captions(analysis_dir=<report_dir>/analysis)` and
+`run_multiview_audit(analysis_dir=<report_dir>/audit/analysis)` write `<stem>.json` (the row, plus
+`labels` — which of its lists the mask indexes) and `<stem>.png` (8-bit instance labels, `i + 1`
+where instance `i` is) through `_analysis.py`, from the detections `propose_for_image` /
+`audit_image` hand their `mask_sink`. An image the next run walks without a row loses its pair, so
+the files are always the latest word on the image.
+
 Both write the revised tree, like every other caption stage — the phase through
 `run_position_captions`, the standalone stage through `apply_findings`. No stage writes the
 hand-written master (Export and the GUI caption editor are its only writers), and revised-first

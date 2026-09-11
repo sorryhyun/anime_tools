@@ -2,6 +2,7 @@ import { For, Match, Switch } from "solid-js";
 import { t } from "../i18n";
 import { REPLAY_FIELD } from "../types";
 import type { Field } from "../types";
+import { MaskList } from "./MaskList";
 
 /** Group fields by argparse group, preserving order. Left out: fields bound to
     a dataset root, a Settings stage default or the Settings `report_root` /
@@ -40,7 +41,7 @@ export function FieldRow(props: {
   const f = () => props.field;
   const cls = () => ({ dirty: !!props.dirty });
   return (
-    <div class="row">
+    <div class="row" classList={{ wide: f().kind === "masks" }}>
       <label classList={{ req: f().required }} title={f().help}>
         {f().label || f().flags[0] || f().dest}
       </label>
@@ -62,6 +63,9 @@ export function FieldRow(props: {
               {(c) => <option value={String(c)}>{String(c)}</option>}
             </For>
           </select>
+        </Match>
+        <Match when={f().kind === "masks"}>
+          <MaskList value={props.value} dirty={props.dirty} setValue={props.setValue} />
         </Match>
         <Match when={f().kind === "list"}>
           <textarea

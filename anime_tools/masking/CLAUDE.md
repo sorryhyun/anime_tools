@@ -24,7 +24,8 @@ caches per process on its arguments, so a second pass in one interpreter reuses 
 - `_sam3.py` is the only place SAM3 is constructed, the one declaration of `--checkpoint` /
   `--prompt_embed` (defaults imported from `downloads.py`), and the home of
   `ground_with_soft_prompt` (a soft prompt is the text encoder's output, so the encode is
-  skipped), `prompt_list` (`none`/`off` = no prompts) and `detect_union`. It installs the `np.bool`
+  skipped), `prompt_list` (`none`/`off` = no prompts; the detection stages' lists) and
+  `detect_union`. It installs the `np.bool`
   alias sam3 needs as an import side effect, with sam3 imports deferred into functions so
   importing it stays torch-free. Two more shims run inside those functions: `stub_edt_kernel`
   pre-seeds `sam3.model.edt` (the one module that imports triton, which has no macOS build) with a
@@ -39,9 +40,15 @@ caches per process on its arguments, so a second pass in one interpreter reuses 
 
 ## Prompts, drawers, directories
 
-The subject-mask CLI takes prompts, not a config: `--prompts` (masked out) / `--focus-prompts`
-(keep only, default `girl`) / `--prompt_embed`. Both lists empty is the one argv the stage
-refuses.
+The SAM3 mask CLI takes one list, `--masks ROLE:KIND:VALUE …` (`MaskPrompt`: role `keep` /
+`ignore`, kind `text` / `soft`; the value is everything after the second colon). A soft entry is
+a prompt file `sam.py::_resolve_prompts` loads once per path, and `detect_union` takes text and
+loaded soft prompts in one list. The default is `keep:soft:<the shipped girl embed>`, which falls
+back to the text `girl` when the file is missing; an empty list is the one argv the stage
+refuses. The field carries `kind="masks"` metadata (`_request.KIND`), so the GUI draws it as a
+row editor (`frontend/src/components/MaskList.tsx`) while argparse still sees a plain `nargs="*"`
+flag — which is also why the stage takes no `--prompt_embed` and ⚙ Settings' soft prompt no
+longer reaches it.
 
 A drawer is a switch field carrying `gate=<its own name>` plus the drawer's `group` title,
 with every knob inside it carrying `gate=<the switch>`; the GUI folds a shut drawer's knobs away

@@ -42,7 +42,7 @@ body.nosidebar #root { grid-template-columns:0 1fr }
 body.nosidebar aside { display:none }
 /* The rail that brings the folded tree back. Fixed, because the column it
    would sit in is zero wide once the tree is gone. */
-.unfold { position:fixed; left:0; top:52px; z-index:20; padding:14px 8px; border-left:0; border-radius:0 7px 7px 0; background:var(--panel); color:var(--dim); font-size:16px; line-height:1 }
+.unfold { position:fixed; left:0; top:52px; z-index:20; display:grid; place-items:center; padding:14px 6px; border-left:0; border-radius:0 7px 7px 0; background:var(--panel); color:var(--dim); line-height:0 }
 .unfold:hover { color:var(--fg) }
 header .mono { max-width:26ch; overflow:hidden; text-overflow:ellipsis; white-space:nowrap }
 .dim { color:var(--dim); font-size:12px }
@@ -60,6 +60,9 @@ aside { grid-column:1; grid-row:2/4; border-right:1px solid var(--line); backgro
 .treebar { display:flex; align-items:center; gap:6px; padding:8px; border-bottom:1px solid var(--line) }
 .treebar + .treebar { padding-top:6px }
 .treebar input { flex:1 }
+.ico { width:15px; height:15px; fill:none; stroke:currentColor; stroke-width:2; stroke-linecap:round; stroke-linejoin:round; flex:none }
+button.icon { display:grid; place-items:center; padding:5px 7px; line-height:0; color:var(--dim) }
+button.icon:hover { color:var(--fg) }
 /* The two orderings of the same rows: folders, and near-twin components. */
 .modes { display:flex; border:1px solid var(--line); border-radius:5px; overflow:hidden }
 .modes button { border:0; border-radius:0; background:none; color:var(--dim); padding:2px 9px; font-size:12px }
@@ -85,6 +88,18 @@ aside { grid-column:1; grid-row:2/4; border-right:1px solid var(--line); backgro
    `.caps` rule for it. */
 .dot.history { background:var(--dim) }
 .dot.proposal { background:var(--warn) }
+.dot.analysis { background:#bb9af7 }
+.analysis { display:flex; flex-direction:column; gap:10px; margin-top:8px }
+.ansec { display:flex; flex-direction:column; gap:6px }
+.ansec .badge.ok { color:var(--ok) } .ansec .badge.warn { color:var(--warn) }
+.anfig { position:relative; align-self:flex-start; max-width:100%; line-height:0; border-radius:4px; overflow:hidden }
+.anfig img { display:block; max-width:100%; max-height:320px }
+.anfig canvas { position:absolute; inset:0; width:100%; height:100%; pointer-events:none }
+.anlegend { display:flex; flex-direction:column; gap:2px }
+.anrow { display:grid; grid-template-columns:10px auto minmax(0,1fr) auto; gap:6px; align-items:baseline; padding:2px 4px; border-radius:4px; font-size:12px }
+.anrow:hover { background:var(--sel) }
+.anrow .swatch { width:10px; height:10px; border-radius:2px; align-self:center }
+.anrow .mono { overflow-wrap:anywhere }
 /* An image's caption ladder, as a strip on its own row: filled is a file on
    disk, hollow is not, and either is the button that opens that version. */
 .caps { display:flex; gap:5px; flex:none; padding-left:6px }
@@ -296,6 +311,11 @@ legend:has(input:checked) { color:var(--fg) }
    preflight block. */
 .twoup { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:0 16px }
 .twoup .row { grid-template-columns:150px minmax(0,1fr) }
+.twoup .row.wide { grid-column:1/-1; align-items:start }
+.masklist { display:flex; flex-direction:column; gap:4px; align-items:flex-start; width:100% }
+.maskrow { display:grid; grid-template-columns:auto auto minmax(0,1fr) auto; gap:4px; width:100% }
+.maskrow select { width:auto }
+.masklist.dirty .maskrow input { border-color:#4b5a80 }
 /* The form's foot: the advanced fold and the reset, both plain links, on the
    line under the last fieldset. */
 .formfoot { display:flex; gap:14px; align-items:center; margin:0 0 8px }

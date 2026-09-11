@@ -21,7 +21,7 @@ import pytest
 from anime_tools._request import Request, args_of
 from anime_tools.downloads import DEFAULT_SAM3_CHECKPOINT
 from anime_tools.grouping.requests import GroupRequest
-from anime_tools.masking.requests import MergeMasksRequest, SamMaskRequest
+from anime_tools.masking.requests import MaskPrompt, MergeMasksRequest, SamMaskRequest
 from anime_tools.stages.instance_detection import DEFAULT_SUBJECT_PROMPT_EMBED
 from anime_tools.stages.registry import BY_ID, STAGES, Stage
 from anime_tools.stages.requests import (
@@ -180,9 +180,10 @@ CASES: dict[str, Request] = {
     "masks_sam": SamMaskRequest(
         image_dir="i",
         mask_dir="m",
-        prompts=("speech bubble", "text"),
-        focus_prompts=(),
-        prompt_embed="none",
+        masks=(
+            MaskPrompt("ignore", "text", "speech bubble"),
+            MaskPrompt("keep", "soft", "C:/soft/girl.safetensors"),
+        ),
         threshold=0.7,
         dilate=0,
         checkpoint="w.pt",
@@ -398,21 +399,28 @@ def test_shared_flags_keep_one_spelling(parsers, dest, flags, default):
 
 
 @pytest.mark.parametrize(
-    ("dest", "flags", "default"),
+    ("dest", "flags", "default", "stages"),
     [
-        ("checkpoint", ("--checkpoint",), DEFAULT_SAM3_CHECKPOINT),
+        (
+            "checkpoint",
+            ("--checkpoint",),
+            DEFAULT_SAM3_CHECKPOINT,
+            {"position", "audit", "masks_sam"},
+        ),
+        # The mask stage names its soft prompts per entry of `--masks` instead.
         (
             "prompt_embed",
             ("--prompt_embed", "--prompt-embed"),
             DEFAULT_SUBJECT_PROMPT_EMBED,
+            {"position", "audit"},
         ),
     ],
 )
-def test_the_sam3_stages_share_the_catalog_flags(parsers, dest, flags, default):
-    """The two ⚙ Settings model values reach every SAM3 stage, masking's
-    hyphenated CLI included, under one spelling and one default."""
+def test_the_sam3_stages_share_the_catalog_flags(parsers, dest, flags, default, stages):
+    """The two ⚙ Settings model values reach every SAM3 stage that takes them,
+    masking's hyphenated CLI included, under one spelling and one default."""
     carriers = {s.id for s in STAGES if dest in parsers[s.id]}
-    assert carriers == {"position", "audit", "masks_sam"}
+    assert carriers == stages
     for stage_id in carriers:
         action = parsers[stage_id][dest]
         assert tuple(action.option_strings) == flags, stage_id

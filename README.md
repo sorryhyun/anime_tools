@@ -1,5 +1,8 @@
 # anime_tools
 
+![The anime-tools GUI: the dataset tree, an image with its caption ladder, and the stage
+dock](docs/images/gui.png)
+
 Dataset curation for anime diffusion training: the caption master and every
 sidecar a training run reads, produced from a folder of images. It installs on
 its own — no DiT, no VAE, no training stack — and everything it writes is a

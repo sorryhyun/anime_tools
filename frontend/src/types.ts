@@ -1,6 +1,15 @@
 // Mirrors anime_tools/gui/stages.py (schema()) and jobs.py (Job.to_dict()).
 
-export type FieldKind = "bool" | "int" | "float" | "str" | "enum" | "list";
+export type FieldKind = "bool" | "int" | "float" | "str" | "enum" | "list" | "masks";
+
+/** The two axes of a `masks` field's entries (`anime_tools/masking/requests.py`'s
+    `MASK_ROLES` / `MASK_KINDS`). Spelled here, like `StageId`, because each one
+    is also a key the form's labels are translated under; a value the server
+    grows is a type error in `i18n/` before it is a blank option. */
+export const MASK_ROLES = ["keep", "ignore"] as const;
+export const MASK_KINDS = ["text", "soft"] as const;
+export type MaskRole = (typeof MASK_ROLES)[number];
+export type MaskKind = (typeof MASK_KINDS)[number];
 
 export interface Field {
   dest: string;
@@ -410,6 +419,72 @@ export interface CaptionEntry {
     could never surface that. */
 export interface SavedCaption extends CaptionEntry {
   versions: CaptionEntry[];
+}
+
+// ---- analysis (mirrors anime_tools/gui/dataset.py::load_analysis) ----
+
+/** The selection kind the caption panel's analysis badge puts in the hash. Not a
+    ladder rung: it is what a stage *saw* in the image, not a caption. */
+export const ANALYSIS_KIND = "analysis";
+
+/** One instance of a position proposal (`position_captions.InstanceProposal`). */
+export interface AnalysisInstance {
+  position: string;
+  box: number[];
+  score: number;
+  tags: string[];
+  source: string;
+  novel: number;
+}
+
+/** One detection as the sweep recorded it before any gate — all a skip has. */
+export interface AnalysisDetection {
+  box: number[];
+  score: number;
+  source: string;
+}
+
+/** The position sweep's row for one image (`ImageProposal`), plus which list
+    the label map's indices refer to. */
+export interface PositionAnalysis {
+  status: string;
+  detected: number;
+  expected: number | null;
+  instances: AnalysisInstance[];
+  detections: AnalysisDetection[];
+  moved: { tag: string; position: string; margin: number }[];
+  proposed: string | null;
+  labels: "instances" | "detections";
+}
+
+/** One crop the multiview audit asked the tagger about (`CropIdentity`). */
+export interface AuditCrop {
+  position: string;
+  score: number;
+  source: string;
+  name: string | null;
+  groups: Record<string, string>;
+}
+
+/** The audit phase's finding for one image (`MultiviewFinding`). */
+export interface AuditAnalysis {
+  verdict: string;
+  confidence: string;
+  witnesses: string[];
+  instances: number;
+  tagger_multiple_views: number | null;
+  people_count: string | null;
+  identity_agreement: number | null;
+  suggested_tag: string | null;
+  crops: AuditCrop[];
+  labels: "crops";
+}
+
+/** Per kind, the stage's record and its instance label map (a PNG `data:` URL:
+    8-bit, 0 background, i+1 where instance i is), or null for nothing on file. */
+export interface Analysis {
+  position: { record: PositionAnalysis; mask: string | null } | null;
+  audit: { record: AuditAnalysis; mask: string | null } | null;
 }
 
 // ---- proposals (mirrors anime_tools/gui/proposals.py) ----

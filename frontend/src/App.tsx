@@ -13,6 +13,7 @@ import { DatasetTree } from "./components/DatasetTree";
 import { Dock } from "./components/Dock";
 import { Guidebook } from "./components/Guidebook";
 import { Header } from "./components/Header";
+import { Icon } from "./components/Icon";
 import { ItemView } from "./components/ItemView";
 import { JobBar, JobLog } from "./components/JobLog";
 import { SettingsAdvanced } from "./components/SettingsAdvanced";
@@ -99,7 +100,7 @@ export default function App() {
           title={t().header.showSidebar}
           onClick={() => layout.setSidebar(true)}
         >
-          ⟩
+          <Icon name="chevronRight" />
         </button>
       </Show>
 
@@ -136,6 +137,7 @@ export default function App() {
         help={layout.helpOpen("caption")}
         onHelp={() => layout.toggleHelp("caption")}
         onSaved={dataset.onSaved}
+        analysis={dataset.analysis.error ? undefined : dataset.analysis()}
         onSetExcluded={dataset.setExcluded}
       />
 

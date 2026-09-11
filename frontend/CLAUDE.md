@@ -135,6 +135,17 @@ on what the next image is; only the fold state is the component's.
 None of the three files fetches anything but what it says (`captionEditor`
 parses and saves; the other two are pure over their inputs).
 
+The caption panel has one badge that is not a rung: **analysis**, after the ladder, drawn only
+while `dataset.ts`'s `analysis` resource (refetched with the item) has a record for the image.
+Selecting it puts `ANALYSIS_KIND` in the selection like any badge, and `CaptionCard` trades the
+whole editor for `AnalysisView` — the position sweep's proposal and the audit's finding, each
+with its instance label map coloured per pixel on a canvas over the resized image, and a legend
+whose rows solo their region on hover. A selection carried onto an image with no record falls
+back to the editor. `MaskList.tsx` is the `masks` field kind's row editor (role × kind × value,
++ / ×); the `role:kind:value` spelling is that field's wire format and is read and written
+there only. `Icon.tsx` holds the page's line icons as inline SVG paths (a text glyph's size and
+baseline follow whichever fallback font the platform picks for it).
+
 Settings is four dialogs, not one with tabs, and the code says so:
 `SettingsGeneral` / `SettingsAdvanced` / `SettingsModels` / `SettingsUpdate` are
 each their own `<dialog>` over the shared `SettingsShell` frame, mounted side by

@@ -62,7 +62,7 @@ def test_every_stage_has_a_schema():
         if sc["available"]:
             assert sc["fields"], st.id
             assert all(
-                f["kind"] in ("bool", "int", "float", "str", "enum", "list")
+                f["kind"] in ("bool", "int", "float", "str", "enum", "list", "masks")
                 for f in sc["fields"]
             )
 
@@ -663,7 +663,20 @@ def test_resize_is_not_a_dock_panel():
     """Resize has a schema and an argv but no panel: it runs itself."""
     assert S.BY_ID["resize"].hidden is True
     assert "Resize" not in S.PANELS
-    assert [s.id for s in S.STAGES if s.hidden] == ["resize"]
+    assert [s.id for s in S.STAGES if s.hidden] == ["resize", "audit"]
+
+
+def test_the_audit_is_reached_through_the_position_form():
+    """The audit has no button: the position stage runs it as its first phase,
+    and the knob that says so is on that form before Advanced is opened."""
+    _, sc = _stage("position")
+    phase = next(f for f in sc["fields"] if f["dest"] == "multiview_audit")
+    assert not phase["advanced"] and phase["choices"] == ["off", "report", "apply"]
+    # Curate keeps its two buttons' worth of stages.
+    assert [s.id for s in S.STAGES if s.panel == "Curate" and not s.hidden] == [
+        "position",
+        "correct",
+    ]
 
 
 def test_only_resized_tree_stages_get_the_preflight():

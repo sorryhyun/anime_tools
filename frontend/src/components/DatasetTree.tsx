@@ -2,6 +2,7 @@ import { createMemo, Show } from "solid-js";
 import { slots, t } from "../i18n";
 import { createFolding, type Folder, type Grouped } from "../tree";
 import type { DatasetGroups, DatasetList, Rung, Sel, TreeMode } from "../types";
+import { Icon } from "./Icon";
 import { FolderNode, GroupView, type TreeCtx } from "./TreeNodes";
 
 /** The sidebar: the mode and filter bars, and under them the listing as a
@@ -31,7 +32,7 @@ export function DatasetTree(props: {
   onRefresh: () => void;
   /** Rels the last Run changed, so a batch's diff can be walked down. */
   pending?: Set<string>;
-  /** Collapse the tree; the rail's ⟩ on the left edge brings it back. */
+  /** Collapse the tree; the rail's chevron on the left edge brings it back. */
   onCollapse: () => void;
 }) {
   const fold = createFolding({
@@ -111,11 +112,11 @@ export function DatasetTree(props: {
           </button>
         </div>
         <span class="sp" />
-        <button title={t().tree.rescan} onClick={props.onRefresh}>
-          ↻
+        <button class="icon" title={t().tree.rescan} onClick={props.onRefresh}>
+          <Icon name="refresh" />
         </button>
-        <button title={t().tree.collapse} onClick={props.onCollapse}>
-          ⟨
+        <button class="icon" title={t().tree.collapse} onClick={props.onCollapse}>
+          <Icon name="chevronLeft" />
         </button>
       </div>
       <div class="treebar">

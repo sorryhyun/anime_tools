@@ -20,6 +20,7 @@ from anime_tools._env import curation_home, resolve_path
 from anime_tools._json import write_json
 from anime_tools._progress import phase
 from anime_tools.contract import REPLAY_SHAPES
+from anime_tools.stages._analysis import ANALYSIS_SUBDIR
 from anime_tools.stages._models import release_models
 from anime_tools.stages.cli._args import make_progress
 from anime_tools.stages.cli._report import (
@@ -206,6 +207,7 @@ def _run_audit_phase(
         path_pattern=req.path_pattern,
         crops_dir=(audit_dir / "crops") if req.crops else None,
         sheets_dir=(audit_dir / "sheets") if req.multiview.sheets else None,
+        analysis_dir=audit_dir / ANALYSIS_SUBDIR,
         progress=make_progress(200),
         part_detect_fn=part_detect_fn,
         multiview_threshold=req.multiview.multiview_threshold,
@@ -321,6 +323,7 @@ def run_position(req: PositionRequest):
         token_count_fn=token_count_fn,
         progress=make_progress(200),
         promoted=promoted,
+        analysis_dir=report_dir / ANALYSIS_SUBDIR,
     )
     del sam_processor, sam_model
 
@@ -480,6 +483,7 @@ def run_audit(req: AuditRequest):
         path_pattern=req.path_pattern,
         crops_dir=(report_dir / "crops") if req.crops else None,
         sheets_dir=(report_dir / "sheets") if req.multiview.sheets else None,
+        analysis_dir=report_dir / ANALYSIS_SUBDIR,
         progress=make_progress(200),
         part_detect_fn=part_detect_fn,
         multiview_threshold=req.multiview.multiview_threshold,

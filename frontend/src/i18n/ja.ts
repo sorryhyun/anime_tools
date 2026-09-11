@@ -151,6 +151,23 @@ const ja: Dict = {
     lookUpHint: "タグをダブルクリックすると意味を引きます",
     bag: "タグ袋",
   },
+  analysis: {
+    badge: "分析",
+    badgeHint:
+      "人物位置タグ付けステージがこの画像で最後に見たもの: 切り出したインスタンスマスクと、それぞれについての判断",
+    position: "人物位置タグ付け",
+    audit: "マルチビュー点検",
+    proposed: "提案済み",
+    detected: (n, expected) =>
+      expected == null ? `${n} 人検出` : `${n} 人検出 / キャプションでは ${expected} 人`,
+    noTags: "タグなし",
+    moved: "タグの束から移したもの:",
+    witnesses: "根拠:",
+    suggested: "提案タグ:",
+    auditFacts: (mv, people, agree) =>
+      `multiple views ${mv} · 人数 ${people} · 同一人物の一致度 ${agree}`,
+    where: "位置レポートの横に画像ごとに残ります。この画像をもう一度走らせると置き換わります",
+  },
   diff: {
     written: "書き込み済み",
     changed: "変更内容",
@@ -229,28 +246,28 @@ const ja: Dict = {
       Resize: "リサイズ",
       Autotag: "自動タグ",
       Curate: "キャプション整備",
-      OCR: "OCR",
-      Groups: "グループ",
+      OCR: "OCRタグ付け",
+      Groups: "グループ化",
       Masks: "マスク",
       Export: "エクスポート",
     },
     titles: {
       resize: "バケットサイズにリサイズ",
       autotag: "キャプションを自動タグ付け",
-      position: "位置句を付ける",
-      correct: "キャプション補正 + 左右反転",
+      position: "人物位置タグ付け",
+      correct: "タグ補正",
       audit: "マルチビュー点検",
       ocr: "画像内の文字認識",
-      groups: "近縁グループを作る",
-      masks_sam: "SAM3 被写体マスク",
+      groups: "類似画像のグループ化",
+      masks_sam: "SAM3 マスク",
       masks_merge: "マスクを統合",
       export: "ワークスペースを書き出す",
     },
     shorts: {
-      position: "位置",
-      correct: "補正",
+      position: "人物位置タグ付け",
+      correct: "タグ補正",
       audit: "点検",
-      masks_sam: "被写体",
+      masks_sam: "設定",
       masks_merge: "統合",
     },
     docs: {
@@ -282,8 +299,8 @@ const ja: Dict = {
         "PE-Spatial の見た目の近さでデータセットの画像をまとめ、groups.json マニフェストを書きます。\n\n" +
         "学習の前処理ではなくキュレーションの道具です: 絵師ごとにほぼ同じ画像をクラスタし、GUI のデータセットタブでグループとして絞れるようにするだけで、ほかには何も書きません。二枚は、セルごとの下限 --cell-match-min のもとで match_frac が --match-frac-min 以上のときにまとまります。再実行は共有の PE-Spatial 特徴キャッシュを使い回すので、しきい値の詰め直しは安く済みます。",
       masks_sam:
-        "SAM3 の被写体マスクを workspace/masks_sam/ に書きます。\n\n" +
-        "--prompts はマスクで外すもの(損失で無視するもの)を、--focus-prompts は残すもの(それ以外をすべて外す)を指します。両方を与えると、残した領域から外す領域を引いた分が生き残ります。被写体プロンプトは既定では学習済みのソフトプロンプト(--prompt_embed)が担い、素のテキストプロンプトを使うなら none を渡します。",
+        "SAM3 マスクを workspace/masks_sam/ に書きます。\n\n" +
+        "--masks は領域のリストで、一行が役割(残す/除外)と種類(テキスト/ソフト)と値です。残す領域だけを学習し、それ以外はすべて外します。除外の領域はそこからさらに外れます(残すものがなければ画像全体から外れます)。テキストは SAM3 のテキストエンコーダを通るプロンプト(speech bubble など)、ソフトはその出力の代わりになる学習済みプロンプトファイル(.safetensors)です。既定は同梱のソフトプロンプトで被写体を残す一行で、そのファイルがなければテキストプロンプト girl で代えます。",
       masks_merge:
         "複数の出どころのマスクを、画素ごとの最小値で統合します(マスク領域の和集合)。\n\n" +
         "(rel_dir, name) をキーに統合するので、入力をまたいで同じ相対パスにあるマスクどうしが出会います。入れ子の形は --output-dir の下にそのまま残ります。無い入力ディレクトリはエラーではなくスキップ — 既定の入力は生成器ひとつのツリーで、二つ目のツリー(手で塗ったマスク、別のツールの出力)はその隣に並べるだけです。",
@@ -326,6 +343,16 @@ const ja: Dict = {
     advancedHide: "▾ 詳細",
     advancedHint: "実行のたびに変えることはまずない項目",
     advancedDirty: (n) => `折りたたまれた項目のうち ${n} 個が既定値ではありません`,
+    maskRoles: { keep: "残す", ignore: "除外" },
+    maskKinds: { text: "テキスト", soft: "ソフト" },
+    maskRoleHint: "残す: 残した領域だけを学習します / 除外: この領域は損失から外れます",
+    maskKindHint:
+      "テキスト: speech bubble のような SAM3 プロンプト / ソフト: 学習済みプロンプトファイル(.safetensors)",
+    maskTextPlaceholder: "SAM3 プロンプト (例: speech bubble)",
+    maskSoftPlaceholder: "ソフトプロンプトの .safetensors パス",
+    maskRemove: "このマスクを外す",
+    maskAdd: "+ マスクを追加",
+    maskEmpty: "マスクなし — 実行すると被写体を残す既定に戻ります",
   },
   runner: {
     nothingToUndo: "戻すものがありません",

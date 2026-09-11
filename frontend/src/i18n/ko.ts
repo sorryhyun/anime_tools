@@ -149,6 +149,23 @@ const ko: Dict = {
     lookUpHint: "태그를 더블클릭하면 뜻을 찾아봅니다",
     bag: "태그 묶음",
   },
+  analysis: {
+    badge: "분석",
+    badgeHint:
+      "인물 위치 태깅 스테이지가 이 이미지에서 마지막으로 본 것: 잘라낸 인스턴스 마스크와 각각에 대해 한 말",
+    position: "인물 위치 태깅",
+    audit: "다중 시점 점검",
+    proposed: "제안됨",
+    detected: (n, expected) =>
+      expected == null ? `${n}명 검출` : `${n}명 검출 / 캡션에는 ${expected}명`,
+    noTags: "태그 없음",
+    moved: "태그 뭉치에서 옮긴 것:",
+    witnesses: "근거:",
+    suggested: "제안 태그:",
+    auditFacts: (mv, people, agree) =>
+      `multiple views ${mv} · 인원 수 ${people} · 동일 인물 일치도 ${agree}`,
+    where: "위치 리포트 옆에 이미지별로 남습니다. 이 이미지를 다시 돌리면 바뀝니다",
+  },
   diff: {
     written: "기록됨",
     changed: "변경 내용",
@@ -226,28 +243,28 @@ const ko: Dict = {
       Resize: "리사이즈",
       Autotag: "자동 태깅",
       Curate: "캡션 정리",
-      OCR: "OCR",
-      Groups: "그룹",
+      OCR: "OCR 태깅",
+      Groups: "그룹화",
       Masks: "마스크",
       Export: "내보내기",
     },
     titles: {
       resize: "버킷 크기로 리사이즈",
       autotag: "캡션 자동 태깅",
-      position: "위치 절 붙이기",
-      correct: "캡션 교정 + 좌우 반전",
+      position: "인물 위치 태깅",
+      correct: "태그 교정",
       audit: "다중 시점 점검",
       ocr: "이미지 속 글자 인식",
-      groups: "근접 그룹 만들기",
-      masks_sam: "SAM3 인물 마스크",
+      groups: "유사 이미지 그룹화",
+      masks_sam: "SAM3 마스크",
       masks_merge: "마스크 합치기",
       export: "워크스페이스 내보내기",
     },
     shorts: {
-      position: "위치",
-      correct: "교정",
+      position: "인물 위치 태깅",
+      correct: "태그 교정",
       audit: "점검",
-      masks_sam: "인물",
+      masks_sam: "설정",
       masks_merge: "합치기",
     },
     docs: {
@@ -279,8 +296,8 @@ const ko: Dict = {
         "PE-Spatial 시각 유사도로 데이터셋 이미지를 묶어 groups.json 매니페스트를 만듭니다.\n\n" +
         "학습 전처리가 아니라 큐레이션 도구입니다: 작가별로 거의 같은 이미지들을 묶어 GUI 데이터셋 탭에서 그룹으로 걸러 볼 수 있게 할 뿐, 다른 것은 쓰지 않습니다. 두 이미지는 셀별 하한 --cell-match-min에서 match_frac가 --match-frac-min 이상일 때 묶입니다. 다시 돌리면 공유 PE-Spatial 특징 캐시를 재사용하므로 임계값을 다시 맞추는 일은 쌉니다.",
       masks_sam:
-        "SAM3 인물 마스크를 workspace/masks_sam/ 에 씁니다.\n\n" +
-        "--prompts는 마스크로 가릴 것(손실에서 무시할 것)을, --focus-prompts는 남길 것(그 밖은 모두 가림)을 가리킵니다. 둘 다 주면 남긴 영역에서 가릴 영역을 뺀 만큼이 살아남습니다. 인물 프롬프트는 기본적으로 학습된 소프트 프롬프트(--prompt_embed)가 맡습니다. 평범한 텍스트 프롬프트를 쓰려면 none을 주세요.",
+        "SAM3 마스크를 workspace/masks_sam/ 에 씁니다.\n\n" +
+        "--masks는 영역의 목록이고, 한 줄이 역할(남김/제외)과 종류(텍스트/소프트)와 값입니다. 남김 영역만 학습하고 그 밖은 모두 가립니다. 제외 영역은 거기서 다시 빠집니다(남김이 없으면 이미지 전체에서 빠집니다). 텍스트는 SAM3 텍스트 인코더를 거치는 프롬프트(speech bubble 등)이고, 소프트는 그 출력을 대신하는 학습된 프롬프트 파일(.safetensors)입니다. 기본값은 동봉된 소프트 프롬프트로 인물을 남기는 한 줄이고, 그 파일이 없으면 텍스트 프롬프트 girl로 대신합니다.",
       masks_merge:
         "여러 곳의 마스크를 픽셀별 최솟값으로 합칩니다(가려진 영역의 합집합).\n\n" +
         "(rel_dir, name)을 키로 합치므로 입력마다 같은 상대 경로에 있는 마스크가 서로 만납니다. 중첩된 구조는 --output-dir 아래에 그대로 남습니다. 없는 입력 디렉터리는 오류가 아니라 건너뜀입니다 — 기본 입력은 생성기 한 곳의 트리이고, 두 번째 트리(손으로 칠한 마스크, 다른 도구의 출력)는 그 옆에 적어 두기만 하면 됩니다.",
@@ -323,6 +340,16 @@ const ko: Dict = {
     advancedHide: "▾ 고급",
     advancedHint: "실행할 때마다 바꿀 일은 거의 없는 값들",
     advancedDirty: (n) => `접혀 있는 값 ${n}개가 기본값이 아닙니다`,
+    maskRoles: { keep: "남김", ignore: "제외" },
+    maskKinds: { text: "텍스트", soft: "소프트" },
+    maskRoleHint: "남김: 남긴 영역만 학습합니다 / 제외: 이 영역은 손실에서 빠집니다",
+    maskKindHint:
+      "텍스트: speech bubble 같은 SAM3 프롬프트 / 소프트: 학습된 프롬프트 파일(.safetensors)",
+    maskTextPlaceholder: "SAM3 프롬프트 (예: speech bubble)",
+    maskSoftPlaceholder: "소프트 프롬프트 .safetensors 경로",
+    maskRemove: "이 마스크 빼기",
+    maskAdd: "+ 마스크 추가",
+    maskEmpty: "마스크 없음 — 실행하면 인물을 남기는 기본값으로 돌아갑니다",
   },
   runner: {
     nothingToUndo: "되돌릴 것이 없습니다",

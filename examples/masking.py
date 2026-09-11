@@ -33,21 +33,24 @@ def main() -> None:
         os.environ["ANIME_TOOLS_HOME"] = str(Path(args.home).expanduser().resolve())
 
     from anime_tools.masking import MergeMasksRequest, SamMaskRequest
+    from anime_tools.masking.requests import MaskPrompt
 
-    # --- subject masks -------------------------------------------------------
-    # focus_prompts = keep ONLY these (default: the subject, served by a learned
-    # soft prompt); prompts = mask OUT these. Both: focus minus ignore. Balloons
-    # and lettering are ordinary ignore prompts here (`speech bubble`, `text`).
+    # --- SAM3 masks ----------------------------------------------------------
+    # One list of regions: `keep` trains only inside them (default: the subject,
+    # served by a learned soft prompt), `ignore` masks its region out. Both: keep
+    # minus ignore. Balloons and lettering are ordinary ignore prompts here.
     sam = SamMaskRequest(
         image_dir=args.image_dir,
         recursive=True,
-        focus_prompts=("girl",),
-        prompts=("speech bubble",),
+        masks=(
+            MaskPrompt("keep", "text", "girl"),
+            MaskPrompt("ignore", "text", "speech bubble"),
+        ),
         dilate=5,
     )
     print("$ python -m anime_tools.masking.cli.generate_masks", *sam.to_argv())
     try:
-        SamMaskRequest(image_dir=args.image_dir, focus_prompts=(), prompts=())
+        SamMaskRequest(image_dir=args.image_dir, masks=())
     except ValueError as e:
         print("  refused:", e)
 

@@ -145,6 +145,23 @@ const zh: Dict = {
     lookUpHint: "双击标签可查询词条",
     bag: "标签集合",
   },
+  analysis: {
+    badge: "分析",
+    badgeHint:
+      "人物位置标注阶段最近一次在这张图里看到的东西：它切出的实例掩码，以及对每个实例的判断",
+    position: "人物位置标注",
+    audit: "多视角审查",
+    proposed: "已提议",
+    detected: (n, expected) =>
+      expected == null ? `检出 ${n} 个` : `检出 ${n} 个 / 标注里 ${expected} 个`,
+    noTags: "无标签",
+    moved: "从标签堆里移走的：",
+    witnesses: "依据：",
+    suggested: "建议标签：",
+    auditFacts: (mv, people, agree) =>
+      `multiple views ${mv} · 人数 ${people} · 同一人物一致度 ${agree}`,
+    where: "按图片保存在位置报告旁边；再对这张图运行一次就会被替换",
+  },
   diff: {
     written: "已写入",
     changed: "改动内容",
@@ -215,7 +232,7 @@ const zh: Dict = {
       Resize: "缩放",
       Autotag: "自动标签",
       Curate: "标注整理",
-      OCR: "OCR",
+      OCR: "OCR 标注",
       Groups: "分组",
       Masks: "掩码",
       Export: "导出",
@@ -223,20 +240,20 @@ const zh: Dict = {
     titles: {
       resize: "缩放到桶尺寸",
       autotag: "自动生成标签",
-      position: "添加位置从句",
-      correct: "校正 + 镜像标注",
+      position: "人物位置标注",
+      correct: "标签校正",
       audit: "多视角审查",
       ocr: "识别图中文字",
-      groups: "构建近似分组",
-      masks_sam: "SAM3 主体掩码",
+      groups: "相似图片分组",
+      masks_sam: "SAM3 掩码",
       masks_merge: "合并掩码",
       export: "导出工作区",
     },
     shorts: {
-      position: "位置",
-      correct: "校正",
+      position: "人物位置标注",
+      correct: "标签校正",
       audit: "审查",
-      masks_sam: "主体",
+      masks_sam: "设置",
       masks_merge: "合并",
     },
     docs: {
@@ -268,8 +285,8 @@ const zh: Dict = {
         "按 PE-Spatial 的视觉相似度把数据集里的图片分组，写出 groups.json 清单。\n\n" +
         "这是一件策展工具，不是训练的预处理步骤：它按画师把几乎相同的图片聚在一起，好让 GUI 的数据集页可以按分组筛选，除此之外什么都不写。两张图在每格下限 --cell-match-min 之下、match_frac 达到 --match-frac-min 时归为一组。重跑会复用共享的 PE-Spatial 特征缓存，所以重新调阈值很便宜。",
       masks_sam:
-        "SAM3 主体掩码，写到 workspace/masks_sam/。\n\n" +
-        "--prompts 指的是要被掩掉的东西（在损失里忽略）；--focus-prompts 指的是要保留的东西，其余全部掩掉。两个都给，保留的区域减去掩掉的区域就是活下来的部分。主体提示词默认由一段学出来的软提示（--prompt_embed）来承担；传 none 就用普通的文本提示词。",
+        "SAM3 掩码，写到 workspace/masks_sam/。\n\n" +
+        "--masks 是一组区域，每一行是角色（保留/排除）、种类（文本/软提示）和值。只训练保留的区域，其余全部掩掉；排除的区域再从中去掉（没有保留时就从整张图里去掉）。文本是走 SAM3 文本编码器的提示词（如 speech bubble），软提示是替代其输出的学出来的提示文件（.safetensors）。默认是一行用自带软提示保留主体；那个文件不在时改用文本提示词 girl。",
       masks_merge:
         "把多个来源的掩码按像素取最小值合并（掩码区域的并集）。\n\n" +
         "以 (rel_dir, name) 为键合并，所以各输入里相对路径相同的掩码会碰到一起；嵌套的结构在 --output-dir 下原样保留。输入目录不存在是跳过而不是报错 —— 默认的输入是某一个生成器的树，第二棵树（手绘的掩码、另一个工具的输出）只要列在旁边就行。",
@@ -310,6 +327,16 @@ const zh: Dict = {
     advancedHide: "▾ 高级",
     advancedHint: "每次运行几乎不会改动的参数",
     advancedDirty: (n) => `已折叠的 ${n} 项不是默认值`,
+    maskRoles: { keep: "保留", ignore: "排除" },
+    maskKinds: { text: "文本", soft: "软提示" },
+    maskRoleHint: "保留：只训练保留的区域 / 排除：这块区域不计入损失",
+    maskKindHint:
+      "文本：像 speech bubble 这样的 SAM3 提示词 / 软提示：学出来的提示文件（.safetensors）",
+    maskTextPlaceholder: "SAM3 提示词（例：speech bubble）",
+    maskSoftPlaceholder: "软提示 .safetensors 路径",
+    maskRemove: "去掉这个掩码",
+    maskAdd: "+ 添加掩码",
+    maskEmpty: "没有掩码 —— 运行时回到保留主体的默认值",
   },
   runner: {
     nothingToUndo: "没有可撤销的内容",

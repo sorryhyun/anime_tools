@@ -2164,6 +2164,41 @@ def test_a_second_pass_reads_the_derived_caption_and_skips_it(pipeline_bits, tmp
     assert (dst / "artistA" / "a.txt").read_text(encoding="utf-8") == first
 
 
+def test_the_sweep_keeps_each_images_analysis_until_it_has_none(
+    pipeline_bits, tmp_path
+):
+    """Per image, not per run: the proposal and its instance label map stay
+    beside the report, and the next run that walks the image without proposing
+    for it takes them away."""
+    import numpy as np
+    from PIL import Image
+
+    from anime_tools._json import read_json
+    from anime_tools.stages._analysis import analysis_paths
+
+    src, dst = _corpus(tmp_path, _TWO_GIRLS_CAPTION)
+    analysis = tmp_path / "report" / "analysis"
+    _run_io(pipeline_bits, src, dst, apply=True, analysis_dir=analysis)
+
+    record_path, mask_path = analysis_paths(analysis, "artistA/a.png")
+    record = read_json(record_path)
+    assert record["image"] == "artistA/a.png"
+    assert record["status"] == "proposed" and record["labels"] == "instances"
+    assert [i["position"] for i in record["instances"]] == ["left", "right"]
+    with Image.open(dst / "artistA" / "a.png") as im:
+        size = im.size
+    with Image.open(mask_path) as im:
+        labels = np.asarray(im)
+    assert labels.shape == (size[1], size[0])
+    # No SAM mask on the stub detections, so each instance paints its box.
+    assert set(np.unique(labels)) == {0, 1, 2}
+
+    # Its clauses now make it no candidate: the record would describe a caption
+    # that is gone.
+    _run_io(pipeline_bits, src, dst, apply=True, analysis_dir=analysis)
+    assert not record_path.exists() and not mask_path.exists()
+
+
 def test_flatten_backs_out_the_derived_caption_only(pipeline_bits, tmp_path):
     from anime_tools.stages.position_captions import flatten_captions
 

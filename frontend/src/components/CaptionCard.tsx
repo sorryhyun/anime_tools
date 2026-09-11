@@ -1,10 +1,12 @@
 import { createEffect, For, Show } from "solid-js";
 import { createCaptionEditor } from "../captionEditor";
 import { t } from "../i18n";
+import { AnalysisView } from "./AnalysisView";
 import { BoxedCaption } from "./BoxedCaption";
 import { CaptionDiff } from "./CaptionDiff";
 import { HelpToggle } from "./HelpToggle";
-import type { CaptionEntry, Proposal, SavedCaption, VersionKind } from "../types";
+import { ANALYSIS_KIND } from "../types";
+import type { Analysis, CaptionEntry, Proposal, SavedCaption, VersionKind } from "../types";
 
 /** The caption panel: one editor, and a badge per version of this image's
  * caption. What a draft is, which version is on screen and what Save does are
@@ -43,6 +45,11 @@ export function CaptionCard(props: {
   help: boolean;
   onHelp: () => void;
   onSaved: (saved: SavedCaption) => void;
+  /** What the position stage (and its audit phase) last saw in this image, and
+      the resized image its masks were cut from. The badge exists only while
+      there is a record to open. */
+  analysis?: Analysis;
+  analysisBase: string | null;
 }) {
   let card!: HTMLDivElement;
   const ed = createCaptionEditor({
@@ -109,6 +116,14 @@ export function CaptionCard(props: {
     return e ? changeFor(e) : undefined;
   };
 
+  /** The analysis badge sits after the ladder like the history rung, and like
+      it stands for a record rather than a text — but of what a stage *saw*, so
+      it is not a rung and selecting it trades the whole editor for the record.
+      A selection carried onto an image with nothing on file (arrowing down the
+      tree) falls back to the editor rather than to a blank card. */
+  const hasAnalysis = () => !!(props.analysis?.position || props.analysis?.audit);
+  const showAnalysis = () => props.kind === ANALYSIS_KIND && hasAnalysis();
+
   return (
     <div classList={{ card: true, sel: props.kind !== "image" }} ref={card}>
       {/* The ladder. A filled dot is a file on disk and a hollow one is not,
@@ -120,7 +135,7 @@ export function CaptionCard(props: {
             <button
               classList={{
                 vb: true,
-                on: v.kind === ed.entry()?.kind,
+                on: !showAnalysis() && v.kind === ed.entry()?.kind,
                 off: !v.exists && !changeFor(v),
                 mod: ed.dirtyIn(v.kind),
               }}
@@ -143,125 +158,144 @@ export function CaptionCard(props: {
             </button>
           )}
         </For>
+        <Show when={hasAnalysis()}>
+          <button
+            classList={{ vb: true, on: showAnalysis() }}
+            title={t().analysis.badgeHint}
+            onClick={() => props.onSelect(ANALYSIS_KIND)}
+          >
+            <span class="dot analysis" />
+            {t().analysis.badge}
+          </button>
+        </Show>
       </div>
 
-      <Show when={ed.entry()}>
-        {(e) => (
-          <>
-            <div class="card-h" style="margin-top:8px">
-              <b title={e().path}>{vlabel(e())}</b>
-              <Show when={!e().exists && !past()}>
-                <span class="badge">{t().caption.new}</span>
-              </Show>
-              <Show when={!e().editable}>
-                <span class="badge">{t().item.readOnly}</span>
-              </Show>
-              <HelpToggle open={props.help} onToggle={props.onHelp} />
-              <span class="sp" />
-              <Show when={e().editable}>
-                <button disabled={!ed.dirty() || ed.busy()} onClick={() => ed.clearDraft(e().kind)}>
-                  {t().caption.revert}
-                </button>
-                <button
-                  class="primary"
-                  disabled={!ed.dirty() || ed.busy()}
-                  title={t().caption.saveHint}
-                  onClick={() => void ed.save()}
-                >
-                  {t().caption.save}
-                </button>
-              </Show>
-            </div>
-            {/* A history badge says *when* it stopped being the caption. */}
-            <Show when={e().note}>
-              <div class="dim hint">{e().note}</div>
-            </Show>
-            <Show when={props.help}>
-              <div class="dim hint" title={e().path}>
-                {where(e())} · {root()}
-              </div>
-            </Show>
-            <Show when={!past()}>
-              <BoxedCaption
-                text={ed.text()}
-                spans={ed.parsed()?.spans ?? []}
-                parsedText={ed.snap().text}
-                dirty={ed.dirty()}
-                readOnly={!e().editable}
-                placeholder={e().exists ? "" : t().caption.empty}
-                onInput={ed.setText}
-                onKeyDown={(ev) => {
-                  // Cmd/Ctrl+Enter saves; Cmd/Ctrl+S is caught too, or the
-                  // browser offers to save the page.
-                  if (
-                    (ev.metaKey || ev.ctrlKey) &&
-                    (ev.key === "Enter" || ev.key.toLowerCase() === "s")
-                  ) {
-                    ev.preventDefault();
-                    void ed.save();
-                  }
-                }}
-              />
-            </Show>
-          </>
-        )}
+      <Show when={showAnalysis()}>
+        <AnalysisView analysis={props.analysis!} base={props.analysisBase} />
       </Show>
-      <Show when={!past()}>
-        <Show when={ed.parsed()} fallback={<div class="dim hint">{t().caption.noCaption}</div>}>
-          {(pp) => (
-            <div class="dim hint">
-              {t().caption.tags(pp().flat_tags.length)} · {t().caption.clauses(pp().clauses.length)}
-              <Show when={props.help}> · {t().caption.lookUpHint}</Show>
-              <Show when={ed.dirty()}> · {t().caption.unsaved}</Show>
-            </div>
-          )}
-        </Show>
-      </Show>
-      {/* The rung says a change happened and there is none to show: an image
-          whose caption has only ever been written once, and by hand. */}
-      <Show when={past() && !ladderDiff()}>
-        <div class="dim hint">{t().caption.noHistory}</div>
-      </Show>
-      <Show when={ed.msg()}>
-        {(m) => <div classList={{ hint: true, err: !!m().bad, ok: !m().bad }}>{m().text}</div>}
-      </Show>
-      <Show
-        when={ladderDiff()}
-        fallback={
-          <Show when={props.proposal}>
-            {(p) => (
-              <Show
-                when={diffHere()}
-                fallback={
-                  <button class="link hint" onClick={() => props.onSelect(p().kind)}>
-                    {t().caption.diffElsewhere(label(p().kind) ?? p().kind)}
+      <Show when={!showAnalysis()}>
+        <Show when={ed.entry()}>
+          {(e) => (
+            <>
+              <div class="card-h" style="margin-top:8px">
+                <b title={e().path}>{vlabel(e())}</b>
+                <Show when={!e().exists && !past()}>
+                  <span class="badge">{t().caption.new}</span>
+                </Show>
+                <Show when={!e().editable}>
+                  <span class="badge">{t().item.readOnly}</span>
+                </Show>
+                <HelpToggle open={props.help} onToggle={props.onHelp} />
+                <span class="sp" />
+                <Show when={e().editable}>
+                  <button
+                    disabled={!ed.dirty() || ed.busy()}
+                    onClick={() => ed.clearDraft(e().kind)}
+                  >
+                    {t().caption.revert}
                   </button>
-                }
-              >
-                <CaptionDiff
-                  before={p().before_parsed}
-                  after={p().after_parsed}
-                  text={p().after}
-                  title={t().diff.written}
-                  note={t().diff.by(props.proposalStage ?? t().diff.lastRun)}
-                  hue="proposal"
-                  stale={(ed.entry()?.text ?? "").trim() !== p().after.trim()}
+                  <button
+                    class="primary"
+                    disabled={!ed.dirty() || ed.busy()}
+                    title={t().caption.saveHint}
+                    onClick={() => void ed.save()}
+                  >
+                    {t().caption.save}
+                  </button>
+                </Show>
+              </div>
+              {/* A history badge says *when* it stopped being the caption. */}
+              <Show when={e().note}>
+                <div class="dim hint">{e().note}</div>
+              </Show>
+              <Show when={props.help}>
+                <div class="dim hint" title={e().path}>
+                  {where(e())} · {root()}
+                </div>
+              </Show>
+              <Show when={!past()}>
+                <BoxedCaption
+                  text={ed.text()}
+                  spans={ed.parsed()?.spans ?? []}
+                  parsedText={ed.snap().text}
+                  dirty={ed.dirty()}
+                  readOnly={!e().editable}
+                  placeholder={e().exists ? "" : t().caption.empty}
+                  onInput={ed.setText}
+                  onKeyDown={(ev) => {
+                    // Cmd/Ctrl+Enter saves; Cmd/Ctrl+S is caught too, or the
+                    // browser offers to save the page.
+                    if (
+                      (ev.metaKey || ev.ctrlKey) &&
+                      (ev.key === "Enter" || ev.key.toLowerCase() === "s")
+                    ) {
+                      ev.preventDefault();
+                      void ed.save();
+                    }
+                  }}
                 />
               </Show>
+            </>
+          )}
+        </Show>
+        <Show when={!past()}>
+          <Show when={ed.parsed()} fallback={<div class="dim hint">{t().caption.noCaption}</div>}>
+            {(pp) => (
+              <div class="dim hint">
+                {t().caption.tags(pp().flat_tags.length)} ·{" "}
+                {t().caption.clauses(pp().clauses.length)}
+                <Show when={props.help}> · {t().caption.lookUpHint}</Show>
+                <Show when={ed.dirty()}> · {t().caption.unsaved}</Show>
+              </div>
             )}
           </Show>
-        }
-      >
-        {(c) => (
-          <CaptionDiff
-            before={c().before.parsed}
-            after={c().after.parsed}
-            text={c().before.text}
-            title={t().diff.changed}
-            note={t().diff.from(vlabel(c().before), vlabel(c().after))}
-            hue="history"
-          />
-        )}
+        </Show>
+        {/* The rung says a change happened and there is none to show: an image
+          whose caption has only ever been written once, and by hand. */}
+        <Show when={past() && !ladderDiff()}>
+          <div class="dim hint">{t().caption.noHistory}</div>
+        </Show>
+        <Show when={ed.msg()}>
+          {(m) => <div classList={{ hint: true, err: !!m().bad, ok: !m().bad }}>{m().text}</div>}
+        </Show>
+        <Show
+          when={ladderDiff()}
+          fallback={
+            <Show when={props.proposal}>
+              {(p) => (
+                <Show
+                  when={diffHere()}
+                  fallback={
+                    <button class="link hint" onClick={() => props.onSelect(p().kind)}>
+                      {t().caption.diffElsewhere(label(p().kind) ?? p().kind)}
+                    </button>
+                  }
+                >
+                  <CaptionDiff
+                    before={p().before_parsed}
+                    after={p().after_parsed}
+                    text={p().after}
+                    title={t().diff.written}
+                    note={t().diff.by(props.proposalStage ?? t().diff.lastRun)}
+                    hue="proposal"
+                    stale={(ed.entry()?.text ?? "").trim() !== p().after.trim()}
+                  />
+                </Show>
+              )}
+            </Show>
+          }
+        >
+          {(c) => (
+            <CaptionDiff
+              before={c().before.parsed}
+              after={c().after.parsed}
+              text={c().before.text}
+              title={t().diff.changed}
+              note={t().diff.from(vlabel(c().before), vlabel(c().after))}
+              hue="history"
+            />
+          )}
+        </Show>
       </Show>
     </div>
   );

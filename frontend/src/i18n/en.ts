@@ -188,6 +188,23 @@ const en = {
     lookUpHint: "double-click a tag to look it up",
     bag: "bag",
   },
+  analysis: {
+    badge: "analysis",
+    badgeHint:
+      "what the character-position stage last saw in this image: the instance masks it cut and what it said about each",
+    position: "position tagging",
+    audit: "multiview audit",
+    proposed: "proposed",
+    detected: (n: number, expected: number | null) =>
+      expected == null ? `${n} detected` : `${n} detected / ${expected} in caption`,
+    noTags: "no tags",
+    moved: "moved out of the bag:",
+    witnesses: "witnesses:",
+    suggested: "suggested tag:",
+    auditFacts: (mv: string, people: string, agree: string) =>
+      `multiple views ${mv} · people count ${people} · identity agreement ${agree}`,
+    where: "kept per image beside the position report; the next run over this image replaces it",
+  },
   diff: {
     written: "written",
     changed: "the change",
@@ -277,8 +294,8 @@ const en = {
       Resize: "Resize",
       Autotag: "Autotag",
       Curate: "Curate",
-      OCR: "OCR",
-      Groups: "Groups",
+      OCR: "OCR tagging",
+      Groups: "Grouping",
       Masks: "Masks",
       Export: "Export",
     },
@@ -288,22 +305,22 @@ const en = {
     titles: {
       resize: "Resize to buckets",
       autotag: "Autotag captions",
-      position: "Position captions",
-      correct: "Correct + mirror captions",
+      position: "Character position tagging",
+      correct: "Tag correction",
       audit: "Multiview audit",
       ocr: "OCR text",
-      groups: "Build groups",
-      masks_sam: "SAM3 subject masks",
+      groups: "Group similar images",
+      masks_sam: "SAM3 masks",
       masks_merge: "Merge masks",
       export: "Export workspace",
     },
     /** The in-panel picker's label, for the two panels that hold more than one
         stage. Falls back to the title. */
     shorts: {
-      position: "Position",
-      correct: "Correct",
+      position: "Position tagging",
+      correct: "Tag correction",
       audit: "Audit",
-      masks_sam: "Subject",
+      masks_sam: "Setup",
       masks_merge: "Merge",
     },
     /** The prose the stage bar's (?) reveals, keyed by stage id — an *overlay*
@@ -339,6 +356,17 @@ const en = {
     advancedHide: "▾ advanced",
     advancedHint: "The knobs a run rarely changes its mind about",
     advancedDirty: (n: number) => `${n} hidden field${n === 1 ? " is" : "s are"} off its default`,
+    maskRoles: { keep: "keep", ignore: "ignore" },
+    maskKinds: { text: "text", soft: "soft" },
+    maskRoleHint:
+      "keep: only the regions you keep train; ignore: this region is left out of the loss",
+    maskKindHint:
+      "text: a SAM3 prompt such as speech bubble; soft: a learned prompt file (.safetensors)",
+    maskTextPlaceholder: "SAM3 prompt, e.g. speech bubble",
+    maskSoftPlaceholder: "soft prompt .safetensors path",
+    maskRemove: "remove this mask",
+    maskAdd: "+ add mask",
+    maskEmpty: "no masks — a run falls back to keeping the subject",
   },
   runner: {
     nothingToUndo: "nothing to undo",

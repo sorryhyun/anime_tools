@@ -26,6 +26,9 @@ Field metadata, all optional and all written through :func:`arg`:
   nested block's fields default to its class's :attr:`Request.GROUP`.
 - ``gate``: the dest of the bool that switches this field on — a *drawer* in the
   form. The gate names itself, and the drawer's fields take its group.
+- ``kind``: overrides the :attr:`Arg.kind` derived from the rest, for a field
+  whose values have a shape the form draws its own way (``masks``: the mask
+  stage's list of ``role:kind:value`` prompts). The parser never reads it.
 - ``nargs`` / ``type`` / ``metavar``: for a flag taking several values
   (``--target_res 1024 1536``); a scalar's type comes from its default.
 - ``read``: ``namespace value -> field value`` (``prompt_list`` turns a
@@ -64,6 +67,7 @@ GATE = "gate"
 NARGS = "nargs"
 TYPE = "type"
 METAVAR = "metavar"
+KIND = "kind"
 
 KEYS = frozenset(
     {
@@ -79,6 +83,7 @@ KEYS = frozenset(
         NARGS,
         TYPE,
         METAVAR,
+        KIND,
     }
 )
 
@@ -144,7 +149,8 @@ class Arg:
     """Canonical spelling first, then the alias; ``()`` for a positional. A
     ``store_false`` switch lists its ``off`` spellings."""
     kind: str
-    """``bool`` | ``int`` | ``float`` | ``str`` | ``enum`` | ``list``."""
+    """``bool`` | ``int`` | ``float`` | ``str`` | ``enum`` | ``list``, or whatever
+    the field's ``kind`` metadata names."""
     default: Any
     help: str = ""
     choices: tuple[Any, ...] | None = None
@@ -168,6 +174,8 @@ class Arg:
 
 def _kind(f, default: Any) -> str:
     md = f.metadata
+    if md.get(KIND):
+        return md[KIND]
     if md.get(POSITIONAL) or md.get(NARGS) is not None:
         return "list"
     if md.get(CHOICES):

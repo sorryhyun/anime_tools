@@ -18,7 +18,7 @@ from __future__ import annotations
 
 from collections import Counter
 from collections.abc import Callable, Iterable, Mapping, Sequence
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
 from PIL import Image
@@ -41,6 +41,7 @@ from anime_tools.captions.position_clauses import (
 from anime_tools.captions.taxonomy import count_of, exact_count, normalize_tag
 from anime_tools.stages.instance_detection import Detection, crop_instance
 
+from ._analysis import clear_analysis, write_analysis
 from ._caption_io import read_caption
 from ._walk_captions import iter_captions
 from .position_captions import PositionCaptionOptions, detect_subjects
@@ -299,11 +300,13 @@ def audit_image(
     multiview_threshold: float = DEFAULT_MULTIVIEW_PROB,
     identity_confidence: float = DEFAULT_IDENTITY_CONFIDENCE,
     suggest_counts: bool = False,
+    mask_sink: Callable[[list[Detection]], None] | None = None,
 ) -> MultiviewFinding:
     """Detect, and when more than one subject lands, ask the tagger who they are.
 
     An image with nothing to report comes back ``UNSURE`` with ``instances < 2``;
-    the caller filters.
+    the caller filters. ``mask_sink`` sees the reading-ordered detections, the
+    order ``crops`` is in.
     """
     girls = _girls_count(caption)
     finding = MultiviewFinding(
@@ -329,6 +332,8 @@ def audit_image(
     order = ordered_indices([d.box for d in dets], image.size, row_tol=options.row_tol)
     dets = [dets[i] for i in order]
     finding.instances = len(dets)
+    if mask_sink is not None:
+        mask_sink(dets)
 
     # A caption whose counts already cover every detected body is fine:
     # `1girl, 1boy` lands here only because the *girls*-count is one, and the
@@ -455,11 +460,14 @@ def run_multiview_audit(
     multiview_threshold: float = DEFAULT_MULTIVIEW_PROB,
     identity_confidence: float = DEFAULT_IDENTITY_CONFIDENCE,
     suggest_counts: bool = False,
+    analysis_dir: Path | None = None,
 ) -> tuple[list[MultiviewFinding], MultiviewAuditStats]:
     """Walk the resized tree and report every under-counted caption.
 
     ``caption_path`` is reported relative so the caller can decide which tree to
-    edit. Nothing here writes.
+    edit. No caption is written; ``analysis_dir`` keeps each finding and its
+    instance masks (:mod:`~anime_tools.stages._analysis`), and clears the pair
+    of an image audited without one.
     """
     options = options or PositionCaptionOptions()
     stats = MultiviewAuditStats()
@@ -468,8 +476,10 @@ def run_multiview_audit(
     for image_path, rel, dst_caption, caption in iter_captions(
         resized_dir, source_dir, path_pattern, stats, progress
     ):
+        image_rel = image_path.relative_to(resized_dir).as_posix()
         ok, reason = is_audit_target(caption)
         if not ok:
+            clear_analysis(analysis_dir, image_rel)
             stats.skip(reason)
             continue
         stats.audited += 1
@@ -496,6 +506,11 @@ def run_multiview_audit(
                 _held.append(crop.copy())
             return _save(i, pos, crop) if _save is not None else ""
 
+        labelled: list[Detection] = []
+
+        def hold_labels(dets: list[Detection], _held=labelled) -> None:
+            _held[:] = dets
+
         with Image.open(image_path) as handle:
             image = handle.convert("RGB")
         finding = audit_image(
@@ -510,14 +525,17 @@ def run_multiview_audit(
             multiview_threshold=multiview_threshold,
             identity_confidence=identity_confidence,
             suggest_counts=suggest_counts,
+            mask_sink=hold_labels if analysis_dir is not None else None,
         )
         # Only the tagger can raise an image the geometry had nothing to say
         # about: too few boxes, or a caption that already counts them all.
         if finding.source != SOURCE_TAGGER:
             if finding.verdict == COUNT_EXPLAINED:
+                clear_analysis(analysis_dir, image_rel)
                 stats.skip(COUNT_EXPLAINED)
                 continue
             if finding.instances < max(2, options.min_instances):
+                clear_analysis(analysis_dir, image_rel)
                 stats.skip("single-instance")
                 continue
         # Both rels go into audit_report.json and come back as dict keys and
@@ -541,6 +559,10 @@ def run_multiview_audit(
             target.parent.mkdir(parents=True, exist_ok=True)
             render_contact_sheet(image, finding, held).save(target)
             finding.sheet = str(target.relative_to(sheets_dir))
+        if analysis_dir is not None:
+            record = asdict(finding)
+            record["labels"] = "crops"
+            write_analysis(analysis_dir, image_rel, record, labelled, image.size)
 
     return rows, stats
 

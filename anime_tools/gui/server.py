@@ -745,6 +745,14 @@ def create_app(
         settings = load_settings()
         return D.load_groups(report_root(settings, roots_for(settings)))
 
+    @app.get("/api/dataset/analysis")
+    def dataset_analysis(rel: str) -> dict[str, Any]:
+        """The caption panel's analysis badge: what the position stage (and its
+        multiview audit phase) last recorded about this image, masks included.
+        Derived like the groups manifest, so it follows Settings."""
+        settings = load_settings()
+        return D.load_analysis(report_root(settings, roots_for(settings)), rel)
+
     @app.post("/api/dataset/items")
     async def dataset_items(request: Request) -> dict[str, Any]:
         """Refresh named sidebar rows: re-stat what a job wrote rather than

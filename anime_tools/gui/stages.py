@@ -198,9 +198,7 @@ BASIC_FIELDS: dict[str, frozenset[str]] = {
         {"det_conf", "min_det", "min_score", "min_chars", "skip_en", "strip_symbols"}
     ),
     "groups": frozenset({"sim_min", "min_size"}),
-    "masks_sam": frozenset(
-        {"prompts", "focus_prompts", "threshold", "dilate", "force"}
-    ),
+    "masks_sam": frozenset({"masks", "threshold", "dilate", "force"}),
 }
 """Which of each stage's own knobs the form shows before Advanced is on."""
 
@@ -296,7 +294,7 @@ class Field:
     mirrors it)."""
 
     dest: str
-    kind: str  # bool | int | float | str | enum | list
+    kind: str  # bool | int | float | str | enum | list | masks
     flags: list[str] = field(default_factory=list)  # [] → positional
     default: Any = None
     """The argv spelling of the field's default (a prompt list is its
@@ -522,8 +520,10 @@ def _blank(v: Any) -> bool:
 def _coerce(f: Field, v: Any) -> Any:
     """A form value as the request's parser would have left it on the namespace:
     the field's kind decides the Python type, and a blank falls back to the
-    default (or is refused on a required field)."""
-    if f.kind == "list" and not _blank(v):
+    default (or is refused on a required field). A ``masks`` list travels as its
+    ``role:kind:value`` strings, so it is coerced as a list."""
+    listy = f.kind in ("list", "masks")
+    if listy and not _blank(v):
         items = v if isinstance(v, list) else str(v).split("\n")
         v = [str(x).strip() for x in items if str(x).strip()]
     if _blank(v):
@@ -536,7 +536,7 @@ def _coerce(f: Field, v: Any) -> Any:
         return int(v)
     if f.kind == "float":
         return float(v)
-    if f.kind == "list":
+    if listy:
         return v
     return str(v)
 

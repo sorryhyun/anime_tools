@@ -256,12 +256,20 @@ sidecar is now stale.
 Below the captions, an image that the OCR stage has read shows the text in the image with
 each line's confidence and position (§7.6).
 
+After the version badges, an **analysis** badge appears on an image the position stage
+(§7.4) has looked at. It is not a caption: selecting it swaps the editor for what the stage
+saw — the instance masks it cut, painted over the resized image one colour per subject, and
+beside each colour its position and the tags the clause took (or why the image was skipped).
+When the multiview audit phase looked at the image, its verdict, witnesses and masks are
+there too. The record is kept per image beside the position report, so a run over another
+image leaves it alone, and the next run over this one replaces it.
+
 ### 6.3 The dock is the stage runner
 
 The button strip along the bottom is the stage list: Resize sits behind the scenes, and
-the buttons are Autotag · Curate · OCR · Groups · Masks · Export. Curate holds three stages
-(Position / Correct / Audit) and Masks holds three (Subject / Text / Merge), picked inside the
-panel. One click opens a stage's form; a second click on the open one folds the dock away.
+the buttons are Autotag · Curate · OCR tagging · Grouping · Masks · Export. Curate holds two
+stages (Position tagging / Tag correction) and Masks holds two (Setup / Merge), picked inside
+the panel. One click opens a stage's form; a second click on the open one folds the dock away.
 
 The form is generated from the stage's own `--help`. It opens on the knobs a run changes its
 mind about; the rest fold under ▸ advanced (n) at the bottom of each group, with a note when
@@ -402,6 +410,10 @@ loaded — or Undo. The full grammar, the gates and every knob are in
 
 ### 7.5 Multiview audit
 
+Has no button of its own: it runs as the position stage's first phase, set by that form's
+`multiview_audit` (`report` audits and tags nothing, `apply` also feeds each admitted finding
+into the same run's sweep). Its CLI still runs it alone.
+
 Reads the single-subject images the position stage skipped. Writes the revised
 caption — `multiple views` appended to the flat tag bag, and only that. Models: as
 Position.
@@ -441,14 +453,16 @@ overrides) and stamped with the file's size and mtime, so a re-resize recomputes
 images that changed. Tighten or loosen the clustering with the two match thresholds on the
 form. See [`docs/grouping.md`](../../../docs/grouping.md).
 
-### 7.8 Masks: Subject, Merge
+### 7.8 Masks: Setup, Merge
 
 Read resized images. Write `workspace/masks_sam/` and its merge under
 `workspace/masks/` — 8-bit `{stem}_mask.png` mirroring the source subfolder. Model: SAM 3.
 
-- Subject keeps the subject and masks out the background: by default it grounds SAM3 on the
-  learned subject prompt. Prompts to mask out (`speech bubble,text`) can be added — balloons
-  and lettering are ordinary ignore prompts here.
+- Setup is a list of masks, one row each: a role — **keep** (only kept regions train) or
+  **ignore** (this region leaves the loss) — and a kind — **text**, a SAM3 prompt such as
+  `speech bubble`, or **soft**, a learned prompt file (`.safetensors`). + adds a row, × removes
+  one. The default is one row keeping the subject through the shipped soft prompt; balloons
+  and lettering are ordinary ignore rows.
 - Merge takes the pixel-wise minimum of its input trees into `workspace/masks/`, the tree the
   sidebar shows as mask / overlay and Export publishes. The default input is the generator's
   tree; a missing input is skipped, and a hand-painted tree can be listed beside it.
@@ -495,7 +509,7 @@ stages spell flags with underscores (`--path_pattern`), grouping and masking wit
 | Audit | `anime_tools.stages.cli.audit_multiview` | dry run → `report.json` |
 | OCR | `anime_tools.stages.cli.ocr_captions` | dry run → `report.json` |
 | Groups | `anime_tools.grouping.cli.build_groups` | always writes `groups.json` |
-| Subject masks | `anime_tools.masking.cli.generate_masks` | always writes |
+| SAM3 masks | `anime_tools.masking.cli.generate_masks` | always writes |
 | Merge masks | `anime_tools.masking.cli.merge_masks` | always writes |
 | Export | `anime_tools.stages.cli.export_workspace` | dry run → `report.json` |
 | Exclude (§6.5) | `anime_tools.exclude` | dry run → prints what would move |

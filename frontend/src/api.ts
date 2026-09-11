@@ -1,4 +1,5 @@
 import type {
+  Analysis,
   CaptionKind,
   DatasetGroups,
   DatasetItem,
@@ -97,6 +98,7 @@ export const api = {
       against the listing above by the sidebar's group view. */
   groups: () => req<DatasetGroups>("/api/dataset/groups"),
   item: (rel: string) => req<ItemDetail>(`/api/dataset/item?rel=${encodeURIComponent(rel)}`),
+  analysis: (rel: string) => req<Analysis>(`/api/dataset/analysis?rel=${encodeURIComponent(rel)}`),
   items: (rels: string[]) =>
     req<{ items: DatasetItem[] }>("/api/dataset/items", json("POST", { rels })),
   /** Take one image out of the pipeline, or put it back. Instant, not a job:

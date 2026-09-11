@@ -1,27 +1,21 @@
 """What the mask stages' request objects pin beyond the registry-wide round
 trip (``test_registry_requests.py``): the argv a default spells, the mask
-trees, the prompt lists and validation."""
+trees, the mask list and validation."""
 
 from __future__ import annotations
 
 import pytest
 
 from anime_tools import workspace as WS
-from anime_tools.masking._sam3 import SUBJECT_PROMPT, prompt_list
-from anime_tools.masking.requests import MergeMasksRequest, SamMaskRequest
+from anime_tools._request import args_of
+from anime_tools.masking.requests import MaskPrompt, MergeMasksRequest, SamMaskRequest
 from anime_tools.stages.instance_detection import DEFAULT_SUBJECT_PROMPT_EMBED
 
 
 def test_a_default_argv_names_only_what_changed():
-    req = SamMaskRequest(image_dir="i", prompts=("text",), focus_prompts=())
-    assert req.to_argv() == [
-        "--image-dir",
-        "i",
-        "--prompts",
-        "text",
-        "--focus-prompts",
-        "none",
-    ]
+    req = SamMaskRequest(image_dir="i", masks=(MaskPrompt("ignore", "text", "text"),))
+    assert req.to_argv() == ["--image-dir", "i", "--masks", "ignore:text:text"]
+    assert SamMaskRequest(image_dir="i").to_argv() == ["--image-dir", "i"]
     assert MergeMasksRequest(mask_dirs=("a",)).to_argv() == ["a"]
 
 
@@ -33,21 +27,53 @@ def test_the_generator_defaults_to_its_own_tree():
 
 def test_a_request_refuses_a_run_that_would_detect_nothing():
     with pytest.raises(ValueError, match="nothing to mask"):
-        SamMaskRequest(image_dir="i", focus_prompts=())
+        SamMaskRequest(image_dir="i", masks=())
 
 
-def test_the_sam3_mask_stage_defaults_to_the_phrase_its_soft_prompt_encodes():
-    """The default ``--focus-prompts`` is the phrase ``--prompt_embed`` encodes."""
+def test_the_default_keeps_the_subject_through_the_shipped_soft_prompt():
     req = SamMaskRequest(image_dir="i")
-    assert req.focus_prompts == (SUBJECT_PROMPT,)
-    assert req.prompt_embed == DEFAULT_SUBJECT_PROMPT_EMBED
+    assert req.masks == (MaskPrompt("keep", "soft", DEFAULT_SUBJECT_PROMPT_EMBED),)
+    assert req.keep == req.masks and req.ignore == ()
 
 
-def test_a_prompt_flag_is_a_comma_separated_list():
-    assert prompt_list(" speech bubble , text ,") == ("speech bubble", "text")
-    assert prompt_list("") == ()
-    # The GUI drops a blank field back to the default, so "none of them" needs a word.
-    assert prompt_list("none") == ()
-    assert SamMaskRequest.from_namespace(
-        SamMaskRequest.parser().parse_args(["--image-dir", "i", "--prompts", "a, b"])
-    ).prompts == ("a", "b")
+def test_a_mask_is_role_kind_value_and_the_value_keeps_its_colons():
+    """A Windows path's drive letter is a colon; everything after the second one
+    is the value."""
+    m = MaskPrompt.parse("keep:soft:C:/soft/girl.safetensors")
+    assert m == MaskPrompt("keep", "soft", "C:/soft/girl.safetensors")
+    assert MaskPrompt.parse(m.spec()) == m
+    parsed = SamMaskRequest.from_namespace(
+        SamMaskRequest.parser().parse_args(
+            [
+                "--image-dir",
+                "i",
+                "--masks",
+                "keep:text:girl",
+                "ignore:text:speech bubble",
+            ]
+        )
+    )
+    assert parsed.keep == (MaskPrompt("keep", "text", "girl"),)
+    assert parsed.ignore == (MaskPrompt("ignore", "text", "speech bubble"),)
+
+
+@pytest.mark.parametrize(
+    ("spec", "match"),
+    [
+        ("girl", "ROLE:KIND:VALUE"),
+        ("focus:text:girl", "role"),
+        ("keep:embed:x", "kind"),
+        ("keep:text: ", "names no prompt"),
+        ("keep:soft:none", "names a file"),
+    ],
+)
+def test_a_malformed_mask_is_refused(spec, match):
+    with pytest.raises(ValueError, match=match):
+        MaskPrompt.parse(spec)
+
+
+def test_the_mask_list_is_its_own_form_kind():
+    """The GUI draws a row editor for it rather than a textarea of strings."""
+    field = next(a for a in args_of(SamMaskRequest) if a.name == "masks")
+    assert field.kind == "masks"
+    assert field.default == [f"keep:soft:{DEFAULT_SUBJECT_PROMPT_EMBED}"]

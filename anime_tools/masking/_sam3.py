@@ -313,23 +313,21 @@ def detect_union(
     prompts,
     shape: tuple[int, int],
     threshold: float,
-    *,
-    soft_prompt: dict | None = None,
 ) -> np.ndarray:
     """OR-combine SAM3's detections for every prompt into one binary mask.
 
     The whole of what a mask stage does with SAM3 between ``set_image`` and the mask it
-    writes: prompt, drop anything under ``threshold``, union. A ``soft_prompt`` stands in
-    for :data:`SUBJECT_PROMPT` and for no other prompt; a caller whose prompts are all
-    textual passes ``None``.
+    writes: prompt, drop anything under ``threshold``, union. Each prompt is either text
+    (a ``str``, through SAM3's text encoder) or a soft prompt already loaded by
+    ``load_soft_prompt`` (a ``dict``, grounded directly), so one list can mix the two.
     """
     import torch
 
     h, w = shape
     out = np.zeros((h, w), dtype=np.uint8)
     for prompt in prompts:
-        if soft_prompt is not None and prompt == SUBJECT_PROMPT:
-            output = ground_with_soft_prompt(processor, model, state, soft_prompt)
+        if isinstance(prompt, dict):
+            output = ground_with_soft_prompt(processor, model, state, prompt)
         else:
             output = processor.set_text_prompt(state=state, prompt=prompt)
         for mask, score in zip(output["masks"], output["scores"]):

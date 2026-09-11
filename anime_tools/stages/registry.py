@@ -56,7 +56,9 @@ class Stage:
     """Label for the in-panel picker; defaults to :attr:`title`."""
     hidden: bool = False
     """Keep this stage out of the dock. It still has a schema and an argv, so
-    it can run as a preflight and be configured from Settings."""
+    it can run as a preflight and be configured from Settings, or be reached
+    through another stage that runs it as a phase (``audit`` inside
+    ``position``)."""
 
     def request_class(self) -> type:
         """The request class, imported now. Raises ``ImportError`` when the
@@ -141,6 +143,10 @@ STAGES: tuple[Stage, ...] = (
         extra="stages",
         report=("report_dir", "report.json"),
         short="Audit",
+        # The dock reaches it through the position stage's `--multiview_audit`
+        # phase, which audits the same population with the same detector; a
+        # second button for it read as a separate correction step.
+        hidden=True,
     ),
     Stage(
         id="ocr",

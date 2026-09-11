@@ -621,6 +621,42 @@ def test_groups_follow_the_report_root_setting(client, home):
     assert body["path"] == "elsewhere/groups/groups.json" and not body["missing"]
 
 
+def test_position_subpath_is_the_stage_report_tail():
+    """The analysis badge reads the tree the position stage writes beside its
+    report, wherever ``report_root`` points."""
+    from anime_tools.gui.dataset import POSITION_SUBPATH
+    from anime_tools.gui.stages import report_subpath
+    from anime_tools.stages.requests import PositionRequest
+
+    assert report_subpath(PositionRequest.parser().get_default("report_dir")) == (
+        POSITION_SUBPATH
+    )
+
+
+def test_analysis_answers_what_the_position_stage_left_per_image(client):
+    """A kind with nothing on file is ``None``; one with a record carries its
+    label map as a ``data:`` URL the panel colours itself."""
+    from anime_tools.stages._analysis import write_analysis
+    from anime_tools.stages.instance_detection import Detection
+
+    c, home = client
+    assert c.get("/api/dataset/analysis", params={"rel": "sub/b.jpg"}).json() == {
+        "position": None,
+        "audit": None,
+    }
+    root = home / "workspace/captions/position/audit/analysis"
+    det = Detection(box=(0, 0, 2, 2), score=0.9)
+    write_analysis(root, "sub/b.jpg", {"verdict": "multiple-views"}, [det], (4, 4))
+    body = c.get("/api/dataset/analysis", params={"rel": "sub/b.jpg"}).json()
+    assert body["position"] is None
+    assert body["audit"]["record"] == {
+        "image": "sub/b.jpg",
+        "verdict": "multiple-views",
+    }
+    assert body["audit"]["mask"].startswith("data:image/png;base64,")
+    assert c.get("/api/dataset/analysis", params={"rel": "../x.png"}).status_code == 400
+
+
 def test_a_one_component_dst_puts_the_reports_in_the_workspace(client):
     """Beside ``dst`` stops at the home, so a one-component ``dst`` puts the
     reports in the workspace rather than the project root."""

@@ -6,10 +6,9 @@ from __future__ import annotations
 
 import argparse
 
-from anime_tools.masking._sam3 import prompt_list
 from anime_tools.masking.requests import SamMaskRequest
 
-__all__ = ["build_parser", "main", "prompt_list"]
+__all__ = ["build_parser", "main"]
 
 
 def build_parser() -> argparse.ArgumentParser:

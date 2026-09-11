@@ -7,6 +7,7 @@ import { CaptionCard } from "./CaptionCard";
 import { OcrPanel } from "./OcrPanel";
 import { RevealButton } from "./RevealButton";
 import type {
+  Analysis,
   ExcludeResult,
   ImageInfo,
   ItemDetail,
@@ -82,6 +83,9 @@ export function ItemView(props: {
   help: boolean;
   onHelp: () => void;
   onSaved: (saved: SavedCaption) => void;
+  /** What the position stage last saw in this image — the caption panel's
+      analysis badge. */
+  analysis?: Analysis;
   /** Take this image out of the pipeline, or put it back. Resolves once the
       files have moved, which is what the button waits on. */
   onSetExcluded: (excluded: boolean) => Promise<ExcludeResult | undefined>;
@@ -302,6 +306,8 @@ export function ItemView(props: {
                   proposal={props.proposal}
                   proposalStage={props.proposalStage}
                   onSaved={props.onSaved}
+                  analysis={props.analysis}
+                  analysisBase={(it().resized ?? it().image)?.path ?? null}
                 />
                 <OcrPanel lines={it().ocr} />
               </div>

@@ -18,7 +18,7 @@ in-process: the request modules are torch-free by test, and building all eleven 
 | Map | Bound to | Shown? |
 |---|---|---|
 | `ROOT_FIELDS` (`--src`, `--dst`, `--image-dir`, …) | dataset roots | hidden |
-| `SETTING_FIELDS` (`--path_pattern`, `--tagger_dir`, `--checkpoint`, `--prompt_embed`) | Settings stage defaults | hidden |
+| `SETTING_FIELDS` (`--path_pattern`, `--tagger_dir`, `--checkpoint`, `--prompt_embed` — the detection stages'; the mask stage names its soft prompts per `--masks` row) | Settings stage defaults | hidden |
 | `REPORT_SETTING` / `REPORT_INPUTS` (`--report_dir`, groups' `--out`, Export's `--index`) | `report_root` + the stage's own tail | hidden |
 | `MASK_FIELDS` | `mask_root` + tail | hidden |
 | `PANEL_FIELDS` (Export's `--out`, `--index`) | as above, but a per-run choice | shown |
@@ -55,6 +55,12 @@ field and an already-hidden field are never folded — the server settles that, 
   left behind so the listing folds the result in. The ledger is read once per listing rather
   than stat'd per row — it is one small JSON file and the flag is a set membership — and one
   that will not parse is a 400, never an empty listing.
+- `load_analysis` (`GET /api/dataset/analysis?rel=`) is the caption panel's analysis badge: per
+  kind (`ANALYSIS_KINDS` — the position sweep, and its audit phase under `audit/`), the record and
+  the instance label map the stage left under `<report_root>/<POSITION_SUBPATH>/…/analysis/`
+  (`stages/_analysis.py`), the map shipped as a PNG `data:` URL the browser colours itself. It is
+  per image rather than per run because a GUI Run scoped to one image rewrites `report.json`
+  with that image alone. A kind with nothing on file is `None`; an unreadable record is a 400.
 - The browser never splits a caption: clause structure and every tag's `[start, end)` come from
   `/api/dataset/item` and `/api/dataset/parse` via `position_clauses.tag_spans`, which is what lets
   the editor stay a real `<textarea>` with boxes painted behind it.

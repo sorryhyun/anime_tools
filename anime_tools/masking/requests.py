@@ -16,21 +16,37 @@ from dataclasses import dataclass, field
 
 from anime_tools import workspace as WS
 from anime_tools._device import DEVICE_HELP
-from anime_tools._request import HELP, POSITIONAL, READ, WRITE, Request, arg
-from anime_tools.downloads import DEFAULT_SAM3_CHECKPOINT, DEFAULT_SUBJECT_PROMPT_EMBED
-from anime_tools.masking._sam3 import (
-    CHECKPOINT_HELP,
-    PROMPT_EMBED_HELP,
-    SUBJECT_PROMPT,
-    prompt_list,
+from anime_tools._request import (
+    HELP,
+    KIND,
+    METAVAR,
+    NARGS,
+    POSITIONAL,
+    READ,
+    WRITE,
+    Request,
+    arg,
 )
+from anime_tools.downloads import DEFAULT_SAM3_CHECKPOINT, DEFAULT_SUBJECT_PROMPT_EMBED
+from anime_tools.masking._sam3 import CHECKPOINT_HELP
 
 __all__ = [
+    "MASK_KINDS",
+    "MASK_ROLES",
+    "MaskPrompt",
     "MaskWalkRequest",
     "MergeMasksRequest",
     "SamMaskRequest",
-    "prompts_flag",
 ]
+
+MASK_ROLES = ("keep", "ignore")
+"""What a mask prompt's region does to the loss: ``keep`` trains only inside the
+union of every keep region, ``ignore`` masks its region out of that (or out of
+the whole image, when nothing is kept)."""
+
+MASK_KINDS = ("text", "soft")
+"""How a mask prompt reaches SAM3: ``text`` through its text encoder, ``soft`` as a
+learned prompt file (``.safetensors``) that stands in for the encoder's output."""
 
 WALK_HELP = (
     "Walk subfolders under --image-dir. Mask output mirrors the source "
@@ -43,16 +59,55 @@ PATTERN_HELP = (
 )
 
 
-def prompts_flag(prompts: tuple[str, ...]) -> str:
-    """The inverse of :func:`prompt_list`: no prompts is spelled ``none``, because a
-    blank flag would read back as the default."""
-    return ",".join(prompts) if prompts else "none"
+@dataclass(frozen=True)
+class MaskPrompt:
+    """One entry of the mask stage's list: a region SAM3 finds, and what the loss
+    does with it. Spelled ``role:kind:value`` on the command line — ``value`` is
+    everything after the second colon, so a Windows path keeps its drive."""
+
+    role: str
+    kind: str
+    value: str
+
+    def __post_init__(self) -> None:
+        if self.role not in MASK_ROLES:
+            raise ValueError(
+                f"mask role {self.role!r}: expected one of {', '.join(MASK_ROLES)}"
+            )
+        if self.kind not in MASK_KINDS:
+            raise ValueError(
+                f"mask kind {self.kind!r}: expected one of {', '.join(MASK_KINDS)}"
+            )
+        if not self.value.strip():
+            raise ValueError(f"mask {self.role}:{self.kind} names no prompt")
+        # `none` turns --prompt_embed into text elsewhere; here the text is its own
+        # kind, so a soft entry has to name a file.
+        if self.kind == "soft" and self.value.strip().lower() in ("none", "off"):
+            raise ValueError(f"mask {self.spec()}: a soft prompt names a file")
+
+    @classmethod
+    def parse(cls, spec: str) -> MaskPrompt:
+        parts = spec.split(":", 2)
+        if len(parts) != 3:
+            raise ValueError(f"mask {spec!r}: expected ROLE:KIND:VALUE")
+        role, kind, value = (p.strip() for p in parts)
+        return cls(role=role, kind=kind, value=value)
+
+    def spec(self) -> str:
+        return f"{self.role}:{self.kind}:{self.value}"
 
 
-def _prompts(default: tuple[str, ...], **meta) -> tuple[str, ...]:
-    return field(
-        default=default, metadata={READ: prompt_list, WRITE: prompts_flag, **meta}
-    )
+SUBJECT_MASK = MaskPrompt("keep", "soft", DEFAULT_SUBJECT_PROMPT_EMBED)
+"""The default list's one entry: keep the subject, found by the learned soft
+prompt for ``girl`` (the text prompt when that file is not downloaded)."""
+
+
+def _read_masks(values) -> tuple[MaskPrompt, ...]:
+    return tuple(MaskPrompt.parse(v) for v in values or ())
+
+
+def _write_masks(masks: tuple[MaskPrompt, ...]) -> list[str]:
+    return [m.spec() for m in masks]
 
 
 def _mask_dir(default: str) -> str:
@@ -84,33 +139,31 @@ class MaskWalkRequest(Request):
 
 @dataclass(frozen=True, kw_only=True)
 class SamMaskRequest(MaskWalkRequest):
-    """SAM3 subject masks, written to ``workspace/masks_sam/``.
+    """SAM3 masks, written to ``workspace/masks_sam/``.
 
-    ``--prompts`` names what is masked OUT (ignored in the loss); ``--focus-prompts``
-    names what is kept, everything else masked out. Give both and the focus region
-    survives minus the ignore regions. The subject prompt is served by a learned soft
-    prompt by default (``--prompt_embed``); pass ``none`` for the plain text prompt.
+    ``--masks`` is the list of regions, each ``ROLE:KIND:VALUE``. A ``keep`` region
+    is what trains — everything outside the union of them is masked out; an
+    ``ignore`` region is masked out of that (or out of the whole image when
+    nothing is kept). A ``text`` prompt goes through SAM3's text encoder
+    (``ignore:text:speech bubble``); a ``soft`` one is a learned prompt file that
+    stands in for it (``keep:soft:networks/calibration/sam3_girl_prompt.safetensors``,
+    the default, which falls back to the text prompt ``girl`` when not downloaded).
     """
 
     mask_dir: str = _mask_dir(WS.MASKS_SAM)
-    prompts: tuple[str, ...] = _prompts(
-        (),
-        help="Comma-separated SAM3 text prompts to mask OUT — these regions are "
-        "ignored in the loss (e.g. `speech bubble,text`)",
+    masks: tuple[MaskPrompt, ...] = field(
+        default=(SUBJECT_MASK,),
+        metadata={
+            NARGS: "*",
+            METAVAR: "ROLE:KIND:VALUE",
+            KIND: "masks",
+            READ: _read_masks,
+            WRITE: _write_masks,
+            HELP: "Mask regions, one ROLE:KIND:VALUE each — role keep|ignore, kind "
+            "text (a SAM3 prompt) | soft (a learned prompt .safetensors). Default: "
+            "keep the subject via the shipped soft prompt",
+        },
     )
-    focus_prompts: tuple[str, ...] = _prompts(
-        (SUBJECT_PROMPT,),
-        help="Comma-separated prompts to keep ONLY: everything outside them is masked "
-        f"out. Default `{SUBJECT_PROMPT}` (the subject), so a bare run isolates the "
-        "subject from her background; pass `none` to keep nothing in and use "
-        "--prompts alone",
-    )
-    prompt_embed: str = arg(
-        DEFAULT_SUBJECT_PROMPT_EMBED, flag="--prompt_embed", help=PROMPT_EMBED_HELP
-    )
-    """The learned soft prompt standing in for the subject phrase; ``none`` for text.
-    Spelled with an underscore like the detection stages', so ⚙ Settings can fill
-    all three from one value."""
     threshold: float = arg(
         0.5, help="SAM3 confidence floor for a detection (default: 0.5)"
     )
@@ -119,8 +172,16 @@ class SamMaskRequest(MaskWalkRequest):
     batch_size: int = arg(1, help="Images to process in parallel (default: 1)")
 
     def __post_init__(self) -> None:
-        if not self.prompts and not self.focus_prompts:
-            raise ValueError("nothing to mask: pass --prompts and/or --focus-prompts")
+        if not self.masks:
+            raise ValueError("nothing to mask: --masks names no region")
+
+    @property
+    def keep(self) -> tuple[MaskPrompt, ...]:
+        return tuple(m for m in self.masks if m.role == "keep")
+
+    @property
+    def ignore(self) -> tuple[MaskPrompt, ...]:
+        return tuple(m for m in self.masks if m.role == "ignore")
 
 
 @dataclass(frozen=True, kw_only=True)
