@@ -141,9 +141,12 @@ Selecting it puts `ANALYSIS_KIND` in the selection like any badge, and `CaptionC
 whole editor for `AnalysisView` — the position sweep's proposal and the audit's finding, each
 with its instance label map coloured per pixel on a canvas over the resized image, and a legend
 whose rows solo their region on hover. A selection carried onto an image with no record falls
-back to the editor. `MaskList.tsx` is the `masks` field kind's row editor (role × kind × value,
-+ / ×); the `role:kind:value` spelling is that field's wire format and is read and written
-there only. `Icon.tsx` holds the page's line icons as inline SVG paths (a text glyph's size and
+back to the editor. `MaskList.tsx` is the `masks` field kind's editor: one card per region on
+the field's full width (the `wide` row spans both form columns, label above), role and kind as
+segmented controls, the value a text box for a SAM3 prompt or a path with the `…` file chooser
+for a soft prompt; the `role:kind:value` spelling is that field's wire format and is read and
+written there only. `Icon.tsx` holds the page's line icons as inline SVG paths (a text glyph's size
+and
 baseline follow whichever fallback font the platform picks for it).
 
 Settings is four dialogs, not one with tabs, and the code says so:

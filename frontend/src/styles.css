@@ -311,11 +311,22 @@ legend:has(input:checked) { color:var(--fg) }
    preflight block. */
 .twoup { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:0 16px }
 .twoup .row { grid-template-columns:150px minmax(0,1fr) }
-.twoup .row.wide { grid-column:1/-1; align-items:start }
-.masklist { display:flex; flex-direction:column; gap:4px; align-items:flex-start; width:100% }
-.maskrow { display:grid; grid-template-columns:auto auto minmax(0,1fr) auto; gap:4px; width:100% }
-.maskrow select { width:auto }
-.masklist.dirty .maskrow input { border-color:#4b5a80 }
+/* A wide field spans both columns and puts its label above rather than beside
+   it, so the editor under it gets the whole fieldset. */
+.twoup .row.wide { grid-column:1/-1; grid-template-columns:minmax(0,1fr); align-items:start; gap:6px }
+/* The mask list: one card per region, two-up while the dock is wide enough for
+   a prompt to breathe in half of it. */
+.masklist { display:grid; grid-template-columns:repeat(auto-fill,minmax(300px,1fr)); gap:8px; align-items:start; width:100% }
+.masklist > .dim, .masklist > button.link { grid-column:1/-1; justify-self:start }
+.maskcard { display:flex; flex-direction:column; gap:6px; padding:8px; border:1px solid var(--line); border-left:3px solid var(--ok); border-radius:6px; background:var(--panel) }
+.maskcard.ignore { border-left-color:var(--err) }
+.maskhead { display:flex; align-items:center; gap:8px }
+.maskcard textarea { min-height:44px; font-family:var(--font-ui) }
+.masklist.dirty .maskcard :is(input, textarea) { border-color:#4b5a80 }
+.seg { display:inline-flex; gap:2px; padding:2px; border:1px solid var(--line); border-radius:6px; background:var(--input) }
+.seg button { padding:2px 9px; border:0; border-radius:4px; background:none; color:var(--dim); font-size:12px }
+.seg button:hover { color:var(--fg) }
+.seg button.sel { background:var(--line); color:var(--fg); font-weight:600 }
 /* The form's foot: the advanced fold and the reset, both plain links, on the
    line under the last fieldset. */
 .formfoot { display:flex; gap:14px; align-items:center; margin:0 0 8px }
