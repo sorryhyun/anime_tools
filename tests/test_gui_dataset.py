@@ -6,51 +6,37 @@ import io
 from pathlib import Path
 
 import pytest
+from conftest import write_png
 
 pytest.importorskip("fastapi")
 
 
-def _png(path: Path, size: tuple[int, int] = (8, 8), colour: int = 128) -> None:
-    from PIL import Image
-
-    path.parent.mkdir(parents=True, exist_ok=True)
-    Image.new("RGB", size, (colour, colour, colour)).save(path)
-
-
 @pytest.fixture
-def home(tmp_path, monkeypatch):
+def home(home):
     """A miniature curation home: two images, one fully derived."""
-    monkeypatch.setenv("ANIME_TOOLS_HOME", str(tmp_path))
-    src = tmp_path / "image_dataset"
-    dst = tmp_path / "workspace" / "resized"
-    masks = tmp_path / "workspace" / "masks"
+    src = home / "image_dataset"
+    dst = home / "workspace" / "resized"
+    masks = home / "workspace" / "masks"
 
-    _png(src / "a.png")
+    write_png(src / "a.png")
     (src / "a.txt").write_text("1girl, solo. On the left, cat.", encoding="utf-8")
-    _png(src / "sub" / "b.jpg")
+    write_png(src / "sub" / "b.jpg")
     (src / "sub" / "b.txt").write_text("1boy, night", encoding="utf-8")
 
-    _png(dst / "sub" / "b.png")  # the resize step re-encoded jpg -> png
+    write_png(dst / "sub" / "b.png")  # the resize step re-encoded jpg -> png
     (dst / "sub" / "b.txt").write_text("1boy, solo, night", encoding="utf-8")
     (dst / "sub" / "b.variants.txt").write_text(
         "# anima caption variants — auto-generated, do not hand-edit\n"
         "v0\t1boy, solo, night\nv1\tnight, 1boy, solo\n",
         encoding="utf-8",
     )
-    _png(masks / "a_mask.png")  # legacy flat layout
-    return tmp_path
+    write_png(masks / "a_mask.png")  # legacy flat layout
+    return home
 
 
 @pytest.fixture
-def client(home):
-    from fastapi.testclient import TestClient
-
-    from anime_tools.gui.jobs import JobManager
-    from anime_tools.gui.server import create_app
-
-    app = create_app(jobs=JobManager(log_dir=home / "logs"), schemas={})
-    with TestClient(app) as c:
-        yield c, home
+def client(home, gui_client):
+    return gui_client(home), home
 
 
 def test_listing_joins_the_three_trees(client):
@@ -456,7 +442,7 @@ def test_a_root_can_be_a_tree_beside_the_home(client, home):
 
     c, _ = client
     sibling = home.parent / "anima_lora" / "image_dataset"
-    _png(sibling / "z.png")
+    write_png(sibling / "z.png")
     (home.parent / "not-mine.txt").write_text("private", encoding="utf-8")
 
     r = c.put("/api/dataset/roots", json={"src": "../anima_lora/image_dataset"})
@@ -520,8 +506,8 @@ def test_thumbnails_are_webp_and_confined(client):
 
 def test_item_pattern_selects_exactly_the_one_image():
     """Running a stage on one image narrows the ``--path_pattern`` it already takes."""
+    from anime_tools._walk import filter_paths_by_glob
     from anime_tools.gui import dataset as D
-    from anime_tools.path_filter import filter_paths_by_glob
 
     # The extension is a wildcard: the resize step may have re-encoded it.
     assert D.item_pattern("char/a.jpg") == "char/a.*"

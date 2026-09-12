@@ -234,15 +234,13 @@ class DetectionRequest(StageRequest):
         1.01,
         help="Suppress a box this nested inside a kept one (intersection over the "
         "smaller box). Off by default (>1.0 disables): a real second subject is as "
-        "nested as a group box — enabling it cost 32 real subjects to save 12 group "
-        "boxes",
+        "nested as a group box",
     )
     mask_containment_threshold: float = arg(
         0.8,
         help="Suppress a detection whose MASK is this nested inside a kept one. On "
         "by default, unlike its box counterpart: a second girl in front of the first "
-        "nests identically by box but her mask is disjoint. >1.0 disables (the "
-        "pre-2026-08-19 behaviour)",
+        "nests identically by box but her mask is disjoint. >1.0 disables",
     )
     dedupe_fill_ratio: float = arg(
         2.0,
@@ -438,14 +436,10 @@ class PositionRequest(TaggerRequest, ReplayRequest):
         choices=MULTIVIEW_MODES,
         help="Run the multiview audit as this stage's FIRST phase, over the "
         "captions this one skips as 'single-subject'. off: never (default). "
-        "report: audit, write findings + contact sheets, tag nothing — this "
-        "stage then sweeps only its own population. apply: also promote every "
-        "finding the --apply_verdicts/--apply_confidence gate admits, so a "
-        "newly-tagged sheet falls into THIS run's sweep. The order is the whole "
-        "point: 'multiple views' is what moves an image from is_candidate's "
-        "'single-subject' rejection to 'multiple-views', and what arms the "
-        "view-invariant gate — audit after the sweep and the tag arrives too "
-        "late to do either. See docs/multiview_audit.md.",
+        "report: audit, write findings + contact sheets, tag nothing. apply: also "
+        "promote every finding the --apply_verdicts/--apply_confidence gate admits, "
+        "so a newly-tagged sheet falls into THIS run's sweep. See "
+        "docs/multiview_audit.md.",
         group=MULTIVIEW,
     )
     blank_crops: bool = _off(
@@ -466,12 +460,9 @@ class PositionRequest(TaggerRequest, ReplayRequest):
     max_clause_tags: int = arg(8, help="Most tags one clause may carry", group=CLAUSES)
     max_novel_tags: int = arg(
         1,
-        help="How many tags a clause may introduce that the caption never contained. "
-        "The rest of the clause is filled from the flat bag first. Only a bag tag can "
-        "MOVE — a novel one is a pure addition the curated caption never made. 0 = "
-        "never invent, --max_clause_tags = the old bag-blind behaviour (46% novel; on "
-        "ama_mitsuki, 1 vs 8 cut novel tags 515 to 115 and the caption 40% shorter, "
-        "with the moved set unchanged)",
+        help="How many tags a clause may introduce that the caption never contained "
+        "(the flat bag fills it first). 0 = never invent; --max_clause_tags is the "
+        "bag-blind A/B arm",
         group=CLAUSES,
     )
     name_confidence: float = arg(
@@ -481,28 +472,23 @@ class PositionRequest(TaggerRequest, ReplayRequest):
     )
     allow_unlisted_names: bool = arg(
         False,
-        help="Allow a clause name the flat caption never mentions (off: probe B "
-        "scored names 4/7, so an unlisted one is most likely a crop artifact)",
+        help="Allow a clause name the flat caption never mentions (off: an unlisted "
+        "name is most likely a crop artifact)",
         group=CLAUSES,
     )
     discriminative_only: bool = _off(
         True,
         "--keep_shared_tags",
-        help="Keep tags every crop agrees on in every clause. Off by default: on a "
-        "multiple-views sheet all views share the character, hair and eyes, so "
-        "repeating them binds nothing and crowds out the outfit that differs (they "
-        "stay in the flat bag either way — v1 never removes anything).",
+        help="Keep tags every crop agrees on in every clause. Off by default: a "
+        "shared attribute belongs to the flat bag, not to a view",
         group=CLAUSES,
     )
     bag_gated_identity: bool = _off(
         True,
         "--ungated_identity",
         help="Let a clause carry a hair/eye color the flat caption never listed. "
-        "Gated by default: the caption is the curated ground truth, the crop tagger "
-        "guesses one for every crop including headless ones, and discriminative-only "
-        "then promotes the guess precisely because it disagrees — 520 of 1600 "
-        "identity clause tags in the first full-corpus dry run contradicted the "
-        "caption",
+        "Gated by default: the caption is the curated ground truth and the crop "
+        "tagger guesses a color for every crop, headless ones included",
         group=CLAUSES,
     )
     multi_view_gate: bool = _off(
@@ -510,80 +496,63 @@ class PositionRequest(TaggerRequest, ReplayRequest):
         "--bind_view_traits",
         help="On a repeated-subject layout (`multiple views`, comic panels), let a "
         "clause carry the character's name and traits (hair, eyes, body, anatomy). "
-        "Gated by default: every view or panel is the SAME girl, so those belong to "
-        "her, not to a view — 45% of the multiple-views clause tags in the first "
-        "full-corpus dry run were view-invariant, and the ones that survived "
-        "shared-tag suppression did so precisely because a crop disagreed",
+        "Gated by default: every view is the same girl, so those belong to her "
+        "rather than to a view",
         group=CLAUSES,
     )
     bind_view_anatomy: bool = _off(
         True,
         "--gate_view_anatomy",
         help="On a repeated-subject layout, keep anatomy (`ass`, `thighs`, "
-        "`body_parts`) out of every clause — the pre-2026-08-19 behaviour, when "
-        "`body_parts` sat in the view-invariant set. Bound by default: unlike hair "
-        "color, what anatomy is *visible* is a fact about the panel, so on a sheet of "
-        "one girl from the front and the same girl from behind it is the tag that "
-        "separates them",
+        "`body_parts`) out of every clause. Bound by default: unlike hair color, "
+        "what anatomy is *visible* is a fact about the panel",
         group=CLAUSES,
     )
     bind_framing: bool = _off(
         True,
         "--no_framing",
-        help="Keep `framing` out of every clause (the pre-2026-08-19 behaviour). On "
-        "by default: it is the only group that says a view is a headless close-up "
-        "rather than a whole figure, which on a `multiple views` sheet of one full "
-        "body plus a hip/backside panel is the single thing that tells the clauses "
-        "apart. Off restores the A side for an A/B.",
+        help="Keep `framing` out of every clause, so no clause says whether its "
+        "view is a close-up or a whole figure. On by default; off is the A side of "
+        "the framing A/B",
         group=CLAUSES,
     )
     rewrite: bool = _off(
         True,
         "--no_rewrite",
         help="Additive v1: append the clauses but leave the flat bag untouched, so "
-        "every bound attribute is asserted twice. Default is the v2 rewrite, which "
-        "moves an attributable tag out of the bag into its clause. Kept for the "
-        "training A/B arm",
+        "every bound attribute is asserted twice. The default v2 rewrite moves an "
+        "attributable tag out of the bag into its clause",
         group=CLAUSES,
     )
     bag_relax: float = arg(
         0.35,
         help="Multiplier on the tagger's per-tag keep threshold for tags the flat "
-        "bag already contains (they can only MOVE into a clause, never be invented, "
-        "so the curated caption corroborates them — the crop only attributes). 1.0 "
-        "= off, the pre-2026-08-19 behaviour. Applied to every crop before the "
-        "attributable/shared census, so a rival crop's borderline score also blocks "
-        "a move the strict kept sets would have granted. Motivating case: 5828184's "
-        "`black panties` scored 0.498 against a 0.800 threshold on the lying crop "
-        "and stayed unbound; the 0.35 default is what recovers pose tags off "
-        "mask-blanked crops",
+        "bag already contains — such a tag can only move, never be invented, so the "
+        "caption corroborates it and the crop only has to attribute. Applied to "
+        "every crop before the attributable/shared census. 1.0 = off",
         group=CLAUSES,
     )
     bag_word_relax: float = arg(
         0.85,
         help="Extra threshold multiplier per word beyond the first, compounding "
         "with --bag_relax (`black panties` is more specific than `panties`, so a "
-        "sub-threshold hit on it is less likely noise). 1.0 = off",
+        "sub-threshold hit is less likely noise). 1.0 = off",
         group=CLAUSES,
     )
     bag_relax_min_score: float = arg(
         0.3,
         help="Absolute score floor under the bag relaxation: a relaxed admission "
-        "still needs at least this raw probability, however low bag_relax × "
-        "bag_word_relax drags the per-tag threshold. Blocks near-noise fires "
-        "(measured: `white gloves` bound to a crop with no hands in frame at a ~0.16 "
-        "relaxed floor) while keeping the genuine recoveries (`black panties` at "
-        "0.498). Only the relax path is floored. 0.0 = off, the pre-floor behaviour",
+        "still needs this raw probability however far the multipliers drag the "
+        "per-tag threshold, which blocks near-noise fires. Only the relax path is "
+        "floored. 0.0 = off",
         group=CLAUSES,
     )
     attribution_margin: float = arg(
         0.25,
         help="How far the winning crop's probability must clear every other crop's, "
-        "RELATIVE to its own (1 - rival/winner), before a tag may LEAVE the flat bag "
+        "relative to its own (1 - rival/winner), before a tag may LEAVE the flat bag "
         "(the clause carries it either way). Applies on top of the hard rule that no "
-        "other crop kept the tag; 0.0 trusts the tagger's per-tag thresholds alone. "
-        "Guards the one thing v2 can get wrong that v1 cannot: removing an attribute "
-        "the other subjects also have",
+        "other crop kept the tag; 0.0 trusts the per-tag thresholds alone",
         group=CLAUSES,
     )
     qwen3: str | None = arg(
@@ -803,7 +772,7 @@ class OcrRequest(StageRequest):
     det_conf: float = arg(
         0.25,
         help="Keep a detected box scored at least this (0-1). The model card's F1 "
-        "threshold is 0.426; 0.25 boxes ~15%% more, nearly all real text on a "
+        "threshold is 0.426; 0.25 boxes ~15% more, nearly all real text on a "
         "manga page",
         group=DETECTOR,
     )

@@ -13,13 +13,6 @@ from anime_tools.downloads import _catalog
 from anime_tools.downloads._assets import _say
 
 
-@pytest.fixture
-def home(tmp_path, monkeypatch):
-    monkeypatch.setenv("ANIME_TOOLS_HOME", str(tmp_path))
-    monkeypatch.delenv("ANIME_TOOLS_MODELS", raising=False)
-    return tmp_path
-
-
 def test_catalog_is_torch_free():
     """The GUI process imports this module, so it must stay torch-free."""
     import subprocess

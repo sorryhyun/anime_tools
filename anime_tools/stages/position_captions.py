@@ -540,7 +540,7 @@ def run_position_captions(
     promoted = promoted or {}
 
     walked = list(iter_captions(resized_dir, source_dir, path_pattern, stats))
-    for index, (image_path, rel, dst_caption, caption) in enumerate(walked, 1):
+    for index, (image_path, rel, dst_caption, caption, _) in enumerate(walked, 1):
         if progress is not None:
             progress(index, len(walked), str(rel))
         promotion = promoted.get(rel.as_posix())
@@ -646,7 +646,7 @@ def flatten_captions(
     """
     stats = PositionCaptionStats()
     rows: list[dict] = []
-    for _, rel, dst_caption, original in iter_captions(
+    for _, rel, dst_caption, original, _src in iter_captions(
         resized_dir, source_dir, path_pattern, stats
     ):
         if not has_clauses(original):

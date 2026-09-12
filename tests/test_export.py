@@ -7,7 +7,7 @@ import json
 from pathlib import Path
 
 import pytest
-from PIL import Image
+from conftest import write_png
 
 from anime_tools.stages.export_workspace import (
     ExportPaths,
@@ -17,11 +17,6 @@ from anime_tools.stages.export_workspace import (
     rows_from_report,
 )
 from anime_tools.stages.requests import ExportRequest
-
-
-def _png(path: Path, colour: int = 10) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    Image.new("RGB", (8, 8), (colour, colour, colour)).save(path)
 
 
 def _txt(path: Path, text: str) -> None:
@@ -41,12 +36,12 @@ def ws(tmp_path):
         src=tmp_path / "image_dataset",
         out=tmp_path / "post_image_dataset",
     )
-    _png(p.resized / "a.png")
+    write_png(p.resized / "a.png")
     _txt(p.resized / "a.txt", "1girl, solo. On the left, cat.")
     _txt(p.resized / "a.variants.txt", "# generated\nv0\t1girl, solo\n")
-    _png(p.masks / "a_mask.png", 200)
+    write_png(p.masks / "a_mask.png", colour=200)
     _txt(p.master / "a.txt", "1girl, solo, revised")
-    _png(p.resized / "sub" / "b.png")
+    write_png(p.resized / "sub" / "b.png")
     _txt(p.index, json.dumps({"image_meta": {}}))
     # The input tree the master publishes back over.
     _txt(p.src / "a.txt", "1girl, solo")
@@ -132,7 +127,7 @@ def test_the_variants_sidecar_stays_a_revised_tree_artifact(ws):
 
 def test_a_flat_legacy_mask_still_publishes(ws):
     """A flat `masks/{stem}_mask.png` is still a mask."""
-    _png(ws.masks / "b_mask.png", 180)
+    write_png(ws.masks / "b_mask.png", colour=180)
     rels = {r.rel for r in _by(plan_export(ws), "mask")}
     assert rels == {"a.png", "sub/b.png"}
 
@@ -219,7 +214,7 @@ def test_a_destination_edited_since_the_plan_is_decided_again_at_write_time(ws):
     rows = plan_export(ws)
     (image,) = [r for r in _by(rows, "image") if r.rel == "a.png"]
     assert image.status == "would-create"
-    _png(ws.out / "resized" / "a.png", 99)
+    write_png(ws.out / "resized" / "a.png", colour=99)
     _, stats = publish(ws, apply=True)
     assert stats.overwrote == 2  # the master, and now the pre-existing image
 
@@ -271,7 +266,7 @@ def test_revert_leaves_a_file_edited_since_the_export_alone(ws):
 
 def test_revert_cannot_put_back_overwritten_pixels(ws):
     """No pixel snapshot is kept; re-exporting is the way back."""
-    _png(ws.out / "resized" / "a.png", 99)
+    write_png(ws.out / "resized" / "a.png", colour=99)
     rows, _ = publish(ws, apply=True)
     _, stats = revert_export(rows, apply=True)
     assert stats.skipped["not-undoable"] == 1
@@ -412,8 +407,8 @@ def test_a_gui_master_edit_is_what_fills_the_overlay(tmp_path):
         src=home / "image_dataset",
         out=home / "post_image_dataset",
     )
-    _png(paths.resized / "a.png")
-    _png(paths.src / "a.png")
+    write_png(paths.resized / "a.png")
+    write_png(paths.src / "a.png")
     _txt(paths.src / "a.txt", "1girl, solo")
     paths.master.mkdir(parents=True, exist_ok=True)
     roots = D.Roots(

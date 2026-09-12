@@ -546,17 +546,11 @@ def test_the_form_and_the_cli_are_one_field_list():
 
 
 @pytest.fixture
-def client(tmp_path, monkeypatch):
-    from fastapi.testclient import TestClient
-
-    from anime_tools.gui.jobs import JobManager
-    from anime_tools.gui.server import create_app
-
-    monkeypatch.setenv("ANIME_TOOLS_HOME", str(tmp_path))
-    (tmp_path / "image_dataset").mkdir()
-    (tmp_path / "image_dataset" / "a.png").write_bytes(b"\x89PNG\r\n\x1a\n")
+def client(home, monkeypatch, gui_client):
+    (home / "image_dataset").mkdir()
+    (home / "image_dataset" / "a.png").write_bytes(b"\x89PNG\r\n\x1a\n")
     schemas = S.load_schemas()
-    stub = tmp_path / "stub_stage.py"
+    stub = home / "stub_stage.py"
     stub.write_text(
         "import json, os, pathlib, time\n"
         "from dataclasses import dataclass\n"
@@ -582,8 +576,8 @@ def client(tmp_path, monkeypatch):
         "    (d/'report.json').write_text(json.dumps({'apply': a.apply, 'rows': [{'k': 1}]}))\n",
         encoding="utf-8",
     )
-    monkeypatch.syspath_prepend(str(tmp_path))
-    monkeypatch.setenv("PYTHONPATH", str(tmp_path))
+    monkeypatch.syspath_prepend(str(home))
+    monkeypatch.setenv("PYTHONPATH", str(home))
     fake = S.Stage(
         id="stub",
         title="Stub",
@@ -595,11 +589,10 @@ def client(tmp_path, monkeypatch):
     )
     monkeypatch.setitem(S.BY_ID, "stub", fake)
     schemas["stub"] = S.schema(fake)
-    app = create_app(jobs=JobManager(log_dir=tmp_path / "logs"), schemas=schemas)
     # A local browser; `/api/pick` and `/api/ls` answer a remote one differently
     # (pinned in `tests/test_gui_nativepick.py`).
-    with TestClient(app, client=("127.0.0.1", 4242)) as c:
-        yield c, tmp_path
+    c = gui_client(home, client=("127.0.0.1", 4242), schemas=schemas)
+    return c, home
 
 
 def test_index_and_info(client):
@@ -655,26 +648,22 @@ def test_files_reject_dotdot_traversal(client):
     """`..` must not escape the dataset; `reachable` collapses it with normpath
     before the textual `is_relative_to`."""
     c, home = client
+    # Beside the home, but still inside the test's own tmp_path.
     outside = home.parent / "gui_traversal_target.txt"
     outside.write_text("secret", encoding="utf-8")
-    try:
-        traversal = f"image_dataset/../../{outside.name}"
-        assert outside.is_file()  # the target really exists — 404 is the guard
-        assert c.get("/api/files", params={"path": traversal}).status_code == 404
-        # The browser may walk out there; reading what it finds is still refused.
-        assert (
-            c.get("/api/ls", params={"path": "image_dataset/../.."}).status_code == 200
-        )
-        # `..` that stays inside the home keeps working, as do plain paths.
-        assert (
-            c.get(
-                "/api/files", params={"path": "image_dataset/../image_dataset/a.png"}
-            ).status_code
-            == 200
-        )
-        assert c.get("/api/ls", params={"path": "image_dataset"}).status_code == 200
-    finally:
-        outside.unlink()
+    traversal = f"image_dataset/../../{outside.name}"
+    assert outside.is_file()  # the target really exists — 404 is the guard
+    assert c.get("/api/files", params={"path": traversal}).status_code == 404
+    # The browser may walk out there; reading what it finds is still refused.
+    assert c.get("/api/ls", params={"path": "image_dataset/../.."}).status_code == 200
+    # `..` that stays inside the home keeps working, as do plain paths.
+    assert (
+        c.get(
+            "/api/files", params={"path": "image_dataset/../image_dataset/a.png"}
+        ).status_code
+        == 200
+    )
+    assert c.get("/api/ls", params={"path": "image_dataset"}).status_code == 200
 
 
 def test_job_runs_streams_and_persists_values(client):

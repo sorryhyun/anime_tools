@@ -8,8 +8,9 @@ Items under "Reported, not individually reproduced" come from the same review pa
 each checked by hand — treat them as leads, not as verdicts.
 
 **Only open items are listed.** Everything fixed on 2026-09-12 — the twelve confirmed defects
-(three P0, nine P1), the four "close the pairs" items, the five big-file splits and the eleven
-efficiency items — has been removed from the sections below; what each one was, and what closing it
+(three P0, nine P1), the four "close the pairs" items, the five big-file splits, the eleven
+efficiency items and the whole *Cleanup* section — has been removed from the sections below;
+what each one was, and what closing it
 still needs from the trainer repo, is at the bottom under "Landed, and what the trainer owes".
 
 ## The one theme
@@ -26,7 +27,7 @@ pair. That produced most of what this file originally held. One pair is left:
 
 | The one answer | The second one beside it |
 |---|---|
-| `parse_caption` / `compose_caption` | `split(",")` on caption text: `variants.py:186`, `autotag.py:130`/`:211`, `captions.py:254`, `tag_rules.py:108` |
+| `parse_caption` / `compose_caption` | `split(",")` on caption text: `variants.py:186`, `autotag.py:142`/`:254`, `captions.py:280`, `tag_rules.py:108` |
 
 It is also the weakest of the six that table held on 2026-09-12: all five of its remaining sites
 split a *tagger's* comma-joined output rather than a caption. The other five closed that day — the
@@ -38,67 +39,16 @@ can be made correctly in one spot and still be wrong.
 
 ## Structural
 
-- [ ] **`frontend/src/types.ts` is a 650-line hand-maintained mirror of the Python dataclasses**,
-      with no drift check, and it is the single most-churned file in the repo (44 touches in 60
-      days, ahead of `gui/server.py` at 42). `ROOT_NAMES`, `MASK_ROLES`, `MASK_KINDS` and `StageId`
-      each copy a Python constant.
-      Fix: emit it from `schema()` during `scripts/build_frontend.sh`, or add a test asserting the
-      key sets match. CI already diffs the bundle, so generation would be enforced for free.
-
 - [ ] **Flag separator: unify on `_`.** The hyphen/underscore split costs about 15 lines
       (`FLAG_SEP`, `flag_of(sep)`, `spellings()`, and a `replace` in `gui/stages.py`) and two
       docstring paragraphs. It is not even honoured inside `masking/`, where two probe CLIs and
       `exclude/_cli.py` declare underscore flags. Since every flag already accepts both spellings,
       setting `FLAG_SEP = "_"` package-wide breaks no saved command line.
 
-## Cleanup
-
-- [ ] **Dead code, confirmed by grep:** `captions/correction.py:434 correct_many` and
-      `grouping/features.py:57 caption_text` have zero references; `exclude/_ledger.py:181 is_excluded`,
-      `masking/_sam3.py:183 add_prompt_embed_arg` and `masking/cli/merge_masks.py:11 DEFAULT_INPUTS`
-      are referenced only by their own export line. `frontend/src/components/Report.tsx` (97 lines)
-      is imported nowhere. `ocr/engine.py crop_quad`, `ocr/sfx.py read_raw`/`read`/`read_boxes`, and
-      `dbv4_backend.py:266 normalization` have no callers.
-- [ ] **Stale counts, confirmed.** Three files — root `CLAUDE.md:110`, `stages/CLAUDE.md:68`,
-      `gui/CLAUDE.md:15` — say the registry lists "eleven" stages. It has listed ten since
-      `9413178` removed the ComicTextDetector text-mask stage, a commit that *did* edit
-      `CLAUDE.md` and still missed all three copies of the number. Likewise `stages/CLAUDE.md:63`
-      says `__init__` exposes "fifteen names" where `__all__` has 17, and `README.md:106` plus
-      `frontend/CLAUDE.md:47` say "three Settings dialogs" where `frontend/src/config.ts:12` has
-      four — `frontend/CLAUDE.md` then contradicts itself 120 lines later.
-      Every one of these is a number buried mid-sentence in prose. The fix is a test asserting the
-      documented counts against `len(STAGES)` and `len(__all__)`, or writing no counts at all.
-- [ ] **Other stale prose:** `tagger/CLAUDE.md:10` says `groups.json`, the code says `groups.yaml`;
-      `masking/cli/merge_masks.py:12` and `masking/CLAUDE.md` still say "two generators" (one since
-      0.5); `_masks.py:141` names the removed ComicTextDetector stage; `_device.py:8` spends five of
-      56 lines on the deleted `anime_tools._onnx`; `ocr/engine.py:139` still says "overlaps a
-      `session.run`" from the retired ONNX backend; `position_captions.py:10` says
-      `cli/position_captions.py` owns model loading, which `run.py` does.
-- [ ] **`requests.py` help strings double as a changelog** — `bag_relax` runs 11 lines, others cite
-      measurements and "the pre-2026-08-19 behaviour". `docs/position_captions.md` is the declared
-      home for the numbers; help text should be one sentence.
-- [ ] **`path_filter.py` is a 25-line internal leaf with one caller** and no CLI or re-export.
-      Rename `_path_filter.py` or fold it into `_walk.py`, so the `_`-prefix convention stays
-      meaningful.
-- [ ] **`stages/captions.py` re-implements the caption walk** (`:172`) instead of using
-      `iter_captions`, and compares raw `read_text()` to the corrected text at `:220` where every
-      other stage compares a stripped `read_caption`. A legacy file with a trailing newline is
-      therefore judged "changed" and rewritten, with a history push, on every run.
-- [ ] **Test fixtures are duplicated rather than shared.** `conftest.py` holds only `repo_root` and
-      `chdir`, while `home(tmp_path, monkeypatch)` is redefined in six files, a `TestClient` fixture
-      in five, and a `_png` writer in five more under four different signatures. Promoting `home`,
-      `client` and a `png()` factory would cut roughly 150 lines.
-- [ ] **One test asserts on source text rather than behaviour** — `test_registry_requests.py:527`
-      rglobs the package for the literal `"--device"`, so it breaks on any refactor that preserves
-      behaviour. The `inspect.getsource` grep in `test_ocr.py` was the other one; it went with the
-      split (it was reading `stages/run.py`) and now stubs both model loads instead.
-- [ ] **Two tests write outside `tmp_path`** — `tests/test_gui.py:556` (cleaned up in a `finally`)
-      and `tests/test_gui_dataset.py:461` (not cleaned, leaking into the pytest basetemp parent).
-
 ## Docs, packaging and CI
 
-The health check is good: **1096 tests pass in 15.8 s**, CPU-only; `ruff check` and `ruff format
---check` are both clean across 239 files; `scripts/wrap_md.py --check` is clean over every tracked
+The health check is good: **1157 tests pass in 16.2 s**, CPU-only; `ruff check` and `ruff format
+--check` are both clean across 261 files; `scripts/wrap_md.py --check` is clean over every tracked
 markdown file; and there are **zero** `TODO`/`FIXME`/`XXX`/`HACK` markers in `anime_tools/`,
 `frontend/src/` and `tests/`. The problems are elsewhere.
 
@@ -133,12 +83,6 @@ markdown file; and there are **zero** `TODO`/`FIXME`/`XXX`/`HACK` markers in `an
       Windows non-UTF-8 consoles and macOS NFD normalization are the other two hazards, the latter
       silently breaking the dict lookup.
       Fix: ASCII filenames (`guidebook.ko.md`) behind the `lang → filename` map that already exists.
-
-- [ ] **Stale README claims.** `README.md:20` says "with every extra" where `pyproject.toml` has no
-      `[project.optional-dependencies]` at all and root `CLAUDE.md:28` says "no extras"; the
-      `ANIME_TOOLS_VERSION` example still reads `v0.3.1` against a current `0.6.5`; and the layout
-      tree matches neither the guidebook's nor `workspace/__init__.py`'s, though both cite the
-      latter as owner.
 
 - [ ] **The same fact is spelled in up to fifteen files.** Measured: the `workspace/resized/` tree
       appears in 15, the torch-free-server rule in 9, the dry-run rule in 7, `history.txt`/Undo in
@@ -233,27 +177,102 @@ Worth keeping in mind before any refactor moves these.
 
 ## Suggested order
 
-Grouped so that each block is one coherent sitting. The five blocks that are done — correctness,
-durability, closing the pairs, splitting the big files, and the efficiency sweep — are under
-"Landed" below, so this is only what is left.
+Grouped so that each block is one coherent sitting. The six blocks that are done — correctness,
+durability, closing the pairs, splitting the big files, the efficiency sweep and the cleanup — are
+under "Landed" below, so this is only what is left.
 
 1. **Make the guards real.** Move the ruff rules into `pyproject.toml` and let `ruff check` gate
-   CI; add a Windows job; generate or test `types.ts` against `schema()`; test the documented
-   counts against `len(STAGES)` and `len(__all__)`.
-2. **Cleanup.** Share the test fixtures, delete the dead symbols, fix the stale prose and the
-   README's four wrong claims in one sweep.
+   CI, and add a Windows job. (The other two guards this block asked for — `types.ts` against
+   `schema()` and the documented counts against `len(STAGES)` / `len(__all__)` — landed on
+   2026-09-12; see below.)
 
 Two items sit outside that order because they are one-line changes with outsized downside: move
 `ANIME_TOOLS_HOME` out of the checkout before the next `git clean`, and rename the guidebooks to
 ASCII.
 
-The remaining blocks are safe to do incrementally, and the cleanup is much less likely to regress
-now that the second implementations are gone.
+What is left is safe to do incrementally, and much less likely to regress now that the second
+implementations are gone and the numbers the prose states are checked.
 
 ## Landed, and what the trainer owes
 
-Each of these was a block of items in the sections above and has been removed from them. What they
-were, so a reader of the git history can find them:
+### The cleanup sweep and the `types.ts` guard, 2026-09-12
+
+The whole *Cleanup* section, plus the first *Structural* item. No behaviour changed except where a
+defect is named below; four new test files' worth of guards came with it, because every item in
+that section existed because nothing was checking.
+
+- **`frontend/src/types.ts` has a drift check** (`tests/test_frontend_types.py`). Not generated:
+  the file's prose is the reason each wire field exists and a generator would lose it. What is
+  checked is every literal *copy* inside it — `ROOT_NAMES` against `workspace.DEFAULT_ROOTS`,
+  `MASK_ROLES` / `MASK_KINDS` against `masking/requests.py`, `i18n/en.ts`'s `StageId` against
+  `STAGES` **in order**, `FieldKind` against every kind `schema()` actually emits, `JobState`
+  against the states a built `Job` reports, the two update unions against `update.py`, and
+  `REPLAY_FIELD` / `REPORT_SETTING` / `MASK_SETTING` / `ANALYSIS_KIND` against their owners.
+  The assertions read the literals out of the `.ts` source, so a value the browser would meet as a
+  blank dropdown fails in pytest instead.
+
+- **The documented counts are checked** (`tests/test_doc_counts.py`). "eleven stages" is ten in
+  three files, "fifteen names" is seventeen, "three Settings dialogs" is four in two files and in
+  the guidebook — every one a number buried mid-sentence in a file the commit that changed the
+  count never opened. The numbers are now right *and* swept: an anchored phrase (`all N stages`,
+  `exposes all N names`, `N Settings dialogs`) is matched over every tracked markdown file and
+  checked against `len(STAGES)`, the package's own `__all__`, and `SETTINGS_PANES` read out of
+  `config.ts`. A claim that matches nowhere fails too, so deleting the last copy cannot silently
+  retire the check. `issue.md` is exempt: it quotes the stale numbers on purpose.
+  The guidebook's §6.4 gained the Update dialog row it never got, in all four languages.
+
+- **Dead code deleted:** `correction.correct_many`, `grouping/features.caption_text`,
+  `exclude/_ledger.is_excluded`, `masking/_sam3.add_prompt_embed_arg`,
+  `masking/cli/merge_masks.DEFAULT_INPUTS`, `ocr/engine.crop_quad`, `SfxReader.read_raw` / `read` /
+  `read_boxes` (the unscored wrappers; `read_scored` / `read_boxes_scored` are the live pair), and
+  `Dbv4Backend.normalization` — whose docstring said the ONNX exporter was why it was reachable.
+  `frontend/src/components/Report.tsx` (97 lines, imported nowhere) went with them.
+
+- **Stale prose:** the tagger checkpoint's `groups.json` is `groups.yaml` and the required/optional
+  split is the one `contract.py` spells; `_device.py` no longer spends five of its 56 lines on the
+  deleted `anime_tools._onnx`; `ocr/engine.py` no longer says `session.run`; `gui/CLAUDE.md` no
+  longer has two mask generators. (`_masks.py`'s ComicTextDetector line and
+  `position_captions.py`'s model-loading line had already gone with the file splits.)
+
+- **`requests.py` help is one sentence again.** Thirteen fields carried measurements, corpus case
+  studies and "the pre-2026-08-19 behaviour" — `bag_relax` alone ran 11 lines. Every number they
+  cited is already in `docs/position_captions.md`'s knob table, which is the declared home. Found
+  on the way past and fixed: `--det_conf`'s help spelled `%%` itself, so on top of the parser's own
+  escaping `--help` printed `~15%%`.
+
+- **`path_filter.py` is gone into `_walk.py`.** All four callers already imported `_walk`, which is
+  the one image walk, so `filter_paths_by_glob` is now the one `path_pattern` implementation in the
+  same leaf rather than a 25-line module beside it with no `_` prefix.
+
+- **The corrector walks the one caption walk.** `stages/captions.py` had its own copy of the
+  resized-tree walk; it now goes through `iter_captions`, which grew `recursive=` and a `missing`
+  callback for the one thing the corrector does with an uncaptioned image (drop its orphan variant
+  sidecar) and a `caption_path` field so `from_master` costs no second `exists()`. One real defect
+  fell out with it: the unchanged test compared a raw `read_text()` to the corrected text where
+  every other stage compares a stripped `read_caption`, so a caption with a trailing newline was
+  judged changed and rewritten — with a history push — on every single run.
+
+- **The test fixtures are shared.** `conftest.py` now holds `write_png` / `png`, `home`,
+  `make_gui_app` / `gui_app` and `gui_client`, and the six `home` redefinitions, five `TestClient`
+  fixtures and five `_png` writers under four signatures are gone. The three modules that want a
+  *populated* home override the fixture and request it by the same name, which is how pytest
+  spells "the next one up". The shared `home` is one level **under** `tmp_path`, which is what
+  closes the last two items: both tests that wrote outside `tmp_path` were writing beside the home,
+  and the home's parent is now the temp directory pytest cleans up.
+
+- **The README's stale claims, and a guard for the one that will go stale again.** "with every
+  extra" against a `pyproject.toml` with no `[project.optional-dependencies]`; a layout tree that
+  matched neither `workspace/__init__.py` (its declared owner) nor the guidebook's, missing
+  `_excluded/` and `history.txt`; and an `ANIME_TOOLS_VERSION` example pinning `v0.3.1`, which the
+  four guidebooks copied. That last one is the class that recurs on every release, so it is
+  asserted against `__version__` rather than listed in the release checklist.
+
+- **The one source-text assertion is behavioural.** `test_the_device_flag_has_no_copies_left`
+  rglobbed the package for the literal `"--device"`; it is now
+  `test_every_device_flag_is_the_one_flag`, which asserts every stage parser's `--device` action
+  has the spelling, default and help that `add_device_arg` produces, and that `device` is an
+  `AUTO_FIELDS` dest. `test_the_help_is_the_field_metadata` moved onto `--det_conf`, since the
+  `%`-carrying help it used to read no longer carries one.
 
 ### The five big files, 2026-09-12 (`0.7.0`)
 

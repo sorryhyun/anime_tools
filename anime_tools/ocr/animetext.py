@@ -171,8 +171,8 @@ def denest(boxes: Sequence, policy: str = "inner", th: float = NEST_TH) -> list:
 
 def as_quad(box: Sequence[int]):
     """An axis-aligned box as the ``(4, 2)`` TL-TR-BR-BL quad the engine's size
-    filters and :func:`~anime_tools.ocr.engine.crop_quad` take — the
-    :class:`~anime_tools.ocr.engine.Detector` protocol's one box shape."""
+    filters take — the :class:`~anime_tools.ocr.engine.Detector` protocol's one
+    box shape."""
     import numpy as np
 
     x0, y0, x1, y1 = (float(v) for v in box[:4])

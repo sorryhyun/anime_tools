@@ -133,13 +133,6 @@ def test_crop_box_returns_the_padded_window_or_none():
 # ---- the catalog --------------------------------------------------------
 
 
-@pytest.fixture
-def home(tmp_path, monkeypatch):
-    monkeypatch.setenv("ANIME_TOOLS_HOME", str(tmp_path))
-    monkeypatch.delenv("ANIME_TOOLS_MODELS", raising=False)
-    return tmp_path
-
-
 def test_the_reader_rows_land_where_the_loader_looks(home):
     by = DL.by_id()
     assert by["vl16_base"].dest == DL.default_vl16_base_dir()

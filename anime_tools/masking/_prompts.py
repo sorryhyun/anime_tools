@@ -32,8 +32,8 @@ PROMPT_EMBED_HELP = (
 )
 """The help for ``--checkpoint`` / ``--prompt_embed``, wherever they are declared:
 the stage requests carry them as field metadata, the probe CLIs take them through
-``_sam3.add_checkpoint_arg`` / ``add_prompt_embed_arg``. Both name a
-file a ⚙ Settings → Models row writes and are
+``_sam3.add_checkpoint_arg`` and their own ``--prompt_embed`` declaration. Both
+name a file a ⚙ Settings → Models row writes and are
 :data:`anime_tools.gui.stages.SETTING_FIELDS` dests filled once from Settings,
 which only works while every stage spells them identically."""
 

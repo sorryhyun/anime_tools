@@ -76,7 +76,7 @@ Two environment variables steer the installer:
 
 | Variable | Effect |
 |---|---|
-| `ANIME_TOOLS_VERSION=v0.3.1` | Install that tag instead of the latest release. |
+| `ANIME_TOOLS_VERSION=v0.7.0` | Install that tag instead of the latest release. |
 | `TORCH_INDEX=https://download.pytorch.org/whl/cu128` | Extra package index for torch. The PowerShell installer already defaults to the cu132 one (the channel a 50-series card needs); set this for an older CUDA runtime, or `…/whl/cpu` for none. On Linux it is only needed for a CPU-only build. |
 
 When it finishes, open a new shell so the PATH change is seen, then:
@@ -291,13 +291,14 @@ The newest output line shows in the stage bar; the log button opens the whole th
 stage that walks images shows a progress bar; a run with a preflight in front of it shows
 step 1/2 · resize first.
 
-### 6.4 ⚙ Settings is three dialogs
+### 6.4 ⚙ Settings is four dialogs
 
 | Dialog | What it holds |
 |---|---|
 | Settings | The curation home and models dir, the five dataset roots (`src`, `master`, `dst`, `masks`, `out`), the Hugging Face token. |
 | Advanced settings | Stage defaults filled into every stage that takes them (`path_pattern`, the tagger dir, the SAM3 checkpoint and soft prompt, the report root, the mask root), and the Preprocess block — the Resize stage's own form, since Resize has no dock button. |
 | Models & weights | The model rows of §5. |
+| Update | The installed version against GitHub's latest release, the startup check, and the Update button. |
 
 Each dialog saves only what it holds. Roots are relative to the curation home; a missing one is
 flagged. The panel may read any root the saved settings point at, but it will only create

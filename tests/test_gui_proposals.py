@@ -11,6 +11,7 @@ import json
 from pathlib import Path
 
 import pytest
+from conftest import write_png
 
 pytest.importorskip("fastapi")
 
@@ -18,27 +19,19 @@ pytest.importorskip("fastapi")
 from anime_tools.gui import proposals as P
 
 
-def _png(path: Path) -> None:
-    from PIL import Image
-
-    path.parent.mkdir(parents=True, exist_ok=True)
-    Image.new("RGB", (8, 8), (128, 128, 128)).save(path)
-
-
 @pytest.fixture
-def home(tmp_path, monkeypatch):
+def home(home):
     """Two images: one captioned in both trees, one with no master at all."""
-    monkeypatch.setenv("ANIME_TOOLS_HOME", str(tmp_path))
-    src = tmp_path / "image_dataset"
-    dst = tmp_path / "workspace" / "resized"
-    _png(src / "a.png")
+    src = home / "image_dataset"
+    dst = home / "workspace" / "resized"
+    write_png(src / "a.png")
     (src / "a.txt").write_text("1girl, solo", encoding="utf-8")
-    _png(dst / "a.png")
+    write_png(dst / "a.png")
     (dst / "a.txt").write_text("1girl, solo", encoding="utf-8")
     # A jpg master re-encoded to png on the way into the resized tree.
-    _png(src / "sub" / "b.jpg")
-    _png(dst / "sub" / "b.png")
-    return tmp_path
+    write_png(src / "sub" / "b.jpg")
+    write_png(dst / "sub" / "b.png")
+    return home
 
 
 @pytest.fixture
@@ -353,15 +346,9 @@ def test_the_audit_gate_is_the_only_thing_its_replay_closes_over():
 
 
 @pytest.fixture
-def client(home):
-    from fastapi.testclient import TestClient
-
-    from anime_tools.gui.jobs import JobManager
-    from anime_tools.gui.server import create_app
-
-    app = create_app(jobs=JobManager(log_dir=home / "logs"), schemas={})
-    with TestClient(app) as c:
-        yield c, app.state.jobs, home
+def client(home, gui_client):
+    c = gui_client(home)
+    return c, c.app.state.jobs, home
 
 
 def _finished_job(mgr, home, *, apply: bool, report: Path):

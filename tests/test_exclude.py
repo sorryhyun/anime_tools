@@ -13,16 +13,12 @@ import json
 from pathlib import Path
 
 import pytest
+from conftest import write_png
 from PIL import Image
 
 from anime_tools import exclude as X
 from anime_tools import workspace as WS
 from anime_tools.stages.export_workspace import ExportPaths, plan_export
-
-
-def _png(path: Path, size=(8, 8)) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    Image.new("RGB", size, (10, 20, 30)).save(path)
 
 
 def _txt(path: Path, text: str) -> None:
@@ -40,13 +36,13 @@ def trees(tmp_path) -> X.Trees:
         ocr=tmp_path / "workspace" / "ocr",
         excluded=tmp_path / "workspace" / WS.EXCLUDED_SUBDIR,
     )
-    _png(t.resized / "char_aki" / "a.png")
+    write_png(t.resized / "char_aki" / "a.png")
     _txt(t.resized / "char_aki" / "a.txt", "1girl, solo")
     _txt(t.resized / "char_aki" / "a.variants.txt", "# generated\nv0\t1girl\n")
     _txt(t.resized / "char_aki" / "a.history.txt", "# history\n")
-    _png(t.masks / "char_aki" / "a_mask.png")
+    write_png(t.masks / "char_aki" / "a_mask.png")
     _txt(t.ocr / "char_aki" / "a.ocr.txt", "# ocr\n")
-    _png(t.resized / "b.png")
+    write_png(t.resized / "b.png")
     _txt(t.resized / "b.txt", "1boy")
     return t
 
@@ -137,7 +133,7 @@ def test_restoring_never_clobbers_a_live_file(trees):
     """A resize that ran without the ledger has re-made the png. The archived
     copy is the older one, so it stays put and is reported."""
     X.exclude_one(trees, "char_aki/a.jpg")
-    _png(trees.resized / "char_aki" / "a.png", size=(16, 16))
+    write_png(trees.resized / "char_aki" / "a.png", size=(16, 16))
 
     result = X.restore_one(trees, "char_aki/a.jpg")
 
@@ -229,8 +225,8 @@ def test_resize_skips_every_rel_in_the_ledger(tmp_path, monkeypatch):
     monkeypatch.setenv("ANIME_TOOLS_HOME", str(tmp_path))
     monkeypatch.delenv("ANIME_TOOLS_WORKSPACE", raising=False)
     src = tmp_path / "image_dataset"
-    _png(src / "char_aki" / "a.jpg", size=(1200, 900))
-    _png(src / "b.png", size=(1200, 900))
+    write_png(src / "char_aki" / "a.jpg", size=(1200, 900))
+    write_png(src / "b.png", size=(1200, 900))
     trees = X.Trees.build()
     X.exclude_one(trees, "char_aki/a.jpg")
 
@@ -259,11 +255,11 @@ def test_export_republishes_the_excluded_tree_beside_the_trainers(tmp_path):
         ocr=tmp_path / "workspace" / "ocr",
         excluded=paths.excluded,
     )
-    _png(paths.resized / "char_aki" / "a.png")
+    write_png(paths.resized / "char_aki" / "a.png")
     _txt(paths.resized / "char_aki" / "a.txt", "1girl")
     _txt(paths.resized / "char_aki" / "a.variants.txt", "# generated\nv0\t1girl\n")
-    _png(paths.masks / "char_aki" / "a_mask.png")
-    _png(paths.resized / "b.png")
+    write_png(paths.masks / "char_aki" / "a_mask.png")
+    write_png(paths.resized / "b.png")
     X.exclude_one(trees, "char_aki/a.jpg")
 
     rows = plan_export(paths)
@@ -296,6 +292,6 @@ def test_a_workspace_with_nothing_excluded_publishes_nothing_extra(tmp_path):
         out=tmp_path / "post_image_dataset",
         excluded=tmp_path / "workspace" / WS.EXCLUDED_SUBDIR,
     )
-    _png(paths.resized / "b.png")
+    write_png(paths.resized / "b.png")
 
     assert not any(r.excluded for r in plan_export(paths))

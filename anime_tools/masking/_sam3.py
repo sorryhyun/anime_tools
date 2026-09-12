@@ -32,8 +32,8 @@ from pathlib import Path
 import numpy as np
 
 from anime_tools._progress import phase
-from anime_tools.downloads import DEFAULT_SAM3_CHECKPOINT, DEFAULT_SUBJECT_PROMPT_EMBED
-from anime_tools.masking._prompts import CHECKPOINT_HELP, PROMPT_EMBED_HELP
+from anime_tools.downloads import DEFAULT_SAM3_CHECKPOINT
+from anime_tools.masking._prompts import CHECKPOINT_HELP
 
 # A module-level side effect on purpose — see the docstring.
 if not hasattr(np, "bool"):
@@ -159,13 +159,6 @@ def add_checkpoint_arg(p: argparse._ActionsContainer) -> None:
     """``--checkpoint`` — SAM3 weights, defaulted from the download catalog."""
     p.add_argument(
         "--checkpoint", default=DEFAULT_SAM3_CHECKPOINT, help=CHECKPOINT_HELP
-    )
-
-
-def add_prompt_embed_arg(p: argparse._ActionsContainer) -> None:
-    """``--prompt_embed`` — the learned subject prompt, from the same catalog."""
-    p.add_argument(
-        "--prompt_embed", default=DEFAULT_SUBJECT_PROMPT_EMBED, help=PROMPT_EMBED_HELP
     )
 
 

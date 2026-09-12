@@ -9,6 +9,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+from conftest import write_png
 
 from anime_tools.captions.history import (
     HISTORY_SIDECAR_SUFFIX,
@@ -140,30 +141,14 @@ def test_a_replay_files_the_same_version_the_live_pass_would(tmp_path):
 pytest.importorskip("fastapi")
 
 
-def _png(path: Path, size: tuple[int, int] = (8, 8)) -> None:
-    from PIL import Image
-
-    path.parent.mkdir(parents=True, exist_ok=True)
-    Image.new("RGB", size, (128, 128, 128)).save(path)
-
-
 @pytest.fixture
-def client(tmp_path, monkeypatch):
-    from fastapi.testclient import TestClient
-
-    from anime_tools.gui.jobs import JobManager
-    from anime_tools.gui.server import create_app
-
-    monkeypatch.setenv("ANIME_TOOLS_HOME", str(tmp_path))
-    _png(tmp_path / "image_dataset" / "a.png")
-    (tmp_path / "image_dataset" / "a.txt").write_text("1girl", encoding="utf-8")
-    dst = tmp_path / "workspace" / "resized"
-    _png(dst / "a.png")
+def client(home, gui_client):
+    write_png(home / "image_dataset" / "a.png")
+    (home / "image_dataset" / "a.txt").write_text("1girl", encoding="utf-8")
+    dst = home / "workspace" / "resized"
+    write_png(dst / "a.png")
     (dst / "a.txt").write_text("1girl, solo", encoding="utf-8")
-
-    app = create_app(jobs=JobManager(log_dir=tmp_path / "logs"), schemas={})
-    with TestClient(app) as c:
-        yield c, tmp_path
+    return gui_client(home), home
 
 
 def test_an_edit_is_a_version_and_the_badge_row_says_what_it_was(client):

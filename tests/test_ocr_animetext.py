@@ -334,13 +334,6 @@ def test_an_empty_line_lives_by_its_read():
 # ---- the catalog row and the loader ----------------------------------------
 
 
-@pytest.fixture
-def home(tmp_path, monkeypatch):
-    monkeypatch.setenv("ANIME_TOOLS_HOME", str(tmp_path))
-    monkeypatch.delenv("ANIME_TOOLS_MODELS", raising=False)
-    return tmp_path
-
-
 def test_the_row_lands_where_the_loader_looks_and_names_the_stage(home):
     row = DL.by_id()["animetext_det"]
     assert row.dest == DL.default_animetext_dir() == home / "models" / "animetext"

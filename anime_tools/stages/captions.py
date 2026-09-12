@@ -13,7 +13,6 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from anime_tools._env import curation_home, resolve_path
-from anime_tools._walk import walk_images
 from anime_tools.captions.correction import (
     CaptionCorrectionOptions,
     TagKnowledgeBase,
@@ -31,7 +30,7 @@ from anime_tools.captions.variants import (
 
 from ._caption_io import read_caption, write_caption
 from ._report import print_dry_run_footer, stage_report_header, write_stage_report
-from ._walk_captions import resolve_caption
+from ._walk_captions import iter_captions
 from .resize import resized_tree
 
 if TYPE_CHECKING:
@@ -51,6 +50,13 @@ class PreprocessCaptionStats:
     variants_removed: int = 0
     clauses_preserved: int = 0
     """Captions that carried position clauses through the correction."""
+
+    def skip(self, reason: str) -> None:
+        """:func:`iter_captions`'s half of the walk. It reports exactly one
+        reason, ``no-caption``; the corrector's own skips are statuses on the
+        row, not counters here."""
+        if reason == "no-caption":
+            self.no_caption += 1
 
 
 @dataclass
@@ -203,52 +209,60 @@ def write_corrected_preprocess_captions(
     """
 
     stats = PreprocessCaptionStats()
-    images = walk_images(resized_dir, recursive=recursive, pattern=path_pattern)
-    stats.seen = len(images)
 
     # First pass, collected up front (captions are tiny) so the erasure pool can
     # exclude the full real-tag set before any variant is drawn.
     @dataclass
     class _Entry:
-        src: Path
         dst: Path
         corrected: str
         row: CorrectionProposal
 
     entries: list[_Entry] = []
     rows: list[CorrectionProposal] = []
-    for image_path in images:
-        rel_caption = image_path.relative_to(resized_dir).with_suffix(".txt")
-        dst_caption = resized_dir / rel_caption
-        caption_path = resolve_caption(resized_dir, source_dir, rel_caption)
-        row = CorrectionProposal(
-            image=str(image_path.relative_to(resized_dir)),
-            caption_path=str(rel_caption),
-            target_before=read_caption(dst_caption) if dst_caption.exists() else "",
-        )
 
-        if caption_path is None:
-            stats.no_caption += 1
-            row.status = "skip:no-caption"
-            rows.append(row)
-            # No caption at all, so a variant sidecar left behind is an orphan.
-            sidecar = variants_sidecar_path(dst_caption)
-            if sidecar.exists():
-                if apply:
-                    sidecar.unlink()
-                stats.variants_removed += 1
-            continue
+    def _orphaned(image_path: Path, rel_caption: Path) -> None:
+        """An image with no caption of either kind: report the row, and drop the
+        variant sidecar the caption it was drawn from no longer backs."""
+        dst_caption = resized_dir / rel_caption
+        rows.append(
+            CorrectionProposal(
+                image=str(image_path.relative_to(resized_dir)),
+                caption_path=str(rel_caption),
+                target_before="",
+                status="skip:no-caption",
+            )
+        )
+        sidecar = variants_sidecar_path(dst_caption)
+        if sidecar.exists():
+            if apply:
+                sidecar.unlink()
+            stats.variants_removed += 1
+
+    for image_path, rel_caption, dst_caption, raw, caption_path in iter_captions(
+        resized_dir,
+        source_dir,
+        path_pattern,
+        stats,
+        recursive=recursive,
+        missing=_orphaned,
+    ):
         if caption_path != dst_caption:
             stats.from_master += 1
 
-        raw = read_caption(caption_path)
         corrected = correct_caption(raw, kb, options=options).text if correct else raw
         if has_clauses(corrected):
             stats.clauses_preserved += 1
-        row.existing = raw
-        row.proposed = corrected
-        entries.append(_Entry(caption_path, dst_caption, corrected, row))
-        rows.append(row)
+        rows.append(
+            row := CorrectionProposal(
+                image=str(image_path.relative_to(resized_dir)),
+                caption_path=str(rel_caption),
+                target_before=read_caption(dst_caption) if dst_caption.exists() else "",
+                existing=raw,
+                proposed=corrected,
+            )
+        )
+        entries.append(_Entry(dst_caption, corrected, row))
 
     n_rand = _resolve_n_rand(num_variants, tag_randomize_rate)
     erasure_pool: list[str] | None = None
@@ -276,7 +290,7 @@ def write_corrected_preprocess_captions(
             )
 
     for e in entries:
-        if e.dst.exists() and e.dst.read_text(encoding="utf-8") == e.corrected:
+        if e.dst.exists() and read_caption(e.dst) == e.corrected:
             stats.unchanged += 1
             e.row.status = "skip:unchanged"
         else:

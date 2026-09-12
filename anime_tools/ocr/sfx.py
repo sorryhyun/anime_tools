@@ -16,7 +16,7 @@ so it needs no symbol patching.
 What it is not: a page reader. Feed it the crops a detector has already
 boxed — the AnimeText text-block detector (:mod:`anime_tools.ocr.animetext`,
 the OCR stage's detector: balloon lines and the SFX on the artwork alike);
-:meth:`SfxReader.read_boxes` cuts the padded crops for you. Batch by area: a
+:meth:`SfxReader.read_boxes_scored` cuts the padded crops for you. Batch by area: a
 1.9 B-parameter model at ~0.25 s per crop is the run's whole wall.
 
 **The decode guard is part of the reader**, not an option. An autoregressive
@@ -391,11 +391,6 @@ class SfxReader:
                 out[i] = (tok.decode(ids).strip(), conf)
         return out
 
-    def read_raw(self, crops: Sequence) -> list[str]:
-        """Every crop's raw decode, the text alone — :meth:`read_raw_scored`
-        minus the confidence."""
-        return [text for text, _ in self.read_raw_scored(crops)]
-
     def read_scored(self, crops: Sequence) -> list[tuple[str, float] | None]:
         """:meth:`read_raw_scored` through :func:`guard`: ``(text, confidence)``
         per crop, or ``None`` for a crop the decoder ran away on."""
@@ -405,11 +400,6 @@ class SfxReader:
             text = guard(raw, int(c.shape[1]), int(c.shape[0]))
             out.append(None if text is None else (text, conf))
         return out
-
-    def read(self, crops: Sequence) -> list[str | None]:
-        """:meth:`read_scored`, the text alone: a string per crop, or ``None``
-        for a crop the decoder ran away on."""
-        return [None if r is None else r[0] for r in self.read_scored(crops)]
 
     def read_boxes_scored(
         self, bgr, boxes: Sequence[Sequence[int]], pad: float = CROP_PAD
@@ -428,14 +418,6 @@ class SfxReader:
         for i, r in zip(owners, reads, strict=True):
             out[i] = r
         return out
-
-    def read_boxes(
-        self, bgr, boxes: Sequence[Sequence[int]], pad: float = CROP_PAD
-    ) -> list[str | None]:
-        """:meth:`read_boxes_scored`, the text alone."""
-        return [
-            None if r is None else r[0] for r in self.read_boxes_scored(bgr, boxes, pad)
-        ]
 
 
 __all__ = [

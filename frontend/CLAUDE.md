@@ -44,7 +44,7 @@ nothing fetched, no business rule lives there. The state is five composables at
 `src/`, each a plain function called once inside `App()`:
 
 - `config.ts` — what the server says about itself: `/api/info`, the dataset
-  roots, the weights catalog, the saved settings, and the three Settings dialogs
+  roots, the weights catalog, the saved settings, and the four Settings dialogs
   that edit them (`settingsPane` says which one is open; they are separate
   windows, not tabs, so each entry point opens one and OK saves only its block).
   `/api/settings` is read exactly once (`loaded`, a promise the

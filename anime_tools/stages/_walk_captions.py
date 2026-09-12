@@ -32,13 +32,17 @@ class CaptionItem(NamedTuple):
     """One walked image and the caption that speaks for it.
 
     ``dst_caption`` is where a rewrite would be *written* (always the revised
-    tree), not necessarily where ``caption`` was read from.
+    tree); ``caption_path`` is where ``caption`` was read *from*, which is the
+    master when the revised caption does not exist yet. The two differ exactly
+    when a stage is mirroring an image's master for the first time, so a caller
+    counts that case by comparing them rather than by a second ``exists()``.
     """
 
     image_path: Path
     rel: Path
     dst_caption: Path
     caption: str
+    caption_path: Path
 
 
 def resolve_caption(resized_dir: Path, source_dir: Path, rel: Path) -> Path | None:
@@ -59,16 +63,24 @@ def iter_captions(
     path_pattern: str | None,
     stats: CaptionStats,
     progress: Callable[[int, int, str], None] | None = None,
+    *,
+    recursive: bool = True,
+    missing: Callable[[Path, Path], None] | None = None,
 ) -> Iterator[CaptionItem]:
     """Walk the resized tree, yielding every image that has a caption.
 
     Sets ``stats.seen``, reports ``stats.skip("no-caption")`` for an image with
     neither caption, and calls ``progress`` once per walked image (captioned or
     not, so the bar tracks the walk rather than the yield).
+
+    ``missing`` is called with the ``(image_path, rel)`` of each image that has
+    no caption of either kind, for the one stage that has to *act* on that case
+    rather than only count it: the corrector, whose variant sidecar is an orphan
+    once the caption it was drawn from is gone.
     """
     from anime_tools._walk import walk_images
 
-    images = walk_images(resized_dir, recursive=True, pattern=path_pattern)
+    images = walk_images(resized_dir, recursive=recursive, pattern=path_pattern)
     stats.seen = len(images)
     for index, image_path in enumerate(images, 1):
         rel = image_path.relative_to(resized_dir).with_suffix(".txt")
@@ -77,7 +89,13 @@ def iter_captions(
         caption_path = resolve_caption(resized_dir, source_dir, rel)
         if caption_path is None:
             stats.skip("no-caption")
+            if missing is not None:
+                missing(image_path, rel)
             continue
         yield CaptionItem(
-            image_path, rel, resized_dir / rel, read_caption(caption_path)
+            image_path,
+            rel,
+            resized_dir / rel,
+            read_caption(caption_path),
+            caption_path,
         )

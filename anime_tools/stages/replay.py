@@ -25,8 +25,8 @@ from pathlib import Path
 
 from anime_tools._env import resolve_path
 from anime_tools._json import read_json, write_json
+from anime_tools._walk import filter_paths_by_glob
 from anime_tools.contract import REPLAY_REPORT_NAME, ReplaySpec
-from anime_tools.path_filter import filter_paths_by_glob
 
 from ._caption_io import read_caption, write_caption
 

@@ -14,7 +14,6 @@ import argparse
 import importlib
 import subprocess
 import sys
-from pathlib import Path
 
 import pytest
 
@@ -499,37 +498,60 @@ def test_every_stage_with_apply_is_dry_run_by_default():
 
 def test_the_help_is_the_field_metadata():
     """``--help`` prints what the request field says, ``%`` included, and the
-    parser's description is the class docstring."""
+    parser's description is the class docstring.
+
+    A field's help is plain prose — argparse's own ``%`` escaping happens on
+    the way into the parser, so a help that spells ``%%`` itself prints a
+    doubled sign.
+    """
+    parser = shell(BY_ID["ocr"]).build_parser()
+    conf = next(a for a in args_of(OcrRequest) if a.name == "det_conf")
+    assert "~15% more" in conf.help and "%%" not in conf.help
+    assert actions(parser)["det_conf"].help == conf.help.replace("%", "%%")
+    printed = parser.format_help()
+    assert "~15%" in printed and "%%" not in printed
+
     parser = shell(BY_ID["position"]).build_parser()
-    acts = actions(parser)
-    novel = next(a for a in args_of(PositionRequest) if a.name == "max_novel_tags")
-    assert "46% novel" in novel.help
-    assert acts["max_novel_tags"].help == novel.help.replace("%", "%%")
-    assert "46% novel" in parser.format_help()
     assert parser.description.startswith("Rewrite multi-subject captions")
 
 
-def test_the_device_flag_has_no_copies_left():
-    """``--device`` is declared only in ``_device.py``.
+def test_every_device_flag_is_the_one_flag():
+    """Every ``--device`` is ``_device.py``'s: spelling, default and help.
 
     It is a :data:`anime_tools.gui.stages.AUTO_FIELDS` dest — neither shown on
     the form nor put on the argv — so the child resolves it through
     :func:`anime_tools._device.resolve_device`, which only works while every
-    stage defaults it to ``None``. The request classes spell it as a field
-    (``device: str | None = arg(None, help=DEVICE_HELP)``), never as a flag.
-    """
-    from anime_tools import _device
+    stage defaults it to ``None`` and spells it identically. The request
+    classes carry it as a field (``device: str | None = arg(None,
+    help=DEVICE_HELP)``); the CLIs that are not request objects take
+    :func:`~anime_tools._device.add_device_arg`.
 
-    package = Path(_device.__file__).parent
-    carriers = sorted(
-        p.relative_to(package).as_posix()
-        for p in package.rglob("*.py")
-        if '"--device"' in p.read_text(encoding="utf-8")
-    )
-    assert carriers == ["_device.py"]
+    Asserted off the parsers rather than off the source text, so a refactor
+    that preserves the flag preserves the test.
+    """
+    from anime_tools._device import DEVICE_HELP, add_device_arg
+
+    hand_written = argparse.ArgumentParser()
+    add_device_arg(hand_written)
+    one = actions(hand_written)["device"]
+    assert one.option_strings == ["--device"]
+    assert (one.default, one.help) == (None, DEVICE_HELP)
+
+    carriers = 0
     for stage in STAGES:
-        device = next(
-            (a for a in args_of(type(CASES[stage.id])) if a.name == "device"), None
-        )
-        if device is not None:
-            assert device.default is None, stage.id
+        case = CASES[stage.id]
+        field = next((a for a in args_of(type(case)) if a.name == "device"), None)
+        if field is None:
+            continue
+        carriers += 1
+        assert (field.default, field.help) == (None, DEVICE_HELP), stage.id
+        act = actions(shell(stage).build_parser())["device"]
+        assert act.option_strings == one.option_strings, stage.id
+        assert (act.default, act.help) == (one.default, one.help), stage.id
+    assert carriers, "no stage takes a device any more"
+
+    # An AUTO_FIELDS dest: the form never shows it and the argv never carries
+    # it, which is what leaves the child free to probe.
+    from anime_tools.gui.stages import AUTO_FIELDS
+
+    assert "device" in AUTO_FIELDS

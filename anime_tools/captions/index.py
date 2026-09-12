@@ -31,13 +31,17 @@ from pathlib import Path
 from anime_tools import workspace as WS
 from anime_tools._env import resolve_path
 from anime_tools._json import write_json
-from anime_tools._walk import IMAGE_EXTENSIONS, caption_key, safe_walk
+from anime_tools._walk import (
+    IMAGE_EXTENSIONS,
+    caption_key,
+    filter_paths_by_glob,
+    safe_walk,
+)
 
 # Never hand-split a caption.
 from anime_tools.captions.position_clauses import parse_caption
 from anime_tools.captions.taxonomy import is_artist_tag, is_count_tag, is_rating_tag
 from anime_tools.captions.vocab_io import load_vocab, names_by_category
-from anime_tools.path_filter import filter_paths_by_glob
 
 DEFAULT_VOCAB = "models/captioners/anima-tagger-dbv4/vocab.json"
 # A contract artifact, published under the export tree's ``captions/`` by Export.

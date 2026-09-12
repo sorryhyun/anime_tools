@@ -500,7 +500,7 @@ def run_multiview_audit(
     stats = MultiviewAuditStats()
     rows: list[MultiviewFinding] = []
 
-    for image_path, rel, dst_caption, caption in iter_captions(
+    for image_path, rel, dst_caption, caption, _ in iter_captions(
         resized_dir, source_dir, path_pattern, stats, progress
     ):
         image_rel = image_path.relative_to(resized_dir).as_posix()

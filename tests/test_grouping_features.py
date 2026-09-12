@@ -14,6 +14,7 @@ import os
 
 import numpy as np
 import torch
+from conftest import write_png
 from PIL import Image
 
 import anime_tools.grouping.features as F
@@ -121,16 +122,11 @@ class FakeEmbedder:
         return np.stack(cls_rows), np.stack(grids)
 
 
-def _write_png(path, value: int) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    Image.new("RGB", (8, 8), (value, value, value)).save(path)
-
-
 def test_embed_members_same_stem_in_two_subfolders(tmp_path, monkeypatch):
     monkeypatch.setattr(F, "CACHE_ROOT", tmp_path / "cache")
     root = tmp_path / "src"
-    _write_png(root / "a" / "1.png", 0)
-    _write_png(root / "b" / "1.png", 255)
+    write_png(root / "a" / "1.png", colour=0)
+    write_png(root / "b" / "1.png", colour=255)
     members = [
         Member("a", "1", root / "a" / "1.png", root / "a" / "1.txt"),
         Member("b", "1", root / "b" / "1.png", root / "b" / "1.txt"),
@@ -154,7 +150,7 @@ def test_embed_members_same_stem_in_two_subfolders(tmp_path, monkeypatch):
 def test_embed_members_legacy_stem_keys_without_root(tmp_path, monkeypatch):
     monkeypatch.setattr(F, "CACHE_ROOT", tmp_path / "cache")
     root = tmp_path / "src"
-    _write_png(root / "a" / "1.png", 0)
+    write_png(root / "a" / "1.png", colour=0)
     members = [Member("a", "1", root / "a" / "1.png", root / "a" / "1.txt")]
     feats = embed_members(FakeEmbedder(), members, batch_size=1, num_workers=0)
     assert set(feats) == {"1"}
@@ -164,9 +160,9 @@ def test_build_groups_survives_stem_collision(tmp_path, monkeypatch):
     """Two artists sharing a stem keep separate embeddings; members stay rel-posix."""
     monkeypatch.setattr(F, "CACHE_ROOT", tmp_path / "cache")
     root = tmp_path / "src"
-    _write_png(root / "a" / "1.png", 0)
-    _write_png(root / "a" / "2.png", 0)  # exact twin of a/1
-    _write_png(root / "b" / "1.png", 255)  # same stem as a/1, different image
+    write_png(root / "a" / "1.png", colour=0)
+    write_png(root / "a" / "2.png", colour=0)  # exact twin of a/1
+    write_png(root / "b" / "1.png", colour=255)  # same stem as a/1, different image
     out = tmp_path / "groups.json"
 
     manifest = build_groups(
@@ -265,7 +261,7 @@ def test_cached_feature_is_reused_when_the_source_is_untouched(tmp_path, monkeyp
     """An unchanged file is still a cache hit; the stamp must not defeat the cache."""
     monkeypatch.setattr(F, "CACHE_ROOT", tmp_path / "cache")
     root = tmp_path / "src"
-    _write_png(root / "a" / "1.png", 0)
+    write_png(root / "a" / "1.png", colour=0)
     members = [Member("a", "1", root / "a" / "1.png", root / "a" / "1.txt")]
 
     embed_members(FakeEmbedder(), members, batch_size=1, num_workers=0, root=root)
@@ -289,7 +285,7 @@ def test_rewritten_source_re_embeds_instead_of_a_stale_hit(tmp_path, monkeypatch
     monkeypatch.setattr(F, "CACHE_ROOT", tmp_path / "cache")
     root = tmp_path / "src"
     path = root / "a" / "1.png"
-    _write_png(path, 0)
+    write_png(path, colour=0)
     members = [Member("a", "1", path, root / "a" / "1.txt")]
 
     first = embed_members(
@@ -297,7 +293,7 @@ def test_rewritten_source_re_embeds_instead_of_a_stale_hit(tmp_path, monkeypatch
     )
 
     # Same path, same stem, same parent — different pixels.
-    _write_png(path, 255)
+    write_png(path, colour=255)
     os.utime(path, ns=(0, 0))  # a mtime that cannot collide with the original
     second = embed_members(
         FakeEmbedder(), members, batch_size=1, num_workers=0, root=root
@@ -310,7 +306,7 @@ def test_pre_stamp_cache_entry_is_a_miss(tmp_path, monkeypatch):
     monkeypatch.setattr(F, "CACHE_ROOT", tmp_path / "cache")
     root = tmp_path / "src"
     path = root / "a" / "1.png"
-    _write_png(path, 0)
+    write_png(path, colour=0)
     member = Member("a", "1", path, root / "a" / "1.txt")
 
     legacy = F._cache_path(member)

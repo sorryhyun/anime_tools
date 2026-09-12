@@ -5,11 +5,8 @@ torch-free process and does not expose the flag, so the child decides for
 itself. ``torch`` is imported inside the function to keep this module
 importable without it.
 
-Since 2026-09-09 there is nothing left that runs on anything but torch, so this
-is the only device question the package asks. ``anime_tools._onnx`` used to hold
-a second one for the stages on onnxruntime; the tagger's exported backbone and
-the OCR detector both moved onto torch, which is faster than onnxruntime
-everywhere a GPU exists and no slower on a CPU.
+Since 2026-09-09 every model here runs on torch, so this is the only device
+question the package asks.
 """
 
 from __future__ import annotations

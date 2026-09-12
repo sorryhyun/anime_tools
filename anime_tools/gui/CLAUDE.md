@@ -12,7 +12,7 @@ into the request's argv. The registry is `stages/registry.py` (re-exported); `sc
 kind, default, help, group and drawer reach the form without argparse in between — and
 `build_argv()` coerces the payload into a namespace, reads it with `Request.from_namespace` (so the
 request's own validation runs server-side, as a 400) and spells it with `to_argv()`. Both happen
-in-process: the request modules are torch-free by test, and building all eleven schemas takes
+in-process: the request modules are torch-free by test, and building all ten schemas takes
 ~0.1 s, so there is no child interpreter and no cache.
 
 A `Field` *carries* its `Arg` rather than restating it: dest, kind, flags, default, help, choices,
@@ -34,7 +34,7 @@ Field binding:
 | `BASIC_FIELDS` | — | shown; everything else in that stage folds under `advanced (n)` |
 
 Report and mask roots are split per-stage (`report_subpath` / `mask_subpath`) so one stage's
-`--from_report` can't read another's report, and so the two generators don't overwrite each other. A
+`--from_report` can't read another's report, and so a stage's masks land in its own tree. A
 blank root means beside the relevant dataset root (`_root_beside`). A drawer's gate, a required
 field and an already-hidden field are never folded — the server settles that, not the browser.
 `PREPROCESS_STAGE` (`resize`) runs as a preflight in front of every stage bound to `dst`;

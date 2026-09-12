@@ -16,6 +16,7 @@ from anime_tools.captions.correction import (
     CaptionCorrectionOptions,
     load_tag_knowledge_base,
 )
+from anime_tools.captions.history import history_sidecar_path
 from anime_tools.captions.position_clauses import parse_caption
 from anime_tools.captions.taxonomy import normalize_tag
 from anime_tools.captions.variants import variants_sidecar_path
@@ -271,3 +272,23 @@ def test_an_image_with_no_caption_anywhere_keeps_its_orphan_sidecar_on_a_dry_run
     assert sidecar.exists(), "a dry run removes nothing"
     assert result.stats.variants_removed == 1
     assert [r.status for r in result.rows] == ["skip:no-caption"]
+
+
+def test_a_trailing_newline_is_not_a_change(tmp_path, kb):
+    """The comparison is the stripped ``read_caption``, like every other stage's.
+
+    A revised caption written by an older run (or by hand in an editor that
+    adds a final newline) holds the corrected text plus ``\\n``. Comparing the
+    raw bytes judged it changed, so every run rewrote it and pushed a history
+    version nobody asked for.
+    """
+    resized, source = _dataset(tmp_path, {"a": "1girl"})
+    revised = resized / "a.txt"
+    _correct(resized, source, kb)
+    corrected = revised.read_text(encoding="utf-8")
+    revised.write_text(corrected + "\n", encoding="utf-8")
+
+    stats = _correct(resized, source, kb)
+
+    assert (stats.unchanged, stats.written) == (1, 0)
+    assert not history_sidecar_path(revised).exists()

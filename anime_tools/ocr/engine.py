@@ -61,46 +61,14 @@ def _bounds(quad) -> tuple[int, int, int, int]:
     )
 
 
-def crop_quad(bgr, box):
-    """The perspective-corrected strip a quad encloses, uprighted if it is tall.
-
-    A box taller than 1.5× its width is rotated a quarter turn. Not on the
-    engine's own path — the VL reader cuts its crops from the axis-aligned box
-    with its own padding (:meth:`~anime_tools.ocr.sfx.SfxReader.read_boxes`) —
-    but the one helper for a caller holding a :class:`Detector`'s quads.
-    """
-    import cv2
-    import numpy as np
-
-    box = np.array(box, dtype=np.float32)
-    width = int(max(np.linalg.norm(box[0] - box[1]), np.linalg.norm(box[2] - box[3])))
-    height = int(max(np.linalg.norm(box[0] - box[3]), np.linalg.norm(box[1] - box[2])))
-    if width < 1 or height < 1:
-        return None
-    target = np.array(
-        [[0, 0], [width, 0], [width, height], [0, height]], dtype=np.float32
-    )
-    crop = cv2.warpPerspective(
-        bgr,
-        cv2.getPerspectiveTransform(box, target),
-        (width, height),
-        borderMode=cv2.BORDER_REPLICATE,
-        flags=cv2.INTER_CUBIC,
-    )
-    if height / width >= 1.5:
-        crop = np.rot90(crop).copy()
-    return crop
-
-
 class Detector(Protocol):
     """What :class:`OcrEngine` asks of a detector, split the way its threads are.
 
     :meth:`prepare` and :meth:`boxes` are pure CPU and run on the pool;
     :meth:`forward_batch` is the one call that touches the model and runs on
     the calling thread. ``boxes`` answers ``(quad, score)`` pairs: a ``(4, 2)``
-    float quad in image pixels, TL-TR-BR-BL — the shape :func:`crop_quad` and
-    the size filters take — and the detector's confidence in it, which the line
-    keeps as ``det``.
+    float quad in image pixels, TL-TR-BR-BL — the shape the size filters take —
+    and the detector's confidence in it, which the line keeps as ``det``.
     """
 
     def prepare(self, bgr) -> Any:
@@ -136,9 +104,9 @@ class OcrEngine:
     prefetches — in RAM."""
 
     workers: int = 4
-    """Threads for the decode / letterbox / box work around the session. All of
-    it is OpenCV or NumPy and releases the GIL, so it overlaps a ``session.run``
-    on another thread. Four, because OpenCV's own threading is off inside them
+    """Threads for the decode / letterbox / box work around the forward. All of
+    it is OpenCV or NumPy and releases the GIL, so it overlaps a detector
+    forward on another thread. Four, because OpenCV's own threading is off inside them
     (:func:`_cv2_single_threaded`) and past four the run waits on the detector."""
 
     def read(self, image_path: Path) -> list[OcrLine]:
@@ -159,7 +127,7 @@ class OcrEngine:
         index, so this yields what a ``read``-per-path loop would have, in the
         order the paths arrived.
 
-        Chunk *n+1* is decoded before chunk *n* reaches the session, on a thread
+        Chunk *n+1* is decoded before chunk *n* reaches the model, on a thread
         of its own rather than on ``pool`` — a pool task that waits on the same
         pool deadlocks at ``workers=1``.
 

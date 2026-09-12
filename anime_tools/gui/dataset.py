@@ -40,7 +40,11 @@ from typing import Any
 from anime_tools import workspace as WS
 from anime_tools._env import curation_home, resolve_path, workspace_dir
 from anime_tools._json import read_json
-from anime_tools._walk import IMAGE_EXTENSIONS, glob_images_pathlib
+from anime_tools._walk import (
+    IMAGE_EXTENSIONS,
+    filter_paths_by_glob,
+    glob_images_pathlib,
+)
 from anime_tools.captions.history import (
     history_sidecar_path,
     push_history,
@@ -64,7 +68,6 @@ from anime_tools.exclude import (
 from anime_tools.grouping.groups import MANIFEST_VERSION
 from anime_tools.gui.settings import load_settings
 from anime_tools.masking._masks import mask_name
-from anime_tools.path_filter import filter_paths_by_glob
 from anime_tools.stages._analysis import ANALYSIS_SUBDIR, analysis_paths
 from anime_tools.stages.resize import DEFAULT_MIN_PIXELS, below_min_pixels
 

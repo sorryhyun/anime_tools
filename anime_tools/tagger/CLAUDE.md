@@ -22,8 +22,8 @@ without torch.
 
 ## Checkpoint
 
-Checkpoint dir = `config.json`, `vocab.json`, `rules.yaml`, `groups.json`,
-`thresholds.safetensors`, optional `sidecar.safetensors` (the file set is spelled once, in
+Checkpoint dir = `config.json`, `vocab.json`, `rules.yaml`, plus the optional
+`thresholds.safetensors`, `groups.yaml` and `sidecar.safetensors` (the file set is spelled once, in
 `contract.py`); GPL backbone weights are fetched at load via `_hf.py` under the user's HF token,
 never vendored. `data.py::TaggerCheckpoint.from_dir` is the one read of a checkpoint dir.
 `dbv4_meta.py` (the constants the ComfyUI node and the GUI import) must stay importable without

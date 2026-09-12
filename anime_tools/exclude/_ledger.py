@@ -31,7 +31,6 @@ __all__ = [
     "ExclusionError",
     "Trees",
     "excluded_rels",
-    "is_excluded",
     "manifest_path",
     "read_entries",
     "rel_key",
@@ -176,10 +175,6 @@ def write_entries(excluded: str | Path, entries: dict[str, Entry]) -> Path:
 def excluded_rels(excluded: str | Path) -> tuple[str, ...]:
     """Every excluded rel, sorted — the ``resize --skip`` list."""
     return tuple(sorted(read_entries(excluded)))
-
-
-def is_excluded(excluded: str | Path, rel: str) -> bool:
-    return rel_key(rel) in read_entries(excluded)
 
 
 def rel_key(rel: str | Path) -> str:

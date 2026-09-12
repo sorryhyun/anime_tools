@@ -54,14 +54,6 @@ def read_tags(txt_path: Path) -> set[str]:
     return {normalize_tag(t) for t in parse_caption(raw).flat_tags if t.strip()}
 
 
-def caption_text(txt_path: Path) -> str:
-    return (
-        txt_path.read_text(encoding="utf-8", errors="ignore").strip()
-        if txt_path.is_file()
-        else ""
-    )
-
-
 @dataclass
 class Member:
     artist: str

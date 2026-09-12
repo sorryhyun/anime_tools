@@ -8,9 +8,6 @@ import argparse
 
 from anime_tools.masking.requests import MergeMasksRequest
 
-DEFAULT_INPUTS = list(MergeMasksRequest.mask_dirs)
-"""The two generators' own ``--mask-dir`` defaults, in the order they run."""
-
 
 def build_parser() -> argparse.ArgumentParser:
     return MergeMasksRequest.parser()

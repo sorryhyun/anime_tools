@@ -455,14 +455,3 @@ def _is_commentary_tag(tag: str) -> bool:
     """Danbooru commentary metadata tags (``commentary request``, ``<language>
     commentary``, …) all carry the substring."""
     return "commentary" in tag
-
-
-def correct_many(
-    captions: Iterable[tuple[Path, str]],
-    kb: TagKnowledgeBase,
-    *,
-    options: CaptionCorrectionOptions | None = None,
-) -> list[tuple[Path, CaptionCorrectionResult]]:
-    return [
-        (path, correct_caption(text, kb, options=options)) for path, text in captions
-    ]

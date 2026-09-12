@@ -10,6 +10,7 @@ from __future__ import annotations
 from pathlib import Path, PurePosixPath
 
 import pytest
+from conftest import make_gui_app
 
 from anime_tools.gui import nativepick as NP
 
@@ -119,20 +120,16 @@ def test_a_cancel_is_not_an_unavailable_host(monkeypatch):
 
 
 @pytest.fixture
-def home(tmp_path, monkeypatch):
-    monkeypatch.setenv("ANIME_TOOLS_HOME", str(tmp_path))
-    (tmp_path / "image_dataset").mkdir()
-    return tmp_path
+def home(home):
+    (home / "image_dataset").mkdir()
+    return home
 
 
 def _client(home, *, host: str = "127.0.0.1"):
+    """Pinned to a caller address: these routes answer only a loopback client."""
     from fastapi.testclient import TestClient
 
-    from anime_tools.gui.jobs import JobManager
-    from anime_tools.gui.server import create_app
-
-    app = create_app(jobs=JobManager(log_dir=home / "logs"), schemas={})
-    return TestClient(app, client=(host, 4242))
+    return TestClient(make_gui_app(home), client=(host, 4242))
 
 
 @pytest.fixture

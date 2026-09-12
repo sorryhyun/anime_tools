@@ -263,17 +263,6 @@ class Dbv4Backend:
         return int(self.model.head.fc.fc1.out_features)
 
     @property
-    def normalization(self) -> tuple[torch.Tensor, torch.Tensor]:
-        """``(mean, std)`` as ``[1, 3, 1, 1]`` on :attr:`device`, from the
-        checkpoint's ``pretrained_cfg``.
-
-        Loading the weights is what reads them, so asking loads the model. The ONNX
-        exporter folds the pair into its graph, which is why they are reachable.
-        """
-        _ = self.model
-        return self._mean, self._std  # type: ignore[return-value]
-
-    @property
     def model(self) -> nn.Module:
         if self._model is None:
             self._model = self._load_model()

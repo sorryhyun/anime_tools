@@ -61,12 +61,12 @@ audit pins `min_instances=2` (`MultiviewRequest.MIN_INSTANCES`, applied by the s
 `requests.audit_options`) rather than exposing it. Validation lives in `__post_init__`
 (autotag mode, `--flatten` vs `--from_report`, the randomize tokenizers, resize tiers); a missing
 input tree is a `FileNotFoundError` the shell turns into `SystemExit`. `__init__.py` exposes all
-fifteen names lazily; `tests/test_registry_requests.py` round-trips every registered stage's
+seventeen names lazily; `tests/test_registry_requests.py` round-trips every registered stage's
 request through its parser and imports the request half torch-poisoned;
 `tests/test_stage_requests.py` keeps the stage-specific pins.
 
 `registry.py` is the stage list — `Stage(id, title, request="module:Class",
-run="module:function", module, panel, …)` for all eleven stages, masking and grouping included —
+run="module:function", module, panel, …)` for all ten stages, masking and grouping included —
 resolved lazily (`Stage.request_class()`, `Stage.runner()`), so the GUI server and the trainer can
 enumerate stages without importing one, and a driver can go from a stage id to the in-process
 `run_<stage>(req)` call without naming a runner.

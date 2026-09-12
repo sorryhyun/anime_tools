@@ -92,14 +92,6 @@ def test_windows_update_defaults_to_the_installers_torch_index():
     assert U.default_index("darwin") is None
 
 
-@pytest.fixture
-def home(tmp_path, monkeypatch):
-    """A curation home of its own: the check writes its cache into the settings
-    file beside it, and the checkout's own must not be touched."""
-    monkeypatch.setenv("ANIME_TOOLS_HOME", str(tmp_path))
-    return tmp_path
-
-
 def _release(tag: str = "v9.9.9"):
     def fake(*_a, **_kw):
         return U.Release(tag=tag, notes="what is new", url=f"{U.REPO_URL}/x")

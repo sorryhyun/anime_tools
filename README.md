@@ -17,8 +17,8 @@ walkthrough from a folder of images to a published dataset, and what the GUI's �
 ## Install
 
 One line, no checkout — installs [uv](https://astral.sh/uv) if missing, then
-`uv tool install`s the latest release with every extra and puts
-`anime-tools-gui` on PATH:
+`uv tool install`s the latest release (torch and sam3 included; there are no
+extras) and puts `anime-tools-gui` on PATH:
 
 ```bash
 curl -fsSL https://github.com/sorryhyun/anime_tools/releases/latest/download/install.sh | sh
@@ -30,7 +30,7 @@ Windows (PowerShell)
 irm https://github.com/sorryhyun/anime_tools/releases/latest/download/install.ps1 | iex
 ```
 
-`ANIME_TOOLS_VERSION=v0.3.1` pins a tag, `TORCH_INDEX=https://download.pytorch.org/whl/cu128` picks
+`ANIME_TOOLS_VERSION=v0.7.0` pins a tag, `TORCH_INDEX=https://download.pytorch.org/whl/cu128` picks
 a torch
 index (PyPI's Linux wheel is already CUDA; the Windows installer defaults to cu132, since PyPI's
 win32 wheel is CPU-only).
@@ -103,9 +103,9 @@ version badge, and Undo puts it back from the run's report. The stage
 runner is the bottom dock: its buttons are the stage list, the form is
 generated from the CLI's own `--help`, and a Run works on the selected image or
 the whole batch as one `python -m …` subprocess while the dataset stays on
-screen. The ☰ menu holds three Settings dialogs (dataset roots, stage defaults,
-models with a Download button and the Hugging Face sign-in) and a language
-switch (English, Korean, Japanese, Chinese). `--host 0.0.0.0` exposes it on the
+screen. The ☰ menu holds four Settings dialogs (dataset roots, stage defaults,
+models with a Download button and the Hugging Face sign-in, and the updater)
+and a language switch (English, Korean, Japanese, Chinese). `--host 0.0.0.0` exposes it on the
 LAN for a headless GPU box (no auth — use your own tunnel), `--home` overrides
 the curation home.
 
@@ -134,13 +134,14 @@ runs the same thing named.
 ## Layout of a curated dataset
 
 ```
-(source_dir)/**/{stem}.png + {stem}.txt         caption master   ← hand-written; read-only for the tools
+(source_dir)/<rel>.{png,txt}                    caption master   ← hand-written; read-only for the tools
 workspace/                                       everything the tools write
-  resized/{stem}.{png,txt,variants.txt}            resized image, revised caption, shuffle / dropout variants
-  master/{stem}.txt                                revised master (Export publishes it back over the source tree)
-  masks_sam/ masks/                                the SAM3 generator's tree, and the merge
+  resized/<rel>.{png,txt,history.txt,variants.txt}  resized image, revised caption, its versions, shuffle / dropout variants
+  master/<rel>.txt                                 revised master (Export publishes it back over the source tree)
+  masks_sam/<rel>/  masks/<rel>/                   the SAM3 generator's tree, and the merge
   captions/<stage>/report.json  groups/groups.json  ocr/  export/report.json
-(export_target_dir)/resized/ masks/              the published dataset    ← written only by Export (--combine_ocr attaches ocr/ lines to each published caption)
+  _excluded/excluded.json  _excluded/{resized,masks,ocr}/  images taken out of the pipeline, and their files
+(export_target_dir)/resized/ masks/ _excluded/   the published dataset    ← written only by Export (--combine_ocr attaches ocr/ lines to each published caption)
 models/captioners/anima-tagger-dbv4/            tagger checkpoint (auto-fetched from sorryhyun/anima-tagger)
 models/sam3/  models/pe/  models/animetext/       SAM3 / PE-Spatial / OCR text-block detector
 models/paddleocr_vl_1.6*/                             the manga VL reader (VL-1.6 base + LoRA/tower)
