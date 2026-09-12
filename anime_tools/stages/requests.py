@@ -12,6 +12,12 @@ the hyphenated spelling as an alias.
 The SAM3 detection flags are one nested :class:`DetectionRequest`, and the
 audit's verdict gate one nested :class:`MultiviewRequest`, so the position stage
 and the multiview audit cannot declare either twice.
+
+Every default and help string comes from a leaf — :mod:`anime_tools.stages._options`
+and :mod:`anime_tools.masking._prompts` — never from the stage module that uses it:
+``registry.py`` is import-light on purpose, and the GUI resolves each request class
+to build its form, so reaching into a stage for one number would cost that build
+numpy, PIL and yaml. ``tests/test_registry_requests.py`` measures it.
 """
 
 from __future__ import annotations
@@ -26,23 +32,21 @@ from anime_tools.buckets import ALLOWED_TARGET_RES
 from anime_tools.captions.tag_drop_groups import drop_group_names
 from anime_tools.contract import AUTOTAG_MODES
 from anime_tools.downloads import DEFAULT_SAM3_CHECKPOINT, DEFAULT_SUBJECT_PROMPT_EMBED
-from anime_tools.masking._sam3 import (
+from anime_tools.masking._prompts import (
     CHECKPOINT_HELP,
     PROMPT_EMBED_HELP,
     SUBJECT_PROMPT,
     prompt_list,
 )
-from anime_tools.stages.multiview_audit import (
+from anime_tools.stages._options import (
+    CROP_ANCHORS,
+    DEFAULT_CROP_ANCHOR,
     DEFAULT_IDENTITY_CONFIDENCE,
+    DEFAULT_MIN_PIXELS,
     DEFAULT_MULTIVIEW_PROB,
     EXTRA_CHARACTER,
     MULTIPLE_VIEWS,
-)
-from anime_tools.stages.position_captions import PositionCaptionOptions
-from anime_tools.stages.resize import (
-    CROP_ANCHORS,
-    DEFAULT_CROP_ANCHOR,
-    DEFAULT_MIN_PIXELS,
+    PositionCaptionOptions,
 )
 from anime_tools.tagger.dbv4_meta import DEFAULT_TAGGER_DIR
 

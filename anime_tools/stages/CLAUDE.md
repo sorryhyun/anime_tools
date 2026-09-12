@@ -25,6 +25,14 @@ choices=…)`, the class docstring is the `--help` description, and every flag w
 takes the other spelling as an alias (`--path_pattern` / `--path-pattern`). The CLIs in `cli/` are
 one-line shells (`build_parser()` = `Request.parser()`, `main()` = `run_<stage>(from_argv())`).
 
+Every default and help string a request field names comes from a leaf — `_options.py` here
+(`PositionCaptionOptions`, the resize geometry, the audit's verdicts and witness floors) and
+`masking/_prompts.py` for the SAM3 prompt vocabulary — never from the stage module that uses it,
+which re-exports it instead. `registry.py` is import-light on purpose and the GUI resolves every
+request class to build its form, so reaching into a stage for one number used to cost that build
+numpy, PIL and yaml (360 modules); `tests/test_registry_requests.py` measures it and pins the
+re-exports as the same objects.
+
 The SAM3 detection flags are one nested `DetectionRequest` (`GROUP = "detection"`) and the audit's
 verdict gate one nested `MultiviewRequest` (`GROUP = "multiview audit"`), both shared by
 `PositionRequest` and `AuditRequest`; `.options()` on either builds the `PositionCaptionOptions`

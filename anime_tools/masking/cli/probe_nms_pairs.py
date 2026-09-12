@@ -21,12 +21,10 @@ from anime_tools._device import add_device_arg, resolve_device
 from anime_tools._env import resolve_path
 from anime_tools._json import write_json
 from anime_tools._walk import walk_images
+from anime_tools.downloads import DEFAULT_SUBJECT_PROMPT_EMBED
 from anime_tools.masking._sam3 import add_checkpoint_arg
 from anime_tools.stages.detector import build_detect_fn
-from anime_tools.stages.instance_detection import (
-    DEFAULT_SUBJECT_PROMPT_EMBED,
-    mask_box_fill,
-)
+from anime_tools.stages.instance_detection import mask_box_fill
 from anime_tools.stages.position_captions import (
     box_containment,
     box_iou,

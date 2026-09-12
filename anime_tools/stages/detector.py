@@ -11,6 +11,7 @@ import numpy as np
 
 from anime_tools._device import resolve_device
 from anime_tools._env import resolve_path
+from anime_tools.masking._prompts import load_soft_prompt, resolve_prompt_embed
 
 # Importing _sam3 also installs the `np.bool` alias sam3 needs before it loads.
 from anime_tools.masking._sam3 import (
@@ -19,11 +20,7 @@ from anime_tools.masking._sam3 import (
     load_sam3,
     make_processor,
 )
-from anime_tools.stages.instance_detection import (
-    Detection,
-    load_soft_prompt,
-    resolve_prompt_embed,
-)
+from anime_tools.stages.instance_detection import Detection
 from anime_tools.stages.requests import DetectionRequest
 
 

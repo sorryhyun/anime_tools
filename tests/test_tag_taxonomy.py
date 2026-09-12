@@ -198,8 +198,10 @@ def test_dedupe_count_tags_keeps_top_score_per_family():
 def test_no_stage_compares_tags_with_a_bare_lower():
     """Tags under ``stages/`` are keyed by :func:`normalize_tag`, not a bare
     ``lower()`` — which reads ``speech bubble`` and ``speech_bubble`` as two tags.
-    The two exemptions below are not tags: an argparse enum and a CLI "off"
-    sentinel, matched against literals this repo spells itself.
+    The one exemption below is not a tag: an argparse enum, matched against
+    literals this repo spells itself. (The ``--prompt_embed`` "off" sentinel was
+    the second until it moved to ``masking/_prompts.py`` with the rest of the SAM3
+    prompt vocabulary.)
     """
     package = Path(tx.__file__).parents[1]
     stages = package / "stages"
@@ -207,10 +209,6 @@ def test_no_stage_compares_tags_with_a_bare_lower():
         (
             "resize.py",
             "value = str(crop_anchor or DEFAULT_CROP_ANCHOR).strip().lower()",
-        ),
-        (
-            "instance_detection.py",
-            "if spec is None or spec.strip().lower() in _PROMPT_EMBED_OFF:",
         ),
     }
     found = {

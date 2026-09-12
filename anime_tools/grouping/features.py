@@ -27,7 +27,7 @@ import torch
 from PIL import Image
 
 from anime_tools import _progress
-from anime_tools._walk import IMAGE_EXTENSIONS, glob_images_pathlib
+from anime_tools._walk import IMAGE_EXTENSIONS, walk_images
 from anime_tools.captions.position_clauses import parse_caption
 from anime_tools.captions.taxonomy import normalize_tag
 
@@ -80,11 +80,20 @@ def _image_size(path: Path) -> tuple[int, int]:
         return (0, 0)
 
 
-def iter_images(root: Path) -> list[Path]:
-    """Every image file under ``root`` (recursive), sorted."""
+def iter_images(root: Path, pattern: str | None = None) -> list[Path]:
+    """Every image file under ``root`` (recursive), sorted — the same walk every
+    other stage reads (:func:`anime_tools._walk.walk_images`).
+
+    Which buys two things this module used to go without: the same-folder stem
+    collision raises here rather than silently sharing one cache entry
+    (:func:`_cache_path` is parent-dir hash + stem, so two images named ``1.png``
+    and ``1.webp`` in one folder address the same ``.npz``), and ``pattern`` is
+    the ``path_pattern`` glob, so a caller that grows the flag needs no second
+    walk.
+    """
     if not root.is_dir():
         return []
-    return glob_images_pathlib(root, recursive=True)
+    return walk_images(root, recursive=True, pattern=pattern)
 
 
 def gather_members(
@@ -95,6 +104,9 @@ def gather_members(
     Scope is ``union`` across all ``image_dirs`` (a twin can straddle the curated
     cut). A ``(artist, stem)`` seen in more than one dir is kept once, first dir
     listed winning, so list the preferred source first.
+
+    Per artist folder through :func:`walk_images`, whose stem assertion is what a
+    ``(artist, stem)`` key needs to mean one image.
     """
     seen: dict[tuple[str, str], Member] = {}
     for d in image_dirs:
@@ -105,7 +117,7 @@ def gather_members(
             artist = artist_dir.name
             if artists_filter and artist not in artists_filter:
                 continue
-            for img in glob_images_pathlib(artist_dir, recursive=False):
+            for img in walk_images(artist_dir, recursive=False):
                 key = (artist, img.stem)
                 if key in seen:
                     continue

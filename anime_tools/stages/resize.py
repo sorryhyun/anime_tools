@@ -30,8 +30,13 @@ from anime_tools.buckets import (
     freefit_bucket,
 )
 
-DEFAULT_MIN_PIXELS = 500_000
-"""0.5MP. Below this an image cannot fill a 1024 tier without visible upscale."""
+# Re-exported: the defaults live in the leaf every stage request reads, so the
+# GUI's schema build does not import this module (and PIL) to read a number.
+from anime_tools.stages._options import (
+    CROP_ANCHORS,
+    DEFAULT_CROP_ANCHOR,
+    DEFAULT_MIN_PIXELS,
+)
 
 
 def below_min_pixels(size: tuple[int, int], min_pixels: int) -> bool:
@@ -43,19 +48,6 @@ def below_min_pixels(size: tuple[int, int], min_pixels: int) -> bool:
     """
     return min_pixels > 0 and size[0] * size[1] < min_pixels
 
-
-DEFAULT_CROP_ANCHOR = "center"
-CROP_ANCHORS: dict[str, tuple[float, float]] = {
-    "top_left": (0.0, 0.0),
-    "top": (0.5, 0.0),
-    "top_right": (1.0, 0.0),
-    "left": (0.0, 0.5),
-    "center": (0.5, 0.5),
-    "right": (1.0, 0.5),
-    "bottom_left": (0.0, 1.0),
-    "bottom": (0.5, 1.0),
-    "bottom_right": (1.0, 1.0),
-}
 
 MARGIN_SIDES = ("top", "right", "bottom", "left")
 

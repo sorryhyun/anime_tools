@@ -131,7 +131,9 @@ def build(dir_path: Path, label: str) -> dict[str, dict]:
     """``filename -> descriptor`` for every image in ``dir_path``, cached whole.
 
     Descriptors are keyed by filename (extension included), so a mixed-format
-    directory is fine. One ``.npz`` per directory, stamped with ``(newest mtime,
+    directory is fine — which is why this one walk stays on ``glob_images_pathlib``
+    rather than ``walk_images``, whose stem assertion would refuse the ``1.png`` +
+    ``1.webp`` pair this tool exists to compare. One ``.npz`` per directory, stamped with ``(newest mtime,
     count, CACHE_VER)``; anything wrong with the stamp or the file means
     "recompute", never an error.
     """

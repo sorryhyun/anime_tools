@@ -8,8 +8,8 @@ import pytest
 
 from anime_tools import workspace as WS
 from anime_tools._request import args_of
+from anime_tools.downloads import DEFAULT_SUBJECT_PROMPT_EMBED
 from anime_tools.masking.requests import MaskPrompt, MergeMasksRequest, SamMaskRequest
-from anime_tools.stages.instance_detection import DEFAULT_SUBJECT_PROMPT_EMBED
 
 
 def test_a_default_argv_names_only_what_changed():

@@ -4,74 +4,18 @@ The detector-side primitives of the position-clause pipeline and the multiview
 audit: a :class:`Detection` record, the geometry around it, the NMS pass, the
 body-part fallback merge, and the crop the tagger sees.
 
-Detector-agnostic — nothing here imports SAM3.
+Detector-agnostic — nothing here imports SAM3, and what a SAM3 *prompt* is
+(:mod:`anime_tools.masking._prompts`) is the masking package's, so the seam runs
+one way: a stage reaches into ``masking``, never the reverse.
 """
 
 from __future__ import annotations
 
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
-from pathlib import Path
 
 import numpy as np
 from PIL import Image
-
-# Shipped SAM3 soft prompt for the subject pass (textual inversion of ``anime
-# girl``): keeps ``anime girl``'s recall with ``girl``'s junk profile. Part
-# prompts stay textual. The path comes from the download catalog, which is
-# torch-free, and the CLIs import it from here.
-from anime_tools.downloads import DEFAULT_SUBJECT_PROMPT_EMBED
-
-_PROMPT_EMBED_OFF = {"", "none", "off", "text"}
-
-
-def resolve_prompt_embed(spec: str | None) -> Path | None:
-    """``None``/``none``/``off``/``""`` -> text prompt; else the resolved file.
-
-    A missing *default* file degrades to the text prompt with a warning (a
-    relocated checkout without the artifact); an explicit missing path raises.
-    """
-    import warnings
-
-    from anime_tools._env import resolve_path
-
-    if spec is None or spec.strip().lower() in _PROMPT_EMBED_OFF:
-        return None
-    path = resolve_path(spec)
-    if path.exists():
-        return path
-    if spec == DEFAULT_SUBJECT_PROMPT_EMBED:
-        warnings.warn(
-            f"shipped soft prompt missing at {path}; falling back to the text "
-            "prompt (get it with `python -m anime_tools.downloads soft_prompt`)",
-            stacklevel=2,
-        )
-        return None
-    raise FileNotFoundError(f"--prompt_embed {spec!r} not found at {path}")
-
-
-# Keys a SAM3 soft prompt is stored under: SAM3 encodes a text prompt into this
-# triple and the rest of the model only ever sees it.
-SOFT_PROMPT_KEYS = ("language_features", "language_mask", "language_embeds")
-
-
-def load_soft_prompt(path: str | Path, device: str | None = None) -> dict:
-    """The three prompt tensors from a saved soft prompt, on ``device`` (auto
-    when ``None``)."""
-    from safetensors.torch import load_file
-
-    from anime_tools._device import resolve_device
-
-    tensors = load_file(str(path), device=resolve_device(device))
-    return {k: tensors[k] for k in SOFT_PROMPT_KEYS}
-
-
-def prompt_embed_sha256(path: Path | None) -> str | None:
-    import hashlib
-
-    if path is None:
-        return None
-    return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
 @dataclass(frozen=True)

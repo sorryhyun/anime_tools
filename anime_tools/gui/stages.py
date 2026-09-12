@@ -12,7 +12,8 @@ request class is imported to be described (:func:`schema`) or built
 from __future__ import annotations
 
 import inspect
-from dataclasses import MISSING, dataclass, field
+from collections.abc import Mapping
+from dataclasses import MISSING, dataclass
 from pathlib import PurePosixPath
 from types import SimpleNamespace
 from typing import Any
@@ -47,6 +48,7 @@ __all__ = [
     "bound_value",
     "build_argv",
     "dump_schemas",
+    "fields_of",
     "form_values",
     "load_parser",
     "load_schemas",
@@ -290,28 +292,18 @@ def mask_subpath(default: str | list[str]) -> str | list[str]:
 @dataclass
 class Field:
     """One form field — an :class:`anime_tools._request.Arg` plus the GUI's
-    bindings. Shipped to the browser as a dict (``frontend/src/types.ts``
-    mirrors it)."""
+    bindings. Shipped to the browser as :meth:`to_json` (``frontend/src/types.ts``
+    mirrors that dict).
 
-    dest: str
-    kind: str  # bool | int | float | str | enum | list | masks
-    flags: list[str] = field(default_factory=list)  # [] → positional
-    default: Any = None
-    """The argv spelling of the field's default (a prompt list is its
-    comma-separated string), JSON-ready; ``None`` for a required field."""
-    choices: list[Any] | None = None
-    help: str = ""
-    required: bool = False
-    path: bool = False
-    path_kind: str = "dir"
-    """``dir`` | ``file``: which chooser the ``…`` beside a ``path`` field
-    opens. Meaningless unless ``path``."""
-    group: str = ""
-    negate: str | None = None
-    """For a bool without a ``store_false`` spelling: the ``--no-…`` flag."""
-    label: str = ""
-    """What the form shows: the flag, or the dest for a ``store_false`` flag so
-    a ticked box always means *on*."""
+    The :class:`Arg` is *carried*, not copied: everything the flag itself says —
+    its dest, kind, flags, default, help, choices, whether it is required, its
+    ``--no-`` spelling, its label — is a property reading the one the parser was
+    generated from, so the form and the CLI cannot disagree about a field and
+    :func:`_coerce` can dispatch on the very attributes ``build_parser`` hands
+    argparse. Only what the *GUI* decides is stored here.
+    """
+
+    arg: Arg
     root: str | None = None
     """Bound to a dataset root: hidden from the form, filled by :func:`build_argv`
     from the Settings roots."""
@@ -335,14 +327,152 @@ class Field:
     """Not in this stage's :data:`BASIC_FIELDS` row: an ordinary form field folded
     away until the Advanced toggle is on. Never set on a required field or on a
     drawer's own gate."""
-    gate: str | None = None
-    """The dest of the boolean this field hangs off — a *drawer*. The gate carries
-    its own dest here, which is how the form tells the checkbox from what it folds
-    away. A shut drawer's fields never reach the argv."""
+
+    # --- the Arg, as the browser reads it ---------------------------------
+
+    @property
+    def dest(self) -> str:
+        return self.arg.name
+
+    @property
+    def kind(self) -> str:
+        """``bool`` | ``int`` | ``float`` | ``str`` | ``enum`` | ``list`` | ``masks``."""
+        return self.arg.kind
+
+    @property
+    def flags(self) -> list[str]:
+        """``[]`` → positional."""
+        return list(self.arg.flags)
+
+    @property
+    def default(self) -> Any:
+        """The argv spelling of the field's default (a prompt list is its
+        comma-separated string), JSON-ready; ``None`` for a required field."""
+        return _json(self.arg.default)
+
+    @property
+    def choices(self) -> list[Any] | None:
+        return list(self.arg.choices) if self.arg.choices else None
+
+    @property
+    def help(self) -> str:
+        return self.arg.help
+
+    @property
+    def required(self) -> bool:
+        return self.arg.required
+
+    @property
+    def negate(self) -> str | None:
+        """For a bool without a ``store_false`` spelling: the ``--no-…`` flag."""
+        return self.arg.negate
+
+    @property
+    def label(self) -> str:
+        """What the form shows: the flag, or the dest for a ``store_false`` flag so
+        a ticked box always means *on*."""
+        a = self.arg
+        return a.name if a.off else (a.flags[0] if a.flags else a.name)
+
+    @property
+    def gate(self) -> str | None:
+        """The dest of the boolean this field hangs off — a *drawer*. The gate
+        carries its own dest here, which is how the form tells the checkbox from
+        what it folds away. A shut drawer's fields never reach the argv."""
+        return self.arg.gate
+
+    @property
+    def group(self) -> str:
+        return self.arg.group
+
+    # --- what the bindings decide ------------------------------------------
 
     @property
     def bound(self) -> bool:
         return bool(self.root or self.setting or self.report or self.mask)
+
+    @property
+    def path(self) -> bool:
+        """Does the ``…`` chooser belong beside this field?
+
+        A bound field names a path by construction, so it says so rather than
+        waiting for its flag's name to hint at it. That only matters for a field
+        on a form (:data:`PANEL_FIELDS`), where it puts the right chooser beside
+        Export's destinations.
+        """
+        if self.root or self.report or self.mask:
+            return True
+        return any(h in self._hint for h in _PATH_HINTS)
+
+    @property
+    def path_kind(self) -> str:
+        """``dir`` | ``file``: which chooser the ``…`` beside a ``path`` field
+        opens. Meaningless unless :attr:`path`."""
+        if self.root or self.report or self.mask:
+            if not self.root and PurePosixPath(str(self.default or "")).suffix:
+                return "file"
+            return "dir"
+        return "dir" if any(h in self._hint for h in _DIR_HINTS) else "file"
+
+    @property
+    def _hint(self) -> str:
+        """The dest as the ``…``-chooser hints are spelled (hyphenated)."""
+        return self.arg.name.replace("_", "-")
+
+    def to_json(self) -> dict[str, Any]:
+        """The flat dict the browser gets: the Arg's half and the bindings' half."""
+        return {
+            "dest": self.dest,
+            "kind": self.kind,
+            "flags": self.flags,
+            "default": self.default,
+            "choices": self.choices,
+            "help": self.help,
+            "required": self.required,
+            "path": self.path,
+            "path_kind": self.path_kind,
+            "group": self.group,
+            "negate": self.negate,
+            "label": self.label,
+            "gate": self.gate,
+            "root": self.root,
+            "setting": self.setting,
+            "report": self.report,
+            "mask": self.mask,
+            "auto": self.auto,
+            "overridable": self.overridable,
+            "advanced": self.advanced,
+        }
+
+    @classmethod
+    def from_json(cls, arg: Arg, fd: Mapping[str, Any]) -> Field:
+        """The inverse of :meth:`to_json`, given the field's own :class:`Arg`."""
+        return cls(
+            arg=arg,
+            root=fd.get("root"),
+            setting=fd.get("setting"),
+            report=fd.get("report"),
+            mask=fd.get("mask"),
+            auto=bool(fd.get("auto")),
+            overridable=bool(fd.get("overridable")),
+            advanced=bool(fd.get("advanced")),
+        )
+
+
+def fields_of(sc: dict[str, Any]) -> list[Field]:
+    """One schema's fields back as :class:`Field` objects.
+
+    The wire dict carries what the browser reads, not the parser's view of the
+    flag, so each field's :class:`Arg` is re-attached from the request class the
+    schema names — the same object :func:`schema` described it with. Which is why
+    a *resolved* schema (:func:`resolved_schema`, whose defaults are the Settings
+    values) and the stored one build the same argv.
+    """
+    args = {a.name: a for a in args_of(request_class(sc["request"]))}
+    return [
+        fd if isinstance(fd, Field) else Field.from_json(args[fd["dest"]], fd)
+        for fd in sc["fields"]
+    ]
 
 
 def load_parser(stage: Stage):
@@ -356,26 +486,6 @@ def _json(value: Any) -> Any:
     if isinstance(value, tuple):
         return list(value)
     return value
-
-
-def field_of(a: Arg) -> Field:
-    """An :class:`Arg` as the form sees it, before the stage's bindings."""
-    name = a.name.replace("_", "-")
-    return Field(
-        dest=a.name,
-        kind=a.kind,
-        flags=list(a.flags),
-        default=_json(a.default),
-        choices=list(a.choices) if a.choices else None,
-        help=a.help,
-        required=a.required,
-        path=any(h in name for h in _PATH_HINTS),
-        path_kind="dir" if any(h in name for h in _DIR_HINTS) else "file",
-        group=a.group,
-        negate=a.negate,
-        label=a.name if a.off else (a.flags[0] if a.flags else a.name),
-        gate=a.gate,
-    )
 
 
 def schema(stage: Stage) -> dict[str, Any]:
@@ -398,7 +508,7 @@ def schema(stage: Stage) -> dict[str, Any]:
         cls = stage.request_class()
     except ImportError as e:  # extra not installed
         return {**base, "available": False, "error": str(e), "fields": [], "doc": ""}
-    fs = [field_of(a) for a in args_of(cls)]
+    fs = [Field(a) for a in args_of(cls)]
     bound = ROOT_FIELDS.get(stage.id, {})
     basic = BASIC_FIELDS.get(stage.id)
     report_dests = {stage.report[0] if stage.report else None} | {
@@ -423,17 +533,6 @@ def schema(stage: Stage) -> dict[str, Any]:
             and f.gate != f.dest
             and f.dest not in ("apply", REPLAY_FIELD)
         )
-        if f.root or f.report or f.mask:
-            # A bound field names a path by construction, so it says so rather
-            # than waiting for its flag's name to hint at it. That only matters
-            # for a field on a form (:data:`PANEL_FIELDS`), where it puts the
-            # right ``…`` chooser beside Export's destinations.
-            f.path = True
-            f.path_kind = (
-                "file"
-                if not f.root and PurePosixPath(str(f.default or "")).suffix
-                else "dir"
-            )
     return {
         **base,
         "available": True,
@@ -443,7 +542,7 @@ def schema(stage: Stage) -> dict[str, Any]:
         "scoped": any(f.dest == SCOPE_FIELD for f in fs),
         # Can write a dry run's proposals instead of recomputing them.
         "replay": any(f.dest == REPLAY_FIELD for f in fs),
-        "fields": [f.__dict__ for f in fs],
+        "fields": [f.to_json() for f in fs],
     }
 
 
@@ -497,16 +596,16 @@ def resolved_schema(
     if not any(f.get("overridable") for f in fields):
         return sc
     out = []
-    for fd in fields:
+    for f, fd in zip(fields_of(sc), fields, strict=True):
         v = (
             bound_value(
-                Field(**fd),
+                f,
                 roots=roots,
                 settings=settings,
                 report_root=report_root,
                 mask_root=mask_root,
             )
-            if fd.get("overridable")
+            if f.overridable
             else None
         )
         out.append({**fd, "default": v} if v is not None else fd)
@@ -518,27 +617,29 @@ def _blank(v: Any) -> bool:
 
 
 def _coerce(f: Field, v: Any) -> Any:
-    """A form value as the request's parser would have left it on the namespace:
-    the field's kind decides the Python type, and a blank falls back to the
-    default (or is refused on a required field). A ``masks`` list travels as its
-    ``role:kind:value`` strings, so it is coerced as a list."""
-    listy = f.kind in ("list", "masks")
+    """A form value as the request's parser would have left it on the namespace.
+
+    Dispatched on the attributes ``_request.build_parser`` hands argparse — a
+    flag taking several values by its ``nargs`` (or by being positional), the
+    scalar conversion by its ``type`` — rather than on a second reading of the
+    field's ``kind``, so a new kind needs no branch here. A blank falls back to
+    the default, or is refused on a required field. A ``masks`` list travels as
+    its ``role:kind:value`` strings, which its ``nargs`` already makes a list.
+    """
+    a = f.arg
+    listy = a.nargs is not None or a.positional
     if listy and not _blank(v):
         items = v if isinstance(v, list) else str(v).split("\n")
         v = [str(x).strip() for x in items if str(x).strip()]
     if _blank(v):
-        if f.required:
-            raise ValueError(f"{f.flags[0] if f.flags else f.dest} is required")
+        if a.required:
+            raise ValueError(f"{a.flags[0] if a.flags else a.name} is required")
         return f.default
-    if f.kind == "bool":
+    if a.kind == "bool":
         return bool(v)
-    if f.kind == "int":
-        return int(v)
-    if f.kind == "float":
-        return float(v)
     if listy:
         return v
-    return str(v)
+    return a.type(v) if a.type is not None else str(v)
 
 
 def build_argv(
@@ -568,7 +669,7 @@ def build_argv(
     and neither do the knobs of a shut drawer.
     """
     cls = request_class(sc["request"])
-    fs = [Field(**fd) if isinstance(fd, dict) else fd for fd in sc["fields"]]
+    fs = fields_of(sc)
     # A drawer's own checkbox decides whether the rest of it is even a value: the
     # stage ignores the knobs of a detector it is not running.
     gate_on = {

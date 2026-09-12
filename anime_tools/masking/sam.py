@@ -22,18 +22,17 @@ from anime_tools.masking._masks import (
     write_mask,
 )
 
-# Importing _sam3 also installs the `np.bool` alias sam3 needs before it loads.
-from anime_tools.masking._sam3 import (
+# Torch-free at import (the safetensors read is deferred); the same prompt
+# vocabulary the position stage resolves its --prompt_embed through.
+from anime_tools.masking._prompts import (
     SUBJECT_PROMPT,
-    autocast,
-    detect_union,
-    load_sam3,
+    load_soft_prompt,
+    resolve_prompt_embed,
 )
-from anime_tools.masking.requests import MaskPrompt, SamMaskRequest
 
-# Torch-free at import (the safetensors read is deferred); the same two helpers the
-# position stage resolves its --prompt_embed through.
-from anime_tools.stages.instance_detection import load_soft_prompt, resolve_prompt_embed
+# Importing _sam3 also installs the `np.bool` alias sam3 needs before it loads.
+from anime_tools.masking._sam3 import autocast, detect_union, load_sam3
+from anime_tools.masking.requests import MaskPrompt, SamMaskRequest
 
 
 def load_image(path: Path) -> Image.Image:

@@ -21,11 +21,11 @@ from safetensors.torch import save_file
 
 # Importing this also installs the `np.bool` alias sam3 needs, which every
 # module under this directory inherits by importing this one.
-from anime_tools.masking._sam3 import load_sam3 as _load_sam3
-from anime_tools.stages.instance_detection import (
+from anime_tools.masking._prompts import (
     SOFT_PROMPT_KEYS as PROMPT_KEYS,
 )
-from anime_tools.stages.instance_detection import load_soft_prompt  # noqa: F401
+from anime_tools.masking._prompts import load_soft_prompt  # noqa: F401
+from anime_tools.masking._sam3 import load_sam3 as _load_sam3
 
 ROOT = Path(__file__).resolve().parents[2]
 MASK_RES = 288  # native `pred_masks` resolution

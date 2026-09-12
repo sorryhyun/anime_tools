@@ -569,7 +569,8 @@ back to the box rules, so `merge_part_detections` is unaffected.
 | `anime_tools/captions/clause_vocabulary.py` | Loads that YAML into `ClauseGroups`; `ClauseVocabulary` = which tags may enter a clause, in what order (`select`). Warns when the policy names a group the checkpoint's `groups.yaml` doesn't declare — a typo would otherwise silently disable a gate |
 | `anime_tools/captions/clause_rewrite.py` | The move rules — `plan_bag_removals` + the `RemovalPlan` block reasons |
 | `anime_tools/captions/caption_layout.py` | Text-only prefilter — subject/boy counts, `Nkoma` ceiling, layout tags, `is_candidate` |
-| `anime_tools/stages/instance_detection.py` | `Detection`, box geometry, NMS + part merge, mask-blanked `crop_instance`, soft-prompt resolution (`resolve_prompt_embed` / `prompt_embed_sha256`) |
+| `anime_tools/stages/instance_detection.py` | `Detection`, box geometry, NMS + part merge, mask-blanked `crop_instance`. Detector-agnostic |
+| `anime_tools/masking/_prompts.py` | What a SAM3 prompt is, for both packages: the `girl` text prompt, `--checkpoint` / `--prompt_embed` help, `prompt_list`, and the soft prompt (`resolve_prompt_embed` / `load_soft_prompt` / `prompt_embed_sha256`). Torch-free and numpy-free, so a request can take its defaults from it |
 | `anime_tools/stages/position_captions.py` | Pipeline orchestration (`propose_for_image`, `flatten_captions`); models injected as `detect_fn` / `tag_fn` |
 | `anime_tools/stages/requests.py` | `PositionRequest` + the nested `DetectionRequest` (torch-free) — the stage's surface; `.options()` builds `PositionCaptionOptions` |
 | `anime_tools/stages/run.py` | `run_position(req)` — preflight, SAM3/tagger load, the pipeline call, `report.json`, epilogue |

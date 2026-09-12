@@ -1,5 +1,7 @@
 """The one SAM3 entry point: model + processor construction, and the two shims
-``import sam3`` needs.
+``import sam3`` needs. What a *prompt* is — the subject's text prompt, the learned
+soft prompt, the two flags' help — is :mod:`_prompts`, which importing this module
+must not be the only way to reach: this one aliases ``np.bool`` on import.
 
 **The numpy shim is an import side effect of this module**: ``sam3`` still spells
 ``np.bool``, which numpy 2 removed, so the alias has to exist *before* ``import sam3``.
@@ -31,6 +33,7 @@ import numpy as np
 
 from anime_tools._progress import phase
 from anime_tools.downloads import DEFAULT_SAM3_CHECKPOINT, DEFAULT_SUBJECT_PROMPT_EMBED
+from anime_tools.masking._prompts import CHECKPOINT_HELP, PROMPT_EMBED_HELP
 
 # A module-level side effect on purpose — see the docstring.
 if not hasattr(np, "bool"):
@@ -152,27 +155,6 @@ interpreter is not a thing any stage does, but the last build winning is at leas
 rule, and it is the device the next forward runs on."""
 
 
-SUBJECT_PROMPT = "girl"
-"""The text prompt every SAM3 stage means by *the subject*, and the phrase the shipped
-soft prompt is the textual inversion of: ``--prompt``'s default, and what
-``--prompt_embed`` stands in for."""
-
-
-CHECKPOINT_HELP = "SAM3 weights"
-PROMPT_EMBED_HELP = (
-    "learned soft prompt (.safetensors) used in place of the "
-    f"{SUBJECT_PROMPT!r} text prompt for the subject pass; every other "
-    f"prompt stays textual. Default = the shipped "
-    f"{DEFAULT_SUBJECT_PROMPT_EMBED}; pass `none` for the plain text prompt"
-)
-"""The help for ``--checkpoint`` / ``--prompt_embed``, wherever they are declared:
-the stage requests carry them as field metadata, the probe CLIs below take them
-through :func:`add_checkpoint_arg` / :func:`add_prompt_embed_arg`. Both name a
-file a ⚙ Settings → Models row writes and are
-:data:`anime_tools.gui.stages.SETTING_FIELDS` dests filled once from Settings,
-which only works while every stage spells them identically."""
-
-
 def add_checkpoint_arg(p: argparse._ActionsContainer) -> None:
     """``--checkpoint`` — SAM3 weights, defaulted from the download catalog."""
     p.add_argument(
@@ -185,21 +167,6 @@ def add_prompt_embed_arg(p: argparse._ActionsContainer) -> None:
     p.add_argument(
         "--prompt_embed", default=DEFAULT_SUBJECT_PROMPT_EMBED, help=PROMPT_EMBED_HELP
     )
-
-
-_NO_PROMPTS = {"none", "off"}
-
-
-def prompt_list(spec: str) -> tuple[str, ...]:
-    """A comma-separated prompt flag as the tuple of prompts it names.
-
-    ``none`` / ``off`` mean *no prompts*. Emptying the field is not enough to say it: the
-    GUI omits a flag whose value is blank, so a cleared prompt field would come back as
-    its default.
-    """
-    if spec.strip().lower() in _NO_PROMPTS:
-        return ()
-    return tuple(t.strip() for t in spec.split(",") if t.strip())
 
 
 def autocast(device: str):
@@ -299,7 +266,7 @@ def ground_with_soft_prompt(processor, model, state: dict, soft_prompt: dict) ->
     the encode is skipped and ``load_soft_prompt``'s triple goes straight into the state
     :meth:`Sam3Processor.set_image` built — which means reaching past ``set_text_prompt``
     into the grounding call underneath. The caller still owns *which* of its prompts the
-    embed stands in for (:data:`SUBJECT_PROMPT`).
+    embed stands in for (:data:`_prompts.SUBJECT_PROMPT`).
     """
     state["backbone_out"].update(soft_prompt)
     state.setdefault("geometric_prompt", model._get_dummy_prompt())

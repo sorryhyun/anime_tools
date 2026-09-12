@@ -13,7 +13,15 @@ kind, default, help, group and drawer reach the form without argparse in between
 `build_argv()` coerces the payload into a namespace, reads it with `Request.from_namespace` (so the
 request's own validation runs server-side, as a 400) and spells it with `to_argv()`. Both happen
 in-process: the request modules are torch-free by test, and building all eleven schemas takes
-~0.1 s, so there is no child interpreter and no cache. Field binding:
+~0.1 s, so there is no child interpreter and no cache.
+
+A `Field` *carries* its `Arg` rather than restating it: dest, kind, flags, default, help, choices,
+required, the `--no-` spelling, the label and the `…`-chooser hints are all properties over the one
+object the parser was generated from, `to_json()` is the flat dict the browser gets, and
+`fields_of(schema)` re-attaches each `Arg` from the request class the schema names. So `_coerce`
+dispatches on the `type` / `nargs` `build_parser` hands argparse — a new `Arg.kind` needs no branch
+in this module, which is what used to hand a request a string where its own parser put an int.
+Field binding:
 
 | Map | Bound to | Shown? |
 |---|---|---|

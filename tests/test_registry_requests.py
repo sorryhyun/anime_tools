@@ -19,10 +19,9 @@ from pathlib import Path
 import pytest
 
 from anime_tools._request import Request, args_of
-from anime_tools.downloads import DEFAULT_SAM3_CHECKPOINT
+from anime_tools.downloads import DEFAULT_SAM3_CHECKPOINT, DEFAULT_SUBJECT_PROMPT_EMBED
 from anime_tools.grouping.requests import GroupRequest
 from anime_tools.masking.requests import MaskPrompt, MergeMasksRequest, SamMaskRequest
-from anime_tools.stages.instance_detection import DEFAULT_SUBJECT_PROMPT_EMBED
 from anime_tools.stages.registry import BY_ID, STAGES, Stage
 from anime_tools.stages.requests import (
     AuditRequest,
@@ -326,6 +325,57 @@ anime_tools.grouping.GroupRequest
         check=False,
     )
     assert r.returncode == 0, r.stderr
+
+
+def test_resolving_every_request_stays_import_light():
+    """Building the GUI's form schema must not import a stage.
+
+    ``registry.py`` names each request lazily so nothing heavy is imported to
+    *list* the stages — but the GUI resolves every class to build its form, and
+    a request that reached into its own stage module for one default (a
+    ``DEFAULT_MIN_PIXELS``, a ``PositionCaptionOptions``) undid that on every
+    schema build: measured at 360 modules with numpy, PIL and yaml along. The
+    defaults live in leaves instead (``stages/_options.py``,
+    ``masking/_prompts.py``), so this is the assertion that keeps them there.
+    """
+    code = """
+import importlib, sys
+from anime_tools.stages.registry import STAGES
+for stage in STAGES:
+    stage.request_class()
+heavy = sorted(m for m in ("numpy", "PIL", "yaml", "cv2", "torch") if m in sys.modules)
+assert not heavy, heavy
+"""
+    r = subprocess.run(
+        [sys.executable, "-c", code],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        check=False,
+    )
+    assert r.returncode == 0, r.stderr
+
+
+def test_the_request_defaults_are_spelled_once():
+    """A stage module re-exports its defaults from the leaf, never the reverse.
+
+    The leaf is the home precisely so ``requests.py`` can read a number without
+    the stage; an owner that declared its own copy would drift from the flag's
+    default silently.
+    """
+    from anime_tools.stages import _options, multiview_audit, position_captions, resize
+
+    assert resize.DEFAULT_MIN_PIXELS is _options.DEFAULT_MIN_PIXELS
+    assert resize.CROP_ANCHORS is _options.CROP_ANCHORS
+    assert resize.DEFAULT_CROP_ANCHOR is _options.DEFAULT_CROP_ANCHOR
+    assert multiview_audit.MULTIPLE_VIEWS is _options.MULTIPLE_VIEWS
+    assert multiview_audit.EXTRA_CHARACTER is _options.EXTRA_CHARACTER
+    assert multiview_audit.DEFAULT_MULTIVIEW_PROB is _options.DEFAULT_MULTIVIEW_PROB
+    assert (
+        multiview_audit.DEFAULT_IDENTITY_CONFIDENCE
+        is _options.DEFAULT_IDENTITY_CONFIDENCE
+    )
+    assert position_captions.PositionCaptionOptions is _options.PositionCaptionOptions
 
 
 # ---- the runner -------------------------------------------------------------

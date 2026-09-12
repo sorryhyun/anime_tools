@@ -32,6 +32,11 @@ group=…, gate=…, choices=…)`; the class docstring is the `--help` descript
   device flag literal exists once, in `_device.py::DEVICE_HELP`.
 - Roots and report paths default in terms of `anime_tools/workspace/__init__.py` (`RESIZED`,
   `REPORTS`, …) so the CLI and GUI defaults can't drift.
+- A default or help string that belongs to the stage's own logic goes in a leaf —
+  `stages/_options.py`
+  or `masking/_prompts.py` — and the stage module re-exports it. Importing the stage module from
+  here would cost the GUI's schema build numpy, PIL and yaml on every request;
+  `tests/test_registry_requests.py::test_resolving_every_request_stays_import_light` measures it.
 - SAM3 detection knobs are the nested `DetectionRequest` (`GROUP = "detection"`); reuse it, and
   build the options object field by field through `.options()` so a knob with no request field
   is an error.
@@ -63,7 +68,9 @@ The CLI in `cli/` is a shell and nothing more: `build_parser()` returns `Request
 - `stages/__init__.py` `__all__` (lazy export) if it lives in `stages/`.
 - `gui/stages.py`: a `ROOT_FIELDS` row (which dests are dataset roots), `BASIC_FIELDS` if some
   knobs should fold under Advanced, `MASK_FIELDS` / `REPORT_INPUTS` / `PANEL_FIELDS` when they
-  apply, `NO_PREFLIGHT` if the stage must not have `resize` run in front of it.
+  apply, `NO_PREFLIGHT` if the stage must not have `resize` run in front of it. Nothing else:
+  a `Field` carries the `Arg`, so a field's type and its coercion need no entry here — a new
+  `kind` is only a renderer in `frontend/src/components/FieldRow.tsx`.
 - `frontend/src/i18n/{en,ko,ja,zh}.ts`: `stage.panels` / `stage.titles` / `stage.shorts` entries
   keyed by the id. A missing id falls back to the English the server sent, but `en.ts` is the
   schema, so add it there first and `tsc` names the other three. Then `make frontend`.

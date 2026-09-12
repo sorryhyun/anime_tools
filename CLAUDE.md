@@ -109,7 +109,10 @@ Each of these is implemented in one package but bites from any of them.
   `to_argv()` / `from_namespace()` inverses), a `run_<stage>(req)` runner, and a one-line CLI
   shell. `stages/registry.py` lists all eleven, resolved lazily; the GUI form schema and argv
   come from the same field list. `stages/` spells flags with underscores, `masking/` and
-  `grouping/` with hyphens, and either spelling is an alias. Procedure: the `add-stage` skill.
+  `grouping/` with hyphens, and either spelling is an alias. A field's default and help come
+  from a leaf — `stages/_options.py`, `masking/_prompts.py` — and never from the stage module
+  that uses it: resolving a request class is how the GUI builds its form, and reaching into a
+  stage for one number costs that build numpy, PIL and yaml. Procedure: the `add-stage` skill.
 - Dry-run by default from the CLI; `--apply` writes. Every run leaves `report.json`; the
   GUI always applies and relies on `{stem}.history.txt` plus `replay.apply_one` (the one
   drift-guarded write) for Undo.

@@ -36,6 +36,15 @@ from anime_tools.captions.position_clauses import (
     parse_caption,
 )
 from anime_tools.captions.taxonomy import count_of, exact_count, normalize_tag
+
+# Re-exported: the verdict names and the two witness floors are request defaults,
+# so they live in the leaf the schema build reads (:mod:`stages._options`).
+from anime_tools.stages._options import (
+    DEFAULT_IDENTITY_CONFIDENCE,
+    DEFAULT_MULTIVIEW_PROB,
+    EXTRA_CHARACTER,
+    MULTIPLE_VIEWS,
+)
 from anime_tools.stages.instance_detection import Detection, crop_instance
 
 from ._analysis import clear_analysis, write_analysis
@@ -47,8 +56,6 @@ from .replay import apply_one, undo_one
 # The audit population, named by `is_candidate`'s own reason string.
 AUDIT_SKIP_REASON = "single-subject"
 
-MULTIPLE_VIEWS = "multiple views"
-EXTRA_CHARACTER = "extra-character"
 UNSURE = "unsure"
 # Not a finding: the caption's own girls+boys counts already cover every box.
 COUNT_EXPLAINED = "count-explained"
@@ -63,13 +70,6 @@ _DIFFERENT_CHARACTER_AGREEMENT = 0.34
 # Groups needed before the agreement ratio is trusted: two crops agreeing only
 # on `brown hair` says nothing.
 _MIN_COMPARABLE_GROUPS = 2
-# P(multiple views) from the whole-image tagger at which it counts as a witness.
-DEFAULT_MULTIVIEW_PROB = 0.5
-# Probability an identity-group winner needs before it is believed. Measured: a
-# legible face scores 0.978-1.000 on hair/eye colour, a headless panel's
-# invented values land at 0.54-0.63.
-DEFAULT_IDENTITY_CONFIDENCE = 0.9
-
 # Which detector produced the finding.
 SOURCE_DETECTION = "detection"
 SOURCE_TAGGER = "tagger-only"

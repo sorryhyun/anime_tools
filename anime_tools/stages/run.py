@@ -269,12 +269,12 @@ def run_position(req: PositionRequest):
         )
         return rows, stats
 
-    from anime_tools.stages._models import load_tagger
-    from anime_tools.stages.detector import build_detect_fn
-    from anime_tools.stages.instance_detection import (
+    from anime_tools.masking._prompts import (
         prompt_embed_sha256,
         resolve_prompt_embed,
     )
+    from anime_tools.stages._models import load_tagger
+    from anime_tools.stages.detector import build_detect_fn
     from anime_tools.stages.position_captions import run_position_captions
 
     # Both stay resident: the pipeline is per-image (detect -> crop -> tag), not

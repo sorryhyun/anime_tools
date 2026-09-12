@@ -218,6 +218,35 @@ def test_iter_images_on_a_missing_root_is_empty(tmp_path):
     assert F.iter_images(tmp_path / "nope") == []
 
 
+def test_a_same_folder_stem_collision_is_refused(tmp_path):
+    """Grouping walks through ``walk_images``, so it gets the stem assertion.
+
+    The feature cache addresses ``(parent-dir hash, stem)``, so ``1.png`` and
+    ``1.webp`` in one folder would silently share one ``.npz`` — the collision
+    the shared walk exists to refuse. Across folders is still fine: the cache
+    key carries the parent.
+    """
+    import pytest
+
+    _touch(tmp_path / "a" / "1.png")
+    _touch(tmp_path / "b" / "1.webp")
+    assert len(F.iter_images(tmp_path)) == 2
+
+    _touch(tmp_path / "a" / "1.webp")
+    with pytest.raises(ValueError, match="Duplicate image stems"):
+        F.iter_images(tmp_path)
+    with pytest.raises(ValueError, match="Duplicate image stems"):
+        F.gather_members([tmp_path], None)
+
+
+def test_iter_images_takes_the_shared_path_pattern(tmp_path):
+    """``pattern`` is ``_walk``'s ``path_pattern``, not a second glob."""
+    _touch(tmp_path / "a" / "one.png")
+    _touch(tmp_path / "b" / "two.png")
+    assert [p.name for p in F.iter_images(tmp_path, "a/*")] == ["one.png"]
+    assert len(F.iter_images(tmp_path, "*")) == 2
+
+
 def test_gather_members_uses_the_same_glob(tmp_path):
     _touch(tmp_path / "artist_a" / "s1.png")
     _touch(tmp_path / "artist_a" / "s2.bmp")

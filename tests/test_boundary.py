@@ -95,3 +95,26 @@ def test_gui_server_is_torch_free():
         check=False,
     )
     assert r.returncode == 0, r.stderr
+
+
+def test_the_masking_library_does_not_import_a_stage():
+    """The masking ↔ stages seam runs one way.
+
+    ``masking/sam.py`` used to resolve its ``--prompt_embed`` through
+    ``stages/instance_detection.py`` while ``stages/requests.py`` read its help
+    strings out of ``masking/_sam3.py``, so a change to either side could be
+    made correctly in one place and still be wrong. The prompt vocabulary is
+    masking's (``masking/_prompts.py``) and a stage reaches in for it; nothing
+    under ``masking/`` reaches back. The ``cli/probe_*`` tools are exempt: they
+    are dev probes over a stage's own ``Detection`` geometry, not the library.
+    """
+    masking = PKG / "masking"
+    bad = []
+    for path in sorted(masking.rglob("*.py")):
+        if path.parent.name == "cli":
+            continue
+        for m in _IMPORT_RE.finditer(path.read_text(encoding="utf-8")):
+            mod = m.group("from") or m.group("mod")
+            if mod.startswith("anime_tools.stages"):
+                bad.append(f"{path.relative_to(PKG)}: {m.group(0).strip()}")
+    assert not bad, "\n".join(bad)

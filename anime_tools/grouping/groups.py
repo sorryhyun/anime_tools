@@ -9,16 +9,19 @@ pairs)``.
 Scope is per-artist: components are computed independently within each top-level
 folder under the source dir. ``build_groups`` imports the torch-backed primitives
 lazily, so importing this module for the clustering / manifest schema stays
-torch-free.
+torch-free — and numpy-free, which is what lets ``requests.py`` read the five
+``DEFAULT_*`` thresholds from here without weighing down the GUI's schema build.
 """
 
 from __future__ import annotations
 
 from pathlib import Path
-
-import numpy as np
+from typing import TYPE_CHECKING
 
 from anime_tools._json import write_json
+
+if TYPE_CHECKING:  # numpy is imported where it is used — see the module docstring.
+    import numpy as np
 
 MANIFEST_VERSION = 2
 # Stage-B near-twin gate; looser on the inlier fraction than the miner's defaults
@@ -65,6 +68,8 @@ def connected_components(n: int, edges: list[tuple[int, int]]) -> list[list[int]
 
 def _mean_pairwise_cosine(sub: np.ndarray) -> float:
     """Mean off-diagonal cosine of a small (already-normed) embedding block."""
+    import numpy as np
+
     if sub.shape[0] < 2:
         return 1.0
     sim = sub @ sub.T
@@ -95,6 +100,7 @@ def _grid_match_edges(
     Runs on ``device``. Pooling and the pair match are chunked so peak memory is
     bounded regardless of bucket size.
     """
+    import numpy as np
     import torch
 
     from anime_tools.grouping.matching import match_fracs, pool_cells_batch
@@ -148,6 +154,8 @@ def build_groups(
     manifest dict (also written to ``out_path`` as JSON).
     """
     # Lazy torch-backed imports so the pure helpers above import without torch.
+    import numpy as np
+
     from anime_tools._progress import ProgressBar
     from anime_tools.grouping.features import Member, embed_members, iter_images
 

@@ -28,7 +28,7 @@ from anime_tools._request import (
     arg,
 )
 from anime_tools.downloads import DEFAULT_SAM3_CHECKPOINT, DEFAULT_SUBJECT_PROMPT_EMBED
-from anime_tools.masking._sam3 import CHECKPOINT_HELP
+from anime_tools.masking._prompts import CHECKPOINT_HELP
 
 __all__ = [
     "MASK_KINDS",

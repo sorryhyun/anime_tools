@@ -46,6 +46,10 @@ from anime_tools.captions.position_clauses import (
     parse_caption,
 )
 from anime_tools.captions.taxonomy import normalize_tag
+
+# Re-exported: the knob dataclass is a leaf so the GUI's schema build can read the
+# defaults without importing this module (:mod:`stages._options`).
+from anime_tools.stages._options import PositionCaptionOptions
 from anime_tools.stages.instance_detection import (
     Detection,
     box_area,
@@ -171,72 +175,6 @@ class PositionCaptionStats:
 
     def pin(self, reason: str) -> None:
         self.pinned_tags[reason] = self.pinned_tags.get(reason, 0) + 1
-
-
-@dataclass(frozen=True)
-class PositionCaptionOptions:
-    """Knobs for one pass. Defaults are the shipped recipe."""
-
-    prompt: str = "girl"
-    score_threshold: float = 0.5
-    retry_score_threshold: float = 0.35
-    # Body-part fallback: extra SAM3 prompts run only when the subject prompt
-    # undershoots. Off by default (empty tuple) — see ``merge_part_detections``.
-    part_prompts: tuple[str, ...] = ()
-    part_score_threshold: float = 0.5
-    part_containment_threshold: float = 0.7
-    iou_threshold: float = 0.65
-    # Off by default — see ``box_containment``.
-    containment_threshold: float = 1.01
-    # On by default, unlike its box counterpart — see ``mask_containment``.
-    mask_containment_threshold: float = 0.8
-    # Mask-quality tie-break inside an NMS-matched pair — see
-    # ``dedupe_detections``; 0 disables (score-only survivor).
-    dedupe_fill_ratio: float = 2.0
-    min_area_frac: float = 0.005
-    pad: float = 0.06
-    blank_crops: bool = True
-    row_tol: float = 0.25
-    max_clause_tags: int = 8
-    # How many tags a clause may introduce that the caption never contained;
-    # the rest fills from the flat bag first, since only a bag tag can *move*.
-    max_novel_tags: int = 1
-    name_confidence: float = 0.5
-    allow_unlisted_names: bool = False
-    min_instances: int = 2
-    max_instances: int = 8
-    strict_count: bool = True
-    discriminative_only: bool = True
-    bag_gated_identity: bool = True
-    # On a repeated-subject layout (``multiple views`` / comic panels), keep the
-    # character's own traits and name out of every clause: they belong to the
-    # girl, not to a view of her.
-    multi_view_gate: bool = True
-    # Let a clause say which *view* it describes (`close-up`, `full body`).
-    bind_framing: bool = True
-    # Let a view layout's clause carry the anatomy visible in that panel.
-    bind_view_anatomy: bool = True
-    # Bag-tag keep relaxation (1.0 = off): a bag tag can only MOVE into a clause,
-    # never be invented, so the crop tagger only has to *localize* it and its
-    # per-tag F1 threshold may be relaxed — which recovers pose tags whose scores
-    # collapse once mask-blanking removes the scene context. Applied before the
-    # attributable/shared census, so a rival crop's borderline score also BLOCKS
-    # a move the strict kept sets allowed.
-    bag_relax: float = 0.35
-    # Extra relaxation per word beyond the first (compounds with ``bag_relax``):
-    # a more specific tag is less likely to clear on noise. 1.0 = off.
-    bag_word_relax: float = 0.85
-    # Raw-score floor under the relaxation, which can otherwise drag a 2-word
-    # tag to ~0.16× of its threshold. Only the relax path is floored. 0 = off.
-    bag_relax_min_score: float = 0.3
-    # Move an attributable tag out of the flat bag into its clause. False is the
-    # additive v1 behaviour (bag untouched), kept for the training A/B.
-    rewrite: bool = True
-    # How far the winning crop must clear every other, relative to its own
-    # probability (``1 - rival/winner``), before a tag may leave the bag. Gates
-    # only the removal — a tag that fails still enters its clause. 0.0 = trust
-    # the tagger's thresholds alone.
-    attribution_margin: float = 0.25
 
 
 def detect_subjects(

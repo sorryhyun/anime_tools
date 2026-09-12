@@ -11,6 +11,13 @@ curation-private, keyed by parent-dir hash + stem and stamped with `(size, mtime
 load-bearing because `resize` rewrites files under a key that doesn't move.
 `cli/match_decensored.py` has a different cache shape and they are deliberately not unified.
 
+`features.iter_images` / `gather_members` walk through `_walk.walk_images`, the same walk every
+other stage reads, so grouping gets its same-folder stem assertion — load-bearing here, since the
+feature cache is keyed `(parent-dir hash, stem)` and a colliding pair would share one `.npz` — and
+`path_pattern` for free. `cli/match_decensored.py` is the one deliberate exception: its
+descriptors are keyed by *filename*, so it must keep the `1.png` + `1.webp` pair `walk_images`
+refuses.
+
 `features.read_tags` is the one caption read on this side (through `parse_caption`, keyed by
 `normalize_tag`). The surface is `GroupRequest` (`requests.py`, torch-free, hyphenated flags,
 `FLAG_SEP = "-"`) run by `groups.run_groups`, which resolves `--embedder`'s `module:callable` and

@@ -26,34 +26,46 @@ pair. That is what produces nearly every item below:
 | The one answer | The second one beside it |
 |---|---|
 | `parse_caption` / `compose_caption` | `split(",")` on caption text: `variants.py:186`, `autotag.py:130`/`:211`, `captions.py:254`, `tag_rules.py:108` |
-| `_request.Arg` + generated parser | `gui/stages.Field` + `_coerce`, a parallel type system |
-| `_walk.walk_images` | `grouping/features.py:87` calling `glob_images_pathlib` directly |
-| `registry.py`, deliberately import-light | `stages/requests.py`, which pulls numpy, PIL and yaml |
+| ~~`_request.Arg` + generated parser~~ | ~~`gui/stages.Field` + `_coerce`~~ — closed: `Field` carries its `Arg` |
+| ~~`_walk.walk_images`~~ | ~~`grouping/features.py:87` calling `glob_images_pathlib`~~ — closed |
+| ~~`registry.py`, deliberately import-light~~ | ~~`stages/requests.py`, which pulls numpy, PIL and yaml~~ — closed: two leaves |
 
 Fixing the pairs is worth more than any individual bug below, because each pair is a place where a
 future change can be made correctly in one spot and still be wrong.
 
-Two rows are off that table since 2026-09-12: the progress format now has one implementation
-(`_progress.progress_line` / `ProgressBar`, no `tqdm` anywhere in the package), and `correct` is
-dry-run-by-default with a report like its six siblings. `correction.py`'s own two caption splits
-went with the first P0.
+Two rows came off that table earlier on 2026-09-12: the progress format now has one
+implementation (`_progress.progress_line` / `ProgressBar`, no `tqdm` anywhere in the package), and
+`correct` is dry-run-by-default with a report like its six siblings. `correction.py`'s own two
+caption splits went with the first P0. The three struck rows went the same day, with the
+"close the pairs" block. Only the caption-split row is left, and its five remaining sites all
+split a *tagger's* comma-joined output rather than a caption.
 
 ## Structural
 
-- [ ] **`stages/requests.py` defeats the registry's laziness.** Measured: `import
-      anime_tools.stages.registry` pulls no numpy, PIL, yaml, cv2 or torch; `import
-      anime_tools.stages.requests` pulls numpy, PIL and yaml, at 360 modules. The cause is module-
-      level imports of `masking._sam3` (`:29`) for four constants, `stages.multiview_audit` (`:35`)
-      for four defaults, and `stages.position_captions` for `PositionCaptionOptions`. The GUI
-      resolves request classes to build its form, so it pays this on every schema build.
-      Fix: move `prompt_list` and the help constants to `contract.py`, and `PositionCaptionOptions`
-      plus the `DEFAULT_*` constants to a leaf `stages/_options.py`.
+- [x] **`stages/requests.py` defeats the registry's laziness.** *Done 2026-09-12.* 360 modules
+      with numpy, PIL and yaml → 182 with none; `masking/requests.py` 275 → 179 and
+      `grouping/requests.py` 259 → 164, since the GUI resolves all three packages' request
+      classes. `stages/_options.py` holds `PositionCaptionOptions`, the resize geometry and the
+      audit's verdicts + witness floors; `masking/_prompts.py` holds the SAM3 prompt vocabulary
+      (the seam item below); `grouping/groups.py` defers its numpy import the way it already
+      deferred torch. Each owning module re-exports its own constants, and
+      `test_resolving_every_request_stays_import_light` measures the result while
+      `test_the_request_defaults_are_spelled_once` pins the re-exports as the same objects.
+      The help constants did *not* go to `contract.py` as suggested: that module is stdlib-only
+      (`PROMPT_EMBED_HELP` needs `downloads.DEFAULT_SUBJECT_PROMPT_EMBED`) and append-only within
+      a `CONTRACT_VERSION`, which a SAM3 flag's help text has no business entering.
 
-- [ ] **`gui/stages.Field` and `_coerce` are a second type system over the same field list.**
-      `Field` restates eight of `Arg`'s attributes, `field_of` copies them across one by one, and
-      `_coerce` re-implements as a `kind` switch the coercion `build_parser` already encodes in
-      `type=`. Adding an `Arg.kind` means remembering a matching `_coerce` branch.
-      Fix: have `Field` carry its `Arg`, and dispatch `_coerce` on `a.type` / `a.nargs`.
+- [x] **`gui/stages.Field` and `_coerce` are a second type system over the same field list.**
+      *Done 2026-09-12.* `Field` is now `arg: Arg` plus the seven GUI bindings; everything the flag
+      says is a property over that one object, `to_json()` is the wire dict, and
+      `fields_of(schema)` re-attaches each `Arg` from the request class the schema names.
+      `field_of` is gone and `_coerce` dispatches on `a.nargs`/`a.positional` and `a.type` — the
+      attributes `build_parser` hands argparse — so a new `kind` needs no branch. It was a latent
+      bug and not only duplication: a field carrying both a custom `kind` and `type=int` got `str`
+      from the form and `int` from the CLI, which
+      `test_a_form_value_is_coerced_by_the_parsers_own_type` now pins. The browser is untouched —
+      the 4.6k-line schema dump and ~70k lines of A/B'd `build_argv` output are byte-identical to
+      before, so `types.ts` and the bundle needed no change.
 
 - [ ] **`stages/run.py` holds seven runners (882 lines) away from the stage modules**, while
       `registry.py` already addresses runners as `module:function`. `run_position`'s 55-line summary
@@ -63,17 +75,22 @@ went with the first P0.
 - [ ] **`stages/run.py:25` imports from `stages/cli/_args.py` and `cli/_report.py`** — the library
       depends on its own CLI package. Move both to `stages/_report.py` and `stages/_progress.py`.
 
-- [ ] **The masking ↔ stages seam is two-way.** `masking/sam.py:36` imports from
-      `stages/instance_detection.py`, while `stages/requests.py:29` imports from `masking/_sam3.py`.
-      The root cause is naming: `instance_detection.py:7` claims "Detector-agnostic — nothing here
-      imports SAM3" yet owns `resolve_prompt_embed`, `SOFT_PROMPT_KEYS` and `load_soft_prompt`.
-      Fix: move those three into `masking/_sam3.py`. The docstring becomes true, the seam becomes
-      one-way, and masking loses its only `stages` import.
+- [x] **The masking ↔ stages seam is two-way.** *Done 2026-09-12.* The prompt vocabulary went
+      into a new `masking/_prompts.py` rather than into `_sam3.py`: `SUBJECT_PROMPT`, the two help
+      strings, `prompt_list`, `resolve_prompt_embed`, `SOFT_PROMPT_KEYS`, `load_soft_prompt`,
+      `prompt_embed_sha256`. `_sam3.py` aliases `np.bool` on import, so putting them there would
+      have kept `masking/requests.py` and `stages/requests.py` importing numpy for a help string —
+      the item above. `instance_detection.py`'s docstring is true now, masking's library half
+      imports no stage, and `test_the_masking_library_does_not_import_a_stage` greps for it. Still
+      exempt, and now said so in that test: `masking/cli/probe_*.py`, dev probes over a stage's own
+      `Detection` geometry.
 
-- [ ] **Grouping bypasses the one image walk.** `grouping/features.py:87` calls
-      `glob_images_pathlib` directly while `masking/_masks.py:66` uses `walk_images`, so grouping
-      gets neither the same-stem collision assertion nor `path_pattern`. A test currently asserts
-      the two agree, which is exactly the assertion that breaks first.
+- [x] **Grouping bypasses the one image walk.** *Done 2026-09-12.* `iter_images` (now taking the
+      `pattern`) and `gather_members` both go through `walk_images`. The stem assertion is
+      load-bearing here rather than cosmetic: the feature cache is keyed `(parent-dir hash, stem)`,
+      so `1.png` and `1.webp` in one folder shared a single `.npz`. `cli/match_decensored.py` keeps
+      `glob_images_pathlib` on purpose — its descriptors are keyed by filename, so it must accept
+      exactly the pair `walk_images` refuses, and its docstring says so now.
 
 - [ ] **`frontend/src/types.ts` is a 650-line hand-maintained mirror of the Python dataclasses**,
       with no drift check, and it is the single most-churned file in the repo (44 touches in 60
@@ -318,30 +335,39 @@ Worth keeping in mind before any refactor moves these.
 
 ## Suggested order
 
-Grouped so that each block is one coherent sitting. The original blocks 1 (correctness) and 2
-(durability) are done — see "Landed" below — and block 3 has lost its first item, so the
-numbering starts where the work does.
+Grouped so that each block is one coherent sitting. The original blocks 1 (correctness), 2
+(durability) and 3 (close the pairs) are all done — see "Landed" below — so the numbering starts
+where the work does.
 
-1. **Close the pairs.** Grouping onto `walk_images`; `Field` onto `Arg`; move the prompt-embed
-   helpers so the masking seam is one-way; lighten `requests.py` so the registry's laziness
-   survives resolution. (The progress helper is done: `_progress.progress_line` / `ProgressBar`.)
-2. **Split the big files.** `server.py` into routers, `run.py` into per-stage runners,
+1. **Split the big files.** `server.py` into routers, `run.py` into per-stage runners,
    `tagger.py` into schema/fetch/model, `downloads.py` and `exclude.py` into catalog/engine/CLI.
-3. **Make the guards real.** Move the ruff rules into `pyproject.toml` and let `ruff check` gate
+2. **Make the guards real.** Move the ruff rules into `pyproject.toml` and let `ruff check` gate
    CI; add a Windows job; generate or test `types.ts` against `schema()`; test the documented
    counts against `len(STAGES)` and `len(__all__)`.
-4. **Cleanup.** Share the test fixtures, delete the dead symbols, fix the stale prose and the
+3. **Cleanup.** Share the test fixtures, delete the dead symbols, fix the stale prose and the
    README's four wrong claims in one sweep.
 
 Two items sit outside that order because they are one-line changes with outsized downside: move
 `ANIME_TOOLS_HOME` out of the checkout before the next `git clean`, and rename the guidebooks to
 ASCII.
 
-Block 1 is where the maintainability return is. Blocks 2 through 4 are safe to do incrementally,
-and the cleanup is much less likely to regress once block 1 has removed the second
-implementations.
+The remaining blocks are safe to do incrementally, and the cleanup is much less likely to regress
+now that the second implementations are gone.
 
 ## Landed, and what the trainer owes
+
+### Block 3 — the pairs, 2026-09-12
+
+All four items of "Close the pairs" are struck above with what each one actually took. Two new
+leaves came out of it — `anime_tools/stages/_options.py` (every default a stage request field
+names) and `anime_tools/masking/_prompts.py` (what a SAM3 prompt is, for both packages) — plus
+five regression tests: the import-light measurement and the re-export identity
+(`test_registry_requests`), the one-way masking seam (`test_boundary`), the stem collision and the
+shared `path_pattern` (`test_grouping_features`), and the `Arg`-driven coercion plus the
+`Field`-is-its-`Arg` shape (`test_gui`). Nothing in `frontend/` moved: the schema the browser
+receives is byte-identical.
+
+### Blocks 1 and 2 — the confirmed defects, 2026-09-12
 
 The twelve items that were under "Confirmed defects" — three P0, nine P1 — were fixed on
 2026-09-12 and removed from this file. What they were, so a reader of the git history can find

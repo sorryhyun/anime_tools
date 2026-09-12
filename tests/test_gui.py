@@ -12,9 +12,11 @@ import subprocess
 import sys
 import threading
 import time
+from dataclasses import dataclass
 
 import pytest
 
+from anime_tools._request import Request, arg, args_of
 from anime_tools.gui import stages as S
 
 pytest.importorskip("fastapi")
@@ -65,6 +67,104 @@ def test_every_stage_has_a_schema():
                 f["kind"] in ("bool", "int", "float", "str", "enum", "list", "masks")
                 for f in sc["fields"]
             )
+
+
+def test_a_field_is_its_arg_plus_the_bindings():
+    """``Field`` carries the :class:`Arg` the parser was generated from.
+
+    Everything the flag itself says is a property reading that one object, so
+    the form and the CLI cannot drift on a field, and the wire dict is a
+    projection of it (:meth:`Field.to_json`) rather than a second copy. The GUI
+    only *adds* the bindings.
+    """
+    from dataclasses import fields as dc_fields
+
+    from anime_tools._request import args_of
+
+    _, sc = _stage("autotag")
+    stored = dc_fields(S.Field)
+    assert stored[0].name == "arg"
+    assert {f.name for f in stored[1:]} == {
+        "root",
+        "setting",
+        "report",
+        "mask",
+        "auto",
+        "overridable",
+        "advanced",
+    }
+
+    args = {a.name: a for a in args_of(S.BY_ID["autotag"].request_class())}
+    for fd in sc["fields"]:
+        a = args[fd["dest"]]
+        f = S.Field(a)
+        assert (f.kind, f.flags, f.help, f.required) == (
+            a.kind,
+            list(a.flags),
+            a.help,
+            a.required,
+        )
+        # ...and the wire dict is exactly what the schema shipped, bindings apart.
+        assert S.Field.from_json(a, fd).to_json() == fd
+
+
+@dataclass(frozen=True, kw_only=True)
+class OddRequest(Request):
+    """A request whose numbers carry a ``kind`` this GUI has never heard of."""
+
+    FLAG_SEP = "_"
+
+    tally: int = arg(3, kind="dial", type=int, help="an int drawn some new way")
+    ratio: float = arg(0.5, kind="dial", type=float)
+    name: str = arg("x", kind="dial")
+
+    def __post_init__(self) -> None:
+        # ValueError, not TypeError: a request's validation is what the CLI turns
+        # into `parser.error` and the GUI into a 400.
+        if not isinstance(self.tally, int) or not isinstance(self.ratio, float):
+            raise ValueError(  # noqa: TRY004
+                f"not numbers: {self.tally!r} {self.ratio!r}"
+            )
+
+
+def test_a_form_value_is_coerced_by_the_parsers_own_type():
+    """``_coerce`` reads the ``type`` / ``nargs`` ``build_parser`` hands argparse.
+
+    So a request growing a new ``Arg.kind`` needs no matching branch here — the
+    kind decides how a field is *drawn*, its ``type`` how a value is read. While
+    the two were separate readings of the same field, a kind with no branch fell
+    through to ``str`` and handed the request a string where its own parser would
+    have put an int: this stage's ``__post_init__`` is where that lands, one
+    validation short of the child.
+    """
+    fields = [S.Field(a).to_json() for a in args_of(OddRequest)]
+    sc = {"request": f"{__name__}:OddRequest", "fields": fields}
+    assert [f["kind"] for f in fields] == ["dial", "dial", "dial"]
+    assert S.build_argv(sc, {"tally": "7", "ratio": "1.25", "name": 9}) == [
+        "--tally",
+        "7",
+        "--ratio",
+        "1.25",
+        "--name",
+        "9",
+    ]
+    # ...which is what the parser reads back, types and all.
+    ns = OddRequest.parser().parse_args(["--tally", "7", "--ratio", "1.25"])
+    assert ns.tally == 7 and ns.ratio == 1.25
+
+    # The mask stage's own list kind is a list because its ``nargs`` says so,
+    # not because this module knows the word "masks".
+    _, masks = _stage("masks_sam")
+    by = {f["dest"]: f for f in masks["fields"]}
+    assert by["masks"]["kind"] == "masks"
+    argv = S.build_argv(
+        masks, {"masks": "keep:text:girl\nignore:text:logo"}, roots={"dst": "d"}
+    )
+    assert argv[argv.index("--masks") :] == [
+        "--masks",
+        "keep:text:girl",
+        "ignore:text:logo",
+    ]
 
 
 def test_defaults_produce_empty_argv():

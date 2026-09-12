@@ -21,11 +21,18 @@ caches per process on its arguments, so a second pass in one interpreter reuses 
 
 ## Two private cores
 
-- `_sam3.py` is the only place SAM3 is constructed, the one declaration of `--checkpoint` /
-  `--prompt_embed` (defaults imported from `downloads.py`), and the home of
+- `_prompts.py` is what a *prompt* is, for both packages: `SUBJECT_PROMPT` (`girl`), the
+  `--checkpoint` / `--prompt_embed` help (defaults imported from `downloads.py`), `prompt_list`
+  (`none`/`off` = no prompts; the detection stages' lists), and the soft prompt —
+  `resolve_prompt_embed` (`none`/`off`/`text`/`""` = the text prompt; a missing *shipped* default
+  degrades to it with a warning, any other missing path raises), `SOFT_PROMPT_KEYS`,
+  `load_soft_prompt`, `prompt_embed_sha256`. Torch-free *and numpy-free*, which is the point: it is
+  split out of `_sam3` so `masking/requests.py` and `stages/requests.py` can read a default without
+  the `np.bool` side effect below, and so the seam runs one way — a stage reaches in here, nothing
+  here reaches into `stages/` (`tests/test_boundary.py`).
+- `_sam3.py` is the only place SAM3 is constructed, and the home of
   `ground_with_soft_prompt` (a soft prompt is the text encoder's output, so the encode is
-  skipped), `prompt_list` (`none`/`off` = no prompts; the detection stages' lists) and
-  `detect_union`. It installs the `np.bool`
+  skipped) and `detect_union`. It installs the `np.bool`
   alias sam3 needs as an import side effect, with sam3 imports deferred into functions so
   importing it stays torch-free. Two more shims run inside those functions: `stub_edt_kernel`
   pre-seeds `sam3.model.edt` (the one module that imports triton, which has no macOS build) with a
