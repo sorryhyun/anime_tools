@@ -86,6 +86,7 @@ const zh: Dict = {
       image: "原图",
       mask: "掩膜",
       overlay: "叠加",
+      ocr: "文本框",
     },
     overlayHint: "把掩膜以 40% 叠在图片上",
     overlayNeeds: "需要同时有图片和掩膜",
@@ -117,7 +118,23 @@ const zh: Dict = {
     /** {0} is how many lines were recognized. */
     count: (n: number) => `${n} 行`,
     readOnly: "由 OCR 阶段生成",
-    boxHint: "在图像中的左上角坐标（像素）",
+    /** The seq badge, the header count and the preview tab: the boxes the
+        detector drew, over the resized copy they were read from. */
+    boxesHint: "在该阶段读取的图像上画出每一行的框",
+    boxesNeeds: "需要读取这段文字时用的缩放副本",
+    /** {0} is the line's seq number. The hint on one line's badge. */
+    showBox: (seq: number) => `在图像上显示第 ${seq} 行 — 再次点击显示全部`,
+    /** Under the picture while every box is drawn. {0} is how many. */
+    boxesAll: (n: number) => `该阶段读取的图像上共 ${n} 个文本框`,
+    /** Under the picture while one line is drawn alone. {0} is its seq. */
+    boxesOne: (seq: number) => `仅显示第 ${seq} 行 — 再次点击徽章显示全部`,
+    weak: "不进入描述",
+    weakHint:
+      "低于检测置信度或字形大小下限：边车文件仍会保留该行，但 Export 的 --combine_ocr 不会写进描述。",
+    /** The row's hint: {0} is the detector's confidence in the box, {1} the reader's in the text
+        (either 0 when nothing stood behind it). */
+    scores: (det: number, read: number) =>
+      `框 ${det.toFixed(2)} · 识别 ${read.toFixed(2)} · 在图像中的左上角坐标（像素）`,
   },
   caption: {
     master: "master",

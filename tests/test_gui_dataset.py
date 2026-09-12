@@ -751,10 +751,30 @@ def test_the_ocr_sidecar_reaches_the_panel_without_being_a_caption_version(clien
         "det": 0.0,  # a pre-det record: the detector's score was never kept
         "score": 0.971,
         "text": "こんにちは",
+        "usable": True,
     }
     # Not a rung: no badge in the row came out of the sidecar.
     assert not any(v["kind"] == "ocr" or v.get("rung") == "ocr" for v in it["versions"])
     assert not any("こんにちは" in (v.get("text") or "") for v in it["versions"])
+
+
+def test_an_ocr_row_says_whether_that_line_could_reach_a_caption(client):
+    """``usable`` is ``usable_lines`` answered server-side: the panel draws the
+    floors rather than re-deriving them, so the box badge of a line Export would
+    drop reads as such.
+    """
+    c, home = client
+    ocr = home / "workspace" / "ocr" / "sub"
+    ocr.mkdir(parents=True)
+    (ocr / "b.ocr.txt").write_text(
+        "# anima caption ocr — auto-generated, do not hand-edit\n"
+        "1\t10,20,300,60\t0.900\t0.971\tこんにちは\n"
+        "2\t0,0,39,22\t0.900\t0.800\tはあはあ\n"  # 14.6 px glyphs: too fine
+        "3\t0,0,300,60\t0.300\t0.800\tでかい\n",  # the detector was unsure
+        encoding="utf-8",
+    )
+    rows = c.get("/api/dataset/item", params={"rel": "sub/b.jpg"}).json()["ocr"]
+    assert [r["usable"] for r in rows] == [True, False, False]
 
 
 def test_an_image_with_no_ocr_sidecar_answers_an_empty_list(client):

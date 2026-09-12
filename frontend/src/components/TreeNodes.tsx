@@ -1,4 +1,4 @@
-import { For, Show } from "solid-js";
+import { createEffect, For, Show } from "solid-js";
 import { t } from "../i18n";
 import type { Folder, Folding, Grouped } from "../tree";
 import type { DatasetItem, NodeKind, Rung, Sel, VersionKind } from "../types";
@@ -85,8 +85,17 @@ export function FolderNode(p: { ctx: TreeCtx; f: Folder; depth: number }) {
 export function ImageNode(p: { ctx: TreeCtx; it: DatasetItem; depth: number; withDir?: boolean }) {
   const isSel = () => p.ctx.sel()?.rel === p.it.rel;
   const on = (k: NodeKind) => isSel() && p.ctx.sel()!.kind === k;
+  let row!: HTMLDivElement;
+  // A selection arrives from the keyboard and from the address hash as often as
+  // from a click here, and the tree it lands in may have just unfolded around
+  // it, so the row brings itself into view. `nearest` is what keeps that from
+  // being a jump: a row already on screen does not move.
+  createEffect(() => {
+    if (isSel()) row.scrollIntoView({ block: "nearest" });
+  });
   return (
     <div
+      ref={row}
       classList={{ tn: true, img: true, sel: isSel(), excluded: p.it.excluded }}
       style={{ "padding-left": `${8 + p.depth * 12}px` }}
       title={p.it.rel}

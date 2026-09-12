@@ -86,6 +86,7 @@ const ko: Dict = {
       image: "원본",
       mask: "마스크",
       overlay: "겹쳐 보기",
+      ocr: "텍스트 박스",
     },
     overlayHint: "이미지 위에 마스크를 40%로 겹칩니다",
     overlayNeeds: "이미지와 마스크가 모두 있어야 합니다",
@@ -119,7 +120,23 @@ const ko: Dict = {
     /** {0} is how many lines were recognized. */
     count: (n: number) => `${n}줄`,
     readOnly: "OCR 스테이지가 생성함",
-    boxHint: "이미지 안에서의 좌측 상단 좌표(픽셀)",
+    /** The seq badge, the header count and the preview tab: the boxes the
+        detector drew, over the resized copy they were read from. */
+    boxesHint: "스테이지가 읽은 이미지 위에 모든 줄의 박스를 그립니다",
+    boxesNeeds: "이 텍스트를 읽은 리사이즈본이 필요합니다",
+    /** {0} is the line's seq number. The hint on one line's badge. */
+    showBox: (seq: number) => `${seq}번 줄을 이미지 위에 표시 — 다시 누르면 전체`,
+    /** Under the picture while every box is drawn. {0} is how many. */
+    boxesAll: (n: number) => `스테이지가 읽은 이미지 위의 텍스트 박스 ${n}개`,
+    /** Under the picture while one line is drawn alone. {0} is its seq. */
+    boxesOne: (seq: number) => `${seq}번 줄만 표시 — 뱃지를 다시 누르면 전체`,
+    weak: "캡션 제외",
+    weakHint:
+      "검출 신뢰도 또는 글자 크기 하한에 미달합니다. 사이드카에는 남지만 Export의 --combine_ocr이 캡션에 넣지 않습니다.",
+    /** The row's hint: {0} is the detector's confidence in the box, {1} the reader's in the text
+        (either 0 when nothing stood behind it). */
+    scores: (det: number, read: number) =>
+      `박스 ${det.toFixed(2)} · 판독 ${read.toFixed(2)} · 이미지 안에서의 좌측 상단 좌표(픽셀)`,
   },
   caption: {
     master: "master",

@@ -1236,6 +1236,21 @@ def test_an_image_that_is_not_in_the_dataset_is_a_404(client):
     assert "not in the dataset" in r.json()["detail"]
 
 
+def test_the_page_and_the_files_it_draws_are_never_cached_without_asking(client):
+    """Everything this server hands out is rewritten under its own URL — the
+    bundle by ``make frontend``, an image by the stage that re-cropped it — so
+    the answer must carry ``cache-control``. Without one a browser invents a
+    freshness window from ``last-modified`` and goes on drawing the old copy
+    without a request; the GUI then runs yesterday's code with nothing on screen
+    to say so.
+    """
+    c, *_ = client
+    for path in ("/", "/api/files?path=image_dataset/a.png"):
+        r = c.get(path)
+        assert r.status_code == 200, path
+        assert r.headers["cache-control"] == "no-cache", path
+
+
 def test_every_ui_language_has_a_guidebook_that_ships():
     """The menu row is in four languages, so four books must be in the wheel.
 

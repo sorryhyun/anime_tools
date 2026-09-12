@@ -55,6 +55,10 @@ field and an already-hidden field are never folded — the server settles that, 
   left behind so the listing folds the result in. The ledger is read once per listing rather
   than stat'd per row — it is one small JSON file and the flag is a set membership — and one
   that will not parse is a 400, never an empty listing.
+- `ocr_lines` rides in `/api/dataset/item` beside the ladder rather than in it — the words in
+  the picture are not a caption — and each row carries one field the sidecar does not spell,
+  `usable`: whether `ocr_sidecar.usable_lines` would let that line reach a published caption. The
+  floors behind it are the grammar's, so the answer is computed here and the panel only draws it.
 - `load_analysis` (`GET /api/dataset/analysis?rel=`) is the caption panel's analysis badge: per
   kind (`ANALYSIS_KINDS` — the position sweep, and its audit phase under `audit/`), the record and
   the instance label map the stage left under `<report_root>/<POSITION_SUBPATH>/…/analysis/`
@@ -90,6 +94,12 @@ field and an already-hidden field are never folded — the server settles that, 
   tab's timers are throttled to once a minute; the grace is what a reload gets back inside; and
   nothing is armed until the first client attaches, so a `--open` whose browser never appears keeps
   serving.
+- Nothing this server hands out is cached without asking (`NO_CACHE`, on the page, its
+  assets and `/api/files`). Every one of those files is rewritten under its own URL — the
+  bundle by `make frontend`, an image by the stage that re-cropped it — and Starlette's
+  `last-modified`-only answer is exactly the case where a browser invents a freshness window
+  and draws the old copy without a request. `no-cache` revalidates instead, so the ETag
+  makes an unchanged font a 304. The thumbnail route keeps its explicit hour.
 - `tags.py` merges the two Danbooru KB files (base CSV = taxonomy; optional `.en.csv` replaces only
   the description) for `/api/tags/describe`, cached on both mtimes; a missing KB answers
   `installed: false` rather than erroring.

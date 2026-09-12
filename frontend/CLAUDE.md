@@ -127,7 +127,14 @@ is then something behind it to read. `zoomPan.ts` is the preview's
 Ctrl+wheel zoom and drag-to-pan. `tree.ts` is the sidebar's model: `build`
 nests the listing into folders, `regroup` joins the grouping manifest onto it,
 `drawOrder` flattens either one back into the sequence the rows appear in, and
-`createFolding` is the open/paged state both views share; the rows are
+`createFolding` is the open/paged state both views share. `drawOrder` ignores that
+state on purpose — a collapsed folder is still part of the listing, and skipping it
+would put images out of the arrows' reach — so `revealPath` is its counterpart: what
+must open, and how far a paged list must count out, for the selected rel to be a row
+at all. `DatasetTree` runs it on every selection and `fold.reveal` only ever opens,
+so the sidebar follows the keyboard into the next folder without undoing a fold you
+made yourself; the row then scrolls itself into view (`ImageNode`, `block: "nearest"`,
+so a row already on screen does not move). The rows are
 `components/TreeNodes.tsx`, each reading one `TreeCtx` that `DatasetTree`
 builds. `build`, `regroup` and `drawOrder` are called in `dataset.ts` and
 handed to `DatasetTree` as props, because the arrow keys and the eye must agree
@@ -141,7 +148,19 @@ Selecting it puts `ANALYSIS_KIND` in the selection like any badge, and `CaptionC
 whole editor for `AnalysisView` — the position sweep's proposal and the audit's finding, each
 with its instance label map coloured per pixel on a canvas over the resized image, and a legend
 whose rows solo their region on hover. A selection carried onto an image with no record falls
-back to the editor. `MaskList.tsx` is the `masks` field kind's editor: one card per region on
+back to the editor.
+
+`OcrPanel.tsx` is the other panel under the caption card, and its every line is a badge: the seq
+of a line clicked puts the preview on the **text boxes** view with that box drawn alone, the
+header count draws all of them, and clicking either again gives the rest back or leaves the view.
+The boxes (`OcrBoxes`, the same file) are drawn over the *resized* copy and never the source —
+the coordinates are the pixels the stage read and resize cover-crops — as an `<svg>` whose
+`viewBox` is that image's own size under `preserveAspectRatio="xMidYMid meet"`, which letterboxes
+exactly the way the `object-fit:contain` image under it does, so a box lands on its glyphs at
+every frame size and inside the frame's own zoom without one measurement in the browser. A line
+the server marked `usable: false` is drawn dashed and marked in the list: the two floors that
+decide it are the caption grammar's (`ocr_sidecar.usable_lines`), answered server-side and only
+drawn here. `MaskList.tsx` is the `masks` field kind's editor: one card per region on
 the field's full width (the `wide` row spans both form columns, label above), role and kind as
 segmented controls, the value a text box for a SAM3 prompt or a path with the `…` file chooser
 for a soft prompt; the `role:kind:value` spelling is that field's wire format and is read and

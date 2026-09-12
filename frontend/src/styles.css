@@ -168,6 +168,34 @@ button.excl.on { color:var(--warn); border-color:#5c4a2a }
 .ocrlines .seq { width:2ch; text-align:right; padding-right:8px }
 .ocrlines .text { color:var(--fg); word-break:break-word; padding-right:8px }
 .ocrlines .box { width:11ch; text-align:right; white-space:nowrap }
+.ocrlines tr.sel .text { color:var(--accent) }
+.ocrlines .text.weak { color:var(--dim) }
+/* The seq is a button, not a number: it puts the line's box on the picture. It
+   keeps the badge shape so the column stays the width it was. */
+/* Both of these are buttons that put a box on the picture, and a dim pill reads
+   as a label rather than as something to press: the outline and the accent are
+   what say so before the pointer is over them. */
+.ocrlines .seqbadge { font:inherit; font-size:11px; padding:0 7px; border-radius:9px; border:1px solid var(--line); background:#2a2f3a; color:var(--accent); cursor:pointer }
+.ocrlines .seqbadge:hover:not(:disabled) { border-color:var(--accent); background:var(--sel) }
+.ocrlines .seqbadge.weak { color:var(--warn) }
+.ocrlines .seqbadge.weak:hover:not(:disabled) { border-color:var(--warn) }
+.ocrlines .seqbadge.on { background:var(--accent); border-color:var(--accent); color:#14161a }
+.ocrlines .seqbadge:disabled { color:var(--dim); border-color:transparent; cursor:default; opacity:.5 }
+.card.ocr .badge.boxes { font:inherit; font-size:11px; border:1px solid var(--line); color:var(--accent); cursor:pointer }
+.card.ocr .badge.boxes:hover:not(:disabled) { border-color:var(--accent); background:var(--sel) }
+.card.ocr .badge.boxes.on { background:var(--accent); border-color:var(--accent); color:#14161a }
+.card.ocr .badge.boxes:disabled { color:var(--dim); border-color:transparent; cursor:default; opacity:.5 }
+.card.ocr .badge.warn { color:var(--warn) }
+/* The boxes view. The svg letterboxes its viewBox exactly the way the image
+   under it contain-fits, so a rect in image pixels lands on its glyphs at any
+   frame size; the stroke is non-scaling, so zooming in does not fatten it. */
+.preview .overlay svg.boxes { position:absolute; inset:0; width:100%; height:100%; pointer-events:none }
+.preview .overlay svg.boxes rect { fill:none; stroke:var(--accent); stroke-width:1.5 }
+.preview .overlay svg.boxes text { fill:var(--accent); font-family:var(--font-mono) }
+.preview .overlay svg.boxes .weak rect { stroke:var(--warn); stroke-dasharray:4 3 }
+.preview .overlay svg.boxes .weak text { fill:var(--warn) }
+.preview .overlay svg.boxes .off { opacity:.25 }
+.preview .overlay svg.boxes .on rect { stroke-width:3 }
 .card { border:1px solid var(--line); border-radius:7px; padding:10px 12px; background:var(--panel) }
 .card.sel { border-color:var(--accent) }
 .card-h { display:flex; align-items:center; gap:8px }

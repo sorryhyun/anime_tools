@@ -143,6 +143,57 @@ export function drawOrder(mode: TreeMode, tree: Folder, grouped: Grouped): strin
   return out;
 }
 
+/** One node the sidebar folds, named the way its own row names it: the key,
+    and the default that key draws with (a folder's follows the dataset size,
+    an artist opens, the ungrouped bucket does not). */
+export interface FoldNode {
+  key: string;
+  dflt?: boolean;
+}
+
+/** What must give way for `rel` to be a row on screen: the nodes standing over
+ * it, and the paged list it sits in with its place in that list. `null` for a
+ * rel the listing does not hold.
+ *
+ * ↑/↓ walk the whole listing rather than what is unfolded (`drawOrder`), so
+ * the walk can land inside a folder somebody closed or past a "N more" — a
+ * selection with no row to point at. This is the question that answers, and it
+ * is asked of the same two shapes the arrows walk.
+ */
+export interface RevealPath {
+  nodes: FoldNode[];
+  /** The paged list the row is in, and which row it is: the list has to be
+      counted out at least that far before it is drawn at all. */
+  page?: { key: string; index: number };
+}
+
+function inFolder(f: Folder, rel: string, over: FoldNode[]): RevealPath | null {
+  const index = f.items.findIndex((it) => it.rel === rel);
+  if (index >= 0) return { nodes: over, page: { key: f.path, index } };
+  for (const child of f.folders) {
+    const hit = inFolder(child, rel, [...over, { key: child.path }]);
+    if (hit) return hit;
+  }
+  return null;
+}
+
+export function revealPath(
+  mode: TreeMode,
+  tree: Folder,
+  grouped: Grouped,
+  rel: string,
+): RevealPath | null {
+  if (mode !== "groups") return inFolder(tree, rel, []);
+  for (const a of grouped.artists)
+    for (const c of a.comps)
+      if (c.items.some((it) => it.rel === rel))
+        // Components are not paged: a cluster is small by construction.
+        return { nodes: [{ key: `a:${a.name}`, dflt: true }, { key: `c:${c.key}` }] };
+  const index = grouped.ungrouped.findIndex((it) => it.rel === rel);
+  if (index < 0) return null;
+  return { nodes: [{ key: "ungrouped", dflt: false }], page: { key: "ungrouped", index } };
+}
+
 /** Which nodes are unfolded and how many rows of each are shown. A node is
  * named by a key (a folder path, `a:<artist>`, `c:<component>`, `ungrouped`),
  * and what is stored is which keys differ from their *default*, not which are
@@ -180,7 +231,30 @@ export function createFolding(opts: { size: () => number; resetKey: () => string
   const limitOf = (key: string) => shown().get(key) ?? PAGE;
   const more = (key: string) => setShown((m) => new Map(m).set(key, limitOf(key) + PAGE * 4));
 
-  return { open, toggle, limitOf, more };
+  /** Make a row drawable: open what is closed over it and count its list out
+   * far enough to reach it (`revealPath` says what those are).
+   *
+   * It only ever opens. A fold is a thing you did to the sidebar, and the
+   * keyboard arriving under it is no reason to undo it elsewhere — so a node
+   * already open is left alone, and the paging is raised, never lowered.
+   */
+  function reveal(path: RevealPath) {
+    setFlipped((prev) => {
+      const next = new Set(prev);
+      for (const node of path.nodes) {
+        const dflt = node.dflt ?? openByDefault();
+        if (next.has(node.key) ? !dflt : dflt) continue;
+        // Closed is the flip of its default either way, so opening is too.
+        if (!next.delete(node.key)) next.add(node.key);
+      }
+      return next;
+    });
+    const page = path.page;
+    if (!page || page.index < limitOf(page.key)) return;
+    setShown((m) => new Map(m).set(page.key, Math.ceil((page.index + 1) / PAGE) * PAGE));
+  }
+
+  return { open, toggle, limitOf, more, reveal };
 }
 
 export type Folding = ReturnType<typeof createFolding>;

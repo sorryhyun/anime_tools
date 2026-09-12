@@ -1,6 +1,6 @@
-import { createMemo, Show } from "solid-js";
+import { createEffect, createMemo, on, Show } from "solid-js";
 import { slots, t } from "../i18n";
-import { createFolding, type Folder, type Grouped } from "../tree";
+import { createFolding, revealPath, type Folder, type Grouped } from "../tree";
 import type { DatasetGroups, DatasetList, Rung, Sel, TreeMode } from "../types";
 import { Icon } from "./Icon";
 import { FolderNode, GroupView, type TreeCtx } from "./TreeNodes";
@@ -39,6 +39,26 @@ export function DatasetTree(props: {
     size: () => props.list?.items.length ?? 0,
     resetKey: () => props.resetKey,
   });
+  /** The sidebar follows the selection into whatever it is folded behind.
+      ↑/↓ walk the listing rather than what is unfolded, so the walk crosses
+      into the next folder whether or not it is open — and a selection whose
+      row is not drawn is a panel pointing at nothing. Opening is all that
+      happens: a fold you made elsewhere is left as you left it. */
+  createEffect(
+    on(
+      // The listing is a dependency, not just the rel: a link opened straight
+      // onto an image arrives before the tree that holds it, and a filter or a
+      // rescan drops every fold (`createFolding`'s reset, which runs first)
+      // with the selection still standing.
+      [() => props.sel?.rel, () => props.tree, () => props.grouped],
+      ([rel, tree, grouped]) => {
+        if (!rel) return;
+        const path = revealPath(props.mode, tree, grouped, rel);
+        if (path) fold.reveal(path);
+      },
+    ),
+  );
+
   const ctx: TreeCtx = {
     fold,
     ladder: createMemo<Rung[]>(() => props.list?.ladder ?? []),

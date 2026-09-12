@@ -48,6 +48,18 @@ mimetypes.add_type("font/woff", ".woff")
 
 STATIC = Path(__file__).parent / "static"
 
+NO_CACHE = {"cache-control": "no-cache"}
+"""Every file this server hands out is one something else rewrites.
+
+Starlette sends a ``last-modified`` and no ``cache-control``, which is the case
+a browser answers by *inventing* a freshness window — a tenth of the file's age
+— and serving its cached copy without asking. So a page rebuilt by ``make
+frontend`` goes on running yesterday's bundle, and an image a stage rewrote in
+place goes on being drawn as it was. ``no-cache`` keeps the copy and makes the
+load revalidate: the file's own ETag turns an unchanged one into a 304, so the
+1.7 MB font is not re-sent for the sake of a header. Not ``no-store``, which
+would throw the copy away and re-send it every time."""
+
 
 LOOPBACK_HOSTS = frozenset({"127.0.0.1", "::1", "localhost", "::ffff:127.0.0.1"})
 """Who may open a window on this desktop: only the machine it is drawn on."""
@@ -340,7 +352,7 @@ def create_app(
 
     @app.get("/")
     def index() -> FileResponse:
-        return FileResponse(STATIC / "index.html")
+        return FileResponse(STATIC / "index.html", headers=NO_CACHE)
 
     @app.get("/assets/{name}")
     def asset(name: str) -> FileResponse:
@@ -354,7 +366,7 @@ def create_app(
         if name == "index.html" or name.startswith(".") or not p.is_file():
             raise HTTPException(404, "not found")
         mime = mimetypes.guess_type(name)[0] or "application/octet-stream"
-        return FileResponse(p, media_type=mime)
+        return FileResponse(p, media_type=mime, headers=NO_CACHE)
 
     @app.get("/api/info")
     def info(request: Request) -> dict[str, Any]:
@@ -860,7 +872,7 @@ def create_app(
         if not p.is_file():
             raise HTTPException(404, "not found")
         mime = mimetypes.guess_type(p.name)[0] or "application/octet-stream"
-        return FileResponse(p, media_type=mime)
+        return FileResponse(p, media_type=mime, headers=NO_CACHE)
 
     @app.post("/api/pick")
     async def pick_path(request: Request) -> dict[str, Any]:

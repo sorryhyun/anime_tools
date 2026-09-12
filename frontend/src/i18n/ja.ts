@@ -88,6 +88,7 @@ const ja: Dict = {
       image: "元画像",
       mask: "マスク",
       overlay: "重ね表示",
+      ocr: "テキストボックス",
     },
     overlayHint: "画像の上にマスクを 40% で重ねます",
     overlayNeeds: "画像とマスクの両方が必要です",
@@ -120,7 +121,23 @@ const ja: Dict = {
     /** {0} is how many lines were recognized. */
     count: (n: number) => `${n}行`,
     readOnly: "OCR ステージが生成",
-    boxHint: "画像内の左上座標（ピクセル）",
+    /** The seq badge, the header count and the preview tab: the boxes the
+        detector drew, over the resized copy they were read from. */
+    boxesHint: "ステージが読んだ画像の上に全行のボックスを描きます",
+    boxesNeeds: "このテキストを読んだリサイズ版が必要です",
+    /** {0} is the line's seq number. The hint on one line's badge. */
+    showBox: (seq: number) => `${seq} 行目を画像上に表示 — もう一度押すと全体`,
+    /** Under the picture while every box is drawn. {0} is how many. */
+    boxesAll: (n: number) => `ステージが読んだ画像上のテキストボックス ${n} 個`,
+    /** Under the picture while one line is drawn alone. {0} is its seq. */
+    boxesOne: (seq: number) => `${seq} 行目のみ表示 — バッジをもう一度押すと全体`,
+    weak: "キャプション対象外",
+    weakHint:
+      "検出信頼度または文字サイズの下限を下回ります。サイドカーには残りますが、Export の --combine_ocr はキャプションに入れません。",
+    /** The row's hint: {0} is the detector's confidence in the box, {1} the reader's in the text
+        (either 0 when nothing stood behind it). */
+    scores: (det: number, read: number) =>
+      `ボックス ${det.toFixed(2)} · 読み ${read.toFixed(2)} · 画像内の左上座標（ピクセル）`,
   },
   caption: {
     master: "master",

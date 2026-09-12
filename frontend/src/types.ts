@@ -539,15 +539,22 @@ export interface ImageInfo {
 }
 
 /** One line the OCR stage read out of the image, from `{stem}.ocr.txt`. Not a
-    caption: `box` is the detector's text-block box and `score` is `0` — the VL
-    reader answers text, not a confidence. The model returns a string and never
-    a language, so there is no language field. Generated, so the panel renders
-    it read-only. */
+    caption: `box` is the detector's text-block box, in the pixels of the
+    *resized* copy the stage read, and `det` / `score` are the detector's
+    confidence in the box and the reader's in the text (either `0` when nothing
+    stood behind it). The model returns a string and never a language, so there
+    is no language field. Generated, so the panel renders it read-only. */
 export interface OcrLine {
   seq: number;
   box: [number, number, number, number];
+  det: number;
   score: number;
   text: string;
+  /** Whether this line clears the two floors a caption holds a line to
+      (`ocr_sidecar.usable_lines`, answered by the server — the rule belongs to
+      the grammar, not to the browser). A line that does not is kept in the
+      sidecar and left out of a combined caption. */
+  usable: boolean;
 }
 
 export interface ItemDetail {

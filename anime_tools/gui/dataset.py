@@ -45,7 +45,11 @@ from anime_tools.captions.history import (
     push_history,
     read_history,
 )
-from anime_tools.captions.ocr_sidecar import ocr_sidecar_path, read_ocr
+from anime_tools.captions.ocr_sidecar import (
+    ocr_sidecar_path,
+    read_ocr,
+    usable_lines,
+)
 from anime_tools.captions.position_clauses import parse_caption, tag_spans
 from anime_tools.captions.variants import read_variants_sidecar, variants_sidecar_path
 from anime_tools.exclude import (
@@ -821,10 +825,19 @@ def ocr_lines(roots: Roots, rel: Path) -> list[dict[str, Any]]:
     Not a :data:`CAPTION_LADDER` rung: it holds the words *in the picture*, not a
     text that could be written back into the caption. Joined by the same relative
     path as every other root. A missing sidecar means no text was found.
+
+    Each row carries one field the sidecar does not spell, ``usable``: whether
+    :func:`~anime_tools.captions.ocr_sidecar.usable_lines` would let that line
+    reach a published caption. The two floors behind it (detector confidence,
+    glyph size) are the caption's own rule, so the answer is computed here and
+    never re-derived in the browser — the panel only draws the line it got back
+    differently.
     """
     txt = rel.with_suffix(".txt")
     sidecar = ocr_sidecar_path(workspace_dir() / WS.OCR_SUBDIR / txt)
-    return [line.to_dict() for line in read_ocr(sidecar)]
+    lines = read_ocr(sidecar)
+    keep = {line.seq for line in usable_lines(lines)}
+    return [{**line.to_dict(), "usable": line.seq in keep} for line in lines]
 
 
 def item_detail(
