@@ -222,7 +222,9 @@ def test_mask_for_prefers_the_nested_tree_and_falls_back_flat(tmp_path: Path):
     assert reread.mask_for(tmp_path, Path("artist/b.png")) is None
 
 
-def test_the_engine_wrapper_rereads_each_page_the_engine_yields(tmp_path: Path):
+def test_the_engine_wrapper_rereads_each_page_the_engine_yields(
+    tmp_path: Path, monkeypatch
+):
     from PIL import Image
 
     dst = tmp_path / "resized"
@@ -231,18 +233,26 @@ def test_the_engine_wrapper_rereads_each_page_the_engine_yields(tmp_path: Path):
         Image.new("RGB", (120, 80), "white").save(dst / name)
 
     class Engine:
-        def read(self, p):
-            return [line("はんぱん", (10, 10, 40, 60))] if p.name == "a.png" else []
+        """The detector pass: it decodes each page and hands the pixels on."""
 
-        def read_iter(self, paths):
+        def read_iter(self, paths, *, with_pixels=False):
+            import cv2
+
             for p in paths:
-                yield self.read(p)
+                found = (
+                    [line("はんぱん", (10, 10, 40, 60))] if p.name == "a.png" else []
+                )
+                yield (found, cv2.imread(str(p))) if with_pixels else found
 
     calls = []
 
     def read_boxes(bgr, boxes):
         calls.append((bgr.shape, list(boxes)))
         return ["ぱんぱん"] * len(boxes)
+
+    monkeypatch.setattr(
+        reread, "_read_image", lambda p: pytest.fail(f"decoded {p} a second time")
+    )
 
     eng = reread.RereadEngine(engine=Engine(), read_boxes=read_boxes, resized_dir=dst)
     pages = list(eng.read_iter([dst / "a.png", dst / "b.png"]))

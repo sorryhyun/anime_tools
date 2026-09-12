@@ -473,13 +473,17 @@ def _excluded_rows(paths: ExportPaths) -> list[ExportRow]:
     return rows
 
 
-def export_one(row: ExportRow, *, apply: bool) -> str:
+def export_one(row: ExportRow, *, apply: bool, decided: bool = False) -> str:
     """Copy one artifact, or say what copying it would do.
 
     Re-decides against disk first, so an ``--apply`` of an older report reports
-    a destination edited since rather than clobbering it.
+    a destination edited since rather than clobbering it. ``decided`` is the
+    in-process run, where :func:`plan_export` just decided this row against the
+    same disk: deciding it again would re-read both sides of every text row and
+    re-render every combined one for an answer that cannot have changed.
     """
-    _decide(row)
+    if not decided:
+        _decide(row)
     if row.status in ("identical", "missing-source"):
         return row.status
     if not apply:
@@ -506,7 +510,7 @@ def publish(
 ) -> tuple[list[ExportRow], ExportStats]:
     """Plan the export and, with ``apply``, perform it."""
     rows = plan_export(paths)
-    return _run(rows, apply=apply, progress=progress)
+    return _run(rows, apply=apply, progress=progress, decided=True)
 
 
 def _run(
@@ -514,10 +518,11 @@ def _run(
     *,
     apply: bool,
     progress: Callable[[int, int, str], None] | None = None,
+    decided: bool = False,
 ) -> tuple[list[ExportRow], ExportStats]:
     stats = ExportStats(rows=len(rows))
     for i, row in enumerate(rows, 1):
-        status = export_one(row, apply=apply)
+        status = export_one(row, apply=apply, decided=decided)
         if status in ("created", "overwrote"):
             stats.by_kind[row.kind] += 1
             stats.combined += row.combined

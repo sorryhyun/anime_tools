@@ -301,10 +301,11 @@ class RereadEngine:
     """An :class:`~anime_tools.ocr.engine.OcrEngine` with the VL pass behind it.
 
     ``read`` / ``read_iter`` answer the engine's boxes, each page then run
-    through :func:`reread_lines`. The page is decoded a second time here (the
-    engine keeps no pixels past its chunk); against a 1.9 B-parameter read per
-    crop that is noise. ``masks`` is the mask tree, resolved per image against
-    ``resized_dir`` by :func:`mask_for`; ``None`` reads no components.
+    through :func:`reread_lines`. The pixels come from the engine's own pass
+    (``read_iter(..., with_pixels=True)``) rather than a second decode: they are
+    alive for the length of its chunk anyway, and a page is decoded once.
+    ``masks`` is the mask tree, resolved per image against ``resized_dir`` by
+    :func:`mask_for`; ``None`` reads no components.
     """
 
     engine: object
@@ -319,7 +320,7 @@ class RereadEngine:
     min_score: float = LINE_MIN_SCORE
     strip_symbols: bool = True
 
-    def _page(self, path: Path, lines: list[OcrLine]) -> list[OcrLine]:
+    def _page(self, path: Path, lines: list[OcrLine], bgr=None) -> list[OcrLine]:
         mask = None
         if self.masks is not None:
             try:
@@ -331,7 +332,10 @@ class RereadEngine:
                 mask = _read_mask(mp)
         if not lines and mask is None:
             return []
-        bgr = _read_image(path)
+        # ``bgr`` is the detector pass's own decode; only a caller that has none
+        # (or one the engine could not decode) pays for a read here.
+        if bgr is None:
+            bgr = _read_image(path)
         if bgr is None:
             return list(lines)
         if mask is not None and mask.shape[:2] != bgr.shape[:2]:
@@ -355,12 +359,13 @@ class RereadEngine:
         )
 
     def read(self, image_path: Path) -> list[OcrLine]:
-        return self._page(image_path, self.engine.read(image_path))
+        return next(iter(self.read_iter([image_path])))
 
     def read_iter(self, image_paths: Sequence[Path]) -> Iterator[list[OcrLine]]:
         paths = list(image_paths)
-        for path, lines in zip(paths, self.engine.read_iter(paths), strict=True):
-            yield self._page(path, lines)
+        pages = self.engine.read_iter(paths, with_pixels=True)
+        for path, (lines, bgr) in zip(paths, pages, strict=True):
+            yield self._page(path, lines, bgr)
 
 
 __all__ = [

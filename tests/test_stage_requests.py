@@ -242,8 +242,8 @@ def test_the_tagger_loads_once_per_process(monkeypatch, tmp_path):
             built.append((ckpt_dir, device))
             self.device = FakeDevice()
 
-        def predict_caption(self, image, min_confidence=0.0):
-            return "1girl"
+        def predict_caption_batch(self, images, min_confidence=0.0):
+            return ["1girl"] * len(images)
 
     monkeypatch.setattr(tagger_mod, "AnimaTagger", FakeTagger)
     monkeypatch.setattr(fetch_mod, "ensure_tagger_checkpoint", lambda p: p)
@@ -258,15 +258,15 @@ def test_the_tagger_loads_once_per_process(monkeypatch, tmp_path):
     # Autotag goes through the same cache, and what it reports is JSON.
     import json
 
-    from anime_tools.stages.autotag import build_tag_fn
+    from anime_tools.stages.autotag import build_tag_batch
 
-    tag_fn, info = build_tag_fn(tmp_path, "cpu")
+    tag_batch, info = build_tag_batch(tmp_path, "cpu")
     assert len(built) == 2
     assert json.loads(json.dumps(info)) == {
         "tagger_dir": str(tmp_path),
         "device": "cpu",
     }
-    assert tag_fn(None) == "1girl"
+    assert tag_batch([None, None]) == ["1girl", "1girl"]
 
 
 def test_release_models_empties_both_caches(monkeypatch, tmp_path):

@@ -79,7 +79,7 @@ def test_autotag_merge_then_correct_keeps_the_merged_tags(tmp_path, kb):
     run_autotag_captions(
         resized_dir=resized,
         source_dir=source,
-        tag_fn=lambda _img: "1girl, long_hair, smile",
+        tag_batch=lambda images: ["1girl, long_hair, smile"] * len(images),
         options=AutotagOptions(mode="merge"),
         apply=True,
     )
@@ -101,7 +101,7 @@ def test_a_caption_autotag_created_from_nothing_survives_correct(tmp_path, kb):
     run_autotag_captions(
         resized_dir=resized,
         source_dir=source,
-        tag_fn=lambda _img: "1girl, smile",
+        tag_batch=lambda images: ["1girl, smile"] * len(images),
         options=AutotagOptions(mode="missing"),
         apply=True,
     )

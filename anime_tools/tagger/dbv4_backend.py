@@ -264,7 +264,8 @@ class Dbv4Backend:
 
     @property
     def normalization(self) -> tuple[torch.Tensor, torch.Tensor]:
-        """``(mean, std)`` as ``[1, 3, 1, 1]``, from the checkpoint's ``pretrained_cfg``.
+        """``(mean, std)`` as ``[1, 3, 1, 1]`` on :attr:`device`, from the
+        checkpoint's ``pretrained_cfg``.
 
         Loading the weights is what reads them, so asking loads the model. The ONNX
         exporter folds the pair into its graph, which is why they are reachable.
@@ -312,11 +313,18 @@ class Dbv4Backend:
         for p in model.parameters():
             p.requires_grad_(False)
         pcfg = model.pretrained_cfg
-        self._mean = torch.tensor(pcfg.get("mean", (0.485, 0.456, 0.406))).view(
-            1, 3, 1, 1
+        # On the device, because ``forward_tensor`` normalises there: doing it
+        # on the CPU costs a float32 pass over the whole batch before the
+        # transfer that has to happen anyway.
+        self._mean = (
+            torch.tensor(pcfg.get("mean", (0.485, 0.456, 0.406)))
+            .view(1, 3, 1, 1)
+            .to(self.device)
         )
-        self._std = torch.tensor(pcfg.get("std", (0.229, 0.224, 0.225))).view(
-            1, 3, 1, 1
+        self._std = (
+            torch.tensor(pcfg.get("std", (0.229, 0.224, 0.225)))
+            .view(1, 3, 1, 1)
+            .to(self.device)
         )
         logger.info(
             "Dbv4Backend: %s (%s, %d classes, %dpx) on %s",
@@ -330,9 +338,16 @@ class Dbv4Backend:
 
     @torch.no_grad()
     def forward_tensor(self, x01: torch.Tensor) -> Dbv4Output:
-        """``[B, 3, S, S]`` in [0, 1] → probs + hidden."""
+        """``[B, 3, S, S]`` in [0, 1] → probs + hidden.
+
+        The transfer comes first and the normalisation runs on the device: the
+        arithmetic is one pass over ``B x 3 x S x S`` floats either way, and the
+        CPU is the slower place to do it (and the one holding up the decode of
+        the next batch).
+        """
         model = self.model
-        x = ((x01 - self._mean) / self._std).to(self.device, dtype=self.dtype)
+        x = x01.to(self.device, dtype=torch.float32)
+        x = ((x - self._mean) / self._std).to(self.dtype)
         feats = model.forward_features(x)
         pooled = model.forward_head(feats, pre_logits=True)
         fc = model.head.fc

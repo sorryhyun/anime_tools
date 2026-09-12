@@ -38,7 +38,7 @@ is the shell over it.
 from __future__ import annotations
 
 from collections import Counter
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -51,6 +51,7 @@ from anime_tools.captions.taxonomy import RATING_LITERALS, normalize_tag
 from anime_tools.contract import AUTOTAG_MODES
 
 from ._caption_io import read_caption, write_caption
+from ._options import DEFAULT_BATCH_SIZE
 from ._progress import make_progress
 from ._report import print_dry_run_footer, stage_report_header, write_stage_report
 from ._walk_captions import resolve_caption
@@ -155,13 +156,19 @@ def merge_tags(existing: str, tagged: str) -> tuple[str, tuple[str, ...]]:
     return compose_caption((*parsed.flat_tags, *added), parsed.clauses), tuple(added)
 
 
+def _open_rgb(image_path: Path) -> Image.Image:
+    with Image.open(image_path) as handle:
+        return handle.convert("RGB")
+
+
 def run_autotag_captions(
     *,
     resized_dir: Path,
     source_dir: Path,
-    tag_fn: Callable[[Image.Image], str],
+    tag_batch: Callable[[Sequence[Image.Image]], Sequence[str]],
     options: AutotagOptions | None = None,
     path_pattern: str | None = None,
+    batch_size: int = DEFAULT_BATCH_SIZE,
     apply: bool = False,
     progress: Callable[[int, int, str], None] | None = None,
 ) -> tuple[list[AutotagProposal], AutotagStats]:
@@ -171,37 +178,62 @@ def run_autotag_captions(
     caption lands beside it under ``resized_dir``. ``source_dir`` is the master
     tree, read-only here: it is the fallback half of ``resolve_caption``, so
     "what this image already says" means the revised caption when there is one
-    and the hand-written master otherwise. ``tag_fn`` is normally
-    ``AnimaTagger.predict_caption`` bound to ``min_confidence``.
+    and the hand-written master otherwise. ``tag_batch`` is normally
+    ``AnimaTagger.predict_caption_batch`` bound to ``min_confidence``: it takes
+    images and answers one caption each, in order.
+
+    The pass is in two halves because the forward is batched. The first is
+    caption resolution alone — no pixels — and it is what says which images the
+    tagger has to see; the second walks every image in tree order, decides it,
+    and pulls its tags from a buffer filled ``batch_size`` candidates at a time.
+    So the reports, the skip reasons and the progress line are what a
+    one-image-at-a-time pass produced, and the GPU sees whole batches.
     """
     from anime_tools._walk import walk_images
 
     options = options or AutotagOptions()
     stats = AutotagStats()
     rows: list[AutotagProposal] = []
+    size = max(1, int(batch_size))
 
     images = walk_images(resized_dir, recursive=True, pattern=path_pattern)
     stats.seen = len(images)
 
-    for index, image_path in enumerate(images, 1):
+    # Half one, no pixels: what each image already says. Revised first, master
+    # as the read-only fallback — `missing` means no caption anywhere, and
+    # `merge` merges into the text that actually speaks for the image, clauses
+    # included.
+    walked: list[tuple[Path, Path, str]] = []
+    for image_path in images:
         rel = image_path.relative_to(resized_dir).with_suffix(".txt")
+        speaks = resolve_caption(resized_dir, source_dir, rel)
+        walked.append(
+            (image_path, rel, read_caption(speaks) if speaks is not None else "")
+        )
+
+    # The candidates, in tree order: exactly the images the loop below will ask
+    # the tagger about, which is what lets it fill a whole batch ahead.
+    queue = [w for w in walked if not (w[2] and options.mode == "missing")]
+    tagged_by_path: dict[Path, str] = {}
+    taken = 0
+
+    for index, (image_path, rel, existing) in enumerate(walked, 1):
         caption_path = resized_dir / rel
         if progress is not None:
             progress(index, len(images), str(rel))
 
-        # Revised first, master as the read-only fallback: `missing` means no
-        # caption anywhere, and `merge` merges into the text that actually
-        # speaks for the image — clauses included.
-        speaks = resolve_caption(resized_dir, source_dir, rel)
-        existing = read_caption(speaks) if speaks is not None else ""
         if existing and options.mode == "missing":
             stats.skip("has-caption")
             continue
         stats.candidates += 1
 
-        with Image.open(image_path) as handle:
-            image = handle.convert("RGB")
-        tagged = str(tag_fn(image)).strip()
+        if image_path not in tagged_by_path:  # the buffer ran out: fill it
+            chunk = queue[taken : taken + size]
+            taken += len(chunk)
+            texts = tag_batch([_open_rgb(path) for path, _, _ in chunk])
+            for (path, _, _), text in zip(chunk, texts, strict=True):
+                tagged_by_path[path] = str(text).strip()
+        tagged = tagged_by_path.pop(image_path)
 
         proposal = AutotagProposal(
             image=str(image_path.relative_to(resized_dir)),
@@ -249,12 +281,12 @@ def run_autotag_captions(
     return rows, stats
 
 
-def build_tag_fn(
+def build_tag_batch(
     ckpt_dir: str | Path | None = None,
     device: str | None = None,
     min_confidence: float = 0.0,
-) -> tuple[Callable[[Image.Image], str], Mapping[str, object]]:
-    """Load the Anima Tagger and return ``(tag_fn, info)``.
+) -> tuple[Callable[[Sequence[Image.Image]], list[str]], Mapping[str, object]]:
+    """Load the Anima Tagger and return ``(tag_batch, info)``.
 
     Torch imports live inside this function so ``run_autotag_captions`` stays
     torch-free. The checkpoint is auto-fetched when absent, ``device=None``
@@ -266,11 +298,13 @@ def build_tag_fn(
 
     tagger, resolved = load_anima_tagger(ckpt_dir, device)
 
-    def tag_fn(image: Image.Image) -> str:
-        return tagger.predict_caption(image, min_confidence=float(min_confidence))
+    def tag_batch(images: Sequence[Image.Image]) -> list[str]:
+        return tagger.predict_caption_batch(
+            images, min_confidence=float(min_confidence)
+        )
 
     # ``tagger.device`` is a ``torch.device``; the report is JSON.
-    return tag_fn, {
+    return tag_batch, {
         "tagger_dir": str(resolved),
         "device": str(tagger.device),
     }
@@ -291,15 +325,16 @@ def run_autotag(req: AutotagRequest):
     source_dir = resolve_path(req.src)
     report_dir = resolve_path(req.report_dir)
 
-    tag_fn, info = build_tag_fn(
+    tag_batch, info = build_tag_batch(
         req.tagger_dir, device=req.device, min_confidence=req.min_confidence
     )
     rows, stats = run_autotag_captions(
         resized_dir=resized_dir,
         source_dir=source_dir,
-        tag_fn=tag_fn,
+        tag_batch=tag_batch,
         options=AutotagOptions(mode=req.mode, min_confidence=req.min_confidence),
         path_pattern=req.path_pattern,
+        batch_size=req.batch_size,
         apply=req.apply,
         progress=make_progress(50, first=True),
     )
@@ -309,6 +344,7 @@ def run_autotag(req: AutotagRequest):
         {
             "mode": req.mode,
             "min_confidence": req.min_confidence,
+            "batch_size": req.batch_size,
             **stage_report_header(
                 src=source_dir,
                 dst=resized_dir,

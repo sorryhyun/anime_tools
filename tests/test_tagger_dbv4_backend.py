@@ -87,12 +87,15 @@ class FakeBackend:
     def __init__(self, probs_by_name: dict[str, float]):
         self.card = _card()
         self.probs_by_name = probs_by_name
+        self.calls: list[int] = []
 
     def forward(self, images):
-        p = torch.zeros(1, len(DBV4_NAMES))
+        b = max(1, len(images))
+        self.calls.append(b)
+        p = torch.zeros(b, len(DBV4_NAMES))
         for n, v in self.probs_by_name.items():
-            p[0, DBV4_NAMES.index(n)] = v
-        return db.Dbv4Output(probs=p, hidden=torch.ones(1, self.d_hidden))
+            p[:, DBV4_NAMES.index(n)] = v
+        return db.Dbv4Output(probs=p, hidden=torch.ones(b, self.d_hidden))
 
 
 def _write_ckpt(tmp_path, groups: bool = True):
@@ -259,6 +262,29 @@ def test_oc_character_survives_original_without_artist(tmp_path, monkeypatch):
     out = t.predict(IMG)
     assert "original" in out["kept"]
     assert "shiro (mignon)" in out["kept"]
+
+
+def test_predict_batch_is_one_forward_and_matches_per_image_predict(
+    tmp_path, monkeypatch
+):
+    """The batch entry point exists to stop the backbone waiting on one decode
+    at a time; what it answers has to be what the per-image call answers."""
+    _write_ckpt(tmp_path)
+    t = _tagger(tmp_path, {"1girl": 0.95, "solo": 0.9, "explicit": 0.9}, monkeypatch)
+    backend = t._dbv4
+    images = [IMG, IMG, IMG]
+
+    backend.calls.clear()
+    batched = t.predict_batch(images)
+    assert backend.calls == [3]  # one forward, not three
+
+    backend.calls.clear()
+    one_by_one = [t.predict(im) for im in images]
+    assert backend.calls == [1, 1, 1]
+
+    assert batched == one_by_one
+    assert t.predict_caption_batch(images) == [t.predict_caption(im) for im in images]
+    assert t.predict_batch([]) == []
 
 
 # --------------------------------------------------------------------------- #

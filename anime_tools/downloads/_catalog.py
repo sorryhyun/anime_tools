@@ -208,8 +208,9 @@ def catalog() -> tuple[Asset, ...]:
     )
 
 
-def by_id() -> dict[str, Asset]:
-    return {a.id: a for a in catalog()}
+def by_id(rows: tuple[Asset, ...] | None = None) -> dict[str, Asset]:
+    """Rows keyed by id. ``rows`` defaults to the catalog."""
+    return {a.id: a for a in (catalog() if rows is None else rows)}
 
 
 def by_pack(rows: tuple[Asset, ...] | None = None) -> dict[str, tuple[Asset, ...]]:
@@ -224,14 +225,21 @@ def by_pack(rows: tuple[Asset, ...] | None = None) -> dict[str, tuple[Asset, ...
     return out
 
 
-def expand(names: list[str] | tuple[str, ...]) -> list[str]:
+def expand(
+    names: list[str] | tuple[str, ...], rows: tuple[Asset, ...] | None = None
+) -> list[str]:
     """Row ids and/or pack ids → row ids, catalog order, deduped.
 
     Raises ``KeyError`` naming the first token that is neither, so a typo fails
     loudly rather than downloading nothing.
+
+    Every lookup here takes ``rows``, because building the catalog resolves the
+    curation home and probes the installed checkpoint for its backbone repo: a
+    caller that needs two views of it builds it once and hands it down.
     """
-    assets = by_id()
-    packed = by_pack()
+    rows = catalog() if rows is None else rows
+    assets = by_id(rows)
+    packed = by_pack(rows)
     picked: list[str] = []
     for name in names:
         if name in packed:

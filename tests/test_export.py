@@ -175,6 +175,26 @@ def test_apply_publishes_the_contract_paths(ws):
     assert stats.created == 6 and stats.overwrote == 1
 
 
+def test_an_in_process_publish_decides_each_row_once(ws, monkeypatch):
+    """`plan_export` decided every row against the same disk `export_one` is
+    about to write to; deciding it again re-reads both sides of every text row
+    and re-renders every combined one for the same answer. A replay of a saved
+    report still decides, because that disk has moved on."""
+    from anime_tools.stages import export_workspace as EX
+
+    seen: list[str] = []
+    real = EX._decide
+    monkeypatch.setattr(EX, "_decide", lambda row: (seen.append(row.dst), real(row))[1])
+
+    rows, _stats = publish(ws, apply=True)
+    assert len(seen) == len(rows)
+
+    seen.clear()
+    replayed = rows_from_report({"rows": [r.to_dict() for r in rows]})
+    EX._run(replayed, apply=False)
+    assert len(seen) == len(replayed)
+
+
 def test_exporting_twice_publishes_nothing_the_second_time(ws):
     """`copy2` preserves mtime, so an unchanged tree compares equal next time."""
     publish(ws, apply=True)

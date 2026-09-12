@@ -94,11 +94,14 @@ def _grid_match_edges(
     ratio: float,
     pool_chunk: int = 256,
     pair_chunk: int = 4096,
+    cls_chunk: int = 512,
 ) -> list[tuple[int, int]]:
     """Near-twin edges within one artist bucket (Stage-A prefilter → Stage-B grid).
 
-    Runs on ``device``. Pooling and the pair match are chunked so peak memory is
-    bounded regardless of bucket size.
+    Runs on ``device``. Every pass is chunked so peak memory is bounded
+    regardless of bucket size — the prefilter included, which is the one that
+    grows as n²: a 5k-image bucket's full similarity matrix is 25M floats before
+    the pair of index vectors beside it.
     """
     import numpy as np
     import torch
@@ -114,12 +117,21 @@ def _grid_match_edges(
         cells_parts.append(pool_cells_batch(t, grid))
     cells = torch.cat(cells_parts, dim=0)  # [n, G*G, D]
 
-    # Stage-A: CLS-cosine prefilter over the upper triangle, on device.
+    # Stage-A: CLS-cosine prefilter over the upper triangle, on device, a band
+    # of rows at a time. `nonzero` walks each band in row-major order, which is
+    # the order `triu_indices` enumerates the triangle in, so the edge list is
+    # the one an unchunked pass produced.
     cls_t = torch.from_numpy(cls).to(device)
-    sims = cls_t @ cls_t.T
-    iu = torch.triu_indices(n, n, offset=1, device=cls_t.device)
-    cand = sims[iu[0], iu[1]] >= sim_min
-    pi, pj = iu[0][cand], iu[1][cand]  # candidate pair endpoints
+    cols = torch.arange(n, device=cls_t.device)
+    pi_parts, pj_parts = [], []
+    for s in range(0, n, cls_chunk):
+        e = min(s + cls_chunk, n)
+        band = cls_t[s:e] @ cls_t.T  # [e - s, n]
+        hit = (band >= sim_min) & (cols.unsqueeze(0) > cols[s:e].unsqueeze(1))
+        idx = torch.nonzero(hit, as_tuple=False)
+        pi_parts.append(idx[:, 0] + s)
+        pj_parts.append(idx[:, 1])
+    pi, pj = torch.cat(pi_parts), torch.cat(pj_parts)  # candidate pair endpoints
 
     # Stage-B: batched grid match over the candidate pairs, chunked.
     edges: list[tuple[int, int]] = []

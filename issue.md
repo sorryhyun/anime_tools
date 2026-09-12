@@ -8,9 +8,9 @@ Items under "Reported, not individually reproduced" come from the same review pa
 each checked by hand — treat them as leads, not as verdicts.
 
 **Only open items are listed.** Everything fixed on 2026-09-12 — the twelve confirmed defects
-(three P0, nine P1), the four "close the pairs" items and the five big-file splits — has been
-removed from the sections below; what each one was, and what closing it still needs from the
-trainer repo, is at the bottom under "Landed, and what the trainer owes".
+(three P0, nine P1), the four "close the pairs" items, the five big-file splits and the eleven
+efficiency items — has been removed from the sections below; what each one was, and what closing it
+still needs from the trainer repo, is at the bottom under "Landed, and what the trainer owes".
 
 ## The one theme
 
@@ -50,41 +50,6 @@ can be made correctly in one spot and still be wrong.
       docstring paragraphs. It is not even honoured inside `masking/`, where two probe CLIs and
       `exclude/_cli.py` declare underscore flags. Since every flag already accepts both spellings,
       setting `FLAG_SEP = "_"` package-wide breaks no saved command line.
-
-## Efficiency
-
-- [ ] **No batched tagger inference.** `tagger.py`'s `_heads_forward` wraps a single image and
-  `stages/autotag.py`
-      calls `predict_caption` per image with no prefetch, even though `Dbv4Backend.forward` already
-      takes a list and `train_sidecar.build_cache` already drives a DataLoader. Add `predict_batch`.
-- [ ] **`dbv4_backend.py:335` normalises on CPU in float32** over the whole batch, then moves to the
-      device. Move first, normalise on device.
-- [ ] **`tagger.py:333`** runs two Python loops of `float(tensor[i])` per image where one
-  `.tolist()`
-      would do, then walks `tag_entries` five more times for category filters.
-- [ ] **`downloads/` rebuilds the catalog 4+ times per invocation** (`_catalog.expand` calls
-      `by_id` and `by_pack`, each rebuilding; `_cli.main` calls all three again), each running a
-      disk probe.
-- [ ] **`exclude/` rewrites the whole ledger per image.** `_cli.main:110` loops over `args.rels`
-      calling `_move.exclude_one`, so N exclusions cost N full reads and N full JSON rewrites. Add
-      `exclude_many`.
-- [ ] **`grouping/groups.py:112` builds the full n×n CLS similarity unchunked**, while the pooling
-      directly above it is chunked at 256. A 5k-image bucket is 25M floats plus a 2×12.5M index
-      tensor.
-- [ ] **Export decides every row twice per in-process run**, so each text row's source and
-      destination bytes are read twice and each combined row re-renders `with_ocr_clause` twice.
-- [ ] **Repeated caption re-parsing** — `caption_layout.is_candidate` parses three times, and
-      `propose_for_image` parses the same caption about five more times. Cheap next to SAM3, but a
-      `ParsedCaption` entry point removes it.
-- [ ] **`ocr/reread.py:334` decodes every page a second time**, having already been decoded in
-      `ocr/engine.py:227` a chunk earlier. `read_iter` could yield the pixels it already has.
-- [ ] **`ocr/sfx.py:338` re-runs `apply_chat_template` per batch** and redefines `_Greedy` per call.
-      Both belong in `load`.
-- [ ] **Per-request settings re-reads in the GUI.** `_context.roots_for()` ends up parsing
-      `.anime_tools_gui.json` five times per request, because `reachable` → `dataset_bases` →
-      `load_settings()` runs once per root, on top of the caller's own read. `RunContext` closed the
-      *caller's* half of this (one read per request instead of one per handler that wanted a value);
-      the chain inside `resolve_roots` is untouched and is where the five come from.
 
 ## Cleanup
 
@@ -268,9 +233,9 @@ Worth keeping in mind before any refactor moves these.
 
 ## Suggested order
 
-Grouped so that each block is one coherent sitting. The four blocks that are done — correctness,
-durability, closing the pairs, splitting the big files — are under "Landed" below, so this is only
-what is left.
+Grouped so that each block is one coherent sitting. The five blocks that are done — correctness,
+durability, closing the pairs, splitting the big files, and the efficiency sweep — are under
+"Landed" below, so this is only what is left.
 
 1. **Make the guards real.** Move the ruff rules into `pyproject.toml` and let `ruff check` gate
    CI; add a Windows job; generate or test `types.ts` against `schema()`; test the documented
@@ -349,6 +314,50 @@ five regression tests: the import-light measurement and the re-export identity
 shared `path_pattern` (`test_grouping_features`), and the `Arg`-driven coercion plus the
 `Field`-is-its-`Arg` shape (`test_gui`). Nothing in `frontend/` moved: the schema the browser
 receives is byte-identical.
+
+### The efficiency sweep, 2026-09-12
+
+Eleven items, no behaviour change: every one is pinned by a test asserting the *same* answer off
+fewer passes. The recurring shape was a loop asking a cheap question the expensive way — per image
+what the batch already had, per tag what the kept handful could answer, per root what one settings
+read already said.
+
+- **The tagger batches.** `AnimaTagger.predict_batch` / `predict_caption_batch` are one
+  `Dbv4Backend.forward` over a list (`_heads_forward_batch`, which `_heads_forward` is now the
+  one-image case of), with the post-processing split out as `_predict_row` / `_caption_of` so a
+  batch of one answers exactly what `predict` does. `stages/autotag.py` drives it: the pass is two
+  halves now, a caption-resolution walk that says which images the tagger has to see and a decision
+  walk that pulls each candidate's tags out of a buffer filled `--batch_size` (default
+  `_options.DEFAULT_BATCH_SIZE`, 8) at a time. The report, the skip reasons and the `[done/total]`
+  line are what the one-at-a-time pass produced. `build_tag_fn` is `build_tag_batch`.
+- **`dbv4_backend.forward_tensor` normalises on the device**, after the transfer that had to
+  happen anyway, with `_mean` / `_std` living there.
+- **`predict` reads its tensors once, as lists**, instead of a `float(t[i])` per vocabulary row;
+  the five category filters behind it key off the kept handful (`_cat_of`, `_scored`) rather than
+  walking all ~13k `tag_entries` apiece, and `predict_caption`'s slotting does the same
+  (`_slot_of` / `_emit_key`).
+- **`downloads.by_id` / `expand` take the rows**, so `_cli.main` builds the catalog once instead of
+  four times, each of which resolved the home and read the installed checkpoint's config.
+- **`exclude_many` / `restore_many`** read and write the one ledger document once however many
+  images move; `exclude_one` / `restore_one` are the single-image case, and the CLI checks every
+  rel first and then makes one pass.
+- **`grouping._grid_match_edges` chunks the Stage-A prefilter** (`cls_chunk`) like the pooling and
+  the pair match above it, row-major so the edge list is the one the n x n pass produced.
+- **An in-process Export decides each row once** (`export_one(..., decided=True)`); a replay of a
+  saved report still re-decides, because that disk has moved on.
+- **`caption_layout` takes a `ParsedCaption`** (`position_clauses.as_parsed`), so `is_candidate`
+  parses once instead of three times and `propose_for_image` / `audit_image` hand their own parse
+  to every layout question.
+- **`OcrEngine.read_iter(..., with_pixels=True)`** yields the page it already decoded, so
+  `RereadEngine` no longer decodes every page a second time. The chunk's pixels were alive anyway.
+- **The SFX reader templates its prompt once** (`SfxReader.prompt`, a `cached_property`) and the
+  greedy logits recorder is one cached class (`_greedy_recorder`) rather than a fresh type per page.
+- **One settings read per request.** `dataset_bases` / `reachable` / `resolve_roots` take what the
+  caller already has, so `RunContext.load()` reads `.anime_tools_gui.json` once rather than five
+  times.
+
+`AutotagRequest` gained `--batch_size`, which is the only new flag; `CONTRACT_VERSION` is
+unchanged and nothing in `contract.py` moved.
 
 ### The confirmed defects, 2026-09-12
 

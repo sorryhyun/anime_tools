@@ -1207,6 +1207,35 @@ def test_comic_panels_defer_the_count_to_detection():
     assert caption_subject_count("safe, 1girl, 2koma, blonde hair") is None
 
 
+def test_the_layout_questions_parse_one_caption_once(monkeypatch):
+    """`is_candidate` asks three questions of one caption and `propose_for_image`
+    five more. Each parsing the string for itself is the same split over and
+    over, which is what the `ParsedCaption` entry point is for."""
+    from anime_tools.captions import position_clauses as PC
+    from anime_tools.captions.caption_layout import (
+        caption_boy_count,
+        caption_subject_count,
+        is_candidate,
+        is_repeated_subject_layout,
+    )
+
+    calls: list[str] = []
+    real = PC.parse_caption
+    monkeypatch.setattr(PC, "parse_caption", lambda c: (calls.append(c), real(c))[1])
+
+    caption = "safe, 2girls, 1boy, multiple views, blonde hair"
+    assert is_candidate(caption) == (True, "multiple-views")
+    assert len(calls) == 1
+
+    parsed = real(caption)
+    calls.clear()
+    assert is_candidate(parsed) == (True, "multiple-views")
+    assert caption_subject_count(parsed) is None
+    assert caption_boy_count(parsed) == 1
+    assert is_repeated_subject_layout(parsed) is True
+    assert calls == []  # an already-parsed caption is never parsed again
+
+
 def test_koma_count_bounds_a_page_that_has_no_girls_count_check():
     """``Nkoma`` names the panel count, restoring the ceiling the layout waived."""
     from anime_tools.stages.position_captions import caption_panel_ceiling

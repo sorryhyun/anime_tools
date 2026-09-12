@@ -283,8 +283,8 @@ def test_the_ocr_stage_resolves_one_device_and_gives_it_to_both_models(
         def read(self, path):
             return []
 
-        def read_iter(self, paths):
-            return ([] for _ in paths)
+        def read_iter(self, paths, *, with_pixels=False):
+            return (([], None) if with_pixels else [] for _ in paths)
 
     class _Reader:
         def read_boxes_scored(self, *a, **kw):

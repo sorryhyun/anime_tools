@@ -171,6 +171,43 @@ def test_a_rel_that_could_name_another_tree_is_refused(trees, rel):
         X.exclude_one(trees, rel)
 
 
+def test_many_reads_and_writes_the_ledger_once(trees, monkeypatch):
+    """The ledger is one JSON document: N images named in one gesture must not
+    cost N full reads and N full rewrites of it."""
+    from anime_tools.exclude import _ledger, _move
+
+    reads, writes = [], []
+    real_read, real_write = _ledger.read_entries, _ledger.write_entries
+    monkeypatch.setattr(
+        _move, "read_entries", lambda p: (reads.append(p), real_read(p))[1]
+    )
+    monkeypatch.setattr(
+        _move, "write_entries", lambda p, e: (writes.append(p), real_write(p, e))[1]
+    )
+
+    results = X.exclude_many(trees, ["char_aki/a.jpg", "b.png"], note="dup")
+
+    assert [r.action for r in results] == ["excluded", "excluded"]
+    assert len(reads) == 1 and len(writes) == 1
+    assert set(X.read_entries(trees.excluded)) == {"char_aki/a.jpg", "b.png"}
+    assert not (trees.resized / "b.png").exists()
+
+    reads.clear()
+    writes.clear()
+    back = X.restore_many(trees, ["char_aki/a.jpg", "b.png"])
+    assert [r.action for r in back] == ["restored", "restored"]
+    assert len(reads) == 1 and len(writes) == 1
+    assert X.read_entries(trees.excluded) == {}
+    assert (trees.resized / "b.png").is_file()
+
+
+def test_restoring_nothing_leaves_the_ledger_alone(trees):
+    """A rel that was never excluded takes nothing out, so nothing is written —
+    a no-op must not create a ledger where there was none."""
+    assert X.restore_many(trees, ["b.png"])[0].action == "not-excluded"
+    assert not X.manifest_path(trees.excluded).exists()
+
+
 def test_the_ledger_round_trips_through_json(trees):
     X.exclude_one(trees, "char_aki/a.jpg", note="why")
     entries = X.read_entries(trees.excluded)

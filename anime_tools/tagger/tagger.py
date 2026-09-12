@@ -20,6 +20,7 @@ model: :mod:`anime_tools.tagger.schema` (what a tag means to a checkpoint) and
 from __future__ import annotations
 
 import logging
+from collections.abc import Sequence
 from pathlib import Path
 
 import torch
@@ -163,6 +164,25 @@ class AnimaTagger:
             self._by_cat.setdefault(cat, []).append((e.index, e.median_pos, e.name))
         for cat in self._by_cat:
             self._by_cat[cat].sort(key=lambda triple: (triple[1], triple[2]))
+        # The slot a tag is emitted into, and its order inside that slot — the
+        # same ``(median_pos, name)`` key ``_by_cat`` is sorted on.
+        self._slot_of: dict[str, str] = {
+            name: cat for cat, entries in self._by_cat.items() for _, _, name in entries
+        }
+        self._emit_key: dict[str, tuple[float, str]] = {
+            name: (pos, name)
+            for entries in self._by_cat.values()
+            for _, pos, name in entries
+        }
+        # Row-order views of the vocabulary, built once. Every question the
+        # post-processing below asks about a *kept* tag — its category, its
+        # index — used to walk all ~13k entries to answer it, five times per
+        # image; keyed by name they are all lookups over the kept handful.
+        self._tag_names: tuple[str, ...] = tuple(e.name for e in self.tag_entries)
+        self._emit_ok: tuple[bool, ...] = tuple(
+            not tg.is_sentinel_name(n) for n in self._tag_names
+        )
+        self._cat_of: dict[str, str] = {e.name: e.category for e in self.tag_entries}
 
         self.n_tags = len(self.tag_entries)
         self.rules = tr.load_rules(self.ckpt_dir / "rules.yaml")
@@ -278,36 +298,47 @@ class AnimaTagger:
         )
 
     @torch.no_grad()
-    def _heads_forward(
-        self, pil_img: Image.Image
+    def _heads_forward_batch(
+        self, images: Sequence[Image.Image]
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor | None]:
-        """Head pass: dbv4 backend + optional sidecar → ``(tag_logits,
-        rating_probs, people_probs | None)`` on ``self.device``.
+        """Head pass over many images: dbv4 backend + optional sidecar →
+        ``(tag_logits [B, n_tags], rating_probs [B, n_ratings], people_probs
+        [B, n_people] | None)`` on ``self.device``.
 
         Tag logits are the projected sigmoid probs mapped back through logit();
         tags the backend cannot emit sit at ``UNSUPPORTED_LOGIT``, so they never
         clear a threshold or win a group argmax.
+
+        The backend has always taken a list — this is the one forward that
+        covers a whole batch, and :meth:`_heads_forward` is its one-image case.
         """
-        out = self._dbv4.forward([pil_img])
-        probs = torch.zeros(self.n_tags)
-        probs[self._align_ours] = out.probs[0, self._align_ext]
+        out = self._dbv4.forward(list(images))
+        b = int(out.probs.shape[0])
+        probs = torch.zeros(b, self.n_tags)
+        probs[:, self._align_ours] = out.probs[:, self._align_ext]
         people: torch.Tensor | None = None
         if self._sidecar is not None:
             bce, people_logits = self._sidecar(out.hidden.to(self.device))
-            probs[self._sidecar_bce_idx] = bce[0].float().sigmoid().cpu()
+            probs[:, self._sidecar_bce_idx] = bce.float().sigmoid().cpu()
             if people_logits is not None:
-                people = people_logits[0].float().softmax(dim=-1)
+                people = people_logits.float().softmax(dim=-1)
         tag_logits = probs_to_logits(probs)
-        tag_logits[~self._supported] = UNSUPPORTED_LOGIT
+        tag_logits[:, ~self._supported] = UNSUPPORTED_LOGIT
         # dbv4 ratings are 4 independent sigmoids; normalise to a distribution.
-        rating = torch.tensor(
-            [
-                float(out.probs[0, c]) if c is not None else 0.0
-                for c in self._rating_cols
-            ]
-        )
-        rating = rating / rating.sum().clamp(min=1e-6)
+        rating = torch.zeros(b, len(self._rating_cols))
+        for j, col in enumerate(self._rating_cols):
+            if col is not None:
+                rating[:, j] = out.probs[:, col]
+        rating = rating / rating.sum(dim=1, keepdim=True).clamp(min=1e-6)
         return tag_logits.to(self.device), rating.to(self.device), people
+
+    @torch.no_grad()
+    def _heads_forward(
+        self, pil_img: Image.Image
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor | None]:
+        """:meth:`_heads_forward_batch` for one image, rows unwrapped."""
+        logits, rating, people = self._heads_forward_batch([pil_img])
+        return logits[0], rating[0], None if people is None else people[0]
 
     @torch.no_grad()
     def tag_logits(self, pil_img: Image.Image) -> torch.Tensor:
@@ -325,38 +356,69 @@ class AnimaTagger:
         threshold, when typed groups are loaded); and ``groups``
         (``{group_name: predicted_tag_or_None}``, only when groups loaded).
         """
-        tag_logits_row, rating_probs, people_probs = self._heads_forward(pil_img)
+        return self._predict_row(*self._heads_forward(pil_img))
+
+    @torch.no_grad()
+    def predict_batch(self, images: Sequence[Image.Image]) -> list[dict[str, object]]:
+        """:meth:`predict` over a list of images — one forward for the batch.
+
+        The post-processing is per image and untouched, so a batch of one
+        answers exactly what :meth:`predict` does. This is the entry point a
+        walk over a tree should use; the per-image one leaves the backbone
+        waiting on the next decode.
+        """
+        if not images:
+            return []
+        logits, rating, people = self._heads_forward_batch(images)
+        return [
+            self._predict_row(
+                logits[i], rating[i], None if people is None else people[i]
+            )
+            for i in range(len(logits))
+        ]
+
+    def _predict_row(
+        self,
+        tag_logits_row: torch.Tensor,
+        rating_probs: torch.Tensor,
+        people_probs: torch.Tensor | None,
+    ) -> dict[str, object]:
+        """One image's head outputs → the :meth:`predict` dict.
+
+        Everything here is Python over the kept handful of tags, so the tensors
+        come off the device once, as lists, rather than a ``float()`` per
+        element.
+        """
         tag_probs = tag_logits_row.sigmoid()
-        kept_mask = (tag_probs >= self.thresholds_dev).cpu()
-        tag_probs_cpu = tag_probs.cpu()
-        scores = {
-            self.tag_entries[i].name: float(tag_probs_cpu[i])
-            for i in range(self.n_tags)
-        }
+        kept_mask = (tag_probs >= self.thresholds_dev).tolist()
+        probs: list[float] = tag_probs.tolist()
+        names = self._tag_names
+        scores = dict(zip(names, probs, strict=True))
         # sentinel slots ("<none:group>") stay in `scores` but are never emitted
         kept = {
-            self.tag_entries[i].name: float(tag_probs_cpu[i])
-            for i in range(self.n_tags)
-            if kept_mask[i] and not tg.is_sentinel_name(self.tag_entries[i].name)
+            name: p
+            for name, p, hit, emit in zip(
+                names, probs, kept_mask, self._emit_ok, strict=True
+            )
+            if hit and emit
         }
-        rating_idx = int(rating_probs.argmax().item())
+        rating_list: list[float] = rating_probs.tolist()
+        rating_idx = max(range(len(rating_list)), key=rating_list.__getitem__)
         out: dict[str, object] = {
             "rating": self.ratings[rating_idx],
-            "rating_scores": {
-                r: float(rating_probs[i].cpu()) for i, r in enumerate(self.ratings)
-            },
+            "rating_scores": dict(zip(self.ratings, rating_list, strict=True)),
             "scores": scores,
             "kept": kept,
             # A shared reference, not a copy — treat as read-only.
             "thresholds": self.threshold_map,
         }
         if people_probs is not None and self.people_count_labels:
-            people_idx = int(people_probs.argmax().item())
+            people_list: list[float] = people_probs.tolist()
+            people_idx = max(range(len(people_list)), key=people_list.__getitem__)
             out["people_count"] = self.people_count_labels[people_idx]
-            out["people_count_scores"] = {
-                lbl: float(people_probs[i].cpu())
-                for i, lbl in enumerate(self.people_count_labels)
-            }
+            out["people_count_scores"] = dict(
+                zip(self.people_count_labels, people_list, strict=True)
+            )
 
         # Group-aware refinement: one argmax winner per applicable group.
         if self._group_lookup:
@@ -389,12 +451,12 @@ class AnimaTagger:
                 # all-unsupported group emits its first member off a -30 logit.
                 if (
                     self.backend_kind == "dbv4"
-                    and tag_probs_cpu[winner_idx] < self.thresholds[winner_idx]
+                    and probs[winner_idx] < self.thresholds[winner_idx]
                 ):
                     group_preds[name] = None
                     continue
-                winner_name = self.tag_entries[winner_idx].name
-                kept[winner_name] = float(tag_probs_cpu[winner_idx])
+                winner_name = names[winner_idx]
+                kept[winner_name] = probs[winner_idx]
                 group_preds[name] = winner_name
             out["kept"] = kept
             out["groups"] = group_preds
@@ -416,52 +478,44 @@ class AnimaTagger:
         ]
         if girl_caps:
             cap = max(girl_caps)
-            char_scored = sorted(
-                (
-                    (kept[e.name], e.name)
-                    for e in self.tag_entries
-                    if e.category == "character" and e.name in kept
-                ),
-                reverse=True,
-            )
-            for _, name in char_scored[cap:]:
+            for _, name in self._scored(kept, "character")[cap:]:
                 kept.pop(name, None)
             out["kept"] = kept
 
         # drop characters below the floor; if that empties both character and
         # copyright, add "original" as a slot-filler (booru non-IP convention)
         dropped_any = False
-        for e in self.tag_entries:
-            if e.category != "character" or e.name not in kept:
-                continue
-            if kept[e.name] < self._character_floor:
-                kept.pop(e.name, None)
+        for _, name in self._scored(kept, "character"):
+            if kept[name] < self._character_floor:
+                kept.pop(name, None)
                 dropped_any = True
         if dropped_any and self._original_idx is not None:
-            has_char = any(
-                e.category == "character" and e.name in kept for e in self.tag_entries
-            )
-            has_copy = any(
-                e.category == "copyright" and e.name in kept for e in self.tag_entries
-            )
-            if not has_char and not has_copy:
-                kept["original"] = float(tag_probs_cpu[self._original_idx])
+            cats = {self._cat_of.get(name) for name in kept}
+            if not cats & {"character", "copyright"}:
+                kept["original"] = probs[self._original_idx]
 
         # cap artist/copyright to top-1 by score (booru convention is one each)
         for cat in ("artist", "copyright"):
-            cat_scored = sorted(
-                (
-                    (kept[e.name], e.name)
-                    for e in self.tag_entries
-                    if e.category == cat and e.name in kept
-                ),
-                reverse=True,
-            )
-            for _, name in cat_scored[1:]:
+            for _, name in self._scored(kept, cat)[1:]:
                 kept.pop(name, None)
 
         out["kept"] = kept
         return out
+
+    def _scored(self, kept: dict[str, float], category: str) -> list[tuple[float, str]]:
+        """``kept``'s tags of one category, highest score first.
+
+        Over ``kept`` rather than the vocabulary: the answer is the same set,
+        and the vocabulary is three orders of magnitude longer.
+        """
+        return sorted(
+            (
+                (p, name)
+                for name, p in kept.items()
+                if self._cat_of.get(name) == category
+            ),
+            reverse=True,
+        )
 
     def predict_caption(self, pil_img: Image.Image, min_confidence: float = 0.0) -> str:
         """Image → canonical Anima caption string (rating + slotted tags).
@@ -470,21 +524,29 @@ class AnimaTagger:
         per-tag F1 thresholds; 0.0 (default) leaves them untouched. The
         rating slot is always emitted regardless of this floor.
         """
-        out = self.predict(pil_img)
+        return self._caption_of(self.predict(pil_img), min_confidence)
+
+    def predict_caption_batch(
+        self, images: Sequence[Image.Image], min_confidence: float = 0.0
+    ) -> list[str]:
+        """:meth:`predict_caption` over a list of images — one forward for the
+        batch (:meth:`predict_batch`), one caption out per image in order."""
+        return [
+            self._caption_of(out, min_confidence) for out in self.predict_batch(images)
+        ]
+
+    def _caption_of(self, out: dict[str, object], min_confidence: float) -> str:
+        """One :meth:`predict` dict → the caption string."""
         kept = out["kept"]
         if min_confidence > 0.0:
             kept = {name: p for name, p in kept.items() if p >= min_confidence}
-        kept_idxs = {
-            self.tag_entries[i].index
-            for i, name in enumerate([e.name for e in self.tag_entries])
-            if name in kept
-        }
         slotted: dict[str, list[str]] = {cat: [] for cat in SLOT_ORDER}
         slotted["rating"].append(out["rating"])
-        for cat, entries in self._by_cat.items():
-            for idx, _, name in entries:
-                if idx in kept_idxs:
-                    slotted.setdefault(cat, []).append(name)
+        for name in kept:
+            slotted.setdefault(self._slot_of.get(name, "general"), []).append(name)
+        for cat, tags in slotted.items():
+            if cat != "rating":
+                tags.sort(key=lambda n: self._emit_key.get(n, (0.0, n)))
         # Re-apply tag rules at emit time: the model can predict both `bra` and
         # `black bra`; apply_rules drops `bra` in that case.
         flat: list[str] = []

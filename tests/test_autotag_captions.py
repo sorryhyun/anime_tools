@@ -58,7 +58,7 @@ def _run(resized, source, tagged, **kwargs):
     return run_autotag_captions(
         resized_dir=resized,
         source_dir=source,
-        tag_fn=lambda _img: tagged,
+        tag_batch=lambda images: [tagged] * len(images),
         **kwargs,
     )
 
@@ -367,3 +367,50 @@ def test_bad_options_fail_at_construction():
         AutotagOptions(mode="clobber")
     with pytest.raises(ValueError):
         AutotagOptions(min_confidence=1.5)
+
+
+def test_the_tagger_sees_batches_and_never_a_skipped_image(tmp_path):
+    """The forward is batched, and the first half of the pass is what decides
+    which images it covers: an image `missing` mode skips is never decoded."""
+    resized, source = _dataset(
+        tmp_path,
+        {"a": "hand written", "b": None, "c": None, "d": None, "e": None},
+    )
+    batches: list[int] = []
+
+    def tag_batch(images):
+        batches.append(len(images))
+        return ["safe, 1girl"] * len(images)
+
+    _rows, stats = run_autotag_captions(
+        resized_dir=resized,
+        source_dir=source,
+        tag_batch=tag_batch,
+        options=AutotagOptions(mode="missing"),
+        batch_size=3,
+        apply=True,
+    )
+
+    # Four candidates (`a` has a master), so 3 + 1 — not five calls of one.
+    assert batches == [3, 1]
+    assert stats.candidates == 4
+    assert stats.written == 4
+    assert not (resized / "a.txt").exists()
+
+
+def test_progress_still_counts_every_image_in_tree_order(tmp_path):
+    """Batching moved the forward, not the bar: the GUI's `[done/total]` line
+    is per image walked, skipped ones included."""
+    resized, source = _dataset(tmp_path, {"a": "hand written", "b": None, "c": None})
+    seen: list[tuple[int, int, str]] = []
+
+    _run(
+        resized,
+        source,
+        "safe, 1girl",
+        options=AutotagOptions(mode="missing"),
+        batch_size=1,
+        progress=lambda i, n, detail: seen.append((i, n, detail)),
+    )
+
+    assert seen == [(1, 3, "a.txt"), (2, 3, "b.txt"), (3, 3, "c.txt")]

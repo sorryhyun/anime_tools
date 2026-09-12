@@ -76,7 +76,7 @@ def _autotag_dry_run(resized: Path, source: Path, *, mode: str = "missing") -> d
     rows, stats = run_autotag_captions(
         resized_dir=resized,
         source_dir=source,
-        tag_fn=lambda _img: TAGGED,
+        tag_batch=lambda images: [TAGGED] * len(images),
         options=AutotagOptions(mode=mode),
         apply=False,
     )
@@ -135,7 +135,7 @@ def test_replay_matches_a_live_apply_byte_for_byte(tmp_path: Path):
     run_autotag_captions(
         resized_dir=live_resized,
         source_dir=live_source,
-        tag_fn=lambda _img: TAGGED,
+        tag_batch=lambda images: [TAGGED] * len(images),
         options=AutotagOptions(mode="missing"),
         apply=True,
     )

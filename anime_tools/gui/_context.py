@@ -71,10 +71,15 @@ def is_loopback(request: Request) -> bool:
 
 def roots_for(settings: Mapping[str, Any], **overrides: str) -> D.Roots:
     """The dataset roots for this request: overrides win, blanks fall back to
-    the saved roots, then to :data:`D.DEFAULT_ROOTS`."""
+    the saved roots, then to :data:`D.DEFAULT_ROOTS`.
+
+    The containment bases are computed here, from the settings already in hand,
+    and handed down: otherwise every root recomputes them and each of those is
+    another read of the settings file this object exists to read once.
+    """
     saved = settings.get(D.SETTINGS_KEY) or {}
     merged = {**saved, **{k: v for k, v in overrides.items() if v}}
-    return D.resolve_roots(merged)
+    return D.resolve_roots(merged, bases=D.dataset_bases(settings))
 
 
 def stage_defaults(settings: Mapping[str, Any]) -> dict[str, str]:

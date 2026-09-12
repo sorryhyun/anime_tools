@@ -21,7 +21,7 @@ from anime_tools.exclude._ledger import (
     read_entries,
     rel_key,
 )
-from anime_tools.exclude._move import Result, exclude_one, restore_one
+from anime_tools.exclude._move import Result, exclude_many, restore_many
 
 __all__ = ["build_parser", "main"]
 
@@ -106,20 +106,24 @@ def main(argv: list[str] | None = None) -> int:
         return 2
 
     src = resolve_path(args.src)
-    results: list[Result] = []
+    keys: list[str] = []
     for raw in args.rels:
         try:
             key = rel_key(raw)
             if not args.restore and not (src / key).is_file():
                 raise ExclusionError(f"not in the dataset: {key} (under {src})")
-            results.append(
-                restore_one(trees, key, apply=args.apply)
-                if args.restore
-                else exclude_one(trees, key, note=args.note, apply=args.apply)
-            )
         except ExclusionError as e:
             print(f"{raw}: {e}", file=sys.stderr)
             return 2
+        keys.append(key)
+
+    # Every rel checked first, then one pass over one ledger: N images named
+    # here cost one read and one write, not N of each.
+    results: list[Result] = (
+        restore_many(trees, keys, apply=args.apply)
+        if args.restore
+        else exclude_many(trees, keys, note=args.note, apply=args.apply)
+    )
 
     verb = "would move" if not args.apply else "moved"
     for r in results:

@@ -83,7 +83,7 @@ manifest, so the band is a property of the checkpoint, not a loader constant.
 
 | File | Role |
 |---|---|
-| `tagger.py` | `AnimaTagger` — public inference class (`predict` / `predict_caption`), plus `ensure_tagger_checkpoint` / `ensure_tagger_backbone`. Implements every post-prediction refinement (group argmax, character floor, original-fallback, girls-count cap, top-1 artist/copyright). |
+| `tagger.py` | `AnimaTagger` — public inference class (`predict` / `predict_caption`, and the batched `predict_batch` / `predict_caption_batch`), plus `ensure_tagger_checkpoint` / `ensure_tagger_backbone`. Implements every post-prediction refinement (group argmax, character floor, original-fallback, girls-count cap, top-1 artist/copyright). |
 | `dbv4_meta.py` | Torch-free facts about the backbone and our checkpoint: repo ids, required/optional file sets, `DEFAULT_TAGGER_DIR`. Shared by the loader, the ComfyUI node and `downloads/`. |
 | `dbv4_backend.py` | Backbone loader + `align_vocab` (the single vocab join point) + `SidecarHead` (our linear head over the backbone's hidden state) + `default_dtype` (bf16 on CUDA, fp32 elsewhere — MPS included). |
 | `feature_cache.py` | The dbv4 hidden-state cache: `dbv4_cache_path` / `dbv4_cache_stems` / `load_dbv4_cache` (the stem list rides in the safetensors metadata — a cache built for another manifest is misaligned row-for-row, so every reader checks it) + `multi_hot_from_manifest`. |
@@ -235,6 +235,12 @@ caption = tagger.predict_caption(Image.open("foo.png"))
 debug = tagger.predict(Image.open("foo.png"))
 # → {"rating": "...", "rating_scores": {...}, "scores": {...},
 #    "kept": {...}, "groups": {"eye_color": "blue eyes", ...}}
+
+# One forward for a whole batch; the post-processing is per image and the same,
+# so a batch of one answers what the calls above do. What a walk over a tree
+# should use -- the per-image call leaves the backbone waiting on the next decode.
+captions = tagger.predict_caption_batch([Image.open(p) for p in paths])
+outs = tagger.predict_batch([Image.open(p) for p in paths])
 ```
 
 `AnimaTagger.predict`:

@@ -30,6 +30,7 @@ from __future__ import annotations
 import base64
 import glob
 import os
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from functools import lru_cache
 from io import BytesIO
@@ -210,17 +211,21 @@ def lexical(path: str | Path) -> Path:
     return Path(os.path.normpath(resolve_path(path)))
 
 
-def dataset_bases() -> tuple[Path, ...]:
+def dataset_bases(settings: Mapping[str, Any] | None = None) -> tuple[Path, ...]:
     """Every tree this panel may reach: the curation home, plus any dataset root
     the **saved** settings pin outside it.
 
     Saved only — a request's own root overrides never widen this, since a root
     outside the home widens what may be read. Only the Settings save does that
     (:func:`resolve_roots` with ``trusted``); every other path is checked here.
+
+    ``settings`` is the already-loaded blob, for a caller that has one: this is
+    on the path of every root a request resolves, so reading the file here is
+    one read per root on top of the caller's own.
     """
     home = curation_home()
     bases = [home]
-    saved = load_settings().get(SETTINGS_KEY) or {}
+    saved = (load_settings() if settings is None else settings).get(SETTINGS_KEY) or {}
     for name in DEFAULT_ROOTS:
         raw = str(saved.get(name) or "").strip()
         if not raw:
@@ -231,14 +236,17 @@ def dataset_bases() -> tuple[Path, ...]:
     return tuple(bases)
 
 
-def reachable(path: str | Path) -> Path:
+def reachable(path: str | Path, bases: Sequence[Path] | None = None) -> Path:
     """``lexical`` + the containment rule every read enforces.
 
     ``..`` is collapsed *before* the test: ``is_relative_to`` is purely textual,
     so ``<home>/../elsewhere`` would otherwise sail through it.
+
+    ``bases`` is :func:`dataset_bases` already computed, for a caller checking
+    several paths against the same settings.
     """
     p = lexical(path)
-    bases = dataset_bases()
+    bases = dataset_bases() if bases is None else bases
     if not any(p.is_relative_to(b) for b in bases):
         raise DatasetError(f"outside the curation home and the dataset roots: {p}")
     return p
@@ -261,7 +269,10 @@ def rel_to_home(p: Path) -> str:
 
 
 def resolve_roots(
-    values: dict[str, Any] | None = None, *, trusted: bool = False
+    values: dict[str, Any] | None = None,
+    *,
+    trusted: bool = False,
+    bases: Sequence[Path] | None = None,
 ) -> Roots:
     """Roots from ``values``, falling back to :data:`DEFAULT_ROOTS`. Blank
     strings fall back too, so an emptied field means "default".
@@ -269,9 +280,14 @@ def resolve_roots(
     ``trusted`` is the Settings **save** and nothing else: that request is what
     *defines* :func:`dataset_bases`, so it cannot be checked against them. Every
     other caller is.
+
+    ``bases`` is those bases already computed. Without it each of the four roots
+    recomputes them, and each of those is another read of the settings file.
     """
     got = values or {}
-    check = lexical if trusted else reachable
+    if not trusted and bases is None:
+        bases = dataset_bases()
+    check = lexical if trusted else (lambda raw: reachable(raw, bases))
     paths = {}
     for name, default in DEFAULT_ROOTS.items():
         raw = got.get(name)

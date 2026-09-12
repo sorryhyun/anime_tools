@@ -9,7 +9,7 @@ agree to. It moves every file the image has out of the live workspace trees into
 |---|---|
 | :mod:`._ledger` | the ledger — the state an exclusion *is*, and the rel that keys it |
 | :mod:`._artifacts` | what an image is made of: every file that has to move |
-| :mod:`._move` | the move engine — :func:`exclude_one` / :func:`restore_one` |
+| :mod:`._move` | the move engine — ``exclude_one`` / ``restore_one``, and the ``_many`` pair |
 | :mod:`._cli` | ``python -m anime_tools.exclude`` |
 
 The enforcement is one chokepoint: ``resize`` reads :func:`excluded_rels` into
@@ -33,7 +33,13 @@ from anime_tools.exclude._ledger import (
     rel_key,
     write_entries,
 )
-from anime_tools.exclude._move import Result, exclude_one, restore_one
+from anime_tools.exclude._move import (
+    Result,
+    exclude_many,
+    exclude_one,
+    restore_many,
+    restore_one,
+)
 
 __all__ = [
     "MANIFEST_VERSION",
@@ -43,6 +49,7 @@ __all__ = [
     "Trees",
     "artifacts",
     "build_parser",
+    "exclude_many",
     "exclude_one",
     "excluded_rels",
     "is_excluded",
@@ -50,6 +57,7 @@ __all__ = [
     "manifest_path",
     "read_entries",
     "rel_key",
+    "restore_many",
     "restore_one",
     "write_entries",
 ]

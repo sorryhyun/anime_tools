@@ -41,6 +41,7 @@ from anime_tools.masking._prompts import (
 )
 from anime_tools.stages._options import (
     CROP_ANCHORS,
+    DEFAULT_BATCH_SIZE,
     DEFAULT_CROP_ANCHOR,
     DEFAULT_IDENTITY_CONFIDENCE,
     DEFAULT_MIN_PIXELS,
@@ -395,6 +396,7 @@ class AutotagRequest(TaggerRequest, ApplyRequest):
         help="Extra probability floor on top of the tagger's per-tag F1 thresholds "
         "(0-1). 0 leaves its own decisions untouched",
     )
+    batch_size: int = arg(DEFAULT_BATCH_SIZE, help="Images per tagger forward pass")
     report_dir: str = _report_dir(f"{WS.REPORTS}/autotag")
 
     def __post_init__(self) -> None:

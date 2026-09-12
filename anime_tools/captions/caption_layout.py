@@ -4,13 +4,19 @@ The text-only prefilter for the position-clause pipeline and the multiview
 audit: how many bindable subjects the caption claims, whether it describes one
 character drawn several times (``multiple views`` / a comic page), and whether
 it is worth running a detector over at all. Pure stdlib — no model, no pixels.
+
+Every function here takes a caption *or* an already-parsed one
+(:func:`~anime_tools.captions.position_clauses.as_parsed`), because a caller
+asks several of them about the same caption in a row: ``is_candidate`` asks
+three and ``propose_for_image`` five more, and each one parsing the string for
+itself is the same parse over and over.
 """
 
 from __future__ import annotations
 
 import re
 
-from anime_tools.captions.position_clauses import flat_tag_set, has_clauses
+from anime_tools.captions.position_clauses import ParsedCaption, as_parsed, flat_tag_set
 from anime_tools.captions.taxonomy import count_of
 
 # ``2koma`` / ``4koma`` name the panel count. Anchored, so the open-ended
@@ -43,7 +49,7 @@ PANEL_LAYOUT_TAGS = frozenset(
 LAYOUT_TAGS = MULTI_VIEW_TAGS | PANEL_LAYOUT_TAGS
 
 
-def caption_subject_count(caption: str) -> int | None:
+def caption_subject_count(caption: str | ParsedCaption) -> int | None:
     """How many bindable subjects the caption itself claims, if it says.
 
     ``Ngirls`` gives a number; ``None`` means "more than one, count unknown",
@@ -60,7 +66,7 @@ def caption_subject_count(caption: str) -> int | None:
     return count_of(tags, "girl")
 
 
-def caption_panel_ceiling(caption: str) -> int | None:
+def caption_panel_ceiling(caption: str | ParsedCaption) -> int | None:
     """Most bindable subjects an ``Nkoma`` page can hold, or ``None`` if unbounded.
 
     A layout tag waives the count check entirely; this restores a backstop for a
@@ -82,7 +88,7 @@ def caption_panel_ceiling(caption: str) -> int | None:
     return max(panels) * per_panel
 
 
-def caption_boy_count(caption: str) -> int | None:
+def caption_boy_count(caption: str | ParsedCaption) -> int | None:
     """How many *male* subjects the caption claims — the count check's slack.
 
     The SAM3 ``girl`` prompt does not reliably exclude males, so the count gate
@@ -92,7 +98,7 @@ def caption_boy_count(caption: str) -> int | None:
     return count_of(flat_tag_set(caption), "boy")
 
 
-def is_repeated_subject_layout(caption: str) -> bool:
+def is_repeated_subject_layout(caption: str | ParsedCaption) -> bool:
     """Is this one character drawn several times, rather than several characters?
 
     Any :data:`LAYOUT_TAGS` member says yes: whatever belongs to *her*
@@ -103,16 +109,21 @@ def is_repeated_subject_layout(caption: str) -> bool:
     return bool(flat_tag_set(caption) & LAYOUT_TAGS)
 
 
-def is_candidate(caption: str) -> tuple[bool, str]:
-    """Should this caption go through detection? Returns ``(ok, reason)``."""
-    if has_clauses(caption):
+def is_candidate(caption: str | ParsedCaption) -> tuple[bool, str]:
+    """Should this caption go through detection? Returns ``(ok, reason)``.
+
+    "Already has clauses" is *position* clauses (a text clause binds no
+    subject), which is what ``parsed.position_clauses`` is.
+    """
+    parsed = as_parsed(caption)
+    if parsed.position_clauses:
         return False, "already-has-clauses"
-    tags = flat_tag_set(caption)
+    tags = parsed.tag_keys
     if tags & MULTI_VIEW_TAGS:
         return True, "multiple-views"
     if tags & PANEL_LAYOUT_TAGS:
         return True, "panel-layout"
-    expected = caption_subject_count(caption)
+    expected = caption_subject_count(parsed)
     if expected is None or expected > 1:
         return True, "multi-girl"
     return False, "single-subject"

@@ -149,7 +149,9 @@ class OcrEngine:
         """:meth:`read_iter` drained into a list, one entry per path."""
         return list(self.read_iter(image_paths))
 
-    def read_iter(self, image_paths: Sequence[Path]) -> Iterator[list[OcrLine]]:
+    def read_iter(
+        self, image_paths: Sequence[Path], *, with_pixels: bool = False
+    ) -> Iterator[Any]:
         """:meth:`read` over many images, batching what is batchable.
 
         A chunk is decoded and prepared on the pool, detected in one forward,
@@ -167,6 +169,13 @@ class OcrEngine:
         nothing decoded behind it, which parks the GPU for a whole chunk's
         decode. The whole run goes in one call; only the chunking below is a
         batch boundary.
+
+        ``with_pixels`` yields ``(lines, bgr)`` instead of ``lines`` — the image
+        this pass already decoded, or ``None`` for one that would not decode.
+        The chunk's pixels are alive for the length of the chunk either way, so
+        handing them out costs nothing and saves the re-reader
+        (:class:`~anime_tools.ocr.reread.RereadEngine`) a second decode of every
+        page.
         """
         from concurrent.futures import ThreadPoolExecutor
 
@@ -186,7 +195,15 @@ class OcrEngine:
                 loaded = pending.result()
                 if i + 1 < len(chunks):
                     pending = ahead.submit(self._load_chunk, chunks[i + 1], pool)
-                yield from self._read_chunk(chunk, loaded, pool)
+                lines = self._read_chunk(chunk, loaded, pool)
+                if not with_pixels:
+                    yield from lines
+                    continue
+                yield from zip(
+                    lines,
+                    (None if item is None else item[0] for item in loaded),
+                    strict=True,
+                )
 
     def _load_chunk(self, paths: Sequence[Path], pool) -> list:
         """One chunk decoded and prepared, on the pool. The prefetched half."""

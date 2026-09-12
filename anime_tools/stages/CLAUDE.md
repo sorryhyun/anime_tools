@@ -32,7 +32,7 @@ A runner lives beside the library function it drives, because `registry.py` addr
 | Runner | Module | Also there |
 |---|---|---|
 | `run_resize` | `resize.py` | `resized_tree()` + `RESIZE_FIRST`, the "run Resize first" preflight every other stage borrows |
-| `run_autotag` | `autotag.py` | |
+| `run_autotag` | `autotag.py` | `run_autotag_captions`, whose `tag_batch` is one forward per `--batch_size` images |
 | `run_position` | `position_captions.py` | `summarize()` (the report's own counts), `_run_flatten` |
 | `run_correct` | `captions.py` | |
 | `run_audit` | `multiview_audit.py` | `run_audit_phase` (the same sweep as the position stage's phase 1) |
@@ -45,7 +45,8 @@ header, the dry-run footer) and `_progress.py` (`make_progress`) are the two thi
 shares; they were under `cli/` until the library depended on its own CLI package.
 
 Every default and help string a request field names comes from a leaf — `_options.py` here
-(`PositionCaptionOptions`, the resize geometry, the audit's verdicts and witness floors) and
+(`PositionCaptionOptions`, the resize geometry, the autotag batch size, the audit's verdicts and
+witness floors) and
 `masking/_prompts.py` for the SAM3 prompt vocabulary — never from the stage module that uses it,
 which re-exports it instead. `registry.py` is import-light on purpose and the GUI resolves every
 request class to build its form, so reaching into a stage for one number used to cost that build

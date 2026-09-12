@@ -38,6 +38,8 @@ from anime_tools.captions.caption_layout import (
 )
 from anime_tools.captions.clause_vocabulary import ClauseVocabulary
 from anime_tools.captions.position_clauses import (
+    ParsedCaption,
+    as_parsed,
     assign_positions,
     compose_caption,
     flat_tag_set,
@@ -176,7 +178,7 @@ def is_audit_target(caption: str) -> tuple[bool, str]:
     return True, AUDIT_SKIP_REASON
 
 
-def _girls_count(caption: str) -> int | None:
+def _girls_count(caption: str | ParsedCaption) -> int | None:
     """The exact ``Ngirls`` the caption claims, or ``None`` if it claims none.
 
     Unlike :func:`~anime_tools.captions.taxonomy.count_of`, "unknown" (a bare
@@ -328,13 +330,15 @@ def audit_image(
     the caller filters. ``mask_sink`` sees the reading-ordered detections, the
     order ``crops`` is in.
     """
-    girls = _girls_count(caption)
+    # One parse for both counts the finding records.
+    parsed = as_parsed(caption)
+    girls = _girls_count(parsed)
     finding = MultiviewFinding(
         image="",
         caption_path="",
         instances=0,
         girls=girls,
-        boys=caption_boy_count(caption),
+        boys=caption_boy_count(parsed),
         caption=caption.strip(),
     )
 

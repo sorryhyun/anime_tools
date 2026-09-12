@@ -415,9 +415,20 @@ def parse_caption(caption: str) -> ParsedCaption:
     )
 
 
-def flat_tag_set(caption: str) -> frozenset[str]:
+def as_parsed(caption: str | ParsedCaption) -> ParsedCaption:
+    """``caption``, parsed — or itself, when it is already a parse.
+
+    The entry point for a chain of text-only questions about one caption. Each
+    of them alone would call :func:`parse_caption`, so asking three of them
+    parses the same string three times; taking the parse instead makes the
+    chain one.
+    """
+    return caption if isinstance(caption, ParsedCaption) else parse_caption(caption)
+
+
+def flat_tag_set(caption: str | ParsedCaption) -> frozenset[str]:
     """``caption``'s flat bag as a lookup set — clause tags excluded."""
-    return parse_caption(caption).tag_keys
+    return as_parsed(caption).tag_keys
 
 
 def flatten_caption(caption: str) -> str:

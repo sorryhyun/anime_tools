@@ -291,9 +291,11 @@ def propose_for_image(
     detected (``proposal.detections``' order, which is all a skip has), then
     reading-ordered once the gates pass (``proposal.instances``' order). The
     last call is the one that matches the returned proposal."""
+    # Parsed once and asked five times: every layout question below takes the
+    # parse (``caption_layout``), so the caption string is never re-split.
     parsed = parse_caption(caption)
     flat_bag = parsed.tag_keys
-    expected = caption_subject_count(caption)
+    expected = caption_subject_count(parsed)
 
     proposal = ImageProposal(
         image="",
@@ -325,7 +327,7 @@ def propose_for_image(
     # can't ground. "Agree" is the range girls..girls+boys, because the ``girl``
     # prompt picks up males inconsistently.
     if options.strict_count and expected:
-        boys = caption_boy_count(caption)
+        boys = caption_boy_count(parsed)
         upper = None if boys is None else expected + boys
         if len(dets) < expected or (upper is not None and len(dets) > upper):
             proposal.status = "skip:count-mismatch"
@@ -334,7 +336,7 @@ def propose_for_image(
     # ``Nkoma`` tag restores a generous ceiling so a subject detected twice
     # still has a backstop.
     if options.strict_count and not expected:
-        ceiling = caption_panel_ceiling(caption)
+        ceiling = caption_panel_ceiling(parsed)
         if ceiling is not None and len(dets) > ceiling:
             proposal.status = "skip:count-mismatch"
             return proposal
@@ -371,7 +373,7 @@ def propose_for_image(
             counts[tag] = counts.get(tag, 0) + 1
     attributable = frozenset(t for t, n in counts.items() if n == 1)
     shared = frozenset(t for t, n in counts.items() if n == len(kept_sets))
-    view_invariant = options.multi_view_gate and is_repeated_subject_layout(caption)
+    view_invariant = options.multi_view_gate and is_repeated_subject_layout(parsed)
 
     for i, (det, kept, pred) in enumerate(zip(dets, kept_sets, predictions)):
         tags = vocabulary.select(

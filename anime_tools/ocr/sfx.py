@@ -46,6 +46,7 @@ import unicodedata
 from collections import defaultdict
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
+from functools import cache, cached_property
 from pathlib import Path
 from typing import Any
 
@@ -201,6 +202,29 @@ def crop_box(bgr, box: Sequence[int], pad: float = CROP_PAD):
     return bgr[y0:y1, x0:x1]
 
 
+@cache
+def _greedy_recorder() -> type:
+    """The logits processor that records the greedy maximum per step.
+
+    Built once and cached, not redefined per read: it subclasses a transformers
+    class, so it cannot live at module scope (this module imports without
+    torch), and a fresh class object per page is a fresh type per page.
+    """
+    from transformers import LogitsProcessor
+
+    class _Greedy(LogitsProcessor):
+        """Records ``max softmax`` per step; changes nothing."""
+
+        def __init__(self) -> None:
+            self.probs: list = []
+
+        def __call__(self, input_ids, scores):
+            self.probs.append(scores.float().log_softmax(-1).max(-1).values.exp())
+            return scores
+
+    return _Greedy
+
+
 class SfxWeightsMissing(RuntimeError):
     """A reader directory the catalog has not filled yet."""
 
@@ -290,7 +314,14 @@ class SfxReader:
             min_edge=int(processor.image_processor.size["shortest_edge"]),
         )
 
-    def _prompt(self) -> str:
+    @cached_property
+    def prompt(self) -> str:
+        """The chat-templated prompt every crop is read under.
+
+        One string for the life of the reader: it depends on nothing but the
+        processor, and templating it per batch was a tokenizer round trip inside
+        the read loop.
+        """
         return self.processor.apply_chat_template(
             [
                 {
@@ -315,27 +346,18 @@ class SfxReader:
         """
         import torch
         from PIL import Image
-        from transformers import LogitsProcessor, LogitsProcessorList
-
-        class _Greedy(LogitsProcessor):
-            """Records ``max softmax`` per step; changes nothing."""
-
-            def __init__(self) -> None:
-                self.probs: list = []
-
-            def __call__(self, input_ids, scores):
-                self.probs.append(scores.float().log_softmax(-1).max(-1).values.exp())
-                return scores
+        from transformers import LogitsProcessorList
 
         if not crops:
             return []
+        greedy = _greedy_recorder()
         order = sorted(
             range(len(crops)), key=lambda i: crops[i].shape[0] * crops[i].shape[1]
         )
         out: list[tuple[str, float]] = [("", 0.0)] * len(crops)
         tok = self.processor.tokenizer
         skip = {tok.eos_token_id, tok.pad_token_id}
-        prompt = self._prompt()
+        prompt = self.prompt
         for s in range(0, len(order), self.batch_size):
             idx = order[s : s + self.batch_size]
             images = [Image.fromarray(crops[i][:, :, ::-1]) for i in idx]
@@ -350,7 +372,7 @@ class SfxReader:
                 },
             ).to(self.device)
             n = inputs["input_ids"].shape[-1]
-            recorder = _Greedy()
+            recorder = greedy()
             with torch.inference_mode():
                 gen = self.model.generate(
                     **inputs,

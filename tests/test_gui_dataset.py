@@ -778,3 +778,24 @@ def test_an_image_with_no_ocr_sidecar_answers_an_empty_list(client):
     """No sidecar and an empty sidecar answer the same: no text on file."""
     c, _ = client
     assert c.get("/api/dataset/item", params={"rel": "a.png"}).json()["ocr"] == []
+
+
+def test_a_request_reads_the_settings_file_once(home, monkeypatch):
+    """`RunContext` is the settings read once per request. Resolving the roots
+    used to re-read it per root, through `reachable` → `dataset_bases`, on top
+    of the caller's own read."""
+    from anime_tools.gui import settings as SET
+    from anime_tools.gui._context import RunContext
+
+    SET.save_settings(
+        {"roots": {"src": str(home / "image_dataset"), "dst": "workspace/resized"}}
+    )
+
+    reads: list = []
+    real = SET.read_json
+    monkeypatch.setattr(SET, "read_json", lambda p: (reads.append(p), real(p))[1])
+
+    ctx = RunContext.load()
+
+    assert len(reads) == 1
+    assert ctx.roots.src == home / "image_dataset"

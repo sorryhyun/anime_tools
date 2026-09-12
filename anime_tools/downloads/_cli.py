@@ -43,24 +43,27 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
-    assets = by_id()
+    # One catalog for the whole run: building it resolves the curation home and
+    # reads the installed checkpoint's config to name its backbone repo.
+    rows = catalog()
+    assets = by_id(rows)
 
     if args.list:
-        for pack_id, rows in by_pack().items():
+        for pack_id, pack_rows in by_pack(rows).items():
             pack = PACK_BY_ID[pack_id]
             print(f"[{pack.id}] {pack.title} — {pack.description}")
-            for a in rows:
+            for a in pack_rows:
                 mark = "installed" if a.installed else "MISSING  "
                 print(f"  {mark}  {a.id:<16} {a.repo:<48} → {a.location}")
         return 0
 
     try:
-        ids = expand(args.ids)
+        ids = expand(args.ids, rows)
     except KeyError as e:
         print(e.args[0], file=sys.stderr)
         return 2
 
-    picked = [assets[i] for i in ids] or [a for a in catalog() if not a.installed]
+    picked = [assets[i] for i in ids] or [a for a in rows if not a.installed]
     if not picked:
         print("every model is already installed.")
         return 0

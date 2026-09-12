@@ -19,6 +19,7 @@ from dataclasses import dataclass
 
 __all__ = [
     "CROP_ANCHORS",
+    "DEFAULT_BATCH_SIZE",
     "DEFAULT_CROP_ANCHOR",
     "DEFAULT_IDENTITY_CONFIDENCE",
     "DEFAULT_MIN_PIXELS",
@@ -45,6 +46,13 @@ CROP_ANCHORS: dict[str, tuple[float, float]] = {
     "bottom": (0.5, 1.0),
     "bottom_right": (1.0, 1.0),
 }
+
+# --- autotag (``stages/autotag.py``) -----------------------------------------
+
+DEFAULT_BATCH_SIZE = 8
+"""Images per tagger forward. The backbone is happiest with a batch and the walk
+has to decode the next image anyway; eight is small enough that the whole batch's
+decoded pixels are nothing next to the weights."""
 
 # --- multiview audit (``stages/multiview_audit.py``) -------------------------
 

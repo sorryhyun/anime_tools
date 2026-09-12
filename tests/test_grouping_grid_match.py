@@ -72,7 +72,8 @@ def test_grid_match_edges_gate():
 
 
 def test_pool_chunk_invariant():
-    """Chunked pooling gives the same edges as single-shot pooling."""
+    """Chunked pooling, prefilter and pair match give the same edges — in the
+    same order — as one-shot passes."""
     rng = np.random.default_rng(2)
     feats = [_feat(_rand_grid(rng)) for _ in range(10)]
     feats[5] = _feat(feats[0].grid16.copy())  # a twin so an edge exists
@@ -86,6 +87,8 @@ def test_pool_chunk_invariant():
         "match_frac_min": 0.4,
         "ratio": 0.8,
     }
-    a = _grid_match_edges(feats, cls, pool_chunk=256, pair_chunk=4096, **kw)
-    b = _grid_match_edges(feats, cls, pool_chunk=3, pair_chunk=7, **kw)
+    a = _grid_match_edges(
+        feats, cls, pool_chunk=256, pair_chunk=4096, cls_chunk=512, **kw
+    )
+    b = _grid_match_edges(feats, cls, pool_chunk=3, pair_chunk=7, cls_chunk=2, **kw)
     assert a == b

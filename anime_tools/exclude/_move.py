@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import shutil
 import time
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -27,7 +28,7 @@ from anime_tools.exclude._ledger import (
     write_entries,
 )
 
-__all__ = ["Result", "exclude_one", "restore_one"]
+__all__ = ["Result", "exclude_many", "exclude_one", "restore_many", "restore_one"]
 
 
 @dataclass
@@ -88,8 +89,36 @@ def exclude_one(
     Re-excluding keeps the original ``at`` (that is when it left the dataset) and
     unions what moved, so a file that appeared since is swept up too.
     """
-    key = rel_key(rel)
+    return exclude_many(trees, [rel], note=note, apply=apply)[0]
+
+
+def exclude_many(
+    trees: Trees, rels: Sequence[str], *, note: str = "", apply: bool = True
+) -> list[Result]:
+    """:func:`exclude_one` over several images, against one ledger.
+
+    The ledger is read once and written once however many images move, because
+    it is a single JSON file: excluding a hundred images one call at a time is a
+    hundred full reads and a hundred full rewrites of the same document.
+    """
     entries = read_entries(trees.excluded)
+    results = [_exclude(trees, entries, rel, note=note, apply=apply) for rel in rels]
+    if apply and results:
+        write_entries(trees.excluded, entries)
+    return results
+
+
+def _exclude(
+    trees: Trees,
+    entries: dict[str, Entry],
+    rel: str,
+    *,
+    note: str,
+    apply: bool,
+) -> Result:
+    """One exclusion against an already-loaded ledger, which it mutates in
+    place; writing it back is the caller's."""
+    key = rel_key(rel)
     was = entries.get(key)
 
     moved: list[str] = []
@@ -110,7 +139,6 @@ def exclude_one(
     )
     if apply:
         entries[key] = entry
-        write_entries(trees.excluded, entries)
     return Result(
         rel=key,
         action="already-excluded" if was and not moved else "excluded",
@@ -127,8 +155,28 @@ def restore_one(trees: Trees, rel: str, *, apply: bool = True) -> Result:
     curation decision this is not. The rel leaves the ledger either way — the
     image is no longer excluded, whatever is on disk.
     """
-    key = rel_key(rel)
+    return restore_many(trees, [rel], apply=apply)[0]
+
+
+def restore_many(
+    trees: Trees, rels: Sequence[str], *, apply: bool = True
+) -> list[Result]:
+    """:func:`restore_one` over several images, against one ledger — the
+    inverse of :func:`exclude_many`, and read and written the same once."""
     entries = read_entries(trees.excluded)
+    results = [_restore(trees, entries, rel, apply=apply) for rel in rels]
+    # A rel that was never excluded took nothing out of the ledger, and a ledger
+    # nothing changed is one this should not have written at all.
+    if apply and any(r.action != "not-excluded" for r in results):
+        write_entries(trees.excluded, entries)
+    return results
+
+
+def _restore(
+    trees: Trees, entries: dict[str, Entry], rel: str, *, apply: bool
+) -> Result:
+    """One restore against an already-loaded ledger, which it mutates in place."""
+    key = rel_key(rel)
     was = entries.get(key)
     if was is None:
         return Result(rel=key, action="not-excluded")
@@ -153,7 +201,6 @@ def restore_one(trees: Trees, rel: str, *, apply: bool = True) -> Result:
 
     if apply:
         del entries[key]
-        write_entries(trees.excluded, entries)
     return Result(
         rel=key,
         action="restored",
