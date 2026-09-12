@@ -127,6 +127,7 @@ STAGES: tuple[Stage, ...] = (
         module="anime_tools.stages.cli.correct_captions",
         panel="Curate",
         extra="tokenizers",
+        report=("report_dir", "report.json"),
         notes=(
             "Corrects the revised caption in place; the master is read only for "
             "an image that has none yet, and is never edited."

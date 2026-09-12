@@ -64,7 +64,7 @@ def _correct(resized, source, kb, *, options=None, **kwargs):
     options = options or CaptionCorrectionOptions(insert_no_artist=False)
     return write_corrected_preprocess_captions(
         source, resized, kb, options=options, **kwargs
-    )
+    ).stats
 
 
 def _read(path: Path) -> str:
@@ -202,3 +202,72 @@ def test_a_second_run_is_a_no_op(tmp_path, kb, insert_no_artist):
     assert second.unchanged == 1 and second.written == 0
     assert second.variants_written == 0
     assert sidecar.stat().st_mtime_ns == stamp
+
+
+def test_a_dry_run_touches_nothing_and_still_reports_every_row(tmp_path, kb):
+    """``apply=False`` is the dry run the other caption stages have.
+
+    It is also what makes the correction undoable: the rows it reports are the
+    ones the GUI's Undo replays backwards
+    (``contract.REPLAY_SHAPES["correct"]``), so each carries
+    ``target_before`` — the *write target*'s own text, empty for an image whose
+    revised caption this run would create out of a master.
+    """
+    resized, source = _dataset(
+        tmp_path, {"a": "long_hair, 1girl", "b": "smile, 1girl"}, {"b": "smile, 1girl"}
+    )
+
+    result = write_corrected_preprocess_captions(
+        source,
+        resized,
+        kb,
+        options=CaptionCorrectionOptions(insert_no_artist=False),
+        apply=False,
+    )
+
+    assert not (resized / "a.txt").exists(), "the mirror is a write, not a read"
+    assert _read(resized / "b.txt") == "smile, 1girl", "left exactly as it was"
+    assert result.stats.written == 2 and result.stats.unchanged == 0
+
+    rows = {r.image: r for r in result.rows}
+    assert rows["a.png"].target_before == ""  # would be created
+    assert rows["a.png"].proposed == "1girl, long hair"
+    assert rows["b.png"].target_before == "smile, 1girl"
+    assert rows["b.png"].proposed == "1girl, smile"
+    assert {r.status for r in result.rows} == {"ok"}
+
+
+def test_an_unchanged_caption_is_a_skip_row_not_a_proposal(tmp_path, kb):
+    """A row the replay must not write: the file already holds the text."""
+    resized, source = _dataset(tmp_path, {"a": "1girl"}, {"a": "1girl"})
+
+    result = write_corrected_preprocess_captions(
+        source,
+        resized,
+        kb,
+        options=CaptionCorrectionOptions(insert_no_artist=False),
+        apply=False,
+    )
+
+    assert result.stats.unchanged == 1 and result.stats.written == 0
+    assert [r.status for r in result.rows] == ["skip:unchanged"]
+
+
+def test_an_image_with_no_caption_anywhere_keeps_its_orphan_sidecar_on_a_dry_run(
+    tmp_path, kb
+):
+    resized, source = _dataset(tmp_path, {"a": None})
+    sidecar = variants_sidecar_path(resized / "a.txt")
+    sidecar.write_text("stale\n", encoding="utf-8")
+
+    result = write_corrected_preprocess_captions(
+        source,
+        resized,
+        kb,
+        options=CaptionCorrectionOptions(insert_no_artist=False),
+        apply=False,
+    )
+
+    assert sidecar.exists(), "a dry run removes nothing"
+    assert result.stats.variants_removed == 1
+    assert [r.status for r in result.rows] == ["skip:no-caption"]

@@ -173,9 +173,11 @@ def test_scoped_stages_are_the_ones_taking_a_pattern():
 
 
 def test_required_field_is_enforced():
-    _, sc = _stage("correct")
-    with pytest.raises(ValueError, match="--src"):
-        S.build_argv(sc, {"dst": "x"})
+    # ``--image-dir`` is the one stage field with no default: the mask generator
+    # writes a tree of its own and will not guess which pixels it read.
+    _, sc = _stage("masks_sam")
+    with pytest.raises(ValueError, match="--image-dir"):
+        S.build_argv(sc, {}, mask_root="ws")
 
 
 def test_boolean_optional_action_and_positional_list():
@@ -784,6 +786,31 @@ def test_a_failing_step_stops_the_chain(tmp_path):
 
     assert job.exit_code == 3 and job.state == "failed"
     assert "first" in job.lines and "second" not in job.lines
+
+
+def test_a_trimmed_log_buffer_still_streams_every_line_once(tmp_path):
+    """``Job.lines`` is a sliding window past ``max_lines``, so a reader's
+    position has to be an absolute line number.
+
+    An index into the list pointed past the deleted prefix after the first trim
+    and silently dropped every line in between — which on a long run is most of
+    them.
+    """
+    from anime_tools.gui.jobs import Job, JobManager
+
+    mgr = JobManager(max_lines=3)
+    job = Job(id="j", stage="s", steps=[], home=tmp_path)
+    for n in range(7):
+        mgr._emit(job, None, f"line{n}")
+    job.exit_code = 0
+
+    assert job.lines == ["line4", "line5", "line6"]
+    assert job.dropped == 4 and job.total_lines == 7
+    # A reader starved behind the window resumes at the oldest line still held
+    # rather than skipping to the end, and is told where it now stands.
+    assert job.wait_lines(0) == (["line4", "line5", "line6"], 7)
+    assert job.wait_lines(5) == (["line5", "line6"], 7)
+    assert job.wait_lines(7) == ([], 7)
 
 
 def test_steps_run_in_order_in_one_stream(tmp_path):

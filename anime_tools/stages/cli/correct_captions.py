@@ -6,7 +6,18 @@ from __future__ import annotations
 
 import argparse
 
+from anime_tools.contract import REPLAY_SHAPES
 from anime_tools.stages.requests import CorrectRequest
+
+# The correction lands on the **revised** caption (``--dst``); the master is the
+# read-only fallback it mirrors from, so the drift baseline is the target's own
+# text (``target_before``), not what spoke for the image.
+REPLAY_SPEC = REPLAY_SHAPES["correct"]
+"""The shape this stage's ``report.json`` is read back through — the same object
+``gui/proposals.py`` reads from ``contract.REPLAY_SHAPES``. This stage has no
+``--from_report``, so the only reader is the GUI's Undo."""
+
+DEFAULT_REPORT_DIR = CorrectRequest.report_dir
 
 
 def build_parser() -> argparse.ArgumentParser:

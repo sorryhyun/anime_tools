@@ -45,6 +45,13 @@ class Job:
     finished: float | None = None
     exit_code: int | None = None
     lines: list[str] = field(default_factory=list)
+    dropped: int = 0
+    """How many lines have been trimmed off the front of :attr:`lines`.
+
+    The buffer is capped at ``JobManager.max_lines``, so on a long run the list
+    is a sliding window and a reader's position has to be an *absolute* line
+    number — ``dropped`` is what converts one into an index into the window.
+    Monotonic for the life of the job."""
     report_path: str | None = None
     values: dict[str, Any] = field(default_factory=dict)
     apply: bool = False
@@ -83,18 +90,33 @@ class Job:
             "started": self.started,
             "finished": self.finished,
             "exit_code": self.exit_code,
-            "lines": len(self.lines),
+            "lines": self.total_lines,
             "report_path": self.report_path,
             "apply": self.apply,
             "values": self.values,
         }
 
-    def wait_lines(self, index: int, timeout: float = 1.0) -> list[str]:
-        """Lines from ``index`` on, blocking up to ``timeout`` for new ones."""
+    @property
+    def total_lines(self) -> int:
+        """Lines this job has emitted, trimmed ones counted — the absolute
+        numbering :meth:`wait_lines` reads and returns."""
+        return self.dropped + len(self.lines)
+
+    def wait_lines(self, index: int, timeout: float = 1.0) -> tuple[list[str], int]:
+        """Lines from absolute ``index`` on, plus the next absolute index.
+
+        Blocks up to ``timeout`` for new ones. ``index`` counts from the start
+        of the job, not into :attr:`lines`: once the buffer has been trimmed the
+        two differ by :attr:`dropped`, and an index that has fallen off the
+        front resumes at the oldest line still held rather than skipping past
+        it. The returned index is what to pass back — never ``index + len(…)``,
+        which a trim between two calls would leave short.
+        """
         with self._cond:
-            if len(self.lines) <= index and self.exit_code is None:
+            if self.total_lines <= index and self.exit_code is None:
                 self._cond.wait(timeout)
-            return self.lines[index:]
+            start = min(max(index - self.dropped, 0), len(self.lines))
+            return self.lines[start:], self.total_lines
 
 
 class JobManager:
@@ -209,7 +231,9 @@ class JobManager:
         with job._cond:
             job.lines.append(line)
             if len(job.lines) > self.max_lines:
-                del job.lines[: len(job.lines) - self.max_lines]
+                trim = len(job.lines) - self.max_lines
+                del job.lines[:trim]
+                job.dropped += trim
             job._cond.notify_all()
 
     def cancel(self, job_id: str) -> bool:

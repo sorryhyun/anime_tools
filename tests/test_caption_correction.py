@@ -252,3 +252,41 @@ def test_default_tag_csv_prefers_models_dir_over_env(tmp_path, monkeypatch):
     assert candidates[0] == model_csv
     assert root.parent / "danbooru_tags_classified.csv" not in candidates
     assert find_tag_csv(root) == model_csv
+
+
+def test_a_tag_with_a_quoted_comma_survives_the_correction(tmp_path):
+    """The bag reaches the corrector as the tuple ``parse_caption`` cut, never
+    as text re-split on commas.
+
+    ``sign reading "stop, now"`` is one tag under the grammar
+    (``position_clauses._split_outside``). Round-tripping the bag through a
+    joined string and a ``split(",")`` cut it in two and wrote both halves
+    back — the corruption this package's own "never ``split(",")`` a caption"
+    rule exists to stop.
+    """
+    kb = load_tag_knowledge_base(_csv(tmp_path / "tags.csv"))
+    options = CaptionCorrectionOptions(insert_no_artist=False)
+    quoted = 'sign reading "stop, now"'
+
+    flat = correct_caption(f"long_hair, {quoted}, 1girl", kb, options=options)
+    assert flat.text == f"1girl, long hair, {quoted}"
+
+    # And on the clause branch, which is where the bag used to be re-serialised.
+    clauses = correct_caption(
+        f"long_hair, {quoted}, 1girl. On the left, long hair.", kb, options=options
+    )
+    assert clauses.text == f"1girl, long hair, {quoted}. On the left, long hair."
+
+
+def test_correct_tags_takes_the_bag_without_any_caption_text(tmp_path):
+    """The tag-list entry point: the clause branch's own caller, and the reason
+    no caption text is spelled between the parse and the buckets."""
+    from anime_tools.captions.correction import correct_tags
+
+    kb = load_tag_knowledge_base(_csv(tmp_path / "tags.csv"))
+    out = correct_tags(
+        ("long_hair", 'sign reading "stop, now"', "1girl"),
+        kb,
+        options=CaptionCorrectionOptions(insert_no_artist=False),
+    )
+    assert out.tags == ("1girl", "long hair", 'sign reading "stop, now"')

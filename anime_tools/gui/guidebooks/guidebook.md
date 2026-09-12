@@ -384,9 +384,9 @@ and optional drop groups that strip whole tag families from every mirrored capti
 touching the master. With a variant count set it also writes `<rel>.variants.txt`: `v0` is the
 corrected caption, `v1…` are smart-shuffled and dropout draws, each encoded verbatim downstream.
 
-Always writes; there is no dry run and no report, so there is no Undo either — the replaced
-text is on the history rung. The KB is the Danbooru tag KB row in Models (§5); its
-optional English row rewrites the descriptions the tag lookup shows.
+Dry-run by default from the CLI, like Autotag and Position; the GUI always applies, and the
+`report.json` every run leaves is what Undo replays backwards. The KB is the Danbooru tag KB
+row in Models (§5); its optional English row rewrites the descriptions the tag lookup shows.
 
 > Correct mirrors the master. A revised caption's position clauses survive a re-run (they
 > are re-attached to the fresh mirror), but tags Autotag `merge` added to the flat bag do not,
@@ -505,7 +505,7 @@ stages spell flags with underscores (`--path_pattern`), grouping and masking wit
 | Resize | `anime_tools.stages.cli.resize_images` | always writes |
 | Autotag | `anime_tools.stages.cli.autotag_captions` | dry run → `report.json` |
 | Position | `anime_tools.stages.cli.position_captions` | dry run → `report.json` |
-| Correct | `anime_tools.stages.cli.correct_captions` | always writes |
+| Correct | `anime_tools.stages.cli.correct_captions` | dry run → `report.json` |
 | Audit | `anime_tools.stages.cli.audit_multiview` | dry run → `report.json` |
 | OCR | `anime_tools.stages.cli.ocr_captions` | dry run → `report.json` |
 | Groups | `anime_tools.grouping.cli.build_groups` | always writes `groups.json` |

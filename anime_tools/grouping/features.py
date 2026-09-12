@@ -292,10 +292,14 @@ def embed_members(
         collate_fn=_collate,
         persistent_workers=False,
     )
-    # tqdm to stderr: the GUI progress tracker (gui/progress.py TQDM_RE) parses it.
-    from tqdm import tqdm
-
-    pbar = tqdm(total=len(todo), desc="embedding", unit="img", file=sys.stderr)
+    # The shared counter line on stdout, not a ``tqdm`` bar on stderr: the web
+    # GUI merges stderr into the log and reads ``  [n/total]`` off stdout for
+    # its progress bar, which a carriage-return bar never matches. The
+    # trainer's Qt GUI parses the tqdm shape instead (its ``gui/progress.py``
+    # ``TQDM_RE``), so it wants the same second pattern — the issue backlog's
+    # trainer-side list carries it.
+    print(f"embedding {len(todo)} images", flush=True)
+    bar = _progress.ProgressBar(len(todo), every=1)
     with ThreadPoolExecutor(max_workers=2) as saver:
         for idxs, tens, oks in loader:
             batch = tens.to(embedder.device, embedder.dtype, non_blocking=pin)
@@ -310,7 +314,7 @@ def embed_members(
                 f = Feature(cls=cls_b[k], grid16=grid_b[k])
                 feats[_key(todo[i])] = f
                 saver.submit(_save_feature, _cache_path(todo[i]), f, stamps[i])
-            pbar.update(len(idxs))
-            _progress.step(pbar.n, len(todo), todo[idxs[-1]].image_path.name)
-    pbar.close()
+            # One line per batch, named for its last image: a per-image line
+            # would be a batch's worth of identical counts.
+            bar.tick(todo[idxs[-1]].image_path.name, n=len(idxs))
     return feats

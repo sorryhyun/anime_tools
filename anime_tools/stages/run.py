@@ -551,10 +551,20 @@ def run_audit(req: AuditRequest):
 # ---- correction + variants -----------------------------------------------
 
 
+CORRECT_TE_NOTE = (
+    "\nWritten to the resized captions (the master is untouched). Run "
+    "`make preprocess-te` now to re-encode."
+)
+
+
 def run_correct(req: CorrectRequest):
     """Correct the revised captions in place — mirroring the master for an image
-    that has none yet — plus variant sidecars. Returns the
-    :class:`~anime_tools.stages.captions.PreprocessCaptionStats`."""
+    that has none yet — plus variant sidecars. Returns ``(rows, stats)``.
+
+    No ``--from_report``: correction is pure text, so re-running it is cheaper
+    than the machinery to skip it. The report it leaves is still what the GUI's
+    Undo reads (``contract.REPLAY_SHAPES["correct"]``).
+    """
     from anime_tools.captions.correction import (
         CaptionCorrectionOptions,
         find_tag_csv,
@@ -589,7 +599,7 @@ def run_correct(req: CorrectRequest):
         qwen3_tokenizer = load_qwen3_tokenizer_from_dir(req.qwen3)
         t5_tokenizer = load_t5_tokenizer_from_dir(req.t5_tokenizer_path)
 
-    stats = write_corrected_preprocess_captions(
+    result = write_corrected_preprocess_captions(
         src,
         dst,
         load_tag_knowledge_base(csv_path),
@@ -607,17 +617,44 @@ def run_correct(req: CorrectRequest):
         tag_randomize_rate=req.caption_tag_randomize_rate,
         qwen3_tokenizer=qwen3_tokenizer,
         t5_tokenizer=t5_tokenizer,
+        apply=req.apply,
     )
+    stats, rows = result.stats, result.rows
+
+    report_path = write_stage_report(
+        resolve_path(req.report_dir),
+        {
+            **stage_report_header(
+                src=src, dst=dst, path_pattern=req.path_pattern, apply=req.apply
+            ),
+            "correct": not req.no_correct,
+            "stats": {
+                "seen": stats.seen,
+                "written": stats.written,
+                "unchanged": stats.unchanged,
+                "from_master": stats.from_master,
+                "no_caption": stats.no_caption,
+                "variants_written": stats.variants_written,
+                "variants_removed": stats.variants_removed,
+                "clauses_preserved": stats.clauses_preserved,
+            },
+            "rows": [asdict(r) for r in rows],
+        },
+    )
+
+    verb = "written" if req.apply else "would write"
     print(
         "Corrected preprocess captions: "
-        f"{stats.written} written, {stats.unchanged} unchanged, "
+        f"{stats.written} {verb}, {stats.unchanged} unchanged, "
         f"{stats.from_master} mirrored from the master, "
         f"{stats.no_caption} without a caption, "
         f"{stats.variants_written} variant sidecars, "
         f"{stats.clauses_preserved} position clauses kept "
         f"({stats.seen} resized images)"
     )
-    return stats
+    print(f"report: {report_path}")
+    print_dry_run_footer(req.apply, CORRECT_TE_NOTE if stats.written else None)
+    return rows, stats
 
 
 # ---- OCR -----------------------------------------------------------------

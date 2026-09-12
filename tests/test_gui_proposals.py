@@ -325,10 +325,12 @@ def test_the_report_shapes_match_the_stages_own_replay_specs():
     """
     from anime_tools.stages.cli.audit_multiview import REPLAY_SPEC as audit
     from anime_tools.stages.cli.autotag_captions import REPLAY_SPEC as autotag
+    from anime_tools.stages.cli.correct_captions import REPLAY_SPEC as correct
     from anime_tools.stages.cli.position_captions import REPLAY_SPEC as position
 
     assert P.SHAPES == {
         "autotag": autotag,
+        "correct": correct,
         "position": position,
         "audit": audit,
     }

@@ -101,8 +101,9 @@ cwd. The stage prints one tally line when it is done:
 41 group(s) over 3007 image(s) (97 grouped, 2910 ungrouped) @ cell_match_min 0.93 / match_frac_min 0.25 → …/groups.json
 ```
 
-Progress is two `tqdm` bars on stderr: `embedding` per image (absent on a fully cached re-run) and
-`grouping` per top-level folder. The same object is `GroupRequest` from Python
+Progress is the package's own `  [done/total] detail` line on stdout (`_progress.ProgressBar`,
+which is what the GUI's bar parses), twice: `embedding` per batch (absent on a fully cached
+re-run) and `grouping` per top-level folder. The same object is `GroupRequest` from Python
 (`examples/grouping.py`):
 
 ```python

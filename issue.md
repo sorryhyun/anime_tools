@@ -4,9 +4,12 @@ Written 2026-09-12 against `71bdec4`. A whole-repo review of `anime_tools/` (30.
 Python), `frontend/src/` (8.7k lines of TS/TSX) and `tests/` (15.6k lines), looking for structural
 problems, duplication, inefficiency and drift rather than for features.
 
-Every item in "Confirmed defects" was read in the source, and several were reproduced. Items under
-"Reported, not individually reproduced" come from the same review pass but were not each checked by
-hand — treat them as leads, not as verdicts.
+Items under "Reported, not individually reproduced" come from the same review pass but were not
+each checked by hand — treat them as leads, not as verdicts.
+
+**The "Confirmed defects" section is gone: all twelve of its items (three P0, nine P1) were fixed
+on 2026-09-12 and are no longer listed.** What they were and what closing them needs from the
+trainer repo is at the bottom, under "Landed, and what the trainer owes".
 
 ## The one theme
 
@@ -22,101 +25,18 @@ pair. That is what produces nearly every item below:
 
 | The one answer | The second one beside it |
 |---|---|
-| `parse_caption` / `compose_caption` | six `split(",")` sites on caption text |
+| `parse_caption` / `compose_caption` | `split(",")` on caption text: `variants.py:186`, `autotag.py:130`/`:211`, `captions.py:254`, `tag_rules.py:108` |
 | `_request.Arg` + generated parser | `gui/stages.Field` + `_coerce`, a parallel type system |
 | `_walk.walk_images` | `grouping/features.py:87` calling `glob_images_pathlib` directly |
-| `make_progress` → `[n/total]` on stdout | bare `tqdm` in masking and grouping |
 | `registry.py`, deliberately import-light | `stages/requests.py`, which pulls numpy, PIL and yaml |
-| dry-run by default, `--apply` writes | `correct`, which always writes and leaves no report |
 
 Fixing the pairs is worth more than any individual bug below, because each pair is a place where a
 future change can be made correctly in one spot and still be wrong.
 
-## Confirmed defects
-
-### P0 — silent data corruption
-
-- [ ] **The caption corrector round-trips tag text through a comma split.**
-      `captions/correction.py:242` joins parsed tags with `", "`, then `:255` (`_parse_tags`) splits
-      that string on bare commas, and `:246` splits the corrected text again on `", "`. A flat tag
-      that legally contains a comma is cut in two and written back. This is the package whose
-      `__init__.py:3` docstring states the rule "never `split(",")` a caption".
-      Fix: give `correct_caption` a tag-list entry point so the parsed `flat_tags` tuple is never
-      re-serialised and re-split.
-
-- [ ] **The `correct` stage always writes, with no dry run and no report.** Confirmed by dumping
-      every registered request: `correct` is the only caption-writing stage with neither an `apply`
-      field nor a report field, and `requests.py:671` documents this as intended. Because Undo works
-      by replaying a report backwards, this is the one caption mutation with no undo path. The
-      previous text does survive in `{stem}.history.txt`, so nothing is lost, but the automated
-      reversal the other stages have does not exist here.
-      Fix: give `CorrectRequest` `apply` and `report_dir` like its six siblings.
-
-- [ ] **A custom clause vocabulary never reaches the multiview verdict.**
-      `stages/multiview_audit.py:198` reads `default_clause_groups().identity`, while `audit_image`
-      at `:375` uses the `vocabulary.clause_groups.identity` it was handed. `identity_agreement` is
-      called at `:221` with only `crops`, so a vocabulary loaded from a custom
-      `configs/clause_vocabulary.yaml` silently does not affect the agreement score.
-      Fix: pass `vocabulary.clause_groups.identity` into `identity_agreement`.
-
-### P1 — broken or unreachable code paths
-
-- [ ] **A slug regex eats the letter `s`.** `tagger/cli/derive_groups.py:45` is `r"[\\s/]+"`, a
-      character class of backslash, `s` and slash, not the whitespace class. Reproduced:
-      `"blue eyes / color"` slugs to `blue eye_ _ color` instead of `blue_eyes_color`. `_EN_KEY`
-      masks this for known paths; `_unique_key` and `eval_metrics.assign_slices` are exposed.
-      Fix: `r"[\s/]+"`.
-
-- [ ] **`probe_nms_pairs` cannot run.** `masking/cli/probe_nms_pairs.py:124` reads
-      `args.score_threshold`; the parser declares only `--retry_score_threshold` and
-      `--part_score_threshold` (`:57-58`). It raises `AttributeError` on the first image, every run.
-      Fix: use `min(args.floors)`, which is what `:89` already passes to the request.
-
-- [ ] **`--mode predict` is unreachable.** `tagger/cli/predict.py:28` exits unless
-      `model.safetensors` is in the checkpoint dir, but `contract.py:42` states a dbv4 checkpoint
-      carries none, and the error text says "run --mode train first" when `cli/main.py` has only
-      `build_vocab`, `predict`, `scan_role_markers` and `derive_groups`.
-      Fix: gate on the dbv4 file set, or delete the mode.
-
-- [ ] **The job log stream skips lines on long runs.** `gui/server.py:603` streams by absolute index
-      into `job.lines`, but `gui/jobs.py:211` trims that list from the front once it passes
-      `max_lines` (20,000). After the first trim the reader's index points past the deleted prefix,
-      so lines are silently dropped.
-      Fix: track a monotonic `dropped` counter and stream `i - dropped`, or use a `deque` with a
-      base offset.
-
-- [ ] **Unbounded image retention in the SAM3 mask run.** `masking/sam.py:86` builds `load_futures`
-      and only ever appends to it (`:96`). A `Future` holds its result, so every decoded RGB image
-      stays alive for the whole run. On a 10k-image tree that is tens of gigabytes.
-      Fix: `load_futures[i] = None` after `.result()`, or a `deque` you `popleft`.
-
-- [ ] **`write_json` is not atomic, and the settings file has three concurrent writers.**
-      `_json.py:30` is a plain `write_text`, used for every `report.json` and for
-      `.anime_tools_gui.json`. `gui/settings.py` has no lock, and the file is read-modify-written
-      from the event loop (`server.py:417`), from the threadpool (`server.py:575`) and from
-      `gui/updates.py:76`. A crash mid-write truncates a report; concurrent writes lose one.
-      Fix: temp file plus `os.replace` in `write_json`, and an `edit_settings()` context manager
-      holding a module-level lock.
-
-### P1 — user-visible gaps
-
-- [ ] **Three of the ten registered stages have no progress bar in the GUI.** The browser parses
-      `^\s*\[(\d+)\/(\d+)\]` (`frontend/src/state.ts:71`), which is what `make_progress`
-      (`stages/cli/_args.py:25`) prints. All seven `run.py` runners use it; `masking/` and
-      `grouping/` use it zero times. `masks_sam` and `groups` reach `_progress.step`, which only
-      writes the trainer daemon's JSONL and is a no-op without `ANIMA_DAEMON_JOB_DIR`;
-      `masking/merge.py:42` has bare `tqdm` and nothing else. Since `jobs.py:190` merges stderr into
-      stdout, the tqdm output lands in the log as carriage-return noise and never matches. Those
-      three stages show only the coarse `── step n/m ──` bar.
-      Fix: one shared `progress_bar(total, desc)` that prints the parsed line, used by all ten.
-
-- [ ] **`--batch-size` on the mask stage does not batch.** `masking/sam.py:106` calls
-      `processor.set_image` in a plain Python loop and holds every inference state until the batch's
-      detect loop drains. Raising the flag costs memory and buys no throughput.
-      Fix: implement a real batched encode, or delete the flag and its help text.
-
-- [ ] **`--workers 0` crashes the mask stage.** `masking/sam.py:85` gives `prefetch = 0`, then
-      `load_futures[0]` raises `IndexError`. Clamp to `max(1, …)`.
+Two rows are off that table since 2026-09-12: the progress format now has one implementation
+(`_progress.progress_line` / `ProgressBar`, no `tqdm` anywhere in the package), and `correct` is
+dry-run-by-default with a report like its six siblings. `correction.py`'s own two caption splits
+went with the first P0.
 
 ## Structural
 
@@ -398,27 +318,87 @@ Worth keeping in mind before any refactor moves these.
 
 ## Suggested order
 
-Grouped so that each block is one coherent sitting.
+Grouped so that each block is one coherent sitting. The original blocks 1 (correctness) and 2
+(durability) are done — see "Landed" below — and block 3 has lost its first item, so the
+numbering starts where the work does.
 
-1. **Correctness, small diffs.** The three P0 items, plus the slug regex, `probe_nms_pairs`, the
-   `predict` gate, `--workers 0`, and the `load_futures` retention.
-2. **Durability.** Atomic `write_json` plus a settings lock, and the SSE index fix. These three are
-   independent of any refactor and protect the workspace.
-3. **Close the pairs.** One progress helper for all ten stages; grouping onto `walk_images`;
-   `Field` onto `Arg`; move the prompt-embed helpers so the masking seam is one-way; lighten
-   `requests.py` so the registry's laziness survives resolution.
-4. **Split the big files.** `server.py` into routers, `run.py` into per-stage runners,
+1. **Close the pairs.** Grouping onto `walk_images`; `Field` onto `Arg`; move the prompt-embed
+   helpers so the masking seam is one-way; lighten `requests.py` so the registry's laziness
+   survives resolution. (The progress helper is done: `_progress.progress_line` / `ProgressBar`.)
+2. **Split the big files.** `server.py` into routers, `run.py` into per-stage runners,
    `tagger.py` into schema/fetch/model, `downloads.py` and `exclude.py` into catalog/engine/CLI.
-5. **Make the guards real.** Move the ruff rules into `pyproject.toml` and let `ruff check` gate
+3. **Make the guards real.** Move the ruff rules into `pyproject.toml` and let `ruff check` gate
    CI; add a Windows job; generate or test `types.ts` against `schema()`; test the documented
    counts against `len(STAGES)` and `len(__all__)`.
-6. **Cleanup.** Share the test fixtures, delete the dead symbols, fix the stale prose and the
+4. **Cleanup.** Share the test fixtures, delete the dead symbols, fix the stale prose and the
    README's four wrong claims in one sweep.
 
 Two items sit outside that order because they are one-line changes with outsized downside: move
 `ANIME_TOOLS_HOME` out of the checkout before the next `git clean`, and rename the guidebooks to
 ASCII.
 
-Blocks 1 and 2 are worth doing regardless. Block 3 is where the maintainability return is. Blocks 4
-through 6 are safe to do incrementally, and the cleanup is much less likely to regress once block 3
-has removed the second implementations.
+Block 1 is where the maintainability return is. Blocks 2 through 4 are safe to do incrementally,
+and the cleanup is much less likely to regress once block 1 has removed the second
+implementations.
+
+## Landed, and what the trainer owes
+
+The twelve items that were under "Confirmed defects" — three P0, nine P1 — were fixed on
+2026-09-12 and removed from this file. What they were, so a reader of the git history can find
+them:
+
+**P0.** The caption corrector round-tripping its tag bag through a comma split; `correct` writing
+with no dry run and no report (so no Undo); a custom clause vocabulary never reaching the
+multiview verdict.
+
+**P1.** The slug regex that was a character class of backslash, `s` and slash rather than the
+whitespace class; `probe_nms_pairs` reading an undeclared `args.score_threshold`;
+`--mode predict` gated on a file a dbv4 checkpoint never has; the job log stream indexing past a
+trimmed buffer; unbounded decoded-image retention in the SAM3 run; non-atomic `write_json` and
+three unserialised settings writers; three stages with no GUI progress bar; `--batch-size` on the
+mask stage batching nothing; `--workers 0` crashing it.
+
+Ten regression tests came with them. `correct` is now an `ApplyRequest` with
+`REPLAY_SHAPES["correct"]`, `write_json` is temp-file-plus-`os.replace`, settings go through
+`gui.settings.edit_settings()`, and `_progress.py` owns both the printed `  [done/total] detail`
+line and the daemon stream.
+
+### The trainer side (`anima_lora`)
+
+Three of those fixes cross the seam, so they are not done until the trainer moves too. The first
+is blocking and the trainer's tree is already red against its own pinned dependency.
+
+- [ ] **Release `anime_tools` and bump the pin — blocking.** `correct` is dry-run-by-default now,
+      so `scripts/tasks/preprocess.py` has to pass `apply=True` (done, at both construction sites:
+      the `request_from_form` path and the `CorrectRequest(**fields)` path, with one test
+      assertion updated). But `pyproject.toml:141` pins `tag = "v0.6.4"` and `anime-tools-git`
+      is default-on (`default-groups`, `:115`), so a plain
+      `uv sync` installs a package whose `CorrectRequest` has no `apply` field:
+      `TypeError: CorrectRequest.__init__() got an unexpected keyword argument 'apply'` on the
+      first `make preprocess-captions` or `preprocess-te`. Seven of
+      `tests/test_preprocess_tasks.py` fail there today; all 33 pass with
+      `PYTHONPATH=../anime_tools`. Tag a release here, then bump the tag and `uv.lock` in the same
+      commit as the `apply=True` change — they cannot land separately.
+      Without the flag the correction silently stops writing and TE caches the un-corrected
+      caption, which is the same class of bug as the P0 it came from.
+
+- [ ] **Teach the Qt progress bar the package's line format.** No stage in `anime_tools` emits
+      `tqdm` any more, and `gui/progress.py:29`'s `TQDM_RE` only matches tqdm's
+      `NN%|bar| cur/tot`. The tabs that drive a bar off a daemon job's *stdout* — `_job_mixin.py:90`
+      feeding `TqdmProgressTracker.feed`, used by `tabs/image_tab.py:245` for `curate-group` and
+      `tabs/preprocess/tab.py:1097` for the mask stages — therefore sit in indeterminate "busy"
+      mode for the whole run. One extra alternative in the regex fixes it:
+      `^\s*\[(?P<cur>\d+)/(?P<tot>\d+)\]\s*(?P<label>.*)$` (label *after* the counts, unlike
+      tqdm's). The alternative fix is to move those tabs onto `JsonlProgressReader`: the mask
+      merge and the grouping pass now write `step` lines to `progress.jsonl` where before only
+      `masks_sam` did, so the structured stream covers all of them. `_job_mixin.py:90`'s docstring
+      ("preprocess/mask … emit no progress.jsonl, so tqdm is the only progress signal") is stale
+      either way.
+
+- [ ] **One stale sentence in `scripts/tasks/masking.py:191`.** "The SAM3 checkpoint and batch
+      size are the request defaults" — `SamMaskRequest` has no `batch_size` any more. Nothing
+      passes it (the yaml rule path forwards only `threshold` / `dilate`, and no saved GUI card
+      carries it), so this is prose only.
+
+Nothing else crosses: `contract.py` only gained a `REPLAY_SHAPES` key, `buckets.py` is untouched,
+and the `progress.jsonl` line shapes the daemon's reader filters on are unchanged.

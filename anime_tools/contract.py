@@ -124,6 +124,20 @@ REPLAY_SHAPES: dict[str, ReplaySpec] = {
         drop_variants=True,
         history_by="position",
     ),
+    # Text-only, so it has no ``--from_report`` of its own; the shape exists for
+    # the GUI's Undo, which replays these rows backwards. ``drop_variants``
+    # mirrors the stage's own write, which rebuilds the sidecar from v0.
+    "correct": ReplaySpec(
+        stage="correct_captions",
+        rows_key="rows",
+        stats_key="stats",
+        ok_status="ok",
+        before_field="target_before",
+        after_field="proposed",
+        target_root="dst",
+        drop_variants=True,
+        history_by="correct",
+    ),
     # The writable set is the verdict/confidence gate, not a row ``status``, so
     # ``row_filter`` is left open here and closed over the gate at replay time.
     # Same target and same bytes as ``apply_findings``: the revised caption, no

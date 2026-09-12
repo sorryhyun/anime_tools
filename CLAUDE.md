@@ -126,9 +126,13 @@ Each of these is implemented in one package but bites from any of them.
   whatever `--device` said if it said anything. Every stage's model takes the device its
   runner resolved rather than probing again — the OCR stage's two models are the case
   that made it a rule.
-- Progress is stdout. `stages/cli/_args.py::make_progress` prints `  [done/total] detail`,
-  which is what the GUI's bar parses and what `_progress.py` forwards to the trainer's daemon
-  under `ANIMA_DAEMON_JOB_DIR`; a stage that prints nothing else has no bar.
+- Progress is stdout, in one format, from one place. `_progress.py::progress_line` prints
+  `  [done/total] detail` — what the GUI's bar parses — and forwards the same step to the
+  trainer's daemon under `ANIMA_DAEMON_JOB_DIR`. A stage that hands a callback down uses
+  `stages/cli/_args.py::make_progress`; a stage that walks its own loop uses
+  `_progress.ProgressBar` (`advance` / `note` / `tick`). No stage uses `tqdm`: its carriage
+  returns are noise in the GUI's log and match nothing its bar reads. A stage that prints
+  neither has no bar.
 - Markdown is wrapped at 100 columns by `scripts/wrap_md.py`; run it on any `.md` you edit.
 
 ## Shared infra (stdlib-level leaves, not trainer imports)
@@ -150,9 +154,10 @@ Each of these is implemented in one package but bites from any of them.
   `_device.py` (`DEVICE_HELP` for the request fields, `add_device_arg` for the hand-written
   CLIs, and the one device probe — `cuda`, then `mps`, then `cpu`; the flag literal exists
   once), `_hf.py` (tests patch this path), `path_filter.py` (the one `path_pattern`
-  implementation), `_progress.py` (with `ANIMA_DAEMON_JOB_DIR` set, `step()` appends to the daemon's
-  `progress.jsonl` and `phase(name)` brackets a model load with a 30 s heartbeat; without the
-  variable it is a no-op).
+  implementation), `_progress.py` (the printed `  [done/total]` line — `progress_line`,
+  `ProgressBar` — plus the daemon stream: with `ANIMA_DAEMON_JOB_DIR` set, `step()` appends to
+  the daemon's `progress.jsonl` and `phase(name)` brackets a model load with a 30 s heartbeat;
+  without the variable that half is a no-op and the line still prints).
 - `update.py` (torch-free, stdlib-only): the self-update — what is installed
   (`__version__`), what GitHub's latest release is, which of the three install shapes this
   process runs out of (`uv tool` / checkout / other) and the one `uv tool install --force` that

@@ -169,7 +169,6 @@ class SamMaskRequest(MaskWalkRequest):
     )
     dilate: int = arg(5, help="Mask dilation in pixels, 0 = off (default: 5)")
     checkpoint: str = arg(DEFAULT_SAM3_CHECKPOINT, help=CHECKPOINT_HELP)
-    batch_size: int = arg(1, help="Images to process in parallel (default: 1)")
 
     def __post_init__(self) -> None:
         if not self.masks:

@@ -41,6 +41,33 @@ class PreprocessCaptionStats:
     """Captions that carried position clauses through the correction."""
 
 
+@dataclass
+class CorrectionProposal:
+    """One image's before/after, whether or not it was written.
+
+    Same row shape as :class:`~anime_tools.stages.autotag.AutotagProposal`, and
+    for the same reason: ``target_before`` is the *write target*'s own text
+    (empty when it does not exist yet), which is the drift baseline a replay
+    checks, while ``existing`` is what spoke for the image — the master, for an
+    image the corrector is mirroring for the first time.
+    """
+
+    image: str = ""
+    caption_path: str = ""
+    existing: str = ""
+    target_before: str = ""
+    proposed: str = ""
+    status: str = "ok"
+
+
+@dataclass
+class PreprocessCaptionResult:
+    """What :func:`write_corrected_preprocess_captions` reports back."""
+
+    stats: PreprocessCaptionStats
+    rows: list[CorrectionProposal]
+
+
 def _resolve_n_rand(num_variants: int, tag_randomize_rate: float) -> int:
     """Size of the identity-randomized r-family that rides alongside v0..v{N-1}.
 
@@ -132,7 +159,8 @@ def write_corrected_preprocess_captions(
     qwen3_tokenizer=None,
     t5_tokenizer=None,
     protect_fn: Callable[[str], bool] | None = None,
-) -> PreprocessCaptionStats:
+    apply: bool = True,
+) -> PreprocessCaptionResult:
     """Write ``.txt`` captions next to already-resized images.
 
     The resized tree is the authority over which images are visited, and the
@@ -154,6 +182,12 @@ def write_corrected_preprocess_captions(
     shuffled (+ tag-dropped at ``tag_dropout_rate``), and under
     ``tag_randomize_rate > 0`` an r-family with per-tag identity erasure, which
     requires both tokenizers for the dual-single erasure pool.
+
+    ``apply=False`` is the dry run: every caption is corrected and every row is
+    reported, but nothing on disk is touched — not the caption, not the variant
+    sidecar, not the orphan sidecar of an image that lost its caption. The
+    default is True because the in-process callers (the GUI, the trainer's
+    wrapper) always apply; the CLI passes ``req.apply``.
     """
 
     stats = PreprocessCaptionStats()
@@ -167,19 +201,29 @@ def write_corrected_preprocess_captions(
         src: Path
         dst: Path
         corrected: str
+        row: CorrectionProposal
 
     entries: list[_Entry] = []
+    rows: list[CorrectionProposal] = []
     for image_path in images:
         rel_caption = image_path.relative_to(resized_dir).with_suffix(".txt")
         dst_caption = resized_dir / rel_caption
         caption_path = resolve_caption(resized_dir, source_dir, rel_caption)
+        row = CorrectionProposal(
+            image=str(image_path.relative_to(resized_dir)),
+            caption_path=str(rel_caption),
+            target_before=read_caption(dst_caption) if dst_caption.exists() else "",
+        )
 
         if caption_path is None:
             stats.no_caption += 1
+            row.status = "skip:no-caption"
+            rows.append(row)
             # No caption at all, so a variant sidecar left behind is an orphan.
             sidecar = variants_sidecar_path(dst_caption)
             if sidecar.exists():
-                sidecar.unlink()
+                if apply:
+                    sidecar.unlink()
                 stats.variants_removed += 1
             continue
         if caption_path != dst_caption:
@@ -189,7 +233,10 @@ def write_corrected_preprocess_captions(
         corrected = correct_caption(raw, kb, options=options).text if correct else raw
         if has_clauses(corrected):
             stats.clauses_preserved += 1
-        entries.append(_Entry(caption_path, dst_caption, corrected))
+        row.existing = raw
+        row.proposed = corrected
+        entries.append(_Entry(caption_path, dst_caption, corrected, row))
+        rows.append(row)
 
     n_rand = _resolve_n_rand(num_variants, tag_randomize_rate)
     erasure_pool: list[str] | None = None
@@ -219,16 +266,18 @@ def write_corrected_preprocess_captions(
     for e in entries:
         if e.dst.exists() and e.dst.read_text(encoding="utf-8") == e.corrected:
             stats.unchanged += 1
+            e.row.status = "skip:unchanged"
         else:
             # No ``drop_variants``: the sidecar is this pass's own output and
             # is rebuilt (or removed) a few lines down.
-            write_caption(e.dst, e.corrected, history_by="correct")
+            if apply:
+                write_caption(e.dst, e.corrected, history_by="correct")
             stats.written += 1
 
         sidecar = variants_sidecar_path(e.dst)
         if num_variants > 0:
             if not _sidecar_is_current(sidecar, e.corrected, num_variants, n_rand):
-                rows = _build_variant_rows(
+                variant_rows = _build_variant_rows(
                     e.corrected,
                     num_variants=num_variants,
                     tag_dropout_rate=tag_dropout_rate,
@@ -236,11 +285,13 @@ def write_corrected_preprocess_captions(
                     erasure_pool=erasure_pool,
                     protect_fn=protect_fn,
                 )
-                write_variants_sidecar(sidecar, rows)
+                if apply:
+                    write_variants_sidecar(sidecar, variant_rows)
                 stats.variants_written += 1
         elif sidecar.exists():
             # Variants turned off → drop the now-stale sidecar.
-            sidecar.unlink()
+            if apply:
+                sidecar.unlink()
             stats.variants_removed += 1
 
-    return stats
+    return PreprocessCaptionResult(stats=stats, rows=rows)

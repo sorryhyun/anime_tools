@@ -14,6 +14,7 @@ import random
 from pathlib import Path
 
 from anime_tools._device import resolve_device
+from anime_tools.contract import DBV4_REQUIRED_FILES
 
 logger = logging.getLogger(__name__)
 
@@ -25,9 +26,16 @@ def cmd_predict(args: argparse.Namespace) -> None:
     from anime_tools.tagger.tagger import AnimaTagger
 
     out_dir = Path(args.out_dir)
-    if not (out_dir / "model.safetensors").exists():
+    # The dbv4 file set, not ``model.safetensors``: a dbv4 checkpoint carries
+    # none (the backbone weights come from the gated upstream repo, fetched by
+    # ``ensure_tagger_backbone``), and dbv4 is the only backend
+    # :class:`AnimaTagger` still loads. There is no ``--mode train``.
+    missing = [f for f in DBV4_REQUIRED_FILES if not (out_dir / f).exists()]
+    if missing:
         raise SystemExit(
-            f"missing {out_dir / 'model.safetensors'} — run --mode train first."
+            f"{out_dir} is not a tagger checkpoint — missing {', '.join(missing)}. "
+            "Run `python -m anime_tools.downloads tagger` to fetch one, or "
+            "`python -m anime_tools.tagger.cli.build_dbv4_ckpt` to build one."
         )
 
     gt_tags: list[str] | None = None

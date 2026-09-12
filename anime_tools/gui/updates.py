@@ -26,7 +26,7 @@ from typing import Any
 
 from anime_tools import update as U
 from anime_tools.gui.jobs import Step
-from anime_tools.gui.settings import load_settings, save_settings
+from anime_tools.gui.settings import edit_settings, load_settings
 
 AUTO_KEY = "auto_update"
 CACHE_KEY = "update_check"
@@ -63,11 +63,11 @@ def cached(
 
 
 def _save(entry: dict[str, Any]) -> None:
-    # Re-read rather than reusing the caller's copy: this runs on a worker
-    # thread and a settings PUT may have landed while GitHub was answering.
-    data = load_settings()
-    data[CACHE_KEY] = entry
-    save_settings(data)
+    # Not the caller's copy: this runs on a worker thread and a settings PUT may
+    # have landed while GitHub was answering, so the read and the write both
+    # happen under the settings lock.
+    with edit_settings() as data:
+        data[CACHE_KEY] = entry
 
 
 def check(*, force: bool = False, ttl: float = CACHE_TTL) -> dict[str, Any]:

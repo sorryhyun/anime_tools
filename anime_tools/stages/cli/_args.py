@@ -1,11 +1,9 @@
-"""The progress line the stage CLIs print — the one thing the CLIs still share
-now that their flags are request fields (``stages/requests.py``).
+"""The progress callback the stage CLIs pass down — the one thing the CLIs
+still share now that their flags are request fields (``stages/requests.py``).
 
-``gui/jobs.py`` reads the ``  [done/total] detail`` format back off the child's
-stdout for the panel's progress bar, so it is a contract, not a style. Under
-the trainer's daemon the same callback also appends every call to the job's
-``progress.jsonl`` (:mod:`anime_tools._progress`), unthinned — the daemon's
-reader does its own thinning.
+The format itself and the thinning live in :mod:`anime_tools._progress`, which
+is also where the stages that walk their own loop get :class:`~anime_tools.
+_progress.ProgressBar`; this is the callback shape a library function takes.
 """
 
 from __future__ import annotations
@@ -21,8 +19,6 @@ def make_progress(every: int, *, first: bool = False) -> _progress.Progress:
     """
 
     def progress(index: int, total: int, detail: str) -> None:
-        if index == total or index % every == 0 or (first and index == 1):
-            print(f"  [{index}/{total}] {detail}", flush=True)
-        _progress.step(index, total, detail)
+        _progress.progress_line(index, total, detail, every=every, first=first)
 
     return progress

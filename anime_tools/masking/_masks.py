@@ -15,10 +15,9 @@ from typing import Any
 
 import numpy as np
 from PIL import Image
-from tqdm import tqdm
 
-from anime_tools import _progress
 from anime_tools._env import resolve_path
+from anime_tools._progress import ProgressBar
 from anime_tools._walk import walk_images
 
 MASK_SUFFIX = "_mask.png"
@@ -125,7 +124,11 @@ class MaskRun:
     mask_dir: Path
     items: list[tuple[Path, Path]]
     pool: ThreadPoolExecutor
-    _bar: tqdm
+    workers: int
+    """The pool's size, already clamped to at least 1 — the one answer to "how
+    far ahead may I prefetch?", so a generator never re-reads ``--workers`` and
+    never computes a prefetch depth of zero."""
+    _bar: ProgressBar
 
     @property
     def total(self) -> int:
@@ -133,15 +136,15 @@ class MaskRun:
 
     def advance(self) -> None:
         """One image dealt with — called before the branches, so an image that
-        gets no mask still moves the bar."""
-        self._bar.update(1)
+        gets no mask still moves the count."""
+        self._bar.advance()
 
     def note(self, image_path: Path, what: str) -> None:
-        """``name: what`` beside the bar. ``what`` is the stage's own wording
-        (``train 41.2%``, ``skipped (ctd-gated)``, ``focus not found``). Under
-        the daemon the same line is a ``step`` in the job's ``progress.jsonl``."""
-        self._bar.set_postfix_str(f"{image_path.name}: {what}")
-        _progress.step(self._bar.n, self.total, f"{image_path.name}: {what}")
+        """The image's own ``  [n/total] name: what`` line. ``what`` is the
+        stage's own wording (``train 41.2%``, ``skipped``, ``focus not found``).
+        The shared bar, not ``tqdm``: carriage returns are noise in the GUI's
+        log and match nothing its progress bar reads."""
+        self._bar.note(f"{image_path.name}: {what}")
 
 
 @contextmanager
@@ -155,14 +158,13 @@ def mask_run(args: Any, *, desc: str = "Generating masks") -> Iterator[MaskRun]:
 
     Both roots are home-anchored (the ``--mask-dir`` defaults are home-relative, so a run
     from another directory still means the tree the GUI and the merge do), the output root
-    exists before the first write, the plan comes from the request's walk fields, and the
-    bar closes before the pool so its line is finished first.
+    exists before the first write, and the plan comes from the request's walk fields.
 
     Draining the saves is the caller's job, inside the ``with``: a future whose exception
     nobody reads is a mask that silently did not get written.
 
     Nothing to do is not an error — ``items`` is empty, the caller's loop does not run,
-    the bar is constructed disabled and the closing line says so.
+    and the closing line says so.
     """
     image_dir = resolve_path(args.image_dir)
     mask_dir = resolve_path(args.mask_dir)
@@ -176,12 +178,15 @@ def mask_run(args: Any, *, desc: str = "Generating masks") -> Iterator[MaskRun]:
         force=args.force,
     )
 
-    pool = ThreadPoolExecutor(max_workers=args.workers)
-    bar = tqdm(total=len(items), desc=desc, disable=not items)
+    # At least one: ``ThreadPoolExecutor(0)`` refuses outright, and a prefetch
+    # depth of zero leaves a batching generator indexing an empty list.
+    workers = max(1, int(args.workers))
+    pool = ThreadPoolExecutor(max_workers=workers)
     try:
-        yield MaskRun(image_dir, mask_dir, items, pool, bar)
+        yield MaskRun(
+            image_dir, mask_dir, items, pool, workers, ProgressBar(len(items))
+        )
     finally:
-        bar.close()
         pool.shutdown()
     # Past the `finally`, so a run that raised does not sign off as if it had not.
     print(f"Masks saved to {mask_dir}/" if items else "No images to process.")

@@ -172,7 +172,12 @@ def test_the_run_resolves_both_roots_and_plans_the_walk(tree, capsys):
         run.advance()
         run.note(run.items[0][0], "41.2%")
 
-    assert capsys.readouterr().out.strip() == f"Masks saved to {masks}/"
+    # ``note`` is the shared ``  [n/total] detail`` line the GUI's bar parses
+    # (``_progress.progress_line``), not a ``tqdm`` redraw on stderr.
+    assert capsys.readouterr().out.rstrip().splitlines() == [
+        "  [1/4] a.png: 41.2%",
+        f"Masks saved to {masks}/",
+    ]
 
 
 def test_the_run_narrows_by_the_same_walk_flags(tree):

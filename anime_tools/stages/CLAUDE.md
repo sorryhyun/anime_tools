@@ -143,8 +143,11 @@ Settings value each.
   `replay.undo_one` is the inverse — `apply_one` with the two texts swapped, except for that row,
   where the inverse of a create is a delete (the caption and its sidecars go, leaving the master
   as the ladder had it). The GUI's Undo (`gui/proposals.py`) and the audit's `revert_curated` are
-  both that call; the replay shapes are `contract.REPLAY_SHAPES`, bound by the three stage CLIs as
+  both that call; the replay shapes are `contract.REPLAY_SHAPES`, bound by the four stage CLIs as
   `REPLAY_SPEC`.
+  `correct` carries a shape and no `--from_report` either: the pass is pure text, so re-running
+  it is cheaper than the machinery to skip it, but its report is still what the GUI's Undo
+  replays backwards.
 
 Every `--apply` that touches captions must be followed by the trainer's TE re-encode.
 

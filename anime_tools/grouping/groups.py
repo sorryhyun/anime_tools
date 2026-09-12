@@ -148,10 +148,7 @@ def build_groups(
     manifest dict (also written to ``out_path`` as JSON).
     """
     # Lazy torch-backed imports so the pure helpers above import without torch.
-    import sys
-
-    from tqdm import tqdm
-
+    from anime_tools._progress import ProgressBar
     from anime_tools.grouping.features import Member, embed_members, iter_images
 
     source_dir = Path(source_dir)
@@ -202,10 +199,13 @@ def build_groups(
     groups: list[dict] = []
     gid = 0
     n_grouped = 0
-    # tqdm to stderr (GUI bar): the only progress signal on a cached re-run.
-    for artist in tqdm(
-        sorted(by_artist), desc="grouping", unit="artist", file=sys.stderr
-    ):
+    # The shared counter line, and on a cached re-run the only progress signal
+    # there is — so it goes to stdout, where the web GUI's bar reads it (and,
+    # under the daemon, ``progress.jsonl`` as well).
+    print(f"grouping {len(by_artist)} artists", flush=True)
+    bar = ProgressBar(len(by_artist), first=True)
+    for artist in sorted(by_artist):
+        bar.tick(artist)
         bucket = [p for p in by_artist[artist] if _rel_key(p) in feats]
         if len(bucket) < 2:
             continue

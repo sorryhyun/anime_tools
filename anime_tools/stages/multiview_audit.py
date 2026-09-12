@@ -17,7 +17,7 @@ Read-only apart from :func:`apply_findings`. See ``docs/multiview_audit.md``.
 from __future__ import annotations
 
 from collections import Counter
-from collections.abc import Callable, Iterable, Mapping, Sequence
+from collections.abc import Callable, Collection, Iterable, Mapping, Sequence
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
@@ -27,10 +27,7 @@ from anime_tools.captions.caption_layout import (
     caption_boy_count,
     is_candidate,
 )
-from anime_tools.captions.clause_vocabulary import (
-    ClauseVocabulary,
-    default_clause_groups,
-)
+from anime_tools.captions.clause_vocabulary import ClauseVocabulary
 from anime_tools.captions.position_clauses import (
     assign_positions,
     compose_caption,
@@ -176,8 +173,15 @@ def _girls_count(caption: str) -> int | None:
 
 def identity_agreement(
     crops: Sequence[CropIdentity],
+    identity_groups: Collection[str],
 ) -> tuple[float | None, int]:
     """Fraction of identity groups on which every crop agrees, and how many voted.
+
+    ``identity_groups`` is the caller's own vocabulary
+    (``vocabulary.clause_groups.identity``), passed in rather than re-read from
+    :func:`default_clause_groups`: a run loaded from a custom
+    ``configs/clause_vocabulary.yaml`` must score on the groups it declared, and
+    ``audit_image`` already collects each crop's values against exactly this set.
 
     Two things are excluded from the vote:
 
@@ -195,7 +199,7 @@ def identity_agreement(
         return None, 0
     agree = 0
     comparable = 0
-    for group in sorted(default_clause_groups().identity):
+    for group in sorted(identity_groups):
         values = [c.groups.get(group) for c in usable]
         if any(v is None for v in values):
             continue
@@ -211,6 +215,7 @@ def _verdict(
     crops: Sequence[CropIdentity],
     multiview_prob: float | None,
     multiview_threshold: float,
+    identity_groups: Collection[str],
 ) -> tuple[str, float | None, int]:
     """Same character in every box, or a character the caption never counted?
 
@@ -218,7 +223,7 @@ def _verdict(
     whole-image ``multiple views`` head is the fallback, and its absence leaves
     ``unsure``.
     """
-    agreement, comparable = identity_agreement(crops)
+    agreement, comparable = identity_agreement(crops, identity_groups)
     names = {c.name for c in crops if c.name and c.reliable}
     # Decisive on its own: two girls can share brown hair, not a character name.
     if len(names) > 1:
@@ -405,7 +410,10 @@ def audit_image(
         )
 
     verdict, agreement, comparable = _verdict(
-        finding.crops, finding.tagger_multiple_views, multiview_threshold
+        finding.crops,
+        finding.tagger_multiple_views,
+        multiview_threshold,
+        vocabulary.clause_groups.identity,
     )
     finding.verdict = verdict
     finding.identity_agreement = agreement

@@ -96,6 +96,16 @@ class CaptionCorrectionResult:
 
 
 @dataclass(frozen=True)
+class CorrectedTags:
+    """What :func:`correct_tags` returns: the bag, still a tuple of tags."""
+
+    tags: tuple[str, ...]
+    inserted_no_artist: bool
+    unknown_tags: tuple[str, ...]
+    dropped_tags: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
 class TagInfo:
     name: str
     kind: str
@@ -236,29 +246,52 @@ def correct_caption(
     options: CaptionCorrectionOptions | None = None,
 ) -> CaptionCorrectionResult:
     options = options or CaptionCorrectionOptions()
-    # Bucket-reordering would dissolve a clause tag's binding back into the
-    # bag, so only the flat bag is corrected and the clauses re-appended.
-    parsed = parse_position_caption(text)
+    # One parse, and it is the grammar's: the bag reaches :func:`correct_tags`
+    # as the tuple ``parse_caption`` cut, never as text this module splits
+    # again. A tag may legally contain a comma inside quotes (``sign reading
+    # "stop, now"``), and a bare ``split(",")`` cuts it in two.
+    #
+    # Newlines first: a hand-written master may separate its tags with them and
+    # the grammar does not — nothing this package writes has one inside a
+    # caption, text clauses included, so the substitution can only ever turn a
+    # legacy separator into the canonical one.
+    parsed = parse_position_caption(text.replace("\n", ","))
+    flat = correct_tags(parsed.flat_tags, kb, options=options)
     if parsed.has_clauses:
-        flat = correct_caption(", ".join(parsed.flat_tags), kb, options=options)
+        # Bucket-reordering would dissolve a clause tag's binding back into the
+        # bag, so only the flat bag is corrected and the clauses re-appended.
         clauses, clause_dropped = _drop_clause_tags(parsed.clauses, kb, options)
-        corrected = compose_position_caption(
-            [t for t in flat.text.split(", ") if t], clauses
-        )
-        return CaptionCorrectionResult(
-            text=corrected,
-            changed=corrected != text.strip(),
-            inserted_no_artist=flat.inserted_no_artist,
-            unknown_tags=flat.unknown_tags,
-            dropped_tags=(*flat.dropped_tags, *clause_dropped),
-        )
-    tags = _parse_tags(text)
+        corrected = compose_position_caption(list(flat.tags), clauses)
+        dropped = (*flat.dropped_tags, *clause_dropped)
+    else:
+        corrected = ", ".join(flat.tags)
+        dropped = flat.dropped_tags
+    return CaptionCorrectionResult(
+        text=corrected,
+        changed=corrected != text.strip(),
+        inserted_no_artist=flat.inserted_no_artist,
+        unknown_tags=flat.unknown_tags,
+        dropped_tags=dropped,
+    )
+
+
+def correct_tags(
+    raw_tags: Iterable[str],
+    kb: TagKnowledgeBase,
+    *,
+    options: CaptionCorrectionOptions | None = None,
+) -> CorrectedTags:
+    """Correct a flat tag bag, tag by tag, with no caption text in between.
+
+    This is the entry point for a caller that already holds the bag — the
+    clause branch of :func:`correct_caption`, above. It never serialises the
+    bag, so a tag containing a comma survives.
+    """
+    options = options or CaptionCorrectionOptions()
+    tags = [normalize_tag(tag) for tag in raw_tags if tag.strip()]
     if not tags:
-        return CaptionCorrectionResult(
-            text="",
-            changed=bool(text.strip()),
-            inserted_no_artist=False,
-            unknown_tags=(),
+        return CorrectedTags(
+            tags=(), inserted_no_artist=False, unknown_tags=(), dropped_tags=()
         )
 
     buckets: dict[str, list[str]] = {
@@ -320,10 +353,8 @@ def correct_caption(
         *buckets["artist"],
         *buckets["general"],
     ]
-    corrected = ", ".join(_quality_emit_form(tag) for tag in ordered)
-    return CaptionCorrectionResult(
-        text=corrected,
-        changed=corrected != text.strip(),
+    return CorrectedTags(
+        tags=tuple(_quality_emit_form(tag) for tag in ordered),
         inserted_no_artist=inserted_no_artist,
         unknown_tags=tuple(unknown),
         dropped_tags=tuple(dropped),
@@ -356,11 +387,6 @@ def _drop_clause_tags(clauses, kb: TagKnowledgeBase, options: CaptionCorrectionO
         if tags:
             kept.append(replace(clause, tags=tuple(tags)))
     return kept, tuple(dropped)
-
-
-def _parse_tags(text: str) -> list[str]:
-    raw = text.replace("\n", ",").split(",")
-    return [normalize_tag(tag) for tag in raw if tag.strip()]
 
 
 def _classify_tag(

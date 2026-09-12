@@ -120,8 +120,10 @@ def main() -> None:
         index += 1
         if index % 100 == 0:
             print(f"  [{index}/{len(images)}]", flush=True)
+        # The lowest floor, the one the detector was built with: each floor's
+        # population is a re-filter of this single pass (see ``detection`` above).
         dets = drop_small_boxes(
-            detect_fn(image, args.score_threshold), image.size, args.min_area_frac
+            detect_fn(image, min(args.floors)), image.size, args.min_area_frac
         )
         rel = str(path.relative_to(dst))
         width, height = image.size

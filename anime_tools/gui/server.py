@@ -35,7 +35,7 @@ from anime_tools.gui import stages as S
 from anime_tools.gui import tags as T
 from anime_tools.gui import updates as UP
 from anime_tools.gui.jobs import JobManager, Step
-from anime_tools.gui.settings import load_settings, save_settings
+from anime_tools.gui.settings import edit_settings, load_settings
 from anime_tools.stages.resize import DEFAULT_MIN_PIXELS
 
 # `mimetypes` has no built-in font rows -- it learns them from /etc/mime.types,
@@ -414,10 +414,9 @@ def create_app(
     @app.put("/api/settings")
     async def put_settings(request: Request) -> dict[str, Any]:
         body = await request.json()
-        data = load_settings()
         token = body.pop("hf_token", None)
-        data.update(body)
-        save_settings(data)
+        with edit_settings() as data:
+            data.update(body)
         if token:
             from huggingface_hub import login
 
@@ -570,11 +569,11 @@ def create_app(
             )
         except RuntimeError as e:
             raise HTTPException(409, str(e)) from e
-        # Re-read before writing: a settings PUT could have landed while the job
-        # started, and merging into this request's snapshot would roll it back.
-        data = load_settings()
-        data.setdefault("values", {})[stage.id] = values
-        save_settings(data)
+        # Read *and* write under the settings lock: a settings PUT could have
+        # landed while the job started, and merging into this request's snapshot
+        # would roll it back.
+        with edit_settings() as data:
+            data.setdefault("values", {})[stage.id] = values
         return job.to_dict()
 
     @app.get("/api/jobs")
@@ -601,13 +600,15 @@ def create_app(
         job = _job(job_id)
 
         def gen():
+            # Absolute line numbers, which is what ``wait_lines`` returns: the
+            # buffer is a sliding window on a long run, so an index into it
+            # would point past the trimmed prefix and drop lines silently.
             i = offset
             while True:
-                new = job.wait_lines(i)
+                new, i = job.wait_lines(i)
                 for line in new:
                     yield f"data: {json.dumps(line)}\n\n"
-                i += len(new)
-                if job.exit_code is not None and i >= len(job.lines):
+                if job.exit_code is not None and i >= job.total_lines:
                     yield f"event: done\ndata: {json.dumps(job.to_dict())}\n\n"
                     return
 
@@ -719,9 +720,8 @@ def create_app(
             created = D.ensure_roots(roots)
         except OSError as e:
             raise HTTPException(500, f"cannot create root: {e}") from e
-        data = load_settings()
-        data[D.SETTINGS_KEY] = picked
-        save_settings(data)
+        with edit_settings() as data:
+            data[D.SETTINGS_KEY] = picked
         return {
             "roots": roots.as_dict(),
             "defaults": D.DEFAULT_ROOTS,

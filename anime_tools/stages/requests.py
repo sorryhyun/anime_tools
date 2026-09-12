@@ -668,21 +668,18 @@ class _Pinned:
 
 
 @dataclass(frozen=True, kw_only=True)
-class CorrectRequest(StageRequest):
+class CorrectRequest(ApplyRequest):
     """Write corrected captions next to resized preprocessing images.
 
     Corrects the revised caption in place, reading the master only for an image
-    that has no revised caption yet, with optional variant sidecars. Always
-    writes: there is no dry run and no report.
+    that has no revised caption yet, with optional variant sidecars. Dry-run by
+    default like its siblings, and the ``report.json`` every run leaves is what
+    the GUI's Undo replays backwards (``contract.REPLAY_SHAPES["correct"]``).
     """
 
-    src: str = arg(help="Raw source image directory")
-    dst: str = arg(help="Resized image directory")
+    report_dir: str = _report_dir(f"{WS.REPORTS}/correct")
     tag_csv: str | None = arg(
         None, help="danbooru_tags_classified.csv path (default: models/ lookup)"
-    )
-    path_pattern: str = arg(
-        "*", help="Only write captions for resized images matching this relative glob"
     )
     recursive: bool = arg(False, help="Walk subfolders")
     caption_insert_no_artist: bool = arg(

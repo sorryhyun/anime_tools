@@ -12,9 +12,9 @@ from pathlib import Path
 
 import numpy as np
 from PIL import Image
-from tqdm import tqdm
 
 from anime_tools._env import resolve_path
+from anime_tools._progress import ProgressBar
 from anime_tools.masking._masks import iter_masks
 from anime_tools.masking.requests import MergeMasksRequest
 
@@ -39,7 +39,10 @@ def run_merge_masks(req: MergeMasksRequest) -> int:
         return 0
 
     merged = 0
-    for (rel_str, name), sources in tqdm(sorted(by_rel.items()), desc="Merging masks"):
+    # The shared counter line, not ``tqdm``: the GUI's progress bar reads
+    # ``  [n/total]`` off stdout and a carriage-return bar matches nothing.
+    bar = ProgressBar(len(by_rel), every=25, first=True)
+    for (rel_str, name), sources in sorted(by_rel.items()):
         if len(sources) == 1:
             arr = np.array(Image.open(sources[0]))
         else:
@@ -55,6 +58,7 @@ def run_merge_masks(req: MergeMasksRequest) -> int:
         target_dir.mkdir(parents=True, exist_ok=True)
         Image.fromarray(arr, mode="L").save(target_dir / name)
         merged += 1
+        bar.tick(f"{rel_str}/{name}" if rel_str else name)
 
     print(f"Merged {merged} masks into {output_dir}/")
 

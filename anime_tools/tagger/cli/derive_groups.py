@@ -42,7 +42,7 @@ def _slug(path: str) -> str:
     Uses the last segment for readability; collisions are resolved by the caller.
     """
     leaf = path.split(">")[-1].strip()
-    leaf = re.sub(r"[\\s/]+", "_", leaf)
+    leaf = re.sub(r"[\s/]+", "_", leaf)
     return re.sub(r"_+", "_", leaf).strip("_") or "group"
 
 

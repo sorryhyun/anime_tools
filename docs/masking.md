@@ -81,8 +81,12 @@ What gets written. Per image, in this order:
 | only ignore rows, nothing found | nothing | `skipped` |
 
 Knobs: `--threshold` (SAM3 confidence floor, 0.5), `--dilate` (pixels, 5, `0` = off; applied to
-each detection before the two are combined), `--batch-size` (1), `--checkpoint` (SAM3 weights,
+each detection before the two are combined), `--checkpoint` (SAM3 weights,
 `models/sam3/sam3.pt`).
+
+There is no `--batch-size`: `processor.set_image` is a single-image encode, so batching only held
+every inference state resident until its detect loop drained — memory for no throughput. The
+`--workers` I/O pool prefetches decoded images ahead of the GPU, which is what keeps it fed.
 
 ## 4. Merge — `merge_masks`
 
@@ -121,7 +125,7 @@ python -m anime_tools.masking.cli.merge_masks
 | `--recursive` | walk subfolders; the output mirrors them |
 | `--path-pattern` | fnmatch glob (`\|` to OR) on the path relative to `--image-dir`, the training `path_pattern` semantics |
 | `--force` | regenerate a mask that already exists; without it an existing file is skipped |
-| `--workers` | I/O threads for loading and saving (4) |
+| `--workers` | I/O threads for loading and saving (4); clamped to at least 1 |
 | `--device` | `cuda` / `cpu`, default auto |
 
 Flags are hyphenated and take the underscore spelling as an alias

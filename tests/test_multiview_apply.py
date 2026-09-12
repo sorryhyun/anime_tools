@@ -297,3 +297,35 @@ def test_apply_mode_promotes_through_the_gate(tmp_path, monkeypatch) -> None:
     # min_instances pinned to 2, and the sheets/report land under audit/.
     assert seen["options"].min_instances == 2
     assert seen["sheets_dir"] == tmp_path / "reports" / "audit" / "sheets"
+
+
+def test_identity_agreement_scores_the_vocabulary_it_is_handed() -> None:
+    """The agreement vote runs on the caller's own identity groups.
+
+    ``audit_image`` collects each crop's values against
+    ``vocabulary.clause_groups.identity``; reading the *shipped* policy back
+    from ``default_clause_groups()`` here instead meant a vocabulary loaded
+    from a custom ``configs/clause_vocabulary.yaml`` silently did not affect
+    the verdict.
+    """
+    from anime_tools.stages.multiview_audit import CropIdentity, identity_agreement
+
+    crops = [
+        CropIdentity(
+            box=(0, 0, 1, 1), score=0.9, groups={"eye": "blue", "hair": "red"}
+        ),
+        CropIdentity(
+            box=(1, 0, 2, 1), score=0.9, groups={"eye": "blue", "hair": "green"}
+        ),
+    ]
+
+    # Both groups vote: they agree on one of the two.
+    assert identity_agreement(crops, ("eye", "hair")) == (0.5, 2)
+    # A vocabulary that declares only `eye` sees full agreement...
+    assert identity_agreement(crops, ("eye",)) == (1.0, 1)
+    # ...and one that declares only `hair`, none.
+    assert identity_agreement(crops, ("hair",)) == (0.0, 1)
+    # A group no crop resolved is not a disagreement — a headless panel reports
+    # no eye colour, and scoring that would call every close-up a second
+    # character.
+    assert identity_agreement(crops, ("mouth",)) == (None, 0)

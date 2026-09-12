@@ -53,3 +53,27 @@ def test_read_json_propagates_a_malformed_file(tmp_path):
     p.write_text("{oops", encoding="utf-8")
     with pytest.raises(ValueError):
         read_json(p)
+
+
+def test_a_failed_write_leaves_the_previous_file_intact(tmp_path):
+    """The write is a temp file plus ``os.replace``, so it is all or nothing.
+
+    A plain ``write_text`` truncated the target first: a crash (or an
+    unserialisable payload) mid-write left a ``report.json`` that parsed as
+    neither the old contents nor the new.
+    """
+    p = write_json(tmp_path / "r.json", {"keep": "me"})
+
+    with pytest.raises(TypeError):
+        write_json(p, {"bad": object()})
+
+    assert read_json(p) == {"keep": "me"}
+    # And no temp file left behind for the next walk to trip over.
+    assert [q.name for q in tmp_path.iterdir()] == ["r.json"]
+
+
+def test_a_rewrite_replaces_rather_than_appends(tmp_path):
+    p = write_json(tmp_path / "r.json", {"a": "a long first value"})
+    write_json(p, {"b": 1})
+    assert p.read_text(encoding="utf-8") == '{\n  "b": 1\n}'
+    assert [q.name for q in tmp_path.iterdir()] == ["r.json"]

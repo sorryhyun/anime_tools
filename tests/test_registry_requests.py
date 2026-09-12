@@ -187,7 +187,6 @@ CASES: dict[str, Request] = {
         threshold=0.7,
         dilate=0,
         checkpoint="w.pt",
-        batch_size=4,
         force=True,
         workers=2,
         recursive=True,
@@ -378,8 +377,7 @@ def test_shared_flags_keep_one_spelling(parsers, dest, flags, default):
     canonical spelling first, the other separator as an alias — the GUI fills
     one ⚙ Settings value into all of them (``gui/stages.py::SETTING_FIELDS``).
 
-    ``--report_dir``'s default is per-stage, so only its spelling is pinned;
-    ``correct`` requires its roots rather than defaulting them.
+    ``--report_dir``'s default is per-stage, so only its spelling is pinned.
     """
     seen = 0
     for stage in STAGES:
@@ -391,9 +389,7 @@ def test_shared_flags_keep_one_spelling(parsers, dest, flags, default):
         assert tuple(action.option_strings) == flags, (
             f"{stage.id} spells {dest} differently"
         )
-        if default is not None and not (
-            stage.id == "correct" and dest in ("src", "dst")
-        ):
+        if default is not None:
             assert action.default == default, f"{stage.id} defaults {dest} differently"
     assert seen >= 2, f"{dest} is no longer shared — drop it from this test"
 
@@ -438,7 +434,14 @@ def test_every_stage_with_apply_is_dry_run_by_default():
         carriers.append(stage.id)
         assert apply.flags[0] == "--apply", stage.id
         assert apply.default is False, stage.id
-    assert set(carriers) == {"autotag", "position", "audit", "ocr", "export"}
+    assert set(carriers) == {
+        "autotag",
+        "correct",
+        "position",
+        "audit",
+        "ocr",
+        "export",
+    }
 
 
 # ---- the generated parser ----------------------------------------------------

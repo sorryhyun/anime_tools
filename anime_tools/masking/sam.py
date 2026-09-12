@@ -77,69 +77,64 @@ def run_sam_masks(req: SamMaskRequest) -> MaskRun:
         """This run's SAM3 pass: the shared union at this run's threshold."""
         return detect_union(processor, model, state, prompts, shape, req.threshold)
 
-    batch_size = req.batch_size
-    amp = autocast(device)
-
-    with mask_run(req) as run:
-        # Prefetch images ahead of GPU to keep it saturated.
-        prefetch = min(req.workers, run.total)
+    with mask_run(req) as run, autocast(device):
+        # Prefetch images ahead of GPU to keep it saturated. ``run.workers`` is
+        # the clamped pool size, so the depth is never zero.
+        prefetch = min(run.workers, run.total)
         load_futures = [
             run.pool.submit(load_image, run.items[j][0]) for j in range(prefetch)
         ]
         save_futures = []
 
-        for batch_start in range(0, run.total, batch_size):
-            batch_end = min(batch_start + batch_size, run.total)
-            batch = []
-            for i in range(batch_start, batch_end):
-                image = load_futures[i].result()
-                if i + prefetch < run.total:
-                    load_futures.append(
-                        run.pool.submit(load_image, run.items[i + prefetch][0])
-                    )
-                batch.append((run.items[i], image))
+        # One image at a time: ``processor.set_image`` is a single-image encode,
+        # so an outer batch only held every inference state resident until its
+        # detect loop drained — memory for no throughput. That is why the stage
+        # has no ``--batch-size``; the I/O pool is what keeps the GPU fed.
+        for i in range(run.total):
+            image = load_futures[i].result()
+            # A ``Future`` keeps its result: holding the whole list would pin
+            # every decoded RGB image for the length of the run, which on a
+            # large tree is tens of gigabytes. The slot stays so the indexing
+            # above still lines up with ``run.items``.
+            load_futures[i] = None
+            if i + prefetch < run.total:
+                load_futures.append(
+                    run.pool.submit(load_image, run.items[i + prefetch][0])
+                )
 
-            with amp:
-                states = []
-                for (image_path, mask_path), image in batch:
-                    states.append(
-                        (image_path, mask_path, image, processor.set_image(image))
-                    )
+            image_path, mask_path = run.items[i]
+            w, h = image.size
+            run.advance()
+            inference_state = processor.set_image(image)
 
-                for image_path, mask_path, image, inference_state in states:
-                    w, h = image.size
-                    run.advance()
+            ignore_mask = np.zeros((h, w), dtype=np.uint8)
+            if ignore_prompts:
+                ignore_mask = detect(inference_state, ignore_prompts, (h, w))
+                if kernel is not None and ignore_mask.any():
+                    ignore_mask = cv2.dilate(ignore_mask, kernel, iterations=1)
 
-                    ignore_mask = np.zeros((h, w), dtype=np.uint8)
-                    if ignore_prompts:
-                        ignore_mask = detect(inference_state, ignore_prompts, (h, w))
-                        if kernel is not None and ignore_mask.any():
-                            ignore_mask = cv2.dilate(ignore_mask, kernel, iterations=1)
+            if focus_prompts:
+                focus_mask = detect(inference_state, focus_prompts, (h, w))
+                if kernel is not None and focus_mask.any():
+                    focus_mask = cv2.dilate(focus_mask, kernel, iterations=1)
+                if not focus_mask.any():
+                    # Subject not found — leave unmasked (train fully) rather
+                    # than zeroing out the whole loss.
+                    run.note(image_path, "focus not found")
+                    continue
+                trainable = focus_mask * (1 - ignore_mask)
+                save_futures.append(write_mask(mask_path, trainable, pool=run.pool))
+                run.note(image_path, f"train {coverage_pct(trainable):.1f}%")
+                continue
 
-                    if focus_prompts:
-                        focus_mask = detect(inference_state, focus_prompts, (h, w))
-                        if kernel is not None and focus_mask.any():
-                            focus_mask = cv2.dilate(focus_mask, kernel, iterations=1)
-                        if not focus_mask.any():
-                            # Subject not found — leave unmasked (train fully) rather
-                            # than zeroing out the whole loss.
-                            run.note(image_path, "focus not found")
-                            continue
-                        trainable = focus_mask * (1 - ignore_mask)
-                        save_futures.append(
-                            write_mask(mask_path, trainable, pool=run.pool)
-                        )
-                        run.note(image_path, f"train {coverage_pct(trainable):.1f}%")
-                        continue
+            if not ignore_mask.any():
+                run.note(image_path, "skipped")
+                continue
 
-                    if not ignore_mask.any():
-                        run.note(image_path, "skipped")
-                        continue
-
-                    save_futures.append(
-                        write_ignore_mask(mask_path, ignore_mask, pool=run.pool)
-                    )
-                    run.note(image_path, f"{coverage_pct(ignore_mask):.1f}%")
+            save_futures.append(
+                write_ignore_mask(mask_path, ignore_mask, pool=run.pool)
+            )
+            run.note(image_path, f"{coverage_pct(ignore_mask):.1f}%")
 
         # Inside the `with`, before the pool is shut down: a save that raised is a mask
         # that is not there, and this is the only place it can be seen.

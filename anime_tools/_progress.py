@@ -1,4 +1,18 @@
-"""Progress for a stage running under the trainer's daemon — stdlib only.
+"""Progress: the line every stage prints, and the daemon stream behind it — stdlib only.
+
+Two halves, and the first is the one every stage owes its caller.
+
+**The printed line.** ``  [done/total] detail`` on stdout is a contract, not a
+style: ``gui/jobs.py`` reads it back off the child's stdout for the panel's
+progress bar (``frontend/src/state.ts``), and a stage that prints anything else
+has no bar. :func:`progress_line` is the one place that format is spelled;
+:class:`ProgressBar` counts for a stage that walks its own loop, and
+``stages/cli/_args.py::make_progress`` wraps it for a stage that hands a
+``progress(index, total, detail)`` callback to a library function. Every stage
+goes through one of the two — a bare ``tqdm`` writes carriage returns the panel
+cannot parse and the log keeps as noise.
+
+**The daemon stream.** The rest of this module.
 
 The daemon (``anima_lora/anima_daemon``) runs a curation stage as a *command*
 job: it exports ``ANIMA_DAEMON_JOB_DIR``, tails ``<job_dir>/stdout.log``, and
@@ -51,9 +65,11 @@ __all__ = [
     "JOB_DIR_ENV",
     "PROGRESS_NAME",
     "Progress",
+    "ProgressBar",
     "emit",
     "job_dir",
     "phase",
+    "progress_line",
     "progress_path",
     "step",
 ]
@@ -71,6 +87,61 @@ few lines."""
 
 Progress = Callable[[int, int, str], None]
 """The ``progress(index, total, detail)`` callback every stage takes."""
+
+
+# ---- the printed line ---------------------------------------------------
+
+
+def progress_line(
+    index: int, total: int, detail: str = "", *, every: int = 1, first: bool = False
+) -> None:
+    """Print ``  [index/total] detail``, thinned, and stream the step regardless.
+
+    The one spelling of the format the GUI parses, and the one thinning rule:
+    every ``every``-th line, index 1 when ``first``, and always the last — so a
+    run shorter than ``every`` still says it finished. The daemon's
+    ``progress.jsonl`` gets every call either way; it does its own thinning.
+    """
+    if index >= total or (every > 0 and index % every == 0) or (first and index == 1):
+        print(f"  [{index}/{total}] {detail}".rstrip(), flush=True)
+    step(index, total, detail)
+
+
+class ProgressBar:
+    """A counter over a loop the stage walks itself.
+
+    For the stages that have no ``progress=`` callback to pass — the SAM3 mask
+    run, the mask merge, the grouping embedder — so all of them report in the
+    one format instead of each reaching for ``tqdm``. :meth:`advance` moves the
+    count without saying anything (an image whose outcome is decided further
+    down the loop body), :meth:`note` prints where the count stands, and
+    :meth:`tick` is the two together, which is what a plain loop wants.
+    """
+
+    __slots__ = ("done", "every", "first", "total")
+
+    def __init__(self, total: int, *, every: int = 1, first: bool = False):
+        self.total = int(total)
+        self.every = int(every)
+        self.first = bool(first)
+        self.done = 0
+
+    def advance(self, n: int = 1) -> None:
+        """``n`` items dealt with, nothing printed yet."""
+        self.done += n
+
+    def note(self, detail: str = "") -> None:
+        """Print where the count stands, subject to the thinning."""
+        progress_line(self.done, self.total, detail, every=self.every, first=self.first)
+
+    def tick(self, detail: str = "", n: int = 1) -> None:
+        """:meth:`advance` then :meth:`note` — one line for the ``n`` items it
+        moved past (``n > 1`` for a stage that works a batch at a time)."""
+        self.advance(n)
+        self.note(detail)
+
+
+# ---- the daemon stream --------------------------------------------------
 
 
 def job_dir() -> Path | None:

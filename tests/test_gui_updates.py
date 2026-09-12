@@ -131,9 +131,8 @@ def test_check_caches_the_answer(home, monkeypatch):
 def test_stale_cache_is_refreshed(home, monkeypatch):
     monkeypatch.setattr(U, "latest_release", _release("v1.0.0"))
     UP.check()
-    settings = UP.load_settings()
-    settings[UP.CACHE_KEY]["checked_at"] = int(time.time()) - UP.CACHE_TTL - 1
-    UP.save_settings(settings)
+    with UP.edit_settings() as settings:
+        settings[UP.CACHE_KEY]["checked_at"] = int(time.time()) - UP.CACHE_TTL - 1
 
     monkeypatch.setattr(U, "latest_release", _release("v2.0.0"))
     assert UP.check()["latest"] == "v2.0.0"
@@ -152,9 +151,8 @@ def test_auto_off_never_reaches_github(home, monkeypatch):
     """The checkbox is the whole rate limit: with it off the panel renders what
     it already knows and asks nothing."""
     monkeypatch.setattr(U, "latest_release", _explode)
-    settings = UP.load_settings()
-    settings[UP.AUTO_KEY] = False
-    UP.save_settings(settings)
+    with UP.edit_settings() as settings:
+        settings[UP.AUTO_KEY] = False
 
     out = UP.check()
     assert out["auto_check"] is False
@@ -224,3 +222,34 @@ def test_run_starts_one_update_job(client, monkeypatch):
             break
         time.sleep(0.05)
     assert job["state"] == "failed" and job["exit_code"] == 2
+
+
+def test_edit_settings_serialises_a_read_modify_write(home):
+    """The blob is read-modify-written from the event loop, the threadpool and
+    an update check's worker thread.
+
+    ``edit_settings`` holds the lock across both halves, so two writers
+    serialise instead of the second one overwriting the first's snapshot.
+    """
+    import threading
+
+    from anime_tools.gui.settings import edit_settings, load_settings
+
+    with UP.edit_settings() as data:
+        data["seed"] = 0
+
+    def bump(key: str) -> None:
+        for _ in range(50):
+            with edit_settings() as d:
+                d[key] = d.get(key, 0) + 1
+
+    threads = [threading.Thread(target=bump, args=(k,)) for k in ("a", "b", "c")]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+
+    saved = load_settings()
+    # Every increment landed, and nobody's key was dropped by another's write.
+    assert saved["seed"] == 0
+    assert (saved["a"], saved["b"], saved["c"]) == (50, 50, 50)
