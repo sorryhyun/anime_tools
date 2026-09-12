@@ -72,6 +72,10 @@ both GUIs accept a pack id wherever they accept a row id."""
 
 PACK_BY_ID: dict[str, Pack] = {p.id: p for p in PACKS}
 
+REVISION_STAMP = "REVISION"
+"""File a pinned ``dest`` row writes after a fetch: the Hub commit its files
+came from, one line. :meth:`Asset.missing` compares it to :attr:`Asset.revision`."""
+
 
 @dataclass(frozen=True)
 class Asset:
@@ -109,6 +113,12 @@ class Asset:
     """Best-effort files: a 404 means this checkpoint doesn't ship one."""
     gated: str = ""
     """Accept-the-terms URL when the repo is gated; empty when it is public."""
+    revision: str = ""
+    """Hub commit the files are fetched at. Empty = ``main``, and the probe is
+    file-existence only. Set, and a ``dest`` row is installed only when its
+    :data:`REVISION_STAMP` names this commit — so moving the pin re-fetches an
+    install whose files exist under the old name (a Hub ``main`` that moved
+    under an existing install was otherwise invisible to :meth:`missing`)."""
     notes: str = ""
 
     @property
@@ -124,7 +134,17 @@ class Asset:
             from anime_tools._hf import hf_file_cached
 
             return [f for f in self.files if not hf_file_cached(self.repo, f)]
+        if self.revision and self._stamped_revision() != self.revision:
+            return list(self.files)
         return [f for f in self.files if not (self.dest / Path(f).name).exists()]
+
+    def _stamped_revision(self) -> str:
+        """The commit the files under ``dest`` were fetched at, or ``""``."""
+        assert self.dest is not None
+        try:
+            return (self.dest / REVISION_STAMP).read_text().strip()
+        except OSError:
+            return ""
 
     @property
     def installed(self) -> bool:
@@ -144,6 +164,7 @@ class Asset:
             "installed": not missing,
             "missing": missing,
             "gated": self.gated,
+            "revision": self.revision,
             "notes": self.notes,
         }
 
@@ -216,6 +237,7 @@ class Asset:
                         repo_type=self.repo_type,
                         filename=remote,
                         **({"local_dir": str(into)} if into else {}),
+                        **({"revision": self.revision} if self.revision else {}),
                     )
                 )
             except EntryNotFoundError:
@@ -232,6 +254,8 @@ class Asset:
                 got = final
             log(f"    ok  {got}  ({_size(got.stat().st_size)})")
         self._build(log)
+        if into is not None and self.revision:
+            (into / REVISION_STAMP).write_text(self.revision + "\n")
         if into is not None and self.subfolder:
             # Drop the now-empty `dbv4/` local_dir the files were moved out of.
             leftover = into / self.subfolder

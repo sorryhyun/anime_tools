@@ -73,6 +73,12 @@ SFX_READER_ADAPTER_FILES = ("adapter_config.json", "adapter_model.safetensors")
 SFX_READER_TOWER_FILE = "tower.safetensors"
 SFX_READER_FILES = (*SFX_READER_ADAPTER_FILES, SFX_READER_TOWER_FILE)
 SFX_READER_DIR = "models/paddleocr_vl_1.6_manga_lora"
+SFX_READER_REVISION = "26292839d1469c14212a12a1e01b5b1fe01bff15"
+"""Hub commit of the reader the package ships — **v3** (``vl16_b2_norm4``:
+spaced targets + the glyph fold, heart as the single-token ``♥``; v2
+``4caffe65``, v1 ``3b5fe022``). The file names never changed across the three,
+so the catalog row pins this and stamps it under the dest — an install that
+predates the pin re-fetches instead of reading v1 under a v3 name."""
 
 # The AnimeText text-block detector: a YOLO12-l trained on deepghs/AnimeText
 # (735k anime / manga pages, one class), the OCR stage's one detector.

@@ -122,6 +122,43 @@ def test_the_tag_kb_lands_where_correction_looks_for_it(home):
     assert DL.by_id()["danbooru_tags_en"].installed
 
 
+def test_a_pinned_row_is_installed_only_at_its_revision(home, monkeypatch):
+    """The SFX reader's file names never changed across Hub revisions, so
+    existence is not enough: the row is installed only when the ``REVISION``
+    stamp under its dest names the pinned commit, and ``fetch`` writes it."""
+    from anime_tools.downloads._assets import REVISION_STAMP
+
+    row = DL.by_id()["sfx_reader"]
+    assert row.revision == DL.SFX_READER_REVISION
+    dest = home / "models" / "paddleocr_vl_1.6_manga_lora"
+    dest.mkdir(parents=True)
+    for name in DL.SFX_READER_FILES:
+        (dest / name).write_bytes(b"x")
+    # files present, no stamp: a pre-pin install — every file is owed again
+    assert row.missing() == list(DL.SFX_READER_FILES)
+    (dest / REVISION_STAMP).write_text("4caffe65\n")
+    assert row.missing() == list(DL.SFX_READER_FILES)  # stale stamp: same
+    (dest / REVISION_STAMP).write_text(row.revision + "\n")
+    assert row.installed
+    (dest / DL.SFX_READER_TOWER_FILE).unlink()
+    assert row.missing() == [DL.SFX_READER_TOWER_FILE]  # right stamp, file gone
+
+    seen: list[dict[str, object]] = []
+
+    def fake_download(**kwargs):
+        seen.append(kwargs)
+        path = dest / kwargs["filename"]
+        path.write_bytes(b"y")
+        return str(path)
+
+    monkeypatch.setattr("anime_tools._hf.hf_download", fake_download)
+    (dest / REVISION_STAMP).unlink()
+    row.fetch(log=lambda _msg: None)
+    assert {k["revision"] for k in seen} == {row.revision}
+    assert (dest / REVISION_STAMP).read_text().strip() == row.revision
+    assert row.installed
+
+
 def test_a_built_row_runs_its_build_after_fetching(home, monkeypatch):
     """``fetch`` on a derived row is download-then-build, with the download
     landing in the hub cache rather than in ``dest``."""

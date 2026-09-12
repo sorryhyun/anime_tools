@@ -172,6 +172,8 @@ export interface ModelAsset {
   missing: string[];
   /** Accept-the-terms URL when the repo is gated; "" when it is public. */
   gated: string;
+  /** Hub commit the files are pinned to; "" = main, existence-only probe. */
+  revision: string;
   notes: string;
   /** Which `ModelCatalog.packs` entry the row installs under (a `Pack.id`). */
   pack: string;
