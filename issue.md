@@ -7,9 +7,10 @@ problems, duplication, inefficiency and drift rather than for features.
 Items under "Reported, not individually reproduced" come from the same review pass but were not
 each checked by hand — treat them as leads, not as verdicts.
 
-**The "Confirmed defects" section is gone: all twelve of its items (three P0, nine P1) were fixed
-on 2026-09-12 and are no longer listed.** What they were and what closing them needs from the
-trainer repo is at the bottom, under "Landed, and what the trainer owes".
+**Only open items are listed.** Everything fixed on 2026-09-12 — the twelve confirmed defects
+(three P0, nine P1), the four "close the pairs" items and the five big-file splits — has been
+removed from the sections below; what each one was, and what closing it still needs from the
+trainer repo, is at the bottom under "Landed, and what the trainer owes".
 
 ## The one theme
 
@@ -19,89 +20,23 @@ size manage. `_request.py` turns one field declaration into a parser, an argv an
 one drift-guarded write shared by four callers. `_walk`, `_json`, `_device`, `buckets` each claim to
 be the single answer to a question.
 
-The recurring problem is that **most of these abstractions have a second, partial implementation
-sitting next to them**, and the invariants in `CLAUDE.md` describe the abstraction rather than the
-pair. That is what produces nearly every item below:
+The recurring problem was that **most of these abstractions had a second, partial implementation
+sitting next to them**, and the invariants in `CLAUDE.md` described the abstraction rather than the
+pair. That produced most of what this file originally held. One pair is left:
 
 | The one answer | The second one beside it |
 |---|---|
 | `parse_caption` / `compose_caption` | `split(",")` on caption text: `variants.py:186`, `autotag.py:130`/`:211`, `captions.py:254`, `tag_rules.py:108` |
-| ~~`_request.Arg` + generated parser~~ | ~~`gui/stages.Field` + `_coerce`~~ — closed: `Field` carries its `Arg` |
-| ~~`_walk.walk_images`~~ | ~~`grouping/features.py:87` calling `glob_images_pathlib`~~ — closed |
-| ~~`registry.py`, deliberately import-light~~ | ~~`stages/requests.py`, which pulls numpy, PIL and yaml~~ — closed: two leaves |
 
-Fixing the pairs is worth more than any individual bug below, because each pair is a place where a
-future change can be made correctly in one spot and still be wrong.
-
-Two rows came off that table earlier on 2026-09-12: the progress format now has one
-implementation (`_progress.progress_line` / `ProgressBar`, no `tqdm` anywhere in the package), and
-`correct` is dry-run-by-default with a report like its six siblings. `correction.py`'s own two
-caption splits went with the first P0. The three struck rows went the same day, with the
-"close the pairs" block. Only the caption-split row is left, and its five remaining sites all
-split a *tagger's* comma-joined output rather than a caption.
+It is also the weakest of the six that table held on 2026-09-12: all five of its remaining sites
+split a *tagger's* comma-joined output rather than a caption. The other five closed that day — the
+progress format (`_progress.progress_line` / `ProgressBar`, no `tqdm` anywhere in the package),
+`correct`'s dry-run default, `gui.Field` carrying its `Arg`, grouping's walk, and the registry's
+laziness surviving resolution — and are recorded under "Landed" below. Closing a pair is still
+worth more than any individual bug in this file, because a pair is a place where a future change
+can be made correctly in one spot and still be wrong.
 
 ## Structural
-
-- [x] **`stages/requests.py` defeats the registry's laziness.** *Done 2026-09-12.* 360 modules
-      with numpy, PIL and yaml → 182 with none; `masking/requests.py` 275 → 179 and
-      `grouping/requests.py` 259 → 164, since the GUI resolves all three packages' request
-      classes. `stages/_options.py` holds `PositionCaptionOptions`, the resize geometry and the
-      audit's verdicts + witness floors; `masking/_prompts.py` holds the SAM3 prompt vocabulary
-      (the seam item below); `grouping/groups.py` defers its numpy import the way it already
-      deferred torch. Each owning module re-exports its own constants, and
-      `test_resolving_every_request_stays_import_light` measures the result while
-      `test_the_request_defaults_are_spelled_once` pins the re-exports as the same objects.
-      The help constants did *not* go to `contract.py` as suggested: that module is stdlib-only
-      (`PROMPT_EMBED_HELP` needs `downloads.DEFAULT_SUBJECT_PROMPT_EMBED`) and append-only within
-      a `CONTRACT_VERSION`, which a SAM3 flag's help text has no business entering.
-
-- [x] **`gui/stages.Field` and `_coerce` are a second type system over the same field list.**
-      *Done 2026-09-12.* `Field` is now `arg: Arg` plus the seven GUI bindings; everything the flag
-      says is a property over that one object, `to_json()` is the wire dict, and
-      `fields_of(schema)` re-attaches each `Arg` from the request class the schema names.
-      `field_of` is gone and `_coerce` dispatches on `a.nargs`/`a.positional` and `a.type` — the
-      attributes `build_parser` hands argparse — so a new `kind` needs no branch. It was a latent
-      bug and not only duplication: a field carrying both a custom `kind` and `type=int` got `str`
-      from the form and `int` from the CLI, which
-      `test_a_form_value_is_coerced_by_the_parsers_own_type` now pins. The browser is untouched —
-      the 4.6k-line schema dump and ~70k lines of A/B'd `build_argv` output are byte-identical to
-      before, so `types.ts` and the bundle needed no change.
-
-- [x] **`stages/run.py` holds seven runners (882 lines) away from the stage modules.**
-      *Done 2026-09-12.* `run.py` is gone; each runner lives in its stage's own module and
-      `registry.py` names it there (`anime_tools.stages.autotag:run_autotag`, …), with
-      `stages/__init__.py`'s `_RUNNERS` the same mapping for the lazy re-export. The two pieces
-      that were orchestration rather than runner moved with it: `position_captions.summarize()`
-      holds the counts half of the report (the runner keeps the header and the knobs, which are
-      the request's to report), and `multiview_audit.run_audit_phase` sits beside `promotions`,
-      its only caller, so the position stage imports it rather than reimplementing the phase.
-      Two library functions were renamed out of the runners' way, to the aliases `run.py` already
-      gave them: `stages/ocr.py::run_ocr` → `read_tree` and
-      `export_workspace.py::run_export` → `publish`.
-      `tests/test_ocr.py`'s device test stopped being an `inspect.getsource` grep for
-      `_vl_engine(req, engine, resized_dir, device)` and now stubs both loads: one probe, and the
-      same string handed to the detector and the reader.
-
-- [x] **`stages/run.py:25` imports from `stages/cli/_args.py` and `cli/_report.py`.**
-      *Done 2026-09-12.* Both are `stages/_report.py` and `stages/_progress.py` now, so the library
-      half no longer depends on its own CLI package.
-
-- [x] **The masking ↔ stages seam is two-way.** *Done 2026-09-12.* The prompt vocabulary went
-      into a new `masking/_prompts.py` rather than into `_sam3.py`: `SUBJECT_PROMPT`, the two help
-      strings, `prompt_list`, `resolve_prompt_embed`, `SOFT_PROMPT_KEYS`, `load_soft_prompt`,
-      `prompt_embed_sha256`. `_sam3.py` aliases `np.bool` on import, so putting them there would
-      have kept `masking/requests.py` and `stages/requests.py` importing numpy for a help string —
-      the item above. `instance_detection.py`'s docstring is true now, masking's library half
-      imports no stage, and `test_the_masking_library_does_not_import_a_stage` greps for it. Still
-      exempt, and now said so in that test: `masking/cli/probe_*.py`, dev probes over a stage's own
-      `Detection` geometry.
-
-- [x] **Grouping bypasses the one image walk.** *Done 2026-09-12.* `iter_images` (now taking the
-      `pattern`) and `gather_members` both go through `walk_images`. The stem assertion is
-      load-bearing here rather than cosmetic: the feature cache is keyed `(parent-dir hash, stem)`,
-      so `1.png` and `1.webp` in one folder shared a single `.npz`. `cli/match_decensored.py` keeps
-      `glob_images_pathlib` on purpose — its descriptors are keyed by filename, so it must accept
-      exactly the pair `walk_images` refuses, and its docstring says so now.
 
 - [ ] **`frontend/src/types.ts` is a 650-line hand-maintained mirror of the Python dataclasses**,
       with no drift check, and it is the single most-churned file in the repo (44 touches in 60
@@ -110,66 +45,28 @@ split a *tagger's* comma-joined output rather than a caption.
       Fix: emit it from `schema()` during `scripts/build_frontend.sh`, or add a test asserting the
       key sets match. CI already diffs the bundle, so generation would be enforced for free.
 
-- [x] **`gui/server.py` is one 1129-line file with ~620 lines of route closures inside
-      `create_app`.** *Done 2026-09-12.* 1129 → 205. The API is `gui/routes/` — `settings`, `jobs`,
-      `dataset`, `desktop` — each an `APIRouter` reading its state off `request.app.state`
-      (`jobs` / `schemas` / `watch`, the last one new: `/api/alive` had closed over the
-      `create_app` argument). `launch.py` took `main`, `pick_port` and the Chromium app window;
-      `server.py` keeps the factory, the static routes, `/api/info`, `Schemas` and `ClientWatch`.
-      The settings-derived values are `gui/_context.py`'s, as `RunContext` — one settings read per
-      request, `ctx.bindings()` the four keyword arguments `resolved_schema` / `build_argv` bind a
-      form with, and `ctx.scoped_to(rel)` the per-image narrowing. The free `roots_for` /
-      `report_root` / `mask_root` stay, because Settings' placeholders are those same values
-      computed against *empty* settings. One test assumption changed with no behaviour behind it:
-      this FastAPI wraps an included router in `_IncludedRouter`, so `app.routes` no longer
-      flattens, and the listing-cap test reads the endpoint's own signature instead.
-
-- [x] **`tagger/tagger.py` mixes three concerns.** *Done 2026-09-12.* 684 → 496, with
-      `tagger/schema.py` (what a tag means to a checkpoint: the four tuples, `TagEntry`,
-      `dedupe_count_tags`, `fix_artist_category`, `underscore_to_space`) and `tagger/fetch.py`
-      (`ensure_tagger_checkpoint`, `ensure_tagger_backbone`, and `is_dbv4_dir` — public now, which
-      is what `comfyui/anima_tagger/nodes.py` was apologising for). `tagger.py` re-exports both,
-      so nothing outside had to move, but `cli/vocab.py`, both `cli/autotag*` entry points, the
-      ComfyUI node, `stages/_models.py` and two tests were repointed at the leaf, and
-      `tests/test_boundary.py` pins all three importable without torch.
-      One bug fell out of it: `test_the_tagger_loads_once_per_process` patched
-      `tagger.tagger.ensure_tagger_checkpoint` while `_models.py` now imports it from `fetch`, so
-      the test was doing a **real hub fetch** — 10.7 s to 1.0 s once it patched the right module.
-
-- [x] **`downloads.py` (624) and `exclude.py` (540) each hold three things.**
-      *Done 2026-09-12.* Both are packages whose `__init__.py` re-exports the surface they had, so
-      every `from anime_tools.downloads import …` and `python -m anime_tools.exclude` is unchanged
-      (the CLI is `_cli.py` with a two-line `__main__.py`, so importing the package still runs
-      nothing). `downloads/`: `_locations.py` (where each weight lives — the constants the loaders
-      import), `_assets.py` (`Asset` / `Pack` + the fetch engine), `_catalog.py` (the rows and
-      `by_id` / `by_pack` / `expand`), `_cli.py`. `exclude/`: `_ledger.py` (the state, and
-      `rel_key`), `_artifacts.py` (what an image is made of), `_move.py` (`Result`,
-      `exclude_one` / `restore_one`), `_cli.py`.
-      `Asset.build` still reaches `tagger.cli.build_english_tag_csv`, inside `_catalog`'s
-      `_build_english_tag_csv` and still behind a deferred import — the split moved it, it did not
-      fix it; `exclude_many` and the per-invocation catalog rebuild are still open under
-      *Efficiency*.
-
 - [ ] **Flag separator: unify on `_`.** The hyphen/underscore split costs about 15 lines
       (`FLAG_SEP`, `flag_of(sep)`, `spellings()`, and a `replace` in `gui/stages.py`) and two
       docstring paragraphs. It is not even honoured inside `masking/`, where two probe CLIs and
-      `exclude.py` declare underscore flags. Since every flag already accepts both spellings,
+      `exclude/_cli.py` declare underscore flags. Since every flag already accepts both spellings,
       setting `FLAG_SEP = "_"` package-wide breaks no saved command line.
 
 ## Efficiency
 
-- [ ] **No batched tagger inference.** `tagger.py:479` wraps a single image and `stages/autotag.py`
+- [ ] **No batched tagger inference.** `tagger.py`'s `_heads_forward` wraps a single image and
+  `stages/autotag.py`
       calls `predict_caption` per image with no prefetch, even though `Dbv4Backend.forward` already
       takes a list and `train_sidecar.build_cache` already drives a DataLoader. Add `predict_batch`.
 - [ ] **`dbv4_backend.py:335` normalises on CPU in float32** over the whole batch, then moves to the
       device. Move first, normalise on device.
-- [ ] **`tagger.py:520`** runs two Python loops of `float(tensor[i])` per image where one
+- [ ] **`tagger.py:333`** runs two Python loops of `float(tensor[i])` per image where one
   `.tolist()`
       would do, then walks `tag_entries` five more times for category filters.
-- [ ] **`downloads.py` rebuilds the catalog 4+ times per invocation** (`expand` calls `by_id` and
-      `by_pack`, each rebuilding; `main` calls all three again), each running a disk probe.
-- [ ] **`exclude.py` rewrites the whole ledger per image.** `main:513` loops over `args.rels`
-      calling `exclude_one`, so N exclusions cost N full reads and N full JSON rewrites. Add
+- [ ] **`downloads/` rebuilds the catalog 4+ times per invocation** (`_catalog.expand` calls
+      `by_id` and `by_pack`, each rebuilding; `_cli.main` calls all three again), each running a
+      disk probe.
+- [ ] **`exclude/` rewrites the whole ledger per image.** `_cli.main:110` loops over `args.rels`
+      calling `_move.exclude_one`, so N exclusions cost N full reads and N full JSON rewrites. Add
       `exclude_many`.
 - [ ] **`grouping/groups.py:112` builds the full n×n CLS similarity unchunked**, while the pooling
       directly above it is chunked at 256. A 5k-image bucket is 25M floats plus a 2×12.5M index
@@ -183,22 +80,24 @@ split a *tagger's* comma-joined output rather than a caption.
       `ocr/engine.py:227` a chunk earlier. `read_iter` could yield the pixels it already has.
 - [ ] **`ocr/sfx.py:338` re-runs `apply_chat_template` per batch** and redefines `_Greedy` per call.
       Both belong in `load`.
-- [ ] **Per-request settings re-reads in the GUI.** `roots_for()` ends up parsing
+- [ ] **Per-request settings re-reads in the GUI.** `_context.roots_for()` ends up parsing
       `.anime_tools_gui.json` five times per request, because `reachable` → `dataset_bases` →
-      `load_settings()` runs once per root, on top of the caller's own read.
+      `load_settings()` runs once per root, on top of the caller's own read. `RunContext` closed the
+      *caller's* half of this (one read per request instead of one per handler that wanted a value);
+      the chain inside `resolve_roots` is untouched and is where the five come from.
 
 ## Cleanup
 
 - [ ] **Dead code, confirmed by grep:** `captions/correction.py:434 correct_many` and
-      `grouping/features.py:57 caption_text` have zero references; `exclude.py:229 is_excluded`,
+      `grouping/features.py:57 caption_text` have zero references; `exclude/_ledger.py:181 is_excluded`,
       `masking/_sam3.py:183 add_prompt_embed_arg` and `masking/cli/merge_masks.py:11 DEFAULT_INPUTS`
       are referenced only by their own export line. `frontend/src/components/Report.tsx` (97 lines)
       is imported nowhere. `ocr/engine.py crop_quad`, `ocr/sfx.py read_raw`/`read`/`read_boxes`, and
       `dbv4_backend.py:266 normalization` have no callers.
-- [ ] **Stale counts, confirmed.** Three files — root `CLAUDE.md:110`, `stages/CLAUDE.md:41`,
+- [ ] **Stale counts, confirmed.** Three files — root `CLAUDE.md:110`, `stages/CLAUDE.md:68`,
       `gui/CLAUDE.md:15` — say the registry lists "eleven" stages. It has listed ten since
       `9413178` removed the ComicTextDetector text-mask stage, a commit that *did* edit
-      `CLAUDE.md` and still missed all three copies of the number. Likewise `stages/CLAUDE.md:36`
+      `CLAUDE.md` and still missed all three copies of the number. Likewise `stages/CLAUDE.md:63`
       says `__init__` exposes "fifteen names" where `__all__` has 17, and `README.md:106` plus
       `frontend/CLAUDE.md:47` say "three Settings dialogs" where `frontend/src/config.ts:12` has
       four — `frontend/CLAUDE.md` then contradicts itself 120 lines later.
@@ -224,10 +123,10 @@ split a *tagger's* comma-joined output rather than a caption.
       `chdir`, while `home(tmp_path, monkeypatch)` is redefined in six files, a `TestClient` fixture
       in five, and a `_png` writer in five more under four different signatures. Promoting `home`,
       `client` and a `png()` factory would cut roughly 150 lines.
-- [ ] **Two tests assert on source text rather than behaviour** — `tests/test_ocr.py:260` greps the
-      runner with `inspect.getsource` for the exact call string `_vl_engine(req, engine,
-      resized_dir, device)`, and `tests/test_registry_requests.py:459` rglobs the package for
-      `"--device"`. Both break on any refactor that preserves behaviour.
+- [ ] **One test asserts on source text rather than behaviour** — `test_registry_requests.py:527`
+      rglobs the package for the literal `"--device"`, so it breaks on any refactor that preserves
+      behaviour. The `inspect.getsource` grep in `test_ocr.py` was the other one; it went with the
+      split (it was reading `stages/run.py`) and now stubs both model loads instead.
 - [ ] **Two tests write outside `tmp_path`** — `tests/test_gui.py:556` (cleaned up in a `finally`)
       and `tests/test_gui_dataset.py:461` (not cleaned, leaking into the pytest basetemp parent).
 
@@ -316,8 +215,8 @@ These came out of the same review but were not each checked by hand.
 - `grouping/cli/match_decensored.py:130` stamps a whole directory with `(max mtime, count)`, so an
   in-place edit that moves neither is a silent stale cache hit. The per-image stamp in
   `features.py:137` is the correct one.
-- `gui/server.py:419` lets `PUT /api/settings` write any key, including the `update_check` cache
-  that only the server is supposed to own.
+- `gui/routes/settings.py::put_settings` lets `PUT /api/settings` write any key, including the
+  `update_check` cache that only the server is supposed to own.
 - `JobManager.jobs` grows without bound, holding up to 20,000 lines per job even though the log is
   already on disk.
 - `runner.ts:131` fires `finished()` and `reloadTouched()` concurrently and both append a
@@ -369,18 +268,15 @@ Worth keeping in mind before any refactor moves these.
 
 ## Suggested order
 
-Grouped so that each block is one coherent sitting. The original blocks 1 (correctness), 2
-(durability) and 3 (close the pairs) are all done — see "Landed" below — so the numbering starts
-where the work does.
+Grouped so that each block is one coherent sitting. The four blocks that are done — correctness,
+durability, closing the pairs, splitting the big files — are under "Landed" below, so this is only
+what is left.
 
-1. ~~**Split the big files.**~~ Done 2026-09-12 — all five, struck above.
-2. **Make the guards real.** Move the ruff rules into `pyproject.toml` and let `ruff check` gate
+1. **Make the guards real.** Move the ruff rules into `pyproject.toml` and let `ruff check` gate
    CI; add a Windows job; generate or test `types.ts` against `schema()`; test the documented
    counts against `len(STAGES)` and `len(__all__)`.
-3. **Cleanup.** Share the test fixtures, delete the dead symbols, fix the stale prose and the
+2. **Cleanup.** Share the test fixtures, delete the dead symbols, fix the stale prose and the
    README's four wrong claims in one sweep.
-
-The remaining order is therefore blocks 2 and 3.
 
 Two items sit outside that order because they are one-line changes with outsized downside: move
 `ANIME_TOOLS_HOME` out of the checkout before the next `git clean`, and rename the guidebooks to
@@ -391,10 +287,62 @@ now that the second implementations are gone.
 
 ## Landed, and what the trainer owes
 
-### Block 3 — the pairs, 2026-09-12
+Each of these was a block of items in the sections above and has been removed from them. What they
+were, so a reader of the git history can find them:
 
-All four items of "Close the pairs" are struck above with what each one actually took. Two new
-leaves came out of it — `anime_tools/stages/_options.py` (every default a stage request field
+### The five big files, 2026-09-12 (`0.7.0`)
+
+No behaviour changed — the CLIs, every flag, the wire schema and the reports are what they were —
+so this was entirely about where a future change lands.
+
+- **`stages/run.py` (919 lines) is gone.** Each `run_<stage>(req)` lives in its stage's own module,
+  which `registry.py` already addressed as `module:function` and resolves lazily. The two pieces
+  that were orchestration rather than runner moved with it: `position_captions.summarize()` holds
+  the report's counts (the runner keeps the header and the knobs, which are the request's to
+  report), and `multiview_audit.run_audit_phase` sits beside `promotions`, its only caller. Two
+  library functions took the aliases `run.py` already gave them so a runner could keep its name:
+  `stages/ocr.py::run_ocr` → `read_tree`, `export_workspace.py::run_export` → `publish`.
+  `cli/_args.py` and `cli/_report.py` became `stages/_progress.py` and `stages/_report.py`, so the
+  library half no longer depends on its own CLI package.
+
+- **`gui/server.py` 1129 → 207.** The API is `gui/routes/` (`settings`, `jobs`, `dataset`,
+  `desktop`), each an `APIRouter` reading its state off `request.app.state` — `watch` included,
+  which `/api/alive` used to close over as a `create_app` argument. `launch.py` took `main`,
+  `pick_port` and the Chromium app window. The settings-derived values are `gui/_context.py`'s
+  `RunContext`, one settings read per request, where `bindings()` is the four keyword arguments
+  `resolved_schema` / `build_argv` were handed separately and `scoped_to(rel)` is the per-image
+  narrowing. The free `roots_for` / `report_root` / `mask_root` stay, because Settings'
+  placeholders are those same values computed against *empty* settings.
+
+- **`tagger/tagger.py` 684 → 496**, leaving the model, with two torch-free leaves beside it:
+  `tagger/schema.py` (what a tag means to a checkpoint — the four tuples, `TagEntry`,
+  `dedupe_count_tags`; every value of it baked into `vocab.json` at build time) and
+  `tagger/fetch.py` (getting one onto disk, with `is_dbv4_dir` public, which is what the ComfyUI
+  node was apologising for in a comment). `tagger.py` re-exports both, but the vocab build, both
+  `cli/autotag*` entry points, the node and `stages/_models.py` were repointed at the leaf, since
+  not importing torch to read a tuple is the whole point; `test_boundary` pins all three.
+
+- **`downloads.py` (624) and `exclude.py` (540) are packages** whose `__init__.py` re-exports the
+  surface they had, so every `from anime_tools.downloads import …` is unchanged and `python -m`
+  reaches both (`_cli.py` behind a two-line `__main__.py`, so importing the package runs nothing).
+  `downloads/`: `_locations.py` (where each weight lives), `_assets.py` (`Asset` / `Pack` + the
+  fetch engine), `_catalog.py` (the rows and the lookups). `exclude/`: `_ledger.py` (the state and
+  `rel_key`), `_artifacts.py` (what an image is made of), `_move.py` (the engine).
+
+One real bug fell out: `test_the_tagger_loads_once_per_process` patched
+`tagger.tagger.ensure_tagger_checkpoint` while `_models.py` imports it from `fetch`, so the test
+was doing a live hub fetch — 10.7 s to 1.0 s once it patched the owning module. Two tests were
+rewritten rather than repointed, both named under *Cleanup* as source-text assertions: the OCR
+device test (an `inspect.getsource` grep for `_vl_engine(req, engine, resized_dir, device)`, now
+stubbing both loads to assert one probe and one device reaching each) and the listing-cap test,
+which read `app.routes` — this FastAPI does not flatten an included router.
+
+`CONTRACT_VERSION` stays at 2: no name in `contract.py` moved and no stage flag changed.
+
+### Closing the pairs, 2026-09-12
+
+Two new leaves came out of it — `anime_tools/stages/_options.py` (every default a stage request
+field
 names) and `anime_tools/masking/_prompts.py` (what a SAM3 prompt is, for both packages) — plus
 five regression tests: the import-light measurement and the re-export identity
 (`test_registry_requests`), the one-way masking seam (`test_boundary`), the stem collision and the
@@ -402,11 +350,7 @@ shared `path_pattern` (`test_grouping_features`), and the `Arg`-driven coercion 
 `Field`-is-its-`Arg` shape (`test_gui`). Nothing in `frontend/` moved: the schema the browser
 receives is byte-identical.
 
-### Blocks 1 and 2 — the confirmed defects, 2026-09-12
-
-The twelve items that were under "Confirmed defects" — three P0, nine P1 — were fixed on
-2026-09-12 and removed from this file. What they were, so a reader of the git history can find
-them:
+### The confirmed defects, 2026-09-12
 
 **P0.** The caption corrector round-tripping its tag bag through a comma split; `correct` writing
 with no dry run and no report (so no Undo); a custom clause vocabulary never reaching the
@@ -430,7 +374,7 @@ Three of those fixes cross the seam, so they are not done until the trainer move
 is blocking and the trainer's tree is already red against its own pinned dependency.
 
 - [ ] **`from anime_tools.stages import run` no longer resolves.** `stages/run.py` is gone
-      (block 1, 2026-09-12); each runner lives in its stage's module and `stages/__init__.py`
+      (the split, 2026-09-12); each runner lives in its stage's module and `stages/__init__.py`
       re-exports it, so the trainer's *production* path is untouched —
       `preprocess.py` does `from anime_tools.stages import release_models` and `_common.py` goes
       through `Stage.runner()`, both still correct. What breaks is one test:
