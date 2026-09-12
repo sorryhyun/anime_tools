@@ -12,7 +12,7 @@ from anime_tools.stages.requests import AuditRequest
 # The writable set is the verdict/confidence gate, not a row ``status``, so
 # ``row_filter`` is left open here and closed over the gate at replay time.
 REPLAY_SPEC = REPLAY_SHAPES["audit"]
-"""The shape ``stages.run`` replays this stage's report through — the same
+"""The shape ``run_audit`` replays this stage's report through — the same
 object ``gui/proposals.py`` reads from ``contract.REPLAY_SHAPES``."""
 
 DEFAULT_REPORT_DIR = AuditRequest.report_dir
@@ -23,7 +23,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> None:
-    from anime_tools.stages.run import run_audit
+    from anime_tools.stages.multiview_audit import run_audit
 
     try:
         run_audit(AuditRequest.from_argv(build_parser(), argv))

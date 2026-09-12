@@ -156,13 +156,10 @@ def test_the_listing_default_is_the_cap_not_a_smaller_number():
     import inspect
 
     from anime_tools.gui import dataset as D
-    from anime_tools.gui import server as SRV
+    from anime_tools.gui.routes.dataset import dataset_list
 
     assert inspect.signature(D.list_items).parameters["limit"].default == D.MAX_ITEMS
-    route = next(
-        r for r in SRV.create_app().routes if getattr(r, "path", "") == "/api/dataset"
-    )
-    assert inspect.signature(route.endpoint).parameters["limit"].default == D.MAX_ITEMS
+    assert inspect.signature(dataset_list).parameters["limit"].default == D.MAX_ITEMS
 
 
 def test_missing_source_root_is_reported_not_raised(client, home):
@@ -296,7 +293,7 @@ def test_no_resize_floor_means_no_verdict(client, home):
     """``min_pixels`` 0 turns the floor off, so the verdict is ``None``, not
     ``False``."""
     from anime_tools.gui import dataset as D
-    from anime_tools.gui.server import roots_for
+    from anime_tools.gui._context import roots_for
 
     it = D.item_detail(roots_for({}), "a.png", min_pixels=0)
     assert it["image"]["pixels"] == 64 and it["image"]["too_small"] is None
@@ -305,7 +302,7 @@ def test_no_resize_floor_means_no_verdict(client, home):
 def test_the_resize_floor_comes_from_the_preprocess_settings():
     """The item route's floor is the Settings *Preprocess* value, falling back to
     the stage's own constant."""
-    from anime_tools.gui.server import preprocess_min_pixels
+    from anime_tools.gui._context import preprocess_min_pixels
     from anime_tools.gui.stages import PREPROCESS_SETTINGS_KEY
     from anime_tools.stages.resize import DEFAULT_MIN_PIXELS
 
@@ -685,21 +682,21 @@ def test_the_mask_root_sits_beside_the_masks_root_by_default(client):
 def test_the_mask_root_setting_moves_both_generators_and_the_merge(client):
     """One value, three CLIs: the two ``--mask-dir`` defaults and the merge's two
     inputs all hang off it, each keeping its own tail."""
-    from anime_tools.gui import server as SV
     from anime_tools.gui import stages as S
+    from anime_tools.gui._context import mask_root, root_paths, roots_for
 
     c, _ = client
     c.put("/api/settings", json={"stage_defaults": {"mask_root": "elsewhere"}})
     settings = c.get("/api/settings").json()
-    roots = SV.roots_for(settings)
-    assert SV.mask_root(settings, roots) == "elsewhere"
+    roots = roots_for(settings)
+    assert mask_root(settings, roots) == "elsewhere"
 
     got = {}
     for sid in ("masks_sam", "masks_merge"):
         argv = S.build_argv(
             S.schema(S.BY_ID[sid]),
             {},
-            roots=SV.root_paths(roots),
+            roots=root_paths(roots),
             mask_root="elsewhere",
         )
         got[sid] = [a for a in argv if a.startswith("elsewhere")]

@@ -1,6 +1,6 @@
 ---
 name: model-catalog
-description: The model catalog (anime_tools/downloads.py) — every checkpoint's repo, files,
+description: The model catalog (anime_tools/downloads/) — every checkpoint's repo, files,
 destination and installed probe; derived rows that build (the English tag CSV); the rule
 that loaders import their paths from here. Load before adding a weight, moving one, changing a
 loader's default path, or touching the GUI Models pane.
@@ -8,7 +8,13 @@ loader's default path, or touching the GUI Models pane.
 
 # The model catalog
 
-`anime_tools/downloads.py` (torch-free) is one `Asset` per checkpoint: the tagger + gated dbv4
+The package is four halves: `_locations.py` (where each weight lives — the repo, filename and
+destination constants the loaders import), `_assets.py` (`Asset` / `Pack` and the fetch engine),
+`_catalog.py` (the rows, plus `by_id` / `by_pack` / `expand`) and `_cli.py`
+(`python -m anime_tools.downloads`). `__init__.py` re-exports the public surface, so every existing
+`from anime_tools.downloads import …` is unchanged.
+
+`anime_tools/downloads/` (torch-free) is one `Asset` per checkpoint: the tagger + gated dbv4
 backbone, SAM3, PE-Spatial,
 the SAM3 subject soft prompt, the OCR trio (AnimeText detector, PaddleOCR-VL-1.6 base, the manga
 SFX reader), the Danbooru tag KB and its English build. Each row carries repo, files, destination,

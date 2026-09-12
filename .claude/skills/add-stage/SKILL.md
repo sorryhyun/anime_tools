@@ -43,11 +43,11 @@ group=…, gate=…, choices=…)`; the class docstring is the `--help` descript
 
 ## 2. The runner and the shell
 
-`run_<stage>(req)` in `stages/run.py` (or the package's own module for masking/grouping):
+`run_<stage>(req)` in the stage's own module (`stages/autotag.py`, `masking/sam.py`, …):
 preflight, model load through `stages/_models.py` (cached per process; `release_models()`
-empties it), the library call, `report.json` via `cli/_report.py`, progress through
-`cli/_args.py::make_progress` (the `  [done/total] detail` line is the GUI's bar and the daemon's
-`progress.jsonl`), and the printed epilogue. Dry-run by default; `--apply` writes. A
+empties it), the library call, `report.json` via `stages/_report.py`, progress through
+`stages/_progress.py::make_progress` (the `  [done/total] detail` line is the GUI's bar and the
+daemon's `progress.jsonl`), and the printed epilogue. Dry-run by default; `--apply` writes. A
 `phase("…")` bracket from `_progress.py` around a model load keeps the daemon's stall watchdog
 quiet.
 

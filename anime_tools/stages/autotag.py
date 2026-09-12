@@ -29,23 +29,34 @@ Three modes:
 **Dry-run is the default** (the caller passes ``apply``). An applied run must be
 followed by ``make preprocess-te``, since caption edits do not invalidate the TE
 caches.
+
+:func:`run_autotag` is the stage runner over
+:class:`~anime_tools.stages.requests.AutotagRequest`; ``cli/autotag_captions.py``
+is the shell over it.
 """
 
 from __future__ import annotations
 
 from collections import Counter
 from collections.abc import Callable, Mapping
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from PIL import Image
 
+from anime_tools._env import resolve_path
 from anime_tools.captions.position_clauses import compose_caption, parse_caption
 from anime_tools.captions.taxonomy import RATING_LITERALS, normalize_tag
 from anime_tools.contract import AUTOTAG_MODES
 
 from ._caption_io import read_caption, write_caption
+from ._progress import make_progress
+from ._report import print_dry_run_footer, stage_report_header, write_stage_report
 from ._walk_captions import resolve_caption
+
+if TYPE_CHECKING:
+    from anime_tools.stages.requests import AutotagRequest
 
 MODES = AUTOTAG_MODES
 
@@ -263,3 +274,65 @@ def build_tag_fn(
         "tagger_dir": str(resolved),
         "device": str(tagger.device),
     }
+
+
+TE_NOTE = "captions changed — run `make preprocess-te` to re-encode."
+
+
+def run_autotag(req: AutotagRequest):
+    """Tag the resized tree and propose (with ``apply``, write) the revised
+    caption. Returns ``(rows, stats)`` from the tagging pass.
+
+    No ``--from_report``: the pass is one forward per image, so re-running it is
+    cheaper than the machinery to skip it. The report it leaves is still what
+    the GUI's Undo reads (``contract.REPLAY_SHAPES["autotag"]``).
+    """
+    resized_dir = resolve_path(req.dst)
+    source_dir = resolve_path(req.src)
+    report_dir = resolve_path(req.report_dir)
+
+    tag_fn, info = build_tag_fn(
+        req.tagger_dir, device=req.device, min_confidence=req.min_confidence
+    )
+    rows, stats = run_autotag_captions(
+        resized_dir=resized_dir,
+        source_dir=source_dir,
+        tag_fn=tag_fn,
+        options=AutotagOptions(mode=req.mode, min_confidence=req.min_confidence),
+        path_pattern=req.path_pattern,
+        apply=req.apply,
+        progress=make_progress(50, first=True),
+    )
+
+    report_path = write_stage_report(
+        report_dir,
+        {
+            "mode": req.mode,
+            "min_confidence": req.min_confidence,
+            **stage_report_header(
+                src=source_dir,
+                dst=resized_dir,
+                path_pattern=req.path_pattern,
+                apply=req.apply,
+            ),
+            **dict(info),
+            "stats": {
+                "seen": stats.seen,
+                "candidates": stats.candidates,
+                "proposed": stats.proposed,
+                "written": stats.written,
+                "skipped": dict(stats.skipped),
+            },
+            "rows": [asdict(r) for r in rows],
+        },
+    )
+
+    print(
+        f"\nseen={stats.seen} candidates={stats.candidates} "
+        f"proposed={stats.proposed} written={stats.written}"
+    )
+    for reason, count in stats.skipped.most_common():
+        print(f"  skip:{reason} {count}")
+    print(f"report: {report_path}")
+    print_dry_run_footer(req.apply, TE_NOTE if stats.written else None)
+    return rows, stats

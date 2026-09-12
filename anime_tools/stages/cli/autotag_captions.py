@@ -25,7 +25,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> None:
-    from anime_tools.stages.run import run_autotag
+    from anime_tools.stages.autotag import run_autotag
 
     try:
         run_autotag(AutotagRequest.from_argv(build_parser(), argv))

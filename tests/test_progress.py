@@ -11,7 +11,7 @@ from pathlib import Path
 import pytest
 
 from anime_tools import _progress
-from anime_tools.stages.cli._args import make_progress
+from anime_tools.stages._progress import make_progress
 
 
 def lines(job_dir: Path) -> list[dict]:

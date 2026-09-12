@@ -429,7 +429,7 @@ def test_undo_dispatches_an_export_report_to_the_reverter(home, roots, tmp_path)
     branches to `revert_export`."""
     from anime_tools._json import write_json
     from anime_tools.gui import proposals as P
-    from anime_tools.stages.export_workspace import ExportPaths, run_export
+    from anime_tools.stages.export_workspace import ExportPaths, publish
 
     out = home / "post_image_dataset"
     paths = ExportPaths(
@@ -440,7 +440,7 @@ def test_undo_dispatches_an_export_report_to_the_reverter(home, roots, tmp_path)
         src=home / "image_dataset",
         out=out,
     )
-    rows, _ = run_export(paths, apply=True)
+    rows, _ = publish(paths, apply=True)
     assert (out / "resized" / "a.png").is_file()
 
     report = home / "export_apply.json"

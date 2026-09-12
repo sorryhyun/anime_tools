@@ -406,8 +406,8 @@ def test_skip_leaves_the_named_images_out_before_any_header_is_read(tmp_path):
 
 
 def test_skip_request_round_trips_and_reaches_the_runner(monkeypatch, tmp_path):
-    from anime_tools.stages import run as run_mod
     from anime_tools.stages.requests import ResizeRequest
+    from anime_tools.stages.resize import run_resize
 
     req = ResizeRequest(
         src=str(tmp_path), dst=str(tmp_path / "out"), skip=("a/b.png", "c.png")
@@ -429,7 +429,7 @@ def test_skip_request_round_trips_and_reaches_the_runner(monkeypatch, tmp_path):
         return ResizeStats()
 
     monkeypatch.setattr("anime_tools.stages.resize.run_resize_images", fake_run)
-    run_mod.run_resize(req)
+    run_resize(req)
     assert seen["skip"] == ("a/b.png", "c.png")
 
 

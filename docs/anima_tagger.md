@@ -19,7 +19,7 @@ missing; the backbone repo follows the checkpoint's
 `config.json["dbv4"]["repo"]`. `DEFAULT_TAGGER_DIR` / `TAGGER_HF_SUBFOLDER` in
 the torch-free `anime_tools/tagger/dbv4_meta.py` are the single source of truth
 for repo and file set (`tagger.py` re-exports them; the ComfyUI node and
-`anime_tools/downloads.py` — the catalog behind the GUI's Models rows — track
+`anime_tools/downloads/` — the catalog behind the GUI's Models rows — track
 them). `python -m anime_tools.downloads tagger tagger_backbone`, what
 ⚙ Settings → Models runs, pre-fetches both halves.
 
@@ -68,7 +68,7 @@ everything else.
 ### Rating band
 
 Anima's rating band is 4-class — `safe, sensitive, nsfw, explicit`.
-`anime_tools.tagger.tagger.RATINGS` fixes the class order (it is the rating
+`anime_tools.tagger.schema.RATINGS` fixes the class order (it is the rating
 head's class index); `anime_tools.captions.taxonomy.CAPTION_RATINGS` is the
 unordered set the caption-side consumers test against. Danbooru's own literals
 are accepted as aliases and folded onto the band at vocab-build time
@@ -84,7 +84,7 @@ manifest, so the band is a property of the checkpoint, not a loader constant.
 | File | Role |
 |---|---|
 | `tagger.py` | `AnimaTagger` — public inference class (`predict` / `predict_caption`), plus `ensure_tagger_checkpoint` / `ensure_tagger_backbone`. Implements every post-prediction refinement (group argmax, character floor, original-fallback, girls-count cap, top-1 artist/copyright). |
-| `dbv4_meta.py` | Torch-free facts about the backbone and our checkpoint: repo ids, required/optional file sets, `DEFAULT_TAGGER_DIR`. Shared by the loader, the ComfyUI node and `downloads.py`. |
+| `dbv4_meta.py` | Torch-free facts about the backbone and our checkpoint: repo ids, required/optional file sets, `DEFAULT_TAGGER_DIR`. Shared by the loader, the ComfyUI node and `downloads/`. |
 | `dbv4_backend.py` | Backbone loader + `align_vocab` (the single vocab join point) + `SidecarHead` (our linear head over the backbone's hidden state) + `default_dtype` (bf16 on CUDA, fp32 elsewhere — MPS included). |
 | `feature_cache.py` | The dbv4 hidden-state cache: `dbv4_cache_path` / `dbv4_cache_stems` / `load_dbv4_cache` (the stem list rides in the safetensors metadata — a cache built for another manifest is misaligned row-for-row, so every reader checks it) + `multi_hot_from_manifest`. |
 | `data.py` | `TaggerCheckpoint.from_dir(path, require=…, backend=…)` — the one read of a checkpoint dir (`config.json` / `vocab.json` / `dataset.json`, the shared "run `--mode build_vocab` first" exit, `idx_to_name`) — and `TaggerManifest`. |

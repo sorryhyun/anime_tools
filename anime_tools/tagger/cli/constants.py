@@ -1,8 +1,8 @@
 """Caption-source helpers used by the tagger CLI build/eval modes.
 
 The tag-taxonomy / caption-format constants themselves (``SLOT_ORDER``,
-``TAG_TYPE_NAMES``, ``RATINGS``, ``PEOPLE_COUNT_LABELS``) live in
-``anime_tools/tagger/tagger.py``.
+``TAG_TYPE_NAMES``, ``RATINGS``, ``PEOPLE_COUNT_LABELS``) live in the torch-free
+``anime_tools/tagger/schema.py``.
 """
 
 from __future__ import annotations

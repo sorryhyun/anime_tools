@@ -12,9 +12,9 @@ from PIL import Image
 from anime_tools.stages.export_workspace import (
     ExportPaths,
     plan_export,
+    publish,
     revert_export,
     rows_from_report,
-    run_export,
 )
 from anime_tools.stages.requests import ExportRequest
 
@@ -102,7 +102,7 @@ def test_an_image_with_only_a_master_publishes_the_master(ws):
     (caption,) = [r for r in _by(rows, "caption") if r.rel == "sub/b.png"]
     assert Path(caption.src) == ws.src / "sub" / "b.txt"
     assert Path(caption.dst) == ws.out / "resized" / "sub" / "b.txt"
-    run_export(ws, apply=True)
+    publish(ws, apply=True)
     text = (ws.out / "resized" / "sub" / "b.txt").read_text(encoding="utf-8")
     assert text == "1boy, solo"
 
@@ -154,13 +154,13 @@ def test_the_plan_is_the_whole_workspace(ws):
 
 
 def test_a_dry_run_writes_nothing(ws):
-    rows, stats = run_export(ws, apply=False)
+    rows, stats = publish(ws, apply=False)
     assert not ws.out.exists()
     assert stats.created == 0 and all(r.status.startswith("would-") for r in rows)
 
 
 def test_apply_publishes_the_contract_paths(ws):
-    _, stats = run_export(ws, apply=True)
+    _, stats = publish(ws, apply=True)
     assert (ws.out / "resized" / "a.png").is_file()
     assert (
         (ws.out / "resized" / "a.txt").read_text(encoding="utf-8").startswith("1girl")
@@ -177,16 +177,16 @@ def test_apply_publishes_the_contract_paths(ws):
 
 def test_exporting_twice_publishes_nothing_the_second_time(ws):
     """`copy2` preserves mtime, so an unchanged tree compares equal next time."""
-    run_export(ws, apply=True)
-    rows, stats = run_export(ws, apply=True)
+    publish(ws, apply=True)
+    rows, stats = publish(ws, apply=True)
     assert stats.created == 0 and stats.overwrote == 0
     assert stats.skipped["identical"] == len(rows)
 
 
 def test_a_changed_caption_republishes_without_touching_the_pixels(ws):
-    run_export(ws, apply=True)
+    publish(ws, apply=True)
     _txt(ws.resized / "a.txt", "1girl, solo, night")
-    rows, stats = run_export(ws, apply=True)
+    rows, stats = publish(ws, apply=True)
     assert stats.overwrote == 1 and stats.created == 0
     (caption,) = [r for r in rows if r.status == "overwrote"]
     assert caption.kind == "caption"
@@ -200,7 +200,7 @@ def test_a_destination_edited_since_the_plan_is_decided_again_at_write_time(ws):
     (image,) = [r for r in _by(rows, "image") if r.rel == "a.png"]
     assert image.status == "would-create"
     _png(ws.out / "resized" / "a.png", 99)
-    _, stats = run_export(ws, apply=True)
+    _, stats = publish(ws, apply=True)
     assert stats.overwrote == 2  # the master, and now the pre-existing image
 
 
@@ -221,7 +221,7 @@ def test_an_empty_workspace_yields_no_rows(tmp_path):
 
 
 def test_revert_removes_what_the_export_created(ws):
-    rows, _ = run_export(ws, apply=True)
+    rows, _ = publish(ws, apply=True)
     back, stats = revert_export(rows, apply=True)
     assert not (ws.out / "resized" / "a.png").exists()
     assert not (ws.out / "captions" / "caption_index.json").exists()
@@ -230,7 +230,7 @@ def test_revert_removes_what_the_export_created(ws):
 
 
 def test_revert_puts_an_overwritten_master_back(ws):
-    rows, _ = run_export(ws, apply=True)
+    rows, _ = publish(ws, apply=True)
     assert (ws.src / "a.txt").read_text(encoding="utf-8") == "1girl, solo, revised"
     _, stats = revert_export(rows, apply=True)
     assert (ws.src / "a.txt").read_text(encoding="utf-8") == "1girl, solo"
@@ -238,7 +238,7 @@ def test_revert_puts_an_overwritten_master_back(ws):
 
 
 def test_revert_leaves_a_file_edited_since_the_export_alone(ws):
-    rows, _ = run_export(ws, apply=True)
+    rows, _ = publish(ws, apply=True)
     _txt(ws.src / "a.txt", "hand-edited after the export")
     _txt(ws.out / "resized" / "a.txt", "also hand-edited")
     _, stats = revert_export(rows, apply=True)
@@ -252,14 +252,14 @@ def test_revert_leaves_a_file_edited_since_the_export_alone(ws):
 def test_revert_cannot_put_back_overwritten_pixels(ws):
     """No pixel snapshot is kept; re-exporting is the way back."""
     _png(ws.out / "resized" / "a.png", 99)
-    rows, _ = run_export(ws, apply=True)
+    rows, _ = publish(ws, apply=True)
     _, stats = revert_export(rows, apply=True)
     assert stats.skipped["not-undoable"] == 1
     assert (ws.out / "resized" / "a.png").is_file()
 
 
 def test_revert_of_a_dry_run_has_nothing_to_undo(ws):
-    rows, _ = run_export(ws, apply=False)
+    rows, _ = publish(ws, apply=False)
     _, stats = revert_export(rows, apply=True)
     assert stats.removed == 0 and stats.restored == 0
     assert stats.skipped["nothing-to-undo"] == len(rows)
@@ -267,7 +267,7 @@ def test_revert_of_a_dry_run_has_nothing_to_undo(ws):
 
 def test_rows_survive_the_round_trip_through_a_report(ws):
     """Undo reads rows back out of the report's JSON, `before` included."""
-    rows, _ = run_export(ws, apply=True)
+    rows, _ = publish(ws, apply=True)
     report = {"rows": [r.to_dict() for r in rows]}
     again = rows_from_report(json.loads(json.dumps(report)))
     assert [r.to_dict() for r in again] == [r.to_dict() for r in rows]
@@ -297,7 +297,7 @@ def ocr(ws, tmp_path):
 
 
 def test_combine_attaches_the_clause_to_the_caption_and_every_variant(ocr):
-    rows, stats = run_export(ocr, apply=True)
+    rows, stats = publish(ocr, apply=True)
     caption = (ocr.out / "resized" / "a.txt").read_text(encoding="utf-8")
     assert caption == f"1girl, solo. On the left, cat. {JA}"
     variants = (ocr.out / "resized" / "a.variants.txt").read_text(encoding="utf-8")
@@ -312,7 +312,7 @@ def test_combine_attaches_the_clause_to_the_caption_and_every_variant(ocr):
 
 def test_combine_leaves_the_master_and_an_image_with_no_sidecar_alone(ocr):
     _txt(ocr.resized / "sub" / "b.txt", "2girls")
-    rows, stats = run_export(ocr, apply=True)
+    rows, stats = publish(ocr, apply=True)
     assert (ocr.src / "a.txt").read_text(encoding="utf-8") == "1girl, solo, revised"
     assert (ocr.out / "resized" / "sub" / "b.txt").read_text(
         encoding="utf-8"
@@ -323,15 +323,15 @@ def test_combine_leaves_the_master_and_an_image_with_no_sidecar_alone(ocr):
 
 
 def test_combining_twice_publishes_nothing_the_second_time(ocr):
-    run_export(ocr, apply=True)
-    rows, stats = run_export(ocr, apply=True)
+    publish(ocr, apply=True)
+    rows, stats = publish(ocr, apply=True)
     assert stats.created == 0 and stats.overwrote == 0 and stats.combined == 0
     assert stats.skipped["identical"] == len(rows)
 
 
 def test_exporting_without_the_combine_takes_the_clause_back(ocr, ws):
-    run_export(ocr, apply=True)
-    rows, stats = run_export(ws, apply=True)
+    publish(ocr, apply=True)
+    rows, stats = publish(ws, apply=True)
     assert stats.overwrote == 2
     assert {r.kind for r in rows if r.status == "overwrote"} == {"caption", "variants"}
     assert (ws.out / "resized" / "a.txt").read_text(encoding="utf-8").endswith("cat.")
@@ -351,7 +351,7 @@ def test_a_sidecar_gone_since_the_plan_publishes_the_caption_bare(ocr):
 
 
 def test_a_combined_row_survives_the_report_and_reverts(ocr):
-    rows, _ = run_export(ocr, apply=True)
+    rows, _ = publish(ocr, apply=True)
     again = rows_from_report({"rows": [r.to_dict() for r in rows]})
     assert [(r.ocr, r.text) for r in again] == [(r.ocr, r.text) for r in rows]
     assert sum(r.combined for r in again) == 2
@@ -365,7 +365,7 @@ def test_revert_checks_a_combined_row_against_what_it_recorded(ocr):
     say, but the destination still holds what was published, so it reverts."""
     from anime_tools.captions.ocr_sidecar import OcrLine, write_ocr_for
 
-    rows, _ = run_export(ocr, apply=True)
+    rows, _ = publish(ocr, apply=True)
     write_ocr_for(
         ocr.ocr, Path("a.txt"), [OcrLine(seq=1, box=(0, 0, 40, 40), score=1, text="別")]
     )
@@ -418,5 +418,5 @@ def test_a_gui_master_edit_is_what_fills_the_overlay(tmp_path):
     assert Path(master.dst) == paths.src / "a.txt"
     assert master.status == "would-overwrite"
 
-    run_export(paths, apply=True)
+    publish(paths, apply=True)
     assert (paths.src / "a.txt").read_text(encoding="utf-8") == "1girl, solo, smile"

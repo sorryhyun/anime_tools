@@ -62,7 +62,7 @@ relative path, and the names ``gui.stages.ROOT_FIELDS`` binds stage flags to;
 OUTPUT_ROOTS = frozenset({"master", "dst", "masks"})
 """The roots a stage run may create on the way past — not ``src`` (input) and
 not ``out`` (Export-only, and it mkdirs its own destination).
-``gui.server.make_output_dirs`` intersects a stage's bound roots with this.
+``gui._context.make_output_dirs`` intersects a stage's bound roots with this.
 """
 
 EXPORT_ROOTS = frozenset({"out"})
@@ -72,7 +72,7 @@ EXPORT_ROOTS = frozenset({"out"})
 REPORTS_SUBDIR = "captions"
 """The workspace subdirectory the stage reports land in, as the tail of every
 CLI's ``--report_dir`` default (``captions/autotag``, ``captions/position``, …).
-``gui.server.report_root`` derives the root from the parent of ``dst``."""
+``gui._context.report_root`` derives the root from the parent of ``dst``."""
 
 RESIZED = DEFAULT_ROOTS["dst"]
 MASKS = DEFAULT_ROOTS["masks"]

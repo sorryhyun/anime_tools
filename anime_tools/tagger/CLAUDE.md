@@ -5,6 +5,21 @@ caformer. Docs: `docs/anima_tagger.md` (architecture, training pipeline, calibra
 `.env` knobs). The batch stage over a dataset is `stages/autotag.py`; `cli/autotag.py` here is
 single-image/stdout only.
 
+## The three torch-free leaves
+
+`tagger.py` is the model and nothing else. What needs no torch sits beside it and is re-exported
+from it, so the vocab build and the ComfyUI node do not load a backbone to read a tuple:
+
+| Module | What is in it |
+|---|---|
+| `dbv4_meta.py` | where a checkpoint's *files* live: repo ids, the required/optional file sets, `DEFAULT_TAGGER_DIR` |
+| `schema.py` | what a tag *means* to a checkpoint: `SLOT_ORDER`, `TAG_TYPE_NAMES`, `RATINGS`, `PEOPLE_COUNT_LABELS`, `TagEntry`, `dedupe_count_tags` |
+| `fetch.py` | getting one onto disk: `ensure_tagger_checkpoint`, `ensure_tagger_backbone`, `is_dbv4_dir` |
+
+Every value in `schema.py` is baked into `vocab.json` at build time and read back at inference, so
+changing one invalidates existing checkpoints. `tests/test_boundary.py` pins all three importable
+without torch.
+
 ## Checkpoint
 
 Checkpoint dir = `config.json`, `vocab.json`, `rules.yaml`, `groups.json`,

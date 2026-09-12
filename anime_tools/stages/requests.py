@@ -1,8 +1,9 @@
 """The caption stages as request objects — the surface the CLIs, the GUI and the
 trainer share.
 
-Torch-free: run one through :mod:`anime_tools.stages.run` (``run_autotag(req)``
-and friends, which import the models), or hand ``to_argv()`` to a subprocess.
+Torch-free: run one through its stage's runner (``run_autotag(req)`` and
+friends, re-exported from :mod:`anime_tools.stages` and named by
+``registry.py``, which import the models), or hand ``to_argv()`` to a subprocess.
 Every field is a flag of the matching ``stages/cli`` parser — the parser is
 generated from these classes (:meth:`Request.parser`), so the help, the
 default and the argument group are written here, once. Flags are spelled with

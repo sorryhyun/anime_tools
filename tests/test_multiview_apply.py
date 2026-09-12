@@ -215,12 +215,11 @@ def test_promotions_touches_no_file_and_drops_an_empty_proposal(tmp_path: Path) 
 
 
 def _phase(tmp_path, monkeypatch, mode, rows):
-    """``_run_audit_phase`` with the sweep stubbed — the orchestration only."""
+    """``run_audit_phase`` with the sweep stubbed — the orchestration only."""
     import json
 
     from anime_tools.stages import multiview_audit as audit_mod
     from anime_tools.stages.requests import PositionRequest
-    from anime_tools.stages.run import _run_audit_phase
 
     seen = {}
 
@@ -237,7 +236,7 @@ def _phase(tmp_path, monkeypatch, mode, rows):
             return {}
 
     report_dir = tmp_path / "reports"
-    out = _run_audit_phase(
+    out = audit_mod.run_audit_phase(
         PositionRequest(multiview_audit=mode),
         src=tmp_path / "image_dataset",
         dst=tmp_path / "resized",

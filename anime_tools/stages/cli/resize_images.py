@@ -16,7 +16,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> None:
-    from anime_tools.stages.run import run_resize
+    from anime_tools.stages.resize import run_resize
 
     try:
         run_resize(ResizeRequest.from_argv(build_parser(), argv))

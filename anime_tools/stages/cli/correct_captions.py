@@ -25,7 +25,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> None:
-    from anime_tools.stages.run import run_correct
+    from anime_tools.stages.captions import run_correct
 
     try:
         run_correct(CorrectRequest.from_argv(build_parser(), argv))

@@ -1,11 +1,18 @@
-"""Caption correction helpers for preprocessing outputs."""
+"""Caption correction helpers for preprocessing outputs.
+
+:func:`run_correct` is the stage runner over
+:class:`~anime_tools.stages.requests.CorrectRequest`; ``cli/correct_captions.py``
+is the shell over it.
+"""
 
 from __future__ import annotations
 
 from collections.abc import Callable, Collection
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from pathlib import Path
+from typing import TYPE_CHECKING
 
+from anime_tools._env import curation_home, resolve_path
 from anime_tools._walk import walk_images
 from anime_tools.captions.correction import (
     CaptionCorrectionOptions,
@@ -23,7 +30,12 @@ from anime_tools.captions.variants import (
 )
 
 from ._caption_io import read_caption, write_caption
+from ._report import print_dry_run_footer, stage_report_header, write_stage_report
 from ._walk_captions import resolve_caption
+from .resize import resized_tree
+
+if TYPE_CHECKING:
+    from anime_tools.stages.requests import CorrectRequest
 
 
 @dataclass
@@ -295,3 +307,104 @@ def write_corrected_preprocess_captions(
             stats.variants_removed += 1
 
     return PreprocessCaptionResult(stats=stats, rows=rows)
+
+
+TE_NOTE = (
+    "\nWritten to the resized captions (the master is untouched). Run "
+    "`make preprocess-te` now to re-encode."
+)
+
+
+def run_correct(req: CorrectRequest):
+    """Correct the revised captions in place — mirroring the master for an image
+    that has none yet — plus variant sidecars. Returns ``(rows, stats)``.
+
+    No ``--from_report``: correction is pure text, so re-running it is cheaper
+    than the machinery to skip it. The report it leaves is still what the GUI's
+    Undo reads (``contract.REPLAY_SHAPES["correct"]``).
+    """
+    from anime_tools.captions.correction import find_tag_csv, load_tag_knowledge_base
+    from anime_tools.captions.tag_drop_groups import parse_drop_groups
+
+    # Home-anchored like every other runner: a bare ``workspace/resized`` must
+    # name the curation home's tree, not the shell's cwd.
+    src = resolve_path(req.src)
+    dst = resized_tree(req.dst)
+    csv_path = (
+        resolve_path(req.tag_csv) if req.tag_csv else find_tag_csv(curation_home())
+    )
+    if csv_path is None or not csv_path.exists():
+        raise FileNotFoundError(
+            "danbooru_tags_classified.csv not found. Run "
+            "`python -m anime_tools.downloads danbooru_tags` first "
+            "(or the GUI's Settings > Models > Danbooru tag KB)."
+        )
+
+    # The erasure pool (identity-randomize only) needs both tokenizers, loaded
+    # tokenizer-only — no encoder weights.
+    qwen3_tokenizer = t5_tokenizer = None
+    if req.randomizes:
+        from anime_tools.captions.tokenizers import (
+            load_qwen3_tokenizer_from_dir,
+            load_t5_tokenizer_from_dir,
+        )
+
+        qwen3_tokenizer = load_qwen3_tokenizer_from_dir(req.qwen3)
+        t5_tokenizer = load_t5_tokenizer_from_dir(req.t5_tokenizer_path)
+
+    result = write_corrected_preprocess_captions(
+        src,
+        dst,
+        load_tag_knowledge_base(csv_path),
+        options=CaptionCorrectionOptions(
+            insert_no_artist=req.caption_insert_no_artist,
+            trigger_word=req.caption_trigger_word,
+            trigger_at_front=req.caption_trigger_at_front,
+            drop_groups=parse_drop_groups(req.caption_drop_groups),
+        ),
+        recursive=req.recursive,
+        path_pattern=req.path_pattern or "*",
+        correct=not req.no_correct,
+        num_variants=req.caption_shuffle_variants,
+        tag_dropout_rate=req.caption_tag_dropout_rate,
+        tag_randomize_rate=req.caption_tag_randomize_rate,
+        qwen3_tokenizer=qwen3_tokenizer,
+        t5_tokenizer=t5_tokenizer,
+        apply=req.apply,
+    )
+    stats, rows = result.stats, result.rows
+
+    report_path = write_stage_report(
+        resolve_path(req.report_dir),
+        {
+            **stage_report_header(
+                src=src, dst=dst, path_pattern=req.path_pattern, apply=req.apply
+            ),
+            "correct": not req.no_correct,
+            "stats": {
+                "seen": stats.seen,
+                "written": stats.written,
+                "unchanged": stats.unchanged,
+                "from_master": stats.from_master,
+                "no_caption": stats.no_caption,
+                "variants_written": stats.variants_written,
+                "variants_removed": stats.variants_removed,
+                "clauses_preserved": stats.clauses_preserved,
+            },
+            "rows": [asdict(r) for r in rows],
+        },
+    )
+
+    verb = "written" if req.apply else "would write"
+    print(
+        "Corrected preprocess captions: "
+        f"{stats.written} {verb}, {stats.unchanged} unchanged, "
+        f"{stats.from_master} mirrored from the master, "
+        f"{stats.no_caption} without a caption, "
+        f"{stats.variants_written} variant sidecars, "
+        f"{stats.clauses_preserved} position clauses kept "
+        f"({stats.seen} resized images)"
+    )
+    print(f"report: {report_path}")
+    print_dry_run_footer(req.apply, TE_NOTE if stats.written else None)
+    return rows, stats

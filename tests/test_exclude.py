@@ -187,7 +187,7 @@ def test_resize_skips_every_rel_in_the_ledger(tmp_path, monkeypatch):
     """The one chokepoint: resize is what could put an excluded image back into
     the tree every later stage walks."""
     from anime_tools.stages.requests import ResizeRequest
-    from anime_tools.stages.run import run_resize
+    from anime_tools.stages.resize import run_resize
 
     monkeypatch.setenv("ANIME_TOOLS_HOME", str(tmp_path))
     monkeypatch.delenv("ANIME_TOOLS_WORKSPACE", raising=False)

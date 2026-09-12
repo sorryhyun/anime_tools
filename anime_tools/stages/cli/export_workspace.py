@@ -17,7 +17,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> None:
-    from anime_tools.stages.run import run_export
+    from anime_tools.stages.export_workspace import run_export
 
     try:
         run_export(ExportRequest.from_argv(build_parser(), argv))

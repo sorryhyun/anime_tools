@@ -40,6 +40,22 @@ field and an already-hidden field are never folded — the server settles that, 
 `PREPROCESS_STAGE` (`resize`) runs as a preflight in front of every stage bound to `dst`;
 `NO_PREFLIGHT` names the exceptions.
 
+## The server's shape
+
+| File | What it owns |
+|---|---|
+| `server.py` | `create_app()`, the static routes and `/api/info`; `Schemas` (the background schema build) and `ClientWatch` (exit with the window) |
+| `routes/` | the API, one router per area — `settings` (settings, models, guidebook, update), `jobs` (stages, runs, proposals, `/api/alive`), `dataset`, `desktop` (`/api/pick`, `/reveal`, `/ls`) |
+| `_context.py` | `RunContext` — the settings file read **once** per request — plus `NO_CACHE` and `is_loopback` |
+| `launch.py` | `main()`, `pick_port`, the Chromium app window: the process, not the API |
+
+A router reaches its state through `request.app.state` (`jobs` / `schemas` / `watch`), which is what
+lets it live outside `create_app`. `RunContext.bindings()` is the four keyword arguments
+`S.resolved_schema` and `S.build_argv` bind a form with (`roots` / `settings` / `report_root` /
+`mask_root`) — one object instead of four values recomputed per handler — and `ctx.scoped_to(rel)`
+is how a per-image Run narrows `--path_pattern`. The free `roots_for` / `report_root` / `mask_root`
+stay, because Settings' placeholders are those values computed against *empty* settings.
+
 ## Other server pieces
 
 - `dataset.py` joins the trees (`src`/`dst`/`masks`/`master`/`out`) into the sidebar's image→caption
@@ -89,7 +105,7 @@ field and an already-hidden field are never folded — the server settles that, 
   sharing one slot, log and stream, because `preprocess_for()` puts `resize` in front of every stage
   bound to the `dst` root; a failing step stops the chain. `masks_merge` and the `NO_PREFLIGHT`
   names sit outside it. A running stage tells the browser nothing but its stdout, so the panel's
-  progress bar and log window are read straight off it — `stages/cli/_args.py::make_progress`'s
+  progress bar and log window are read straight off it — `stages/_progress.py::make_progress`'s
   `  [done/total] detail` and the `── step i/n: label ──` header this module prints in front of
   each step of a sequence are the two formats parsed there, and a stage printing neither simply
   has no bar.

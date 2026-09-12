@@ -1135,7 +1135,7 @@ def test_a_failed_schema_build_is_reported_not_fatal(tmp_path, monkeypatch):
 def test_pick_port_skips_busy_port():
     import socket
 
-    from anime_tools.gui.server import pick_port
+    from anime_tools.gui.launch import pick_port
 
     with socket.socket() as busy:
         busy.bind(("127.0.0.1", 0))

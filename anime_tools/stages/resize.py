@@ -9,7 +9,9 @@ Two things are interop with the trainer's resize pass: the chosen ``(W, H)``
 (:func:`_metadata_signature`), which its size-aware skip compares. Diverge on
 either and each side re-encodes the other's PNGs.
 
-Torch-free — PIL only.
+Torch-free — PIL only. :func:`run_resize` is the stage runner over
+:class:`~anime_tools.stages.requests.ResizeRequest`; ``cli/resize_images.py`` is
+the shell over it.
 """
 
 from __future__ import annotations
@@ -18,10 +20,12 @@ from collections.abc import Callable, Collection, Iterable
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from PIL import Image, ImageOps
 from PIL.PngImagePlugin import PngInfo
 
+from anime_tools._env import resolve_path
 from anime_tools.buckets import (
     DEFAULT_FREEFIT_MAX_RATIO,
     DEFAULT_TARGET_RES,
@@ -37,6 +41,28 @@ from anime_tools.stages._options import (
     DEFAULT_CROP_ANCHOR,
     DEFAULT_MIN_PIXELS,
 )
+from anime_tools.stages._progress import make_progress
+from anime_tools.stages._report import write_stage_report
+
+if TYPE_CHECKING:
+    from anime_tools.stages.requests import ResizeRequest
+
+RESIZE_FIRST = "run `make preprocess-resize` (or the Resize stage) first"
+"""What a stage says when the tree it reads has not been filled yet."""
+
+
+def resized_tree(dst: str) -> Path:
+    """``dst`` resolved against the curation home, if the tree is there.
+
+    Every stage but this one reads ``workspace/resized/`` rather than filling
+    it, so a missing tree is one preflight failure with one answer.
+    """
+    resized_dir = resolve_path(dst)
+    if not resized_dir.exists():
+        raise FileNotFoundError(
+            f"resized dir not found: {resized_dir} — {RESIZE_FIRST}"
+        )
+    return resized_dir
 
 
 def below_min_pixels(size: tuple[int, int], min_pixels: int) -> bool:
@@ -490,4 +516,92 @@ def run_resize_images(
             except Exception as exc:  # noqa: BLE001 — see above
                 stats.failed += 1
                 stats.failures.append(f"{futures[future]}: {exc}")
+    return stats
+
+
+def run_resize(req: ResizeRequest) -> ResizeStats:
+    """Resize the master into the bucket tree. Always writes.
+
+    The exclusion ledger joins ``--skip`` here, which is where an exclusion is
+    enforced: every other stage walks the resized tree, so leaving an excluded
+    image out of it is the whole of "no further preprocessing"
+    (:mod:`anime_tools.exclude`).
+    """
+    from anime_tools.exclude import excluded_rels
+
+    src = resolve_path(req.src)
+    dst = resolve_path(req.dst)
+    if not src.is_dir():
+        raise FileNotFoundError(f"source dir not found: {src}")
+
+    ledger = excluded_rels(resolve_path(req.excluded_dir))
+    skip = tuple(dict.fromkeys((*req.skip, *ledger)))
+
+    options = ResizeOptions.build(
+        target_res=req.target_res,
+        crop_anchor=req.resize_crop_anchor,
+        crop_margins=req.resize_crop_margins,
+        max_ratio=req.freefit_max_ratio,
+    )
+    stats = run_resize_images(
+        src=src,
+        dst=dst,
+        options=options,
+        path_pattern=req.path_pattern or "*",
+        recursive=req.recursive,
+        min_pixels=req.min_pixels,
+        overwrite=req.overwrite,
+        workers=req.workers,
+        skip=skip,
+        # Every line: there is no other per-image output.
+        progress=make_progress(1),
+    )
+
+    write_stage_report(
+        resolve_path(req.report_dir),
+        {
+            "src": str(src),
+            "dst": str(dst),
+            "path_pattern": req.path_pattern or "*",
+            "target_res": list(options.target_res),
+            "crop_anchor": options.crop_anchor,
+            "crop_margins": list(options.crop_margins),
+            "max_ratio": options.max_ratio,
+            "min_pixels": req.min_pixels,
+            "overwrite": req.overwrite,
+            "skip": list(skip),
+            "excluded": list(ledger),
+            "stats": {
+                "seen": stats.seen,
+                "written": stats.written,
+                "skipped_current": stats.skipped_current,
+                "skipped_small": stats.skipped_small,
+                "skipped_excluded": stats.skipped_excluded,
+                "failed": stats.failed,
+            },
+            "buckets": dict(sorted(stats.buckets.items())),
+            "failures": stats.failures,
+            "too_small": stats.too_small,
+        },
+    )
+
+    print(
+        f"Resized: {stats.written} written, "
+        f"{stats.skipped_current} already current, "
+        f"{stats.skipped_small} below {req.min_pixels:,} px, "
+        f"{stats.skipped_excluded} excluded "
+        f"(--skip + {len(ledger)} in the ledger), "
+        f"{stats.failed} failed ({stats.seen} images seen)"
+    )
+    for line in stats.failures:
+        print(f"  fail: {line}")
+    # A skip here means invisible to every later stage, so name each file rather
+    # than counting them.
+    for line in stats.too_small:
+        print(f"  too small: {line}")
+    if stats.buckets:
+        print("Bucket distribution:")
+        for reso, count in sorted(stats.buckets.items()):
+            w, h = (int(v) for v in reso.split("x"))
+            print(f"  {reso:>10}: {count:>3d} images  ({(w // 16) * (h // 16)} tokens)")
     return stats

@@ -5,8 +5,8 @@ under :data:`anime_tools.workspace.OCR`, mirroring its layout: every recognized
 line with box and confidence (:mod:`anime_tools.captions.ocr_sidecar`).
 
 It reads no caption and writes no caption, so it sits outside the caption ladder
-and invalidates no TE cache. The reader is an argument; what the stage runner
-(``run.py::run_ocr``) hands it is the one path the package has: the AnimeText
+and invalidates no TE cache. The reader is an argument; what :func:`run_ocr`, the
+stage runner, hands :func:`read_tree` is the one path the package has: the AnimeText
 text-block detector (:mod:`anime_tools.ocr.animetext`, detect-only) with every
 box read by the manga VL reader through :class:`anime_tools.ocr.reread.RereadEngine`,
 plus, under ``--mask_dir``, the text mask's uncovered components. The PP-OCRv6
@@ -21,9 +21,20 @@ from collections import Counter
 from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import TYPE_CHECKING
 
+from anime_tools._env import resolve_path
+from anime_tools._progress import phase
 from anime_tools._walk import walk_images
 from anime_tools.captions.ocr_sidecar import OcrLine, write_ocr_for
+
+from ._progress import make_progress
+from ._report import write_stage_report
+from .resize import resized_tree
+
+if TYPE_CHECKING:
+    from anime_tools.ocr import OcrEngine
+    from anime_tools.stages.requests import OcrRequest
 
 
 @dataclass
@@ -75,7 +86,7 @@ def number_lines(lines: Sequence[OcrLine]) -> tuple[OcrLine, ...]:
     )
 
 
-def run_ocr(
+def read_tree(
     *,
     resized_dir: Path,
     ocr_dir: Path,
@@ -135,4 +146,120 @@ def run_ocr(
             write_ocr_for(ocr_dir, rel.with_suffix(".txt"), lines)
             stats.sidecars += 1
 
+    return rows, stats
+
+
+def _vl_engine(
+    req: OcrRequest, engine: OcrEngine, resized_dir: Path, device: str
+) -> OcrEngine:
+    """The engine's boxes read by the manga VL reader, the text mask's uncovered
+    components read too when ``--mask_dir`` names one
+    (:class:`anime_tools.ocr.reread.RereadEngine`).
+
+    Takes the device the runner resolved rather than probing again: the two
+    models cannot land on different ones.
+    """
+    from anime_tools.ocr.reread import RereadEngine
+    from anime_tools.ocr.sfx import SfxReader
+
+    print(f"Loading the manga VL reader ({device})...", flush=True)
+    with phase("load vl reader"):
+        reader = SfxReader.load(device=device, batch_size=req.vl_batch_size)
+    mask_dir = resolve_path(req.mask_dir) if req.mask_dir else None
+    if mask_dir is not None and not mask_dir.is_dir():
+        raise FileNotFoundError(f"--mask_dir {mask_dir} is not a directory")
+    return RereadEngine(
+        engine=engine,
+        read_boxes=reader.read_boxes_scored,
+        resized_dir=resized_dir,
+        masks=mask_dir,
+        comp_min_side=req.comp_min_side,
+        comp_max=req.comp_max,
+        min_chars=req.min_chars,
+        skip_en=req.skip_en,
+        min_det=req.min_det,
+        min_score=req.min_score,
+        strip_symbols=req.strip_symbols,
+    )
+
+
+def run_ocr(req: OcrRequest):
+    """Read the text in every resized image and (with ``apply``) write the
+    ``{stem}.ocr.txt`` sidecars. Returns ``(rows, stats)``.
+
+    One path: the AnimeText detector boxes every page (detect-only), the manga
+    VL reader reads every box, and what came back is the sidecar. Both run on
+    torch, so both take the one device this run resolved.
+    """
+    resized_dir = resized_tree(req.dst)
+    ocr_dir = resolve_path(req.ocr_dir)
+    report_dir = resolve_path(req.report_dir)
+
+    # Deferred: torch is the heaviest thing either model touches.
+    from anime_tools._device import resolve_device
+    from anime_tools.ocr import load_ocr
+
+    device = resolve_device(req.device)
+    print(f"Loading the AnimeText detector ({device})...", flush=True)
+    with phase("load ocr"):
+        engine = load_ocr(
+            device=device,
+            min_box_px=req.min_box_px,
+            max_boxes=req.max_boxes,
+            det_conf=req.det_conf,
+        )
+    engine = _vl_engine(req, engine, resized_dir, device)
+
+    rows, stats = read_tree(
+        resized_dir=resized_dir,
+        ocr_dir=ocr_dir,
+        read_fn=engine.read,
+        read_iter_fn=engine.read_iter,
+        path_pattern=req.path_pattern,
+        apply=req.apply,
+        progress=make_progress(25, first=True),
+    )
+
+    report_path = write_stage_report(
+        report_dir,
+        {
+            "min_chars": req.min_chars,
+            "skip_en": bool(req.skip_en),
+            "strip_symbols": bool(req.strip_symbols),
+            "min_det": req.min_det,
+            "min_score": req.min_score,
+            "min_box_px": req.min_box_px,
+            "max_boxes": req.max_boxes,
+            "det_conf": req.det_conf,
+            "vl_batch_size": req.vl_batch_size,
+            "mask_dir": str(resolve_path(req.mask_dir)) if req.mask_dir else None,
+            "comp_min_side": req.comp_min_side,
+            "comp_max": req.comp_max,
+            "applied": bool(req.apply),
+            "apply": bool(req.apply),
+            "dst": str(resized_dir),
+            "ocr_dir": str(ocr_dir),
+            "path_pattern": req.path_pattern,
+            "stats": {
+                "seen": stats.seen,
+                "with_text": stats.with_text,
+                "lines": stats.lines,
+                "sidecars": stats.sidecars,
+                "skipped": dict(stats.skipped),
+            },
+            "rows": [r.to_row() for r in rows],
+        },
+    )
+
+    print(
+        f"\nseen={stats.seen} with_text={stats.with_text} "
+        f"lines={stats.lines} sidecars={stats.sidecars}"
+    )
+    for reason, count in stats.skipped.most_common():
+        print(f"  skip:{reason} {count}")
+    print(f"report: {report_path}")
+    if req.apply:
+        print(f"sidecars: {ocr_dir}")
+    else:
+        print("\nDry run — no sidecars written. Re-run with --apply to write.")
     return rows, stats

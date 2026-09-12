@@ -37,11 +37,8 @@ from anime_tools.contract import (
     AUTOTAG_READY,
     AUTOTAG_RESULT_PREFIX,
 )
-from anime_tools.tagger.tagger import (
-    DEFAULT_TAGGER_DIR,
-    AnimaTagger,
-    ensure_tagger_checkpoint,
-)
+from anime_tools.tagger.fetch import ensure_tagger_checkpoint
+from anime_tools.tagger.tagger import DEFAULT_TAGGER_DIR, AnimaTagger
 
 READY = AUTOTAG_READY
 RESULT_PREFIX = AUTOTAG_RESULT_PREFIX

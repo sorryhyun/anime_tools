@@ -16,7 +16,7 @@ from anime_tools.captions.ocr_sidecar import (
     read_ocr,
     write_ocr_for,
 )
-from anime_tools.stages.ocr import number_lines, run_ocr
+from anime_tools.stages.ocr import number_lines, read_tree
 
 
 def line(
@@ -116,7 +116,7 @@ def _dataset(tmp_path: Path):
 
 
 def _run(dst, ocr, lines, *, apply: bool, **kw):
-    return run_ocr(
+    return read_tree(
         resized_dir=dst,
         ocr_dir=ocr,
         read_fn=lambda _p: list(lines),
@@ -188,10 +188,10 @@ def test_the_batched_reader_answers_what_the_one_at_a_time_reader_does(tmp_path:
         Image.new("RGB", (64, 64), "white").save(dst / f"{name}.png")
     lines = [line("SALE")]
 
-    one, stats_one = run_ocr(
+    one, stats_one = read_tree(
         resized_dir=dst, ocr_dir=ocr, read_fn=lambda _p: list(lines), apply=False
     )
-    many, stats_many = run_ocr(
+    many, stats_many = read_tree(
         resized_dir=dst,
         ocr_dir=ocr,
         read_fn=lambda _p: list(lines),
@@ -221,7 +221,7 @@ def test_the_reader_gets_the_whole_run_in_one_call(tmp_path: Path):
         for _ in paths:
             yield [line("SALE")]
 
-    _, stats = run_ocr(
+    _, stats = read_tree(
         resized_dir=dst,
         ocr_dir=ocr,
         read_fn=lambda _p: [],
@@ -246,7 +246,7 @@ def test_a_result_is_written_before_the_reader_has_finished(tmp_path: Path):
             seen.append(sorted(p.name for p in ocr.glob("*.ocr.txt")))
             yield [line("SALE")]
 
-    run_ocr(
+    read_tree(
         resized_dir=dst,
         ocr_dir=ocr,
         read_fn=lambda _p: [],
@@ -257,26 +257,60 @@ def test_a_result_is_written_before_the_reader_has_finished(tmp_path: Path):
     assert seen == [[], ["a.ocr.txt"], ["a.ocr.txt", "b.ocr.txt"]]
 
 
-def test_the_ocr_stage_resolves_one_device_and_gives_it_to_both_models():
+def test_the_ocr_stage_resolves_one_device_and_gives_it_to_both_models(
+    tmp_path, monkeypatch
+):
     """The detector and the VL reader both run on torch, so the stage asks once.
 
     Until 2026-09-09 the detector was an ONNX session and this stage resolved
     *two* devices — ``resolve_onnx_device`` for the detector, ``resolve_device``
-    for the reader — because a torch CUDA probe cost an onnxruntime run 1.8x. Both
-    halves are torch now, and the whole point of the single answer is that the two
-    models cannot land on different devices.
+    for the reader — because a torch CUDA probe cost an onnxruntime run 1.8x.
+    Both halves are torch now, and the whole point of the single answer is that
+    the two models cannot land on different devices, so this asks for one probe
+    and the same string reaching both loads.
     """
-    import inspect
+    import anime_tools._device as device_mod
+    import anime_tools.ocr as ocr_pkg
+    import anime_tools.ocr.sfx as sfx_mod
+    from anime_tools.stages.ocr import run_ocr
+    from anime_tools.stages.requests import OcrRequest
 
-    from anime_tools.stages import run
+    dst, ocr_dir = _dataset(tmp_path)
+    probes: list[str | None] = []
+    given: list[str] = []
 
-    src = inspect.getsource(run.run_ocr)
-    assert src.count("resolve_device(req.device)") == 1
-    assert "resolve_onnx_device" not in src
-    # The one resolved device reaches the reader too, rather than being probed
-    # again inside `_vl_engine`.
-    assert "_vl_engine(req, engine, resized_dir, device)" in src
-    assert "resolve_device" not in inspect.getsource(run._vl_engine)
+    class _Engine:
+        def read(self, path):
+            return []
+
+        def read_iter(self, paths):
+            return ([] for _ in paths)
+
+    class _Reader:
+        def read_boxes_scored(self, *a, **kw):
+            return []
+
+    def fake_resolve(requested=None):
+        probes.append(requested)
+        return "cuda:7"
+
+    def fake_load_ocr(*, device, **_kw):
+        given.append(device)
+        return _Engine()
+
+    def fake_reader_load(*, device, batch_size):
+        given.append(device)
+        return _Reader()
+
+    monkeypatch.setattr(device_mod, "resolve_device", fake_resolve)
+    monkeypatch.setattr(ocr_pkg, "load_ocr", fake_load_ocr)
+    monkeypatch.setattr(sfx_mod.SfxReader, "load", fake_reader_load)
+
+    run_ocr(
+        OcrRequest(dst=str(dst), ocr_dir=str(ocr_dir), report_dir=str(tmp_path / "r"))
+    )
+    assert probes == [None]
+    assert given == ["cuda:7", "cuda:7"]
 
 
 def test_the_ocr_request_declares_the_device_flag_like_every_stage():

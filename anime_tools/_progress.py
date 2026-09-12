@@ -7,7 +7,7 @@ style: ``gui/jobs.py`` reads it back off the child's stdout for the panel's
 progress bar (``frontend/src/state.ts``), and a stage that prints anything else
 has no bar. :func:`progress_line` is the one place that format is spelled;
 :class:`ProgressBar` counts for a stage that walks its own loop, and
-``stages/cli/_args.py::make_progress`` wraps it for a stage that hands a
+``stages/_progress.py::make_progress`` wraps it for a stage that hands a
 ``progress(index, total, detail)`` callback to a library function. Every stage
 goes through one of the two — a bare ``tqdm`` writes carriage returns the panel
 cannot parse and the log keeps as noise.

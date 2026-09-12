@@ -16,7 +16,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> None:
-    from anime_tools.stages.run import run_ocr
+    from anime_tools.stages.ocr import run_ocr
 
     try:
         run_ocr(OcrRequest.from_argv(build_parser(), argv))

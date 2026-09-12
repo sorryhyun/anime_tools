@@ -117,7 +117,7 @@ def test_count_of_reads_one_number_out_of_the_bag():
 def test_caption_ratings_are_the_anima_band():
     # The tagger's ordered RATINGS (class index for the rating head) carries
     # exactly the members of the unordered CAPTION_RATINGS.
-    from anime_tools.tagger.tagger import RATINGS
+    from anime_tools.tagger.schema import RATINGS
 
     assert tx.CAPTION_RATINGS == {"safe", "sensitive", "nsfw", "explicit"}
     assert set(RATINGS) == tx.CAPTION_RATINGS
@@ -170,7 +170,7 @@ def test_constants_reexports_for_back_compat():
 
 
 def test_dedupe_count_tags_keeps_top_score_per_family():
-    from anime_tools.tagger.tagger import dedupe_count_tags
+    from anime_tools.tagger.schema import dedupe_count_tags
 
     # Contradictory exact girl counts: only the higher-scoring one survives.
     kept = {

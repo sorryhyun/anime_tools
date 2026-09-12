@@ -187,5 +187,5 @@ under is simply skipped on CPU.
 | `anime_tools/masking/cli/{generate_masks,merge_masks}.py` | One-line shells over the requests |
 | `anime_tools/workspace/__init__.py` | `MASKS_SAM` / `MASKS` — the two trees |
 | `anime_tools/gui/stages.py` | `MASK_SETTING` / `MASK_FIELDS` / `mask_subpath`: the one Settings root |
-| `anime_tools/downloads.py` | `sam3`, `soft_prompt` rows (the `masking` pack) |
+| `anime_tools/downloads/` | `sam3`, `soft_prompt` rows (the `masking` pack) |
 | `tests/test_masking_plan.py`, `tests/test_masking_requests.py` | The pinned shape: layout, polarity, defaults, the refused argv |

@@ -226,6 +226,7 @@ def test_the_tagger_loads_once_per_process(monkeypatch, tmp_path):
     """Autotag followed by position in one interpreter reads the weights once:
     ``load_anima_tagger`` caches on ``(checkpoint dir, device)``."""
     from anime_tools.stages import _models
+    from anime_tools.tagger import fetch as fetch_mod
     from anime_tools.tagger import tagger as tagger_mod
 
     built = []
@@ -245,7 +246,7 @@ def test_the_tagger_loads_once_per_process(monkeypatch, tmp_path):
             return "1girl"
 
     monkeypatch.setattr(tagger_mod, "AnimaTagger", FakeTagger)
-    monkeypatch.setattr(tagger_mod, "ensure_tagger_checkpoint", lambda p: p)
+    monkeypatch.setattr(fetch_mod, "ensure_tagger_checkpoint", lambda p: p)
     monkeypatch.setattr(_models, "_LOADED", {})
 
     a, _ = _models.load_anima_tagger(tmp_path, "cpu", quiet=True)

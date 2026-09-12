@@ -15,8 +15,9 @@ skill; the caption grammar these stages write is the `captions` skill.
 
 The surface is a request object per stage (`requests.py`, torch-free): `ResizeRequest`,
 `AutotagRequest`, `PositionRequest`, `CorrectRequest`, `OcrRequest`, `AuditRequest`,
-`ExportRequest`, run by `run.py::run_<stage>(req)`, which is the old CLI main minus the parsing
-(preflight, model load, the library call, `report.json`, the printed epilogue). Same base as
+`ExportRequest`, run by `run_<stage>(req)` **in the stage's own module** — the old CLI main minus
+the parsing (preflight, model load, the library call, `report.json`, the printed epilogue).
+Same base as
 masking's (`anime_tools/_request.py`), with two differences: flags are spelled with underscores
 (`FLAG_SEP = "_"`), and a `store_false` switch names its one flag in `off` metadata (`skip_en` is
 `--keep_en`). The parser is generated from the class (`Request.parser()` →
@@ -24,6 +25,24 @@ masking's (`anime_tools/_request.py`), with two differences: flags are spelled w
 choices=…)`, the class docstring is the `--help` description, and every flag with a separator
 takes the other spelling as an alias (`--path_pattern` / `--path-pattern`). The CLIs in `cli/` are
 one-line shells (`build_parser()` = `Request.parser()`, `main()` = `run_<stage>(from_argv())`).
+
+A runner lives beside the library function it drives, because `registry.py` addresses it as
+`module:function` and resolves it lazily — nothing has to import seven stages to name one:
+
+| Runner | Module | Also there |
+|---|---|---|
+| `run_resize` | `resize.py` | `resized_tree()` + `RESIZE_FIRST`, the "run Resize first" preflight every other stage borrows |
+| `run_autotag` | `autotag.py` | |
+| `run_position` | `position_captions.py` | `summarize()` (the report's own counts), `_run_flatten` |
+| `run_correct` | `captions.py` | |
+| `run_audit` | `multiview_audit.py` | `run_audit_phase` (the same sweep as the position stage's phase 1) |
+| `run_ocr` | `ocr.py` | `_vl_engine`; the library walk is `read_tree` |
+| `run_export` | `export_workspace.py` | the library call is `publish` |
+
+`anime_tools/stages/__init__.py` re-exports all seven lazily (`_RUNNERS` is the same mapping), so
+`from anime_tools.stages import run_autotag` still costs one module. `_report.py` (the `report.json`
+header, the dry-run footer) and `_progress.py` (`make_progress`) are the two things every runner
+shares; they were under `cli/` until the library depended on its own CLI package.
 
 Every default and help string a request field names comes from a leaf — `_options.py` here
 (`PositionCaptionOptions`, the resize geometry, the audit's verdicts and witness floors) and
@@ -62,7 +81,8 @@ review and probe CLIs share it).
 
 `PositionRequest.multiview_audit` (`off` / `report` / `apply`) runs the multiview audit as the
 position stage's first phase, over the complement population — `is_audit_target` is defined as
-exactly what `is_candidate` rejects as `single-subject`. `run.py::_run_audit_phase` reuses the
+exactly what `is_candidate` rejects as `single-subject`. `multiview_audit.run_audit_phase` reuses
+the
 already-resident SAM3 + tagger, detects under `req.audit_options()`, and in `apply` mode hands
 `multiview_audit.promotions()` to `run_position_captions(promoted=…)`, which substitutes the
 promoted caption before `is_candidate` sees it.
@@ -119,7 +139,7 @@ bare; revert compares against the recorded text), and counts under `stats.combin
 again without the knob takes the clause back. The trainer must `make preprocess-te` after either.
 
 `--excluded_dir` adds a second, smaller plan over `workspace/_excluded/`
-(`anime_tools/exclude.py`): `_excluded/resized` walked as the live resized tree is,
+(`anime_tools/exclude/`): `_excluded/resized` walked as the live resized tree is,
 `_excluded/masks` looked up against it by the same rule, published under `<out>/_excluded/`.
 Same kinds, so the compare and the revert are unchanged; no `master` row and no OCR combine.
 The rows carry `excluded`, which is all that tells them apart in the report, and a workspace
@@ -134,9 +154,9 @@ The GUI always passes it. `tests/test_registry_requests.py` pins one spelling pe
 since the GUI fills `--path_pattern` / `--tagger_dir` / `--checkpoint` / `--prompt_embed` from one
 Settings value each.
 
-- `cli/_args.py::make_progress` (the `  [done/total] detail` line the GUI's progress bar parses;
+- `_progress.py::make_progress` (the `  [done/total] detail` line the GUI's progress bar parses;
   under the trainer's daemon the same callback also streams every call to the job's
-  `progress.jsonl` through `_progress.py`), `cli/_report.py`, `replay.run_replay_cli` (reads
+  `progress.jsonl` through `anime_tools/_progress.py`), `_report.py`, `replay.run_replay_cli` (reads
   `from_report` / `path_pattern` / `apply` off the request).
 - `_caption_io.py` — `read_caption`/`write_caption`, the trailing-newline invariant, the
   `.variants.txt` drop, and `history_by`.

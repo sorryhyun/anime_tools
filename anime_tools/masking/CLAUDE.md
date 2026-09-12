@@ -22,7 +22,7 @@ caches per process on its arguments, so a second pass in one interpreter reuses 
 ## Two private cores
 
 - `_prompts.py` is what a *prompt* is, for both packages: `SUBJECT_PROMPT` (`girl`), the
-  `--checkpoint` / `--prompt_embed` help (defaults imported from `downloads.py`), `prompt_list`
+  `--checkpoint` / `--prompt_embed` help (defaults imported from `downloads/`), `prompt_list`
   (`none`/`off` = no prompts; the detection stages' lists), and the soft prompt —
   `resolve_prompt_embed` (`none`/`off`/`text`/`""` = the text prompt; a missing *shipped* default
   degrades to it with a warning, any other missing path raises), `SOFT_PROMPT_KEYS`,

@@ -26,7 +26,7 @@ from anime_tools.captions.taxonomy import (
     is_rating_tag,
     strip_artist_prefix,
 )
-from anime_tools.tagger.tagger import (
+from anime_tools.tagger.schema import (
     PEOPLE_COUNT_LABELS,
     RATINGS,
     SLOT_ORDER,

@@ -8,6 +8,9 @@ from dataclasses import replace
 import pytest
 
 from anime_tools import downloads as DL
+from anime_tools._env import resolve_path
+from anime_tools.downloads import _catalog
+from anime_tools.downloads._assets import _say
 
 
 @pytest.fixture
@@ -81,7 +84,7 @@ def test_rows_land_where_the_loaders_look():
     by = DL.by_id()
     assert by["tagger"].repo == dbv4_meta.TAGGER_HF_REPO
     assert by["tagger"].subfolder == dbv4_meta.TAGGER_HF_SUBFOLDER
-    assert by["tagger"].dest == DL.resolve_path(dbv4_meta.DEFAULT_TAGGER_DIR)
+    assert by["tagger"].dest == resolve_path(dbv4_meta.DEFAULT_TAGGER_DIR)
     assert by["tagger_backbone"].files == dbv4_meta.DBV4_BACKBONE_FILES
     assert by["pe_spatial"].repo == pe.PE_SPATIAL_REPO
     assert (
@@ -92,11 +95,11 @@ def test_rows_land_where_the_loaders_look():
     from anime_tools.stages.cli import position_captions as pc
 
     default = pc.build_parser().parse_args([]).checkpoint
-    assert DL.resolve_path(default).parent == by["sam3"].dest
-    assert DL.resolve_path(default).name == DL.SAM3_FILENAME
+    assert resolve_path(default).parent == by["sam3"].dest
+    assert resolve_path(default).name == DL.SAM3_FILENAME
 
     # Same for the soft prompt: the --prompt_embed default is the row's file.
-    embed = DL.resolve_path(pc.build_parser().parse_args([]).prompt_embed)
+    embed = resolve_path(pc.build_parser().parse_args([]).prompt_embed)
     assert embed == by["soft_prompt"].dest / DL.SOFT_PROMPT_FILENAME
 
 
@@ -140,11 +143,12 @@ def test_a_built_row_runs_its_build_after_fetching(home, monkeypatch):
 
     monkeypatch.setattr("anime_tools._hf.hf_download", fake_download)
     monkeypatch.setattr(
-        DL, "_build_english_tag_csv", lambda dest, log: seen.update(built=dest)
+        "anime_tools.downloads._catalog._build_english_tag_csv",
+        lambda dest, log: seen.update(built=dest),
     )
     row = DL.by_id()["danbooru_tags_en"]
     # by_id() captured the module-level function; rebuild the row with the patched one.
-    row = replace(row, build=DL._build_english_tag_csv)
+    row = replace(row, build=_catalog._build_english_tag_csv)
     row.fetch(log=lambda _msg: None)
 
     assert seen["repo_type"] == "dataset" and seen["repo_id"] == DL.DANBOORU_WIKI_REPO
@@ -240,7 +244,7 @@ def test_expand_accepts_rows_and_packs_and_raises_on_unknown():
 def test_cli_accepts_a_pack_id(home, monkeypatch):
     fetched: list[str] = []
     monkeypatch.setattr(
-        DL.Asset, "fetch", lambda self, log=DL._say: fetched.append(self.id)
+        DL.Asset, "fetch", lambda self, log=_say: fetched.append(self.id)
     )
     assert DL.main(["masking"]) == 0
     assert fetched == ["sam3", "soft_prompt"]
@@ -254,7 +258,7 @@ def test_cli_downloads_only_what_is_missing(home, monkeypatch, capsys):
     """No id = every missing row, and a failure does not abort the rest."""
     fetched: list[str] = []
 
-    def fake_fetch(self, log=DL._say):
+    def fake_fetch(self, log=_say):
         fetched.append(self.id)
         if self.id == "sam3":
             raise FileNotFoundError("gated")

@@ -10,15 +10,16 @@ Everything after the score vector — thresholds, softmax groups, count dedupe,
 character floor, top-1 copyright, slot order — is post-processing of
 ``{tag: prob}``. Captions come out in ``SLOT_ORDER`` with underscores replaced
 by spaces (Anima's training-time T5 input).
+
+The two halves that need no torch live beside this one and are re-exported from
+it, so the vocab build and the ComfyUI node can reach them without loading a
+model: :mod:`anime_tools.tagger.schema` (what a tag means to a checkpoint) and
+:mod:`anime_tools.tagger.fetch` (getting one onto disk).
 """
 
 from __future__ import annotations
 
 import logging
-import os
-import re
-import shutil
-from dataclasses import dataclass
 from pathlib import Path
 
 import torch
@@ -41,232 +42,43 @@ from anime_tools.tagger.dbv4_backend import (
     rename_recovery_from_rules,
 )
 
-# Re-exported from the torch-free dbv4_meta; callers import them from here.
+# Re-exported from the three torch-free leaves; callers import them from here.
 from anime_tools.tagger.dbv4_meta import (
-    DBV4_OPTIONAL_FILES,
-    DBV4_REQUIRED_FILES,
     DEFAULT_DBV4_ARCH,
     DEFAULT_DBV4_IMG_SIZE,
     DEFAULT_DBV4_REPO,
     DEFAULT_TAGGER_DIR,
-    TAGGER_HF_REPO,
-    TAGGER_HF_SUBFOLDER,
-    TAGGER_OPTIONAL_FILES,
-    TAGGER_REQUIRED_FILES,
 )
+from anime_tools.tagger.fetch import (
+    ensure_tagger_backbone,
+    ensure_tagger_checkpoint,
+    is_dbv4_dir,
+)
+from anime_tools.tagger.schema import (
+    GIRLS_COUNT_RE,
+    PEOPLE_COUNT_LABELS,
+    RATINGS,
+    SLOT_ORDER,
+    TAG_TYPE_NAMES,
+    TagEntry,
+    dedupe_count_tags,
+    fix_artist_category,
+    underscore_to_space,
+)
+
+__all__ = [
+    "PEOPLE_COUNT_LABELS",
+    "RATINGS",
+    "SLOT_ORDER",
+    "TAG_TYPE_NAMES",
+    "AnimaTagger",
+    "dedupe_count_tags",
+    "ensure_tagger_backbone",
+    "ensure_tagger_checkpoint",
+    "is_dbv4_dir",
+]
 
 logger = logging.getLogger(__name__)
-
-
-def ensure_tagger_checkpoint(
-    ckpt_dir: str | Path,
-    repo: str = TAGGER_HF_REPO,
-    subfolder: str = TAGGER_HF_SUBFOLDER,
-    *,
-    backbone: bool = True,
-) -> Path:
-    """Fetch the tagger checkpoint into ``ckpt_dir`` if any required file is missing.
-
-    Files are flattened into ``ckpt_dir`` regardless of source layout; optional
-    files are best-effort. With ``backbone=True`` a dbv4 checkpoint also runs
-    :func:`ensure_tagger_backbone`, so the gated upstream weights are fetched
-    here rather than lazily on the first predict.
-    """
-    ckpt_dir = Path(ckpt_dir)
-    if all((ckpt_dir / f).exists() for f in TAGGER_REQUIRED_FILES):
-        return ckpt_dir
-    if all((ckpt_dir / f).exists() for f in DBV4_REQUIRED_FILES) and _is_dbv4_dir(
-        ckpt_dir
-    ):
-        if backbone:
-            ensure_tagger_backbone(ckpt_dir)
-        return ckpt_dir
-    from huggingface_hub.utils import EntryNotFoundError
-
-    from anime_tools._hf import hf_download
-
-    logger.info(
-        "AnimaTagger: %s missing required files — fetching %s%s (one-time).",
-        ckpt_dir,
-        repo,
-        f"/{subfolder}" if subfolder else "",
-    )
-    ckpt_dir.mkdir(parents=True, exist_ok=True)
-
-    def _fetch_flat(fname: str) -> Path:
-        repo_path = f"{subfolder}/{fname}" if subfolder else fname
-        downloaded = Path(
-            hf_download(
-                what="AnimaTagger weights",
-                repo_id=repo,
-                filename=repo_path,
-                local_dir=str(ckpt_dir),
-            )
-        )
-        dest = ckpt_dir / fname
-        if downloaded.resolve() != dest.resolve():
-            dest.parent.mkdir(parents=True, exist_ok=True)
-            shutil.move(str(downloaded), str(dest))
-        return dest
-
-    # config.json first: it decides which file set is required.
-    _fetch_flat("config.json")
-    if _is_dbv4_dir(ckpt_dir):
-        required, optional = DBV4_REQUIRED_FILES, DBV4_OPTIONAL_FILES
-    else:
-        required, optional = TAGGER_REQUIRED_FILES, TAGGER_OPTIONAL_FILES
-    for fname in required:
-        if fname != "config.json":
-            _fetch_flat(fname)
-    for fname in optional:
-        try:
-            _fetch_flat(fname)
-        except EntryNotFoundError:
-            logger.debug("optional tagger file %s not present on %s", fname, repo)
-    if backbone and _is_dbv4_dir(ckpt_dir):
-        ensure_tagger_backbone(ckpt_dir)
-    return ckpt_dir
-
-
-def ensure_tagger_backbone(ckpt_dir: str | Path) -> str:
-    """Preflight the gated dbv4 backbone for the checkpoint at ``ckpt_dir``.
-
-    The backbone (``config.json["dbv4"]["repo"]``, GPL-3.0) is gated and only
-    ever lands in the HF hub cache under the user's own token. Probes the cache
-    offline first, then fetches through ``hf_download``, which turns a gated
-    401/403 into a ``FileNotFoundError`` naming the accept-terms recovery.
-    Returns the repo id; ``ANIMA_TAGGER_NO_AUTOFETCH=1`` fails instead of
-    fetching.
-    """
-    from anime_tools.tagger.dbv4_meta import (
-        DBV4_BACKBONE_FILES,
-        backbone_cached,
-        backbone_repo_for,
-        gated_hint,
-    )
-
-    ckpt_dir = Path(ckpt_dir)
-    repo = backbone_repo_for(ckpt_dir)
-    if not _is_dbv4_dir(ckpt_dir) or backbone_cached(repo):
-        return repo
-    if os.environ.get("ANIMA_TAGGER_NO_AUTOFETCH"):
-        raise FileNotFoundError(
-            f"AnimaTagger backbone {repo} is not in the HF cache and "
-            f"ANIMA_TAGGER_NO_AUTOFETCH is set. Run "
-            f"`python -m anime_tools.downloads tagger_backbone` "
-            f"({gated_hint(repo)})."
-        )
-    from anime_tools._hf import hf_download
-
-    logger.info(
-        "AnimaTagger: backbone %s not cached — fetching under your HF token "
-        "(gated, GPL-3.0; one-time).",
-        repo,
-    )
-    for fname in DBV4_BACKBONE_FILES:
-        hf_download(
-            what=f"AnimaTagger backbone ({repo})",
-            hint=gated_hint(repo),
-            repo_id=repo,
-            filename=fname,
-        )
-    return repo
-
-
-def _is_dbv4_dir(ckpt_dir: Path) -> bool:
-    try:
-        return read_json(ckpt_dir / "config.json").get("backend") == "dbv4"
-    except (OSError, ValueError):
-        return False
-
-
-# Digit-prefixed girls counts ("1girl"…"6+girls").
-_GIRLS_COUNT_RE = re.compile(r"^(\d+)\+?girls?$")
-
-# Exact people-count families ("3girls" / "2boys" / "1other", open "6+girls"
-# included). "multiple_girls"/"multiple_boys" ride alongside a digit count, so
-# neither this nor _GIRLS_COUNT_RE matches them.
-_EXACT_COUNT_RES = tuple(
-    re.compile(rf"^\d+\+?{noun}s?$") for noun in ("girl", "boy", "other")
-)
-
-
-def dedupe_count_tags(kept: dict[str, float]) -> None:
-    """Drop all but the highest-scoring exact count per family, in place.
-
-    The sigmoid head has no mutual exclusion, so a near-threshold image can
-    clear both ``3girls`` and ``4girls``, inflating the girls-count character
-    cap and tripping the position-clause count-mismatch gate.
-    """
-    for cre in _EXACT_COUNT_RES:
-        hits = sorted((n for n in kept if cre.match(n)), key=lambda n: -kept[n])
-        for name in hits[1:]:
-            kept.pop(name)
-
-
-# Canonical caption-format slot order (matches Anima training captions).
-SLOT_ORDER: tuple[str, ...] = (
-    "rating",
-    "count",
-    "character",
-    "copyright",
-    "artist",
-    "general",
-)
-
-# Booru tag-type integer → category name. Written into vocab.json and read back
-# at inference, so changes here invalidate existing checkpoints.
-TAG_TYPE_NAMES: dict[int, str] = {
-    0: "general",
-    1: "artist",
-    3: "copyright",
-    4: "character",
-    5: "metadata",
-    6: "deprecated",
-}
-
-# Canonical class-index order, least -> most restrictive. Do not reorder without
-# rebuilding vocab.json/dataset.json.
-RATINGS: tuple[str, ...] = ("safe", "sensitive", "nsfw", "explicit")
-
-# 8-class people-count bucket from parsed count tags (``classify_people``).
-# Order is the canonical class index — do not reorder without rebuilding vocab.
-PEOPLE_COUNT_LABELS: tuple[str, ...] = (
-    "no_people",  # 0 — no count tag at all
-    "1girl",  # 1 — 1girl, no boy
-    "1girl_1boy",  # 2 — exactly one of each
-    "2girls",  # 3 — 2girls, no boy
-    "2girls_1boy",  # 4 — 2girls + 1boy
-    "2boys_1girl",  # 5 — 2boys + 1girl  (mirror of 2girls_1boy)
-    "1boy",  # 6 — 1boy, no girl (solo male)
-    "multi",  # 7 — 3+girls / 3+boys / 2g-2b+ / multiple_* / Nothers
-)
-
-
-@dataclass
-class _TagEntry:
-    name: str
-    index: int
-    category: str
-    median_pos: float
-
-
-def _underscore_to_space(s: str) -> str:
-    """Apply at emit time, not vocab-build, so tag indexing stays stable."""
-    return s.replace("_", " ")
-
-
-def _fix_artist_category(category: str, name: str) -> str:
-    """Retype mis-categorized "artist" entries shipped in older vocab.json.
-
-    Those builds typed any ``@``-prefixed tag as ``artist``, sweeping up booru
-    emoticons like ``@_@``; the rule needs ``@`` followed by non-whitespace.
-    """
-    if category != "artist":
-        return category
-    if len(name) >= 2 and name[0] == "@" and not name[1].isspace():
-        return "artist"
-    return "general"
 
 
 def _load_thresholds(path: Path, n_tags: int, default: float = 0.5) -> torch.Tensor:
@@ -321,11 +133,11 @@ class AnimaTagger:
         self._sidecar: SidecarHead | None = None
 
         vocab = load_vocab(self.ckpt_dir)
-        self.tag_entries: list[_TagEntry] = [
-            _TagEntry(
+        self.tag_entries: list[TagEntry] = [
+            TagEntry(
                 name=t["name"],
                 index=int(t["index"]),
-                category=_fix_artist_category(str(t["category"]), t["name"]),
+                category=fix_artist_category(str(t["category"]), t["name"]),
                 median_pos=float(t.get("median_pos", 0.0)),
             )
             for t in vocab["tags"]
@@ -600,7 +412,7 @@ class AnimaTagger:
 
         # cap characters to the largest digit-prefixed girls-count in `kept`
         girl_caps = [
-            int(m.group(1)) for name in kept if (m := _GIRLS_COUNT_RE.match(name))
+            int(m.group(1)) for name in kept if (m := GIRLS_COUNT_RE.match(name))
         ]
         if girl_caps:
             cap = max(girl_caps)
@@ -681,4 +493,4 @@ class AnimaTagger:
         rating_held = flat[:1]
         rest = tr.apply_rules(flat[1:], self.rules)
         out_tags = rating_held + rest
-        return ", ".join(_underscore_to_space(t) for t in out_tags)
+        return ", ".join(underscore_to_space(t) for t in out_tags)

@@ -80,7 +80,7 @@ write pushes the replaced text onto `{stem}.history.txt`, which is what makes a 
 an Apply gate: the old version is a badge in the panel and Undo replays the report backwards.
 
 Excluding an image is the one gesture that moves files *out* of those trees:
-`anime_tools/exclude.py` puts every file it has (resized, mask, OCR sidecar) under
+`anime_tools/exclude/` puts every file it has (resized, mask, OCR sidecar) under
 `workspace/_excluded/<tree>/<rel>` and writes the rel into `workspace/_excluded/excluded.json`.
 The ledger is the state, and `resize` is where it bites — it adds every listed rel to its own
 `--skip`, which is the only place an exclusion has to be enforced, since every other stage
@@ -116,14 +116,15 @@ Each of these is implemented in one package but bites from any of them.
 - Dry-run by default from the CLI; `--apply` writes. Every run leaves `report.json`; the
   GUI always applies and relies on `{stem}.history.txt` plus `replay.apply_one` (the one
   drift-guarded write) for Undo.
-- An exclusion is enforced in one place. `exclude.py` empties the live trees, but only
+- An exclusion is enforced in one place. `exclude/` empties the live trees, but only
   `resize` could refill them, so only `resize` reads the ledger. A stage that learns to
   check it separately is a second answer to the same question — the fix for one that
   processes an excluded image is that it is not walking `workspace/resized/`.
-- Torch stays out of the server path. `captions/`, `gui/`, `contract.py`, `downloads.py`,
+- Torch stays out of the server path. `captions/`, `gui/`, `contract.py`, `downloads/`,
   every `requests.py` and `registry.py` import without torch; model imports live inside runner
   bodies. `tests/test_boundary.py` and `tests/test_registry_requests.py` pin it.
-- Weight locations are spelled once, in `downloads.py`; loaders import their defaults from
+- Weight locations are spelled once, in `downloads/_locations.py`; loaders import their
+  defaults from
   it. Procedure: the `model-catalog` skill.
 - One device answer, `_device.py::resolve_device`: `cuda`, then `mps`, then `cpu`, and
   whatever `--device` said if it said anything. Every stage's model takes the device its
@@ -132,7 +133,7 @@ Each of these is implemented in one package but bites from any of them.
 - Progress is stdout, in one format, from one place. `_progress.py::progress_line` prints
   `  [done/total] detail` — what the GUI's bar parses — and forwards the same step to the
   trainer's daemon under `ANIMA_DAEMON_JOB_DIR`. A stage that hands a callback down uses
-  `stages/cli/_args.py::make_progress`; a stage that walks its own loop uses
+  `stages/_progress.py::make_progress`; a stage that walks its own loop uses
   `_progress.ProgressBar` (`advance` / `note` / `tick`). No stage uses `tqdm`: its carriage
   returns are noise in the GUI's log and match nothing its bar reads. A stage that prints
   neither has no bar.
@@ -192,8 +193,8 @@ Each of these is implemented in one package but bites from any of them.
 | `anime_tools/gui/` — schema/argv binding, dataset ladder, jobs, settings | `anime_tools/gui/CLAUDE.md` |
 | `frontend/` — the Solid browser half | `frontend/CLAUDE.md` |
 | `anime_tools/ocr/` + `stages/ocr.py` — the AnimeText text-block detector over the resized tree, every box read by `ocr/sfx.py`, the manga VL crop reader (fine-tuned PaddleOCR-VL-1.6, decode guard built in) | `anime_tools/stages/CLAUDE.md`; the sidecar rule in the `captions` skill; `ocr/sfx.py`'s module doc |
-| `anime_tools/exclude.py` — taking an image out of the pipeline, and its ⊘ button | this file's "Where things get written"; `anime_tools/gui/CLAUDE.md` |
-| `anime_tools/downloads.py` — adding or moving a weight | the `model-catalog` skill |
+| `anime_tools/exclude/` — taking an image out of the pipeline, and its ⊘ button | this file's "Where things get written"; `anime_tools/gui/CLAUDE.md` |
+| `anime_tools/downloads/` — adding or moving a weight | the `model-catalog` skill |
 | `anime_tools/update.py` — the self-update and its GUI pane | the `release` skill; `anime_tools/gui/CLAUDE.md` |
 | A new stage, a renamed flag, a GUI knob | the `add-stage` skill |
 | A version bump, the installer, `release.yml` | the `release` skill |

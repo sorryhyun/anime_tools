@@ -1,5 +1,4 @@
-"""The progress callback the stage CLIs pass down — the one thing the CLIs
-still share now that their flags are request fields (``stages/requests.py``).
+"""The progress callback a stage runner passes down to its library function.
 
 The format itself and the thinning live in :mod:`anime_tools._progress`, which
 is also where the stages that walk their own loop get :class:`~anime_tools.

@@ -51,6 +51,10 @@ report.
 
 Rows are per *artifact*, not per image, each decided on its own.
 
+:func:`publish` plans and performs one export; :func:`run_export` is the stage
+runner over :class:`~anime_tools.stages.requests.ExportRequest`, which is where
+the workspace roots become an :class:`ExportPaths`.
+
 Torch-free.
 """
 
@@ -61,8 +65,10 @@ from collections import Counter
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from anime_tools import workspace as WS
+from anime_tools._env import resolve_path
 from anime_tools._walk import walk_images
 from anime_tools.captions._sidecar import render_rows, sidecar_header
 from anime_tools.captions.ocr_sidecar import (
@@ -77,6 +83,15 @@ from anime_tools.captions.variants import (
     variants_sidecar_path,
 )
 from anime_tools.masking._masks import mask_name, mask_path_for
+from anime_tools.stages._progress import make_progress
+from anime_tools.stages._report import (
+    print_dry_run_footer,
+    stage_report_header,
+    write_stage_report,
+)
+
+if TYPE_CHECKING:
+    from anime_tools.stages.requests import ExportRequest
 
 KINDS = ("image", "caption", "variants", "mask", "master", "index")
 """Every artifact kind, in the order :func:`plan_export` emits them per image."""
@@ -483,7 +498,7 @@ def export_one(row: ExportRow, *, apply: bool) -> str:
     return row.status
 
 
-def run_export(
+def publish(
     paths: ExportPaths,
     *,
     apply: bool = False,
@@ -603,4 +618,57 @@ def revert_export(
 
         if not row.status.startswith(("would-", "removed", "restored")):
             stats.skip(row.status)
+    return rows, stats
+
+
+# ---- the stage runner ----------------------------------------------------
+
+
+def run_export(req: ExportRequest):
+    """Publish the workspace under ``out``. Returns ``(rows, stats)``."""
+    paths = ExportPaths(
+        resized=resolve_path(req.dst),
+        masks=resolve_path(req.masks),
+        master=resolve_path(req.master),
+        index=resolve_path(req.index),
+        src=resolve_path(req.src),
+        out=resolve_path(req.out),
+        excluded=resolve_path(req.excluded_dir),
+        ocr=resolve_path(req.ocr_dir) if req.combine_ocr else None,
+        ocr_min_det=req.ocr_min_det,
+        ocr_min_glyph=req.ocr_min_glyph,
+    )
+    if not paths.resized.is_dir():
+        raise FileNotFoundError(
+            f"nothing to export: {paths.resized} does not exist. "
+            "Run the Resize stage first."
+        )
+    rows, stats = publish(paths, apply=req.apply, progress=make_progress(50))
+    path = write_stage_report(
+        resolve_path(req.report_dir),
+        {
+            **stage_report_header(
+                src=paths.src,
+                dst=paths.resized,
+                path_pattern=None,
+                apply=req.apply,
+            ),
+            "out": str(paths.out),
+            "excluded_dir": str(paths.excluded),
+            "combine_ocr": req.combine_ocr,
+            "ocr_dir": str(paths.ocr) if paths.ocr is not None else None,
+            "ocr_min_det": req.ocr_min_det,
+            "ocr_min_glyph": req.ocr_min_glyph,
+            "stats": stats.to_dict(),
+            "rows": [r.to_dict() for r in rows],
+        },
+    )
+    print(f"\nreport → {path}")
+    combined = f", {stats.combined} with OCR attached" if req.combine_ocr else ""
+    excluded = f", {stats.excluded} under _excluded/" if stats.excluded else ""
+    print_dry_run_footer(
+        req.apply,
+        f"published: {stats.created} created, "
+        f"{stats.overwrote} overwritten{combined}{excluded}",
+    )
     return rows, stats

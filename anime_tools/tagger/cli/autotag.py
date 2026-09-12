@@ -15,11 +15,8 @@ import logging
 from anime_tools._device import add_device_arg, resolve_device
 from anime_tools._env import resolve_path, setup_logging
 from anime_tools.contract import AUTOTAG_RESULT_PREFIX
-from anime_tools.tagger.tagger import (
-    DEFAULT_TAGGER_DIR,
-    AnimaTagger,
-    ensure_tagger_checkpoint,
-)
+from anime_tools.tagger.fetch import ensure_tagger_checkpoint
+from anime_tools.tagger.tagger import DEFAULT_TAGGER_DIR, AnimaTagger
 
 # Sentinel prefix the GUI greps for in the job's stdout. Tab-separated so the
 # caption (commas + spaces) survives intact on one line.

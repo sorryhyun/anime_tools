@@ -23,7 +23,7 @@ __all__ = [
 # ``drop_variants`` mirrors the stage's own write: a stale
 # ``{stem}.variants.txt`` outranks ``{stem}.txt`` at encode time.
 REPLAY_SPEC = REPLAY_SHAPES["position"]
-"""The shape ``stages.run`` replays this stage's report through — the same
+"""The shape ``run_position`` replays this stage's report through — the same
 object ``gui/proposals.py`` reads from ``contract.REPLAY_SHAPES``."""
 
 DEFAULT_REPORT_DIR = PositionRequest.report_dir
@@ -44,7 +44,7 @@ def options_from_flag_string(
 
 
 def main(argv: list[str] | None = None) -> None:
-    from anime_tools.stages.run import run_position
+    from anime_tools.stages.position_captions import run_position
 
     try:
         run_position(PositionRequest.from_argv(build_parser(), argv))

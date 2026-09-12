@@ -12,17 +12,26 @@ caption's count, or the caption's ``expected=1`` would stop the search at the
 first box — on precisely the image we are trying to catch.
 
 Read-only apart from :func:`apply_findings`. See ``docs/multiview_audit.md``.
+
+Two ways in: :func:`run_audit`, the standalone stage runner over
+:class:`~anime_tools.stages.requests.AuditRequest`, and :func:`run_audit_phase`,
+the same sweep run as the position stage's first phase over the caller's
+already-resident models.
 """
 
 from __future__ import annotations
 
+import json
 from collections import Counter
 from collections.abc import Callable, Collection, Iterable, Mapping, Sequence
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, replace
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from PIL import Image
 
+from anime_tools._env import resolve_path
+from anime_tools._json import write_json
 from anime_tools.captions.caption_layout import (
     caption_boy_count,
     is_candidate,
@@ -36,6 +45,7 @@ from anime_tools.captions.position_clauses import (
     parse_caption,
 )
 from anime_tools.captions.taxonomy import count_of, exact_count, normalize_tag
+from anime_tools.contract import REPLAY_SHAPES
 
 # Re-exported: the verdict names and the two witness floors are request defaults,
 # so they live in the leaf the schema build reads (:mod:`stages._options`).
@@ -47,11 +57,16 @@ from anime_tools.stages._options import (
 )
 from anime_tools.stages.instance_detection import Detection, crop_instance
 
-from ._analysis import clear_analysis, write_analysis
+from ._analysis import ANALYSIS_SUBDIR, clear_analysis, write_analysis
 from ._caption_io import read_caption
+from ._progress import make_progress
+from ._report import print_dry_run_footer, stage_report_header, write_stage_report
 from ._walk_captions import iter_captions
 from .position_captions import PositionCaptionOptions, detect_subjects
 from .replay import apply_one, undo_one
+
+if TYPE_CHECKING:
+    from anime_tools.stages.requests import AuditRequest, PositionRequest
 
 # The audit population, named by `is_candidate`'s own reason string.
 AUDIT_SKIP_REASON = "single-subject"
@@ -620,6 +635,85 @@ def promotions(
     }
 
 
+def run_audit_phase(
+    req: PositionRequest,
+    *,
+    src: Path,
+    dst: Path,
+    report_dir: Path,
+    detect_fn,
+    part_detect_fn,
+    tagger,
+    vocabulary,
+):
+    """The audit run as the position stage's first phase.
+
+    Reuses the caller's already-resident SAM3 + tagger and detects under
+    ``req.audit_options()`` — this stage's detector with ``min_instances``
+    pinned to 2, which is the one thing the audit does differently on purpose.
+    Its report and sheets land under ``<report_dir>/audit/`` so neither phase
+    can read the other's back on a replay.
+
+    Returns ``(rows, stats, promoted)``. ``promoted`` is what
+    :func:`promotions` admitted, empty unless the mode is ``apply``; it is built
+    whether or not ``--apply`` was passed, so a dry run's report is the plan an
+    apply would carry out.
+    """
+    if not req.audits:
+        return [], None, {}
+
+    audit_dir = report_dir / "audit"
+    print(
+        f"multiview audit ({req.multiview_audit}): sweeping the single-subject captions"
+    )
+    rows, stats = run_multiview_audit(
+        resized_dir=dst,
+        source_dir=src,
+        detect_fn=detect_fn,
+        tag_fn=tagger.predict,
+        vocabulary=vocabulary,
+        options=req.audit_options(),
+        path_pattern=req.path_pattern,
+        crops_dir=(audit_dir / "crops") if req.crops else None,
+        sheets_dir=(audit_dir / "sheets") if req.multiview.sheets else None,
+        analysis_dir=audit_dir / ANALYSIS_SUBDIR,
+        progress=make_progress(200),
+        part_detect_fn=part_detect_fn,
+        multiview_threshold=req.multiview.multiview_threshold,
+        identity_confidence=req.multiview.identity_confidence,
+        suggest_counts=req.multiview.suggest_counts,
+    )
+    promoted = (
+        promotions(
+            rows,
+            verdicts=req.multiview.apply_verdicts,
+            confidences=req.multiview.apply_confidence,
+        )
+        if req.promotes
+        else {}
+    )
+    write_json(
+        audit_dir / "audit_report.json",
+        {
+            "summary": {
+                "mode": req.multiview_audit,
+                "seen": stats.seen,
+                "audited": stats.audited,
+                "findings": stats.findings,
+                "verdicts": dict(sorted(stats.verdicts.items(), key=lambda kv: -kv[1])),
+                "promoted": len(promoted),
+                "skipped": dict(sorted(stats.skipped.items(), key=lambda kv: -kv[1])),
+            },
+            "images": [asdict(r) for r in rows],
+        },
+    )
+    print(
+        f"  audited {stats.audited}, {stats.findings} finding(s), "
+        f"{len(promoted)} promoted into the sweep"
+    )
+    return rows, stats, promoted
+
+
 def apply_findings(
     findings: Iterable[MultiviewFinding],
     *,
@@ -773,3 +867,129 @@ def revert_curated(
         )
         outcome["status"] = _REVERT_STATUS.get(status, status)
     return results
+
+
+# ---- the stage runner ----------------------------------------------------
+
+
+def _written_note(dst: Path, written: int, holder: str) -> str:
+    return (
+        f"\n{written} revised caption(s) written ({dst}). Run "
+        "`make preprocess-te` now to re-encode. To back it out: the "
+        f"`.history.txt` sidecar beside each, or {holder}."
+    )
+
+
+def run_audit(req: AuditRequest):
+    """Sweep the single-subject images for several views of one girl and (with
+    ``apply``) write the missing tag into the caption master. Returns
+    ``(rows, stats)``."""
+    from anime_tools.stages.replay import run_replay_cli
+
+    src = resolve_path(req.src)
+    dst = resolve_path(req.dst)
+    report_dir = resolve_path(req.report_dir)
+    verdicts, confidences = req.multiview.apply_verdicts, req.multiview.apply_confidence
+
+    if req.from_report:
+        # The writable set is the verdict/confidence gate, not a row ``status``,
+        # so ``row_filter`` is closed over the gate here.
+        rows, stats, _ = run_replay_cli(
+            req,
+            spec=replace(
+                REPLAY_SHAPES["audit"],
+                row_filter=lambda row: (
+                    row.get("verdict") in verdicts
+                    and row.get("confidence") in confidences
+                ),
+            ),
+            src=src,
+            dst=dst,
+            report_dir=report_dir,
+            notes=[f"gate: verdicts={list(verdicts)} confidences={list(confidences)}"],
+            after_write_note=lambda stats: _written_note(
+                dst, stats.written, "the replayed report"
+            ),
+        )
+        return rows, stats
+
+    from anime_tools.stages._models import load_tagger
+    from anime_tools.stages.detector import build_detect_fn
+
+    detect_fn, part_detect_fn, sam_model, sam_processor = build_detect_fn(
+        req.detection, device=req.device
+    )
+    tagger, vocabulary, _ckpt_dir = load_tagger(req)
+    options = req.options()
+
+    rows, stats = run_multiview_audit(
+        resized_dir=dst,
+        source_dir=src,
+        detect_fn=detect_fn,
+        tag_fn=tagger.predict,
+        vocabulary=vocabulary,
+        options=options,
+        path_pattern=req.path_pattern,
+        crops_dir=(report_dir / "crops") if req.crops else None,
+        sheets_dir=(report_dir / "sheets") if req.multiview.sheets else None,
+        analysis_dir=report_dir / ANALYSIS_SUBDIR,
+        progress=make_progress(200),
+        part_detect_fn=part_detect_fn,
+        multiview_threshold=req.multiview.multiview_threshold,
+        identity_confidence=req.multiview.identity_confidence,
+        suggest_counts=req.multiview.suggest_counts,
+    )
+    del sam_processor, sam_model
+
+    written: list[tuple[str, str, str]] = []
+    apply_skipped: dict[str, int] = {}
+    if req.apply:
+        written, skipped = apply_findings(
+            rows, resized_dir=dst, verdicts=verdicts, confidences=confidences
+        )
+        apply_skipped = dict(skipped.most_common())
+
+    summary = {
+        **stage_report_header(
+            src=src, dst=dst, path_pattern=req.path_pattern, apply=req.apply
+        ),
+        "seen": stats.seen,
+        "audited": stats.audited,
+        "findings": stats.findings,
+        "verdicts": dict(sorted(stats.verdicts.items(), key=lambda kv: -kv[1])),
+        "by_confidence": {
+            tier: sum(1 for r in rows if r.confidence == tier)
+            for tier in ("strong", "weak")
+        },
+        "actionable": sum(1 for r in rows if r.suggested_tag),
+        "by_source": {
+            "detection": sum(1 for r in rows if r.source == "detection"),
+            "tagger-only": sum(1 for r in rows if r.source == "tagger-only"),
+        },
+        "written": len(written),
+        # Why a row was not written: ``drifted`` / ``already-applied`` / gated.
+        "apply_skipped": apply_skipped,
+        "part_prompts": list(options.part_prompts),
+        "part_recovered": sum(
+            1 for r in rows if any(c.source != "subject" for c in r.crops)
+        ),
+        "skipped": dict(sorted(stats.skipped.items(), key=lambda kv: -kv[1])),
+    }
+    report_path = write_stage_report(
+        report_dir,
+        {
+            "summary": summary,
+            "images": [asdict(r) for r in rows],
+            "written": [
+                {"caption_path": rel, "before": before, "after": after}
+                for rel, before, after in written
+            ],
+        },
+    )
+
+    print(json.dumps(summary, indent=2, ensure_ascii=False))
+    print(f"\nreport: {report_path}")
+    if req.multiview.sheets:
+        print(f"sheets: {report_dir / 'sheets'} (one PNG per finding, verdict-first)")
+    print_dry_run_footer(req.apply, _written_note(dst, len(written), "report.json"))
+    return rows, stats

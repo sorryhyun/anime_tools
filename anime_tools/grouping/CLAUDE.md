@@ -5,7 +5,7 @@ Near-twin grouping over PE-Spatial features. Docs: `docs/grouping.md` (what a ne
 
 `features.Embedder` protocol (`cls[B,D]` f32 L2-normed + `grid16[B,16,16,D]` f16); default
 embedder is PE-Spatial-B16-512 from the vendored tower in `vision/pe.py`, whose weight path comes
-from `downloads.py`. Feature cache at `$NEAR_TWIN_CACHE` (default `~/.cache/near_twin/`) is
+from `downloads/`. Feature cache at `$NEAR_TWIN_CACHE` (default `~/.cache/near_twin/`) is
 curation-private, keyed by parent-dir hash + stem and stamped with `(size, mtime_ns)` +
 `FEATURE_CACHE_VER`; anything wrong with an entry means recompute, never an error. The stamp is
 load-bearing because `resize` rewrites files under a key that doesn't move.

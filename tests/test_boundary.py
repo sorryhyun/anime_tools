@@ -41,7 +41,12 @@ def test_captions_core_is_torch_free():
 
     code = (
         "import sys, anime_tools, anime_tools.captions, anime_tools.captions.correction, "
-        "anime_tools.captions.variants, anime_tools.captions.index, anime_tools.tagger.dbv4_meta; "
+        "anime_tools.captions.variants, anime_tools.captions.index, "
+        # The tagger's three torch-free leaves: where a checkpoint's files live,
+        # what a tag means to one, and getting one onto disk. The vocab build and
+        # the ComfyUI node read them without loading a model.
+        "anime_tools.tagger.dbv4_meta, anime_tools.tagger.schema, "
+        "anime_tools.tagger.fetch; "
         "assert 'torch' not in sys.modules"
     )
     r = subprocess.run(

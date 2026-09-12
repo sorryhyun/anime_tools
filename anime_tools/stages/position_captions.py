@@ -7,21 +7,27 @@ An attributable tag *moves* out of the flat bag into its clause, so each
 attribute is asserted exactly once; ``rewrite=False`` keeps the additive v1
 behaviour. Reversible via :func:`flatten_captions`.
 
-Takes its two models as injected callables (``detect_fn``/``tag_fn``), staying
-import-free of SAM3/the tagger; ``stages/cli/position_captions.py`` owns
-argparse + model loading.
+The library half takes its two models as injected callables
+(``detect_fn``/``tag_fn``), staying import-free of SAM3/the tagger;
+:func:`run_position`, the stage runner, is what loads them — and the multiview
+audit phase that runs first, over the captions this sweep rejects
+(:func:`~anime_tools.stages.multiview_audit.run_audit_phase`).
 
 Per-rule evidence and the knob table live in ``docs/position_captions.md``.
 """
 
 from __future__ import annotations
 
+import json
 from collections.abc import Callable, Mapping
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from PIL import Image
 
+from anime_tools._env import resolve_path
+from anime_tools._json import write_json
 from anime_tools.captions.caption_layout import (
     caption_boy_count,
     caption_panel_ceiling,
@@ -46,6 +52,7 @@ from anime_tools.captions.position_clauses import (
     parse_caption,
 )
 from anime_tools.captions.taxonomy import normalize_tag
+from anime_tools.contract import REPLAY_SHAPES
 
 # Re-exported: the knob dataclass is a leaf so the GUI's schema build can read the
 # defaults without importing this module (:mod:`stages._options`).
@@ -63,9 +70,14 @@ from anime_tools.stages.instance_detection import (
     merge_part_detections,
 )
 
-from ._analysis import clear_analysis, write_analysis
+from ._analysis import ANALYSIS_SUBDIR, clear_analysis, write_analysis
 from ._caption_io import read_caption, write_caption
+from ._progress import make_progress
+from ._report import print_dry_run_footer, stage_report_header, write_stage_report
 from ._walk_captions import iter_captions
+
+if TYPE_CHECKING:
+    from anime_tools.stages.requests import PositionRequest
 
 # Convenience re-exports: canonical homes are the modules imported above, but
 # consumers reach for them on this module.
@@ -99,7 +111,9 @@ __all__ = [
     "merge_part_detections",
     "plan_bag_removals",
     "propose_for_image",
+    "run_position",
     "run_position_captions",
+    "summarize",
 ]
 
 
@@ -662,4 +676,228 @@ def flatten_captions(
                 history_by="flatten",
             )
             stats.written += 1
+    return rows, stats
+
+
+# ---------------------------------------------------------------------------
+# The stage runner
+# ---------------------------------------------------------------------------
+
+TE_NOTE = (
+    "\nWritten to the resized captions (the master is untouched). Run "
+    "`make preprocess-te` now to regenerate the variant sidecars and "
+    "re-encode."
+)
+
+
+def summarize(
+    rows: list[ImageProposal],
+    stats: PositionCaptionStats,
+    options: PositionCaptionOptions,
+) -> dict[str, object]:
+    """What the run itself says, for ``report.json``'s ``summary``.
+
+    The counts, how much of the flat bag the clauses took, which rules pinned a
+    tag flat, and what the part prompts recovered. The runner adds the roots it
+    walked and the knobs it was given — those are the request's to report, not
+    the sweep's.
+    """
+    return {
+        "seen": stats.seen,
+        "candidates": stats.candidates,
+        "proposed": stats.proposed,
+        "written": stats.written,
+        # How much of the flat bag the clauses took. Zero under --no_rewrite.
+        "rewritten": stats.rewritten,
+        "moved_tags": stats.moved_tags,
+        "clause_tags": stats.clause_tags,
+        "novel_tags": stats.novel_tags,
+        "reuse_ratio": (
+            round(1.0 - stats.novel_tags / stats.clause_tags, 3)
+            if stats.clause_tags
+            else None
+        ),
+        "pinned_tags": dict(sorted(stats.pinned_tags.items(), key=lambda kv: -kv[1])),
+        "skipped": dict(sorted(stats.skipped.items(), key=lambda kv: -kv[1])),
+        "part_prompts": list(options.part_prompts),
+        # Images with at least one bound instance from a part prompt.
+        "part_recovered": sum(
+            1 for r in rows if any(i.source != "subject" for i in r.instances)
+        ),
+        "max_tokens": max(
+            (r.tokens for r in rows if r.tokens is not None), default=None
+        ),
+    }
+
+
+def _run_flatten(req: PositionRequest, src: Path, dst: Path, report_dir: Path):
+    """The inverse pass — text only, so it short-circuits before any model load."""
+    rows, stats = flatten_captions(
+        resized_dir=dst, source_dir=src, path_pattern=req.path_pattern, apply=req.apply
+    )
+    summary = {
+        "mode": "flatten",
+        "applied": bool(req.apply),
+        "seen": stats.seen,
+        "with_clauses": stats.candidates,
+        "flattened": stats.proposed,
+        "written": stats.written,
+        "skipped": dict(sorted(stats.skipped.items(), key=lambda kv: -kv[1])),
+    }
+    # Its own name, not ``report.json``: replaying a flatten would write the
+    # clauses back.
+    write_json(report_dir / "flatten_report.json", {"summary": summary, "images": rows})
+    print(json.dumps(summary, indent=2, ensure_ascii=False))
+    print(f"\nreport: {report_dir / 'flatten_report.json'}")
+    print_dry_run_footer(req.apply, TE_NOTE)
+    return rows, stats
+
+
+def run_position(req: PositionRequest):
+    """Detect → order → crop → tag → compose over the resized tree, or the
+    ``flatten`` / ``from_report`` text-only passes. Returns ``(rows, stats)``."""
+    from anime_tools.stages.replay import run_replay_cli
+
+    src = resolve_path(req.src)
+    dst = resolve_path(req.dst)
+    report_dir = resolve_path(req.report_dir)
+
+    if req.flatten:
+        return _run_flatten(req, src, dst, report_dir)
+    if req.from_report:
+        # ``drop_variants`` mirrors the stage's own write: a stale
+        # ``{stem}.variants.txt`` outranks ``{stem}.txt`` at encode time.
+        rows, stats, _ = run_replay_cli(
+            req,
+            spec=REPLAY_SHAPES["position"],
+            src=src,
+            dst=dst,
+            report_dir=report_dir,
+            after_write_note=TE_NOTE,
+        )
+        return rows, stats
+
+    from anime_tools.masking._prompts import prompt_embed_sha256, resolve_prompt_embed
+    from anime_tools.stages._models import load_tagger
+    from anime_tools.stages.detector import build_detect_fn
+
+    # Deferred, and only here: the audit phase's module imports this one.
+    from anime_tools.stages.multiview_audit import run_audit_phase
+
+    # Both stay resident: the pipeline is per-image (detect -> crop -> tag), not
+    # two dataset-wide passes.
+    detect_fn, part_detect_fn, sam_model, sam_processor = build_detect_fn(
+        req.detection, device=req.device
+    )
+    tagger, vocabulary, _ckpt_dir = load_tagger(req)
+
+    token_count_fn = None
+    if req.qwen3:
+        from anime_tools.captions.tokenizers import load_qwen3_tokenizer_from_dir
+
+        tokenizer = load_qwen3_tokenizer_from_dir(req.qwen3)
+
+        def token_count_fn(text: str) -> int:
+            return len(tokenizer(text, add_special_tokens=True)["input_ids"])
+
+    # Phase 1: the audit, over the captions phase 2 rejects as single-subject.
+    # BEFORE the sweep, not after: `multiple views` is what promotes an image out
+    # of that rejection and what arms the view-invariant gate, so a tag written
+    # afterwards would need a second position run to do any work.
+    _audit_rows, audit_stats, promoted = run_audit_phase(
+        req,
+        src=src,
+        dst=dst,
+        report_dir=report_dir,
+        detect_fn=detect_fn,
+        part_detect_fn=part_detect_fn,
+        tagger=tagger,
+        vocabulary=vocabulary,
+    )
+
+    options = req.options()
+    rows, stats = run_position_captions(
+        resized_dir=dst,
+        source_dir=src,
+        detect_fn=detect_fn,
+        part_detect_fn=part_detect_fn,
+        tag_fn=tagger.predict,
+        vocabulary=vocabulary,
+        options=options,
+        path_pattern=req.path_pattern,
+        apply=req.apply,
+        crops_dir=(report_dir / "crops") if req.crops else None,
+        token_count_fn=token_count_fn,
+        progress=make_progress(200),
+        promoted=promoted,
+        analysis_dir=report_dir / ANALYSIS_SUBDIR,
+    )
+    del sam_processor, sam_model
+
+    over_budget = [
+        r for r in rows if r.tokens is not None and r.tokens > req.max_tokens
+    ]
+    embed_path = resolve_prompt_embed(req.detection.prompt_embed)
+    summary = {
+        **stage_report_header(
+            src=src, dst=dst, path_pattern=req.path_pattern, apply=req.apply
+        ),
+        "rewrite": bool(req.rewrite),
+        # A soft prompt is a file: two runs only compare when the sha matches.
+        "prompt": req.detection.prompt,
+        "prompt_embed": str(embed_path) if embed_path else None,
+        "prompt_embed_sha256": prompt_embed_sha256(embed_path),
+        "attribution_margin": req.attribution_margin,
+        "max_novel_tags": req.max_novel_tags,
+        **summarize(rows, stats, options),
+        # The audit phase, when it ran. ``promoted`` is what phase 1 handed to
+        # phase 2; ``promoted_written`` is the tail phase 2 could not turn into
+        # clauses and wrote for the tag alone.
+        "multiview_audit": (
+            {
+                "mode": req.multiview_audit,
+                "audited": audit_stats.audited,
+                "findings": audit_stats.findings,
+                "verdicts": dict(
+                    sorted(audit_stats.verdicts.items(), key=lambda kv: -kv[1])
+                ),
+                "promoted": stats.promoted,
+                "promoted_written": stats.promoted_written,
+                "report": str(report_dir / "audit" / "audit_report.json"),
+            }
+            if audit_stats is not None
+            else None
+        ),
+        "over_token_budget": [r.image for r in over_budget],
+    }
+    report_path = write_stage_report(
+        report_dir, {"summary": summary, "images": [asdict(r) for r in rows]}
+    )
+
+    print(json.dumps(summary, indent=2, ensure_ascii=False))
+    print(f"\nreport: {report_path}")
+    if over_budget:
+        print(
+            f"WARNING: {len(over_budget)} caption(s) exceed {req.max_tokens} tokens — "
+            "the tail truncates silently at TE-cache time."
+        )
+    if audit_stats is not None:
+        print(
+            f"multiview audit: {audit_stats.findings} finding(s) over "
+            f"{audit_stats.audited} single-subject caption(s); "
+            f"{stats.promoted} promoted into this run's sweep. "
+            f"sheets: {report_dir / 'audit' / 'sheets'}"
+        )
+        if req.audits and not req.promotes and audit_stats.findings:
+            print(
+                "  --multiview_audit=report tags nothing. Re-run with "
+                "`--multiview_audit apply` to feed the findings into the sweep."
+            )
+    print_dry_run_footer(req.apply, TE_NOTE)
+    if req.apply and req.rewrite and stats.moved_tags:
+        print(
+            f"{stats.moved_tags} tag(s) moved out of the flat bag across "
+            f"{stats.rewritten} caption(s). To back that out: "
+            '`make caption-position ARGS="--flatten --apply"`.'
+        )
     return rows, stats

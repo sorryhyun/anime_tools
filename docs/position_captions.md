@@ -91,7 +91,7 @@ Per candidate image (`anime_tools/stages/position_captions.py`):
 
 1. Detect — SAM3 on the resized image (the pixels training actually sees).
    The subject pass runs a learned soft prompt: `--prompt_embed`, defaulting
-   to `DEFAULT_SUBJECT_PROMPT_EMBED` in `anime_tools/downloads.py`
+   to `DEFAULT_SUBJECT_PROMPT_EMBED` in `anime_tools/downloads/`
    (`networks/calibration/sam3_girl_prompt.safetensors`); `--prompt_embed none`
    restores the text prompt `girl`, and a checkout without the artifact degrades
    to it with a warning (fetch it with `python -m anime_tools.downloads
@@ -573,11 +573,11 @@ back to the box rules, so `merge_part_detections` is unaffected.
 | `anime_tools/masking/_prompts.py` | What a SAM3 prompt is, for both packages: the `girl` text prompt, `--checkpoint` / `--prompt_embed` help, `prompt_list`, and the soft prompt (`resolve_prompt_embed` / `load_soft_prompt` / `prompt_embed_sha256`). Torch-free and numpy-free, so a request can take its defaults from it |
 | `anime_tools/stages/position_captions.py` | Pipeline orchestration (`propose_for_image`, `flatten_captions`); models injected as `detect_fn` / `tag_fn` |
 | `anime_tools/stages/requests.py` | `PositionRequest` + the nested `DetectionRequest` (torch-free) — the stage's surface; `.options()` builds `PositionCaptionOptions` |
-| `anime_tools/stages/run.py` | `run_position(req)` — preflight, SAM3/tagger load, the pipeline call, `report.json`, epilogue |
+| `anime_tools/stages/position_captions.py` | `run_position(req)` — preflight, SAM3/tagger load, the pipeline call, `summarize()`, `report.json`, epilogue |
 | `anime_tools/stages/detector.py` / `_models.py` | `build_detect_fn` over a `DetectionRequest`; the per-process tagger cache |
 | `anime_tools/stages/cli/position_captions.py` | CLI shell — argparse only (`options_from_flag_string` is shared with the A/B and review tools) |
 | `anime_tools/stages/cli/ab_position_captions.py` | A/B two flag sets off one detect+tag pass. Pass sides as `--a_flags=--foo` — the `=` is required, argparse reads a `-`-leading value as the next option |
 | `anime_tools/stages/cli/review_position_captions.py` | Contact sheet for an applied run — overlay, crops, master vs revised caption, moved / novel / duplicated marks, `drift` flag |
-| `anime_tools/downloads.py` | `DEFAULT_SUBJECT_PROMPT_EMBED` and the `soft_prompt` asset row that fetches it |
+| `anime_tools/downloads/` | `DEFAULT_SUBJECT_PROMPT_EMBED` and the `soft_prompt` asset row that fetches it |
 | `anime_tools/captions/variants.py` / `correction.py` | Atomic-clause variant generation; clause-aware order correction |
 | `tests/test_position_captions.py` | Unit tests (grammar round-trip, ordering, selection, skip paths, the rewrite rules) |

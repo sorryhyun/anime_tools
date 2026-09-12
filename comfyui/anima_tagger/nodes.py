@@ -30,10 +30,10 @@ try:
     from anime_tools.tagger import AnimaTagger
     from anime_tools.tagger.dbv4_meta import DEFAULT_TAGGER_DIR, TAGGER_HF_REPO
 
-    # ``_is_dbv4_dir`` is private but is the package's one answer to "is this
-    # checkpoint dbv4-backed?"; re-spelling it here would let the dropdown and
-    # the loader disagree.
-    from anime_tools.tagger.tagger import _is_dbv4_dir, ensure_tagger_checkpoint
+    # ``fetch`` is torch-free, and ``is_dbv4_dir`` is the package's one answer
+    # to "is this checkpoint dbv4-backed?"; re-spelling it here would let the
+    # dropdown and the loader disagree.
+    from anime_tools.tagger.fetch import ensure_tagger_checkpoint, is_dbv4_dir
 except ImportError as e:  # pragma: no cover — install-time guidance
     raise ImportError(
         "comfyui-anima-tagger needs the `anime-tools` package: "
@@ -93,7 +93,7 @@ def _list_tagger_dirs() -> list[str]:
                 cfg_d = json.load(f)
         except (OSError, ValueError):
             continue
-        if not _is_dbv4_dir(p) and not cfg_d.get("aux_encoder"):
+        if not is_dbv4_dir(p) and not cfg_d.get("aux_encoder"):
             continue
         out.append(str(p.relative_to(HOME)))
     return out
@@ -167,7 +167,7 @@ class AnimaTaggerLoader:
             "AnimaTaggerLoader: loading %s on %s (backend=%s)",
             tdir,
             device,
-            "dbv4" if _is_dbv4_dir(tdir) else "pe",
+            "dbv4" if is_dbv4_dir(tdir) else "pe",
         )
         # PE checkpoints stay unset: inert on dbv4, encoder-registry default
         # (-> HF fallback) on a legacy PE-head checkpoint.

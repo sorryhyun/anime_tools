@@ -29,7 +29,8 @@ def load_anima_tagger(
 ):
     """``(tagger, ckpt_dir)`` for a checkpoint dir (``None`` = the shipped
     default, fetched when absent) on ``device`` (``None`` = auto)."""
-    from anime_tools.tagger.tagger import AnimaTagger, ensure_tagger_checkpoint
+    from anime_tools.tagger.fetch import ensure_tagger_checkpoint
+    from anime_tools.tagger.tagger import AnimaTagger
 
     # One phase over the fetch and the build: the first run's backbone download
     # is the quiet stretch a daemon stall watchdog would otherwise read as a wedge.

@@ -67,13 +67,24 @@ split a *tagger's* comma-joined output rather than a caption.
       the 4.6k-line schema dump and ~70k lines of A/B'd `build_argv` output are byte-identical to
       before, so `types.ts` and the bundle needed no change.
 
-- [ ] **`stages/run.py` holds seven runners (882 lines) away from the stage modules**, while
-      `registry.py` already addresses runners as `module:function`. `run_position`'s 55-line summary
-      dict (`:335`) belongs in `position_captions.summarize()`, and `_run_audit_phase` belongs beside
-      `promotions` in `multiview_audit.py`. What is left per runner is roughly 30 lines.
+- [x] **`stages/run.py` holds seven runners (882 lines) away from the stage modules.**
+      *Done 2026-09-12.* `run.py` is gone; each runner lives in its stage's own module and
+      `registry.py` names it there (`anime_tools.stages.autotag:run_autotag`, …), with
+      `stages/__init__.py`'s `_RUNNERS` the same mapping for the lazy re-export. The two pieces
+      that were orchestration rather than runner moved with it: `position_captions.summarize()`
+      holds the counts half of the report (the runner keeps the header and the knobs, which are
+      the request's to report), and `multiview_audit.run_audit_phase` sits beside `promotions`,
+      its only caller, so the position stage imports it rather than reimplementing the phase.
+      Two library functions were renamed out of the runners' way, to the aliases `run.py` already
+      gave them: `stages/ocr.py::run_ocr` → `read_tree` and
+      `export_workspace.py::run_export` → `publish`.
+      `tests/test_ocr.py`'s device test stopped being an `inspect.getsource` grep for
+      `_vl_engine(req, engine, resized_dir, device)` and now stubs both loads: one probe, and the
+      same string handed to the detector and the reader.
 
-- [ ] **`stages/run.py:25` imports from `stages/cli/_args.py` and `cli/_report.py`** — the library
-      depends on its own CLI package. Move both to `stages/_report.py` and `stages/_progress.py`.
+- [x] **`stages/run.py:25` imports from `stages/cli/_args.py` and `cli/_report.py`.**
+      *Done 2026-09-12.* Both are `stages/_report.py` and `stages/_progress.py` now, so the library
+      half no longer depends on its own CLI package.
 
 - [x] **The masking ↔ stages seam is two-way.** *Done 2026-09-12.* The prompt vocabulary went
       into a new `masking/_prompts.py` rather than into `_sam3.py`: `SUBJECT_PROMPT`, the two help
@@ -99,22 +110,45 @@ split a *tagger's* comma-joined output rather than a caption.
       Fix: emit it from `schema()` during `scripts/build_frontend.sh`, or add a test asserting the
       key sets match. CI already diffs the bundle, so generation would be enforced for free.
 
-- [ ] **`gui/server.py` is one 1129-line file with ~620 lines of route closures inside
-      `create_app`.** Natural split: routers for jobs, dataset, desktop (`/api/pick`, `/reveal`,
-      `/ls`) and settings, reading `request.app.state`, plus a `launch.py` for `main`/`pick_port`.
-      Settings-derived values (`roots_for`, `stage_defaults`, `report_root`, `mask_root`) are
-      recomputed in varying combinations per handler; a `RunContext` built once per request would
-      replace four kwargs with one object.
+- [x] **`gui/server.py` is one 1129-line file with ~620 lines of route closures inside
+      `create_app`.** *Done 2026-09-12.* 1129 → 205. The API is `gui/routes/` — `settings`, `jobs`,
+      `dataset`, `desktop` — each an `APIRouter` reading its state off `request.app.state`
+      (`jobs` / `schemas` / `watch`, the last one new: `/api/alive` had closed over the
+      `create_app` argument). `launch.py` took `main`, `pick_port` and the Chromium app window;
+      `server.py` keeps the factory, the static routes, `/api/info`, `Schemas` and `ClientWatch`.
+      The settings-derived values are `gui/_context.py`'s, as `RunContext` — one settings read per
+      request, `ctx.bindings()` the four keyword arguments `resolved_schema` / `build_argv` bind a
+      form with, and `ctx.scoped_to(rel)` the per-image narrowing. The free `roots_for` /
+      `report_root` / `mask_root` stay, because Settings' placeholders are those same values
+      computed against *empty* settings. One test assumption changed with no behaviour behind it:
+      this FastAPI wraps an included router in `_IncludedRouter`, so `app.routes` no longer
+      flattens, and the listing-cap test reads the endpoint's own signature instead.
 
-- [ ] **`tagger/tagger.py` mixes three concerns** — checkpoint fetching, torch-free vocab schema
-      constants, and the model with a 150-line `predict`. Consequence: `cli/vocab.py` and
-      `comfyui/anima_tagger/nodes.py` import torch to read four tuples, and `cli/constants.py`
-      apologises for it in a comment. Split a torch-free `tagger/schema.py` and a `tagger/fetch.py`.
+- [x] **`tagger/tagger.py` mixes three concerns.** *Done 2026-09-12.* 684 → 496, with
+      `tagger/schema.py` (what a tag means to a checkpoint: the four tuples, `TagEntry`,
+      `dedupe_count_tags`, `fix_artist_category`, `underscore_to_space`) and `tagger/fetch.py`
+      (`ensure_tagger_checkpoint`, `ensure_tagger_backbone`, and `is_dbv4_dir` — public now, which
+      is what `comfyui/anima_tagger/nodes.py` was apologising for). `tagger.py` re-exports both,
+      so nothing outside had to move, but `cli/vocab.py`, both `cli/autotag*` entry points, the
+      ComfyUI node, `stages/_models.py` and two tests were repointed at the leaf, and
+      `tests/test_boundary.py` pins all three importable without torch.
+      One bug fell out of it: `test_the_tagger_loads_once_per_process` patched
+      `tagger.tagger.ensure_tagger_checkpoint` while `_models.py` now imports it from `fetch`, so
+      the test was doing a **real hub fetch** — 10.7 s to 1.0 s once it patched the right module.
 
-- [ ] **`downloads.py` (624) and `exclude.py` (540) each hold three things.** Downloads is
-      constants, a 190-line catalog literal, a fetch engine and a CLI — and `Asset.build` wires
-      `tagger.cli.build_english_tag_csv` into a module advertised as a torch-free weight catalog.
-      Exclude is the ledger, the artifact map, and a move engine with a 110-line CLI.
+- [x] **`downloads.py` (624) and `exclude.py` (540) each hold three things.**
+      *Done 2026-09-12.* Both are packages whose `__init__.py` re-exports the surface they had, so
+      every `from anime_tools.downloads import …` and `python -m anime_tools.exclude` is unchanged
+      (the CLI is `_cli.py` with a two-line `__main__.py`, so importing the package still runs
+      nothing). `downloads/`: `_locations.py` (where each weight lives — the constants the loaders
+      import), `_assets.py` (`Asset` / `Pack` + the fetch engine), `_catalog.py` (the rows and
+      `by_id` / `by_pack` / `expand`), `_cli.py`. `exclude/`: `_ledger.py` (the state, and
+      `rel_key`), `_artifacts.py` (what an image is made of), `_move.py` (`Result`,
+      `exclude_one` / `restore_one`), `_cli.py`.
+      `Asset.build` still reaches `tagger.cli.build_english_tag_csv`, inside `_catalog`'s
+      `_build_english_tag_csv` and still behind a deferred import — the split moved it, it did not
+      fix it; `exclude_many` and the per-invocation catalog rebuild are still open under
+      *Efficiency*.
 
 - [ ] **Flag separator: unify on `_`.** The hyphen/underscore split costs about 15 lines
       (`FLAG_SEP`, `flag_of(sep)`, `spellings()`, and a `replace` in `gui/stages.py`) and two
@@ -339,13 +373,14 @@ Grouped so that each block is one coherent sitting. The original blocks 1 (corre
 (durability) and 3 (close the pairs) are all done — see "Landed" below — so the numbering starts
 where the work does.
 
-1. **Split the big files.** `server.py` into routers, `run.py` into per-stage runners,
-   `tagger.py` into schema/fetch/model, `downloads.py` and `exclude.py` into catalog/engine/CLI.
+1. ~~**Split the big files.**~~ Done 2026-09-12 — all five, struck above.
 2. **Make the guards real.** Move the ruff rules into `pyproject.toml` and let `ruff check` gate
    CI; add a Windows job; generate or test `types.ts` against `schema()`; test the documented
    counts against `len(STAGES)` and `len(__all__)`.
 3. **Cleanup.** Share the test fixtures, delete the dead symbols, fix the stale prose and the
    README's four wrong claims in one sweep.
+
+The remaining order is therefore blocks 2 and 3.
 
 Two items sit outside that order because they are one-line changes with outsized downside: move
 `ANIME_TOOLS_HOME` out of the checkout before the next `git clean`, and rename the guidebooks to
@@ -393,6 +428,16 @@ line and the daemon stream.
 
 Three of those fixes cross the seam, so they are not done until the trainer moves too. The first
 is blocking and the trainer's tree is already red against its own pinned dependency.
+
+- [ ] **`from anime_tools.stages import run` no longer resolves.** `stages/run.py` is gone
+      (block 1, 2026-09-12); each runner lives in its stage's module and `stages/__init__.py`
+      re-exports it, so the trainer's *production* path is untouched —
+      `preprocess.py` does `from anime_tools.stages import release_models` and `_common.py` goes
+      through `Stage.runner()`, both still correct. What breaks is one test:
+      `tests/test_anime_tools_cli_contract.py:416` does `from anime_tools.stages import run as
+      pkg_run` and patches `pkg_run.release_models`. The runner cache lives in
+      `anime_tools.stages._models`, so that line becomes
+      `from anime_tools.stages import _models as pkg_run`.
 
 - [ ] **Release `anime_tools` and bump the pin — blocking.** `correct` is dry-run-by-default now,
       so `scripts/tasks/preprocess.py` has to pass `apply=True` (done, at both construction sites:
