@@ -10,7 +10,7 @@ Content-aware heuristics stay with the caption-index builder.
 from __future__ import annotations
 
 import re
-from collections.abc import Iterable
+from collections.abc import Collection, Iterable
 
 # People-count tags. "no girls"/"no boys" are out of the set: they sit after
 # @artist so they never reach the pre-artist span, and including them would
@@ -186,6 +186,47 @@ def is_artist_tag(tag: str) -> bool:
 def strip_artist_prefix(tag: str) -> str:
     """Drop a leading ``@`` so the bare name can be looked up in a tag cache."""
     return tag.removeprefix("@")
+
+
+def trailing_qualifier(tag: str) -> str | None:
+    """The balanced trailing parenthetical of ``tag``, or ``None``.
+
+    ``ayaka (genshin impact)`` → ``genshin impact``; nested handles stay whole:
+    ``kuronuma mayu (kat (bu-kunn))`` → ``kat (bu-kunn)``.
+    """
+    t = tag.rstrip()
+    if not t.endswith(")"):
+        return None
+    depth = 0
+    for i in range(len(t) - 1, -1, -1):
+        ch = t[i]
+        if ch == ")":
+            depth += 1
+        elif ch == "(":
+            depth -= 1
+            if depth == 0:
+                return t[i + 1 : -1].strip() or None
+    return None
+
+
+def artist_oc_handle(tag: str, artist_handles: Collection[str]) -> str | None:
+    """The artist handle an original-character tag is qualified by, or ``None``.
+
+    Booru spells an artist's own recurring OC as ``name (handle)`` —
+    ``shiro (mignon)``, ``akiyama fumika (pepper0)`` — the same trailing
+    parenthetical a franchise qualifier uses (``ayaka (genshin impact)``).
+    What tells them apart is the qualifier being an *artist*: the bare handle
+    of an ``@artist`` tag. ``artist_handles`` is that set, without the ``@``.
+    The tag's own category is not consulted — booru mistypes some OCs as
+    general, and the name is an OC either way.
+    """
+    handle = trailing_qualifier(tag)
+    return handle if handle is not None and handle in artist_handles else None
+
+
+def artist_handles_of(tags: Iterable[str]) -> frozenset[str]:
+    """Bare handles of every artist tag in ``tags`` (``@mignon`` → ``mignon``)."""
+    return frozenset(strip_artist_prefix(t) for t in tags if is_artist_tag(t))
 
 
 # Anima's 4-class rating vocabulary — the leading safety band of a caption, and

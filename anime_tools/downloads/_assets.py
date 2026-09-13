@@ -100,7 +100,8 @@ class Asset:
     """Base URL each file hangs off for rows that are not on the Hub. Set it and
     ``repo`` is only a label; requires ``dest``."""
     subfolder: str = ""
-    """Path prefix inside the repo (the tagger ships under ``dbv4/``)."""
+    """Path prefix inside the repo (``""`` = root; the AnimeText detector
+    ships under one)."""
     repo_type: str = "model"
     """Hub repo kind — ``dataset`` for the Danbooru wiki mirror."""
     derived: tuple[str, ...] = ()
@@ -257,7 +258,7 @@ class Asset:
         if into is not None and self.revision:
             (into / REVISION_STAMP).write_text(self.revision + "\n")
         if into is not None and self.subfolder:
-            # Drop the now-empty `dbv4/` local_dir the files were moved out of.
+            # Drop the now-empty subfolder local_dir the files were moved out of.
             leftover = into / self.subfolder
             if leftover.is_dir() and not any(leftover.iterdir()):
                 leftover.rmdir()

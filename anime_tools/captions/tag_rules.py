@@ -9,15 +9,22 @@ at runtime. Three rule families:
   predating the band carry the old ``questionable → sensitive`` collapse and
   stay valid: :meth:`AnimaTagger.tag` holds the rating slot out of
   ``apply_rules``.
+* ``aliases``: tag-level renames applied to the split tag list — a retired
+  booru name onto the live one (``silver hair → grey hair``). Unlike
+  ``replacements`` this never touches a longer tag the name is a prefix of,
+  and a caption that already carries the target keeps one copy.
 * ``remove``: tag literals that are unconditionally stripped.
 * dedup map: ``{base: {variants}}`` — drop ``bra`` when ``black bra`` is
   already in the caption.
+
+Order inside :func:`apply_rules`: aliases, then remove, then dedup — so a
+removal or a dedup base is spelled in live names only.
 """
 
 from __future__ import annotations
 
 from collections.abc import Iterable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 import yaml
@@ -37,6 +44,9 @@ class TagRules:
     # coverage log. Logging filter only — does not change categorization.
     # Case-sensitive (booru tags are lowercase).
     coverage_ignore: tuple[str, ...]
+    # Tag-level renames of retired booru names onto live ones; applied first in
+    # apply_rules. Last so positional construction of the older fields holds.
+    aliases: dict[str, str] = field(default_factory=dict)
 
     def to_dict(self) -> dict:
         """Round-trippable dict for snapshotting into the checkpoint dir."""
@@ -44,6 +54,8 @@ class TagRules:
             "replacements": dict(self.replacements),
             "remove": sorted(self.remove),
         }
+        if self.aliases:
+            out["aliases"] = dict(self.aliases)
         if self.category_overrides:
             out["category_overrides"] = dict(self.category_overrides)
         if self.coverage_ignore:
@@ -56,6 +68,7 @@ class TagRules:
 _RESERVED_KEYS = frozenset(
     {
         "replacements",
+        "aliases",
         "remove",
         "category_overrides",
         "coverage_ignore",
@@ -73,6 +86,7 @@ def load_rules(path: str | Path) -> TagRules:
 def from_dict(d: dict) -> TagRules:
     """Inverse of :meth:`TagRules.to_dict` — load a snapshot from JSON."""
     repl_map = d.get("replacements", {}) or {}
+    aliases = {str(k): str(v) for k, v in (d.get("aliases", {}) or {}).items()}
     remove = frozenset(d.get("remove", []) or [])
     overrides = dict(d.get("category_overrides", {}) or {})
     coverage_ignore = tuple(str(s) for s in (d.get("coverage_ignore", []) or []))
@@ -84,6 +98,7 @@ def from_dict(d: dict) -> TagRules:
     replacements = tuple((str(k), str(v)) for k, v in repl_map.items())
     return TagRules(
         replacements=replacements,
+        aliases=aliases,
         remove=remove,
         dedup=dedup,
         category_overrides={str(k): str(v) for k, v in overrides.items()},
@@ -110,9 +125,26 @@ def parse_caption(content: str, rules: TagRules) -> list[str]:
     return apply_rules(tags, rules)
 
 
+def apply_aliases(tags: Iterable[str], aliases: dict[str, str]) -> list[str]:
+    """Rename aliased tags in place, keeping order; a target the list already
+    carries (or reaches twice) survives once, at its first position."""
+    if not aliases:
+        return list(tags)
+    out: list[str] = []
+    seen: set[str] = set()
+    for t in tags:
+        t = aliases.get(t, t)
+        if t in seen:
+            continue
+        seen.add(t)
+        out.append(t)
+    return out
+
+
 def apply_rules(tags: Iterable[str], rules: TagRules) -> list[str]:
-    """Drop ``remove``-listed tags and dedup base tags whose variants fired."""
-    tag_list = list(tags)
+    """Alias retired names, drop ``remove``-listed tags and dedup base tags
+    whose variants fired."""
+    tag_list = apply_aliases(tags, rules.aliases)
     tag_set: set[str] = set(tag_list)
     to_remove: set[str] = set(tag_set & rules.remove)
     for base, variants in rules.dedup.items():

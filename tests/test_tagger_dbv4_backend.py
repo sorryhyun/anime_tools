@@ -43,7 +43,7 @@ VOCAB_TAGS = [
     ("@other", "artist"),
     ("original", "copyright"),  # no copyright category upstream
     ("touhou", "copyright"),
-    ("shiro (mignon)", "character"),  # dataset OC
+    ("shiro (mignon)", "character"),  # a character dbv4 lacks
     ("hakurei reimu", "character"),
 ]
 N = len(VOCAB_TAGS)
@@ -247,8 +247,10 @@ def test_sidecar_rows_become_emittable_and_people_head_wins(tmp_path, monkeypatc
     assert out["people_count_scores"]["2girls"] > 0.9
 
 
-def test_oc_character_survives_original_without_artist(tmp_path, monkeypatch):
-    """dbv4 emits no @artist, so the artist-consistency rule cannot drop an OC."""
+def test_sidecar_character_survives_original_without_artist(tmp_path, monkeypatch):
+    """dbv4 emits no @artist, so the artist-consistency rule cannot drop a
+    sidecar character. (The trainer leaves artist OCs out of the head — that is
+    ``select_bce_rows``, not the tagger; a head that carries the row emits it.)"""
     _write_ckpt(tmp_path)
     bce_rows = [IDX["original"], IDX["shiro (mignon)"]]
     head = db.SidecarHead(d_in=8, bce_indices=bce_rows)

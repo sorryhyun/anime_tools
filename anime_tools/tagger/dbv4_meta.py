@@ -32,11 +32,12 @@ DEFAULT_DBV4_ARCH = "caformer_b36"
 DEFAULT_DBV4_IMG_SIZE = 384
 
 # Our half of the tagger: auto-fetched when ckpt_dir is missing required files.
-# The live checkpoint is the `dbv4/` subfolder — vocab / rules / groups /
-# thresholds / sidecar only. The file sets are contract (the trainer probes
-# them too), so they live in ``anime_tools.contract`` and are re-exported here.
+# The live checkpoint sits at the repo root — vocab / rules / groups /
+# thresholds / sidecar only (the `dbv4/` and legacy `v5/` subfolders were
+# removed 2026-09-13). The file sets are contract (the trainer probes them
+# too), so they live in ``anime_tools.contract`` and are re-exported here.
 TAGGER_HF_REPO = "sorryhyun/anima-tagger"
-TAGGER_HF_SUBFOLDER = "dbv4"
+TAGGER_HF_SUBFOLDER = ""
 DEFAULT_TAGGER_DIR = "models/captioners/anima-tagger-dbv4"
 
 

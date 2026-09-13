@@ -431,8 +431,10 @@ def cmd_build_vocab(args: argparse.Namespace) -> None:
     rules_src = Path(args.rules)
     rules = tr.load_rules(rules_src)
     logger.info(
-        "rules: %d replacements, %d remove, %d dedup base tags, %d category overrides",
+        "rules: %d replacements, %d aliases, %d remove, %d dedup base tags, "
+        "%d category overrides",
         len(rules.replacements),
+        len(rules.aliases),
         len(rules.remove),
         len(rules.dedup),
         len(rules.category_overrides),

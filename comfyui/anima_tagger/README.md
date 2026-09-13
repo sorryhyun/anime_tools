@@ -39,7 +39,7 @@ package (`anime_tools.tagger.AnimaTagger`) — this directory is only the node
 surface, nothing is vendored.
 
 The checkpoint auto-downloads on first use: our data + sidecar head (a few MB) is fetched from
-[`sorryhyun/anima-tagger`](https://huggingface.co/sorryhyun/anima-tagger) (`dbv4/` subfolder) into
+[`sorryhyun/anima-tagger`](https://huggingface.co/sorryhyun/anima-tagger) (repo root) into
 `tagger_dir` (default `models/captioners/anima-tagger-dbv4`) when any required file is missing.
 
 The default checkpoint runs on the dbv4 backend: the trunk is the external

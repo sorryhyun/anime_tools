@@ -8,12 +8,12 @@ captions, batch autotag, and the GUI's autotag server.
 The live checkpoint is `models/captioners/anima-tagger-dbv4/`: the external
 `animetimm/caformer_b36.dbv4-full` backbone (134 M params, 384², GPL-3.0,
 gated — fetched under your HF token, never vendored) projected onto a
-2,532-tag vocab / 4-class rating, plus a small sidecar head for copyright / OC
-characters / renamed generals. `config.json["backend"] == "dbv4"` is the only
+2,532-tag vocab / 4-class rating, plus a small sidecar head for copyright /
+characters dbv4 lacks / renamed generals. `config.json["backend"] == "dbv4"` is the only
 backend `AnimaTagger` loads. Requires `timm`.
 
 Our half of the checkpoint (vocab, rules, groups, thresholds, sidecar) is
-auto-fetched from the `dbv4/` subfolder of
+auto-fetched from the root of
 [`sorryhyun/anima-tagger`](https://huggingface.co/sorryhyun/anima-tagger) when
 missing; the backbone repo follows the checkpoint's
 `config.json["dbv4"]["repo"]`. `DEFAULT_TAGGER_DIR` / `TAGGER_HF_SUBFOLDER` in
@@ -39,7 +39,7 @@ PIL image → 384² resize
          ├→ dbv4 tag sigmoids ─── align_vocab ──→ our 2,532-tag vocab
          ├→ dbv4 rating sigmoids ─ normalise ───→ 4-class rating distribution
          └→ 3072-d MLP-head hidden feature
-                    └→ sidecar Linear ──────────→ copyright / OC characters /
+                    └→ sidecar Linear ──────────→ copyright / missing characters /
                                                   renamed generals / people-count
          → per-tag thresholds → kept tags
          → group argmax → girls-count cap → character floor + original
@@ -55,9 +55,21 @@ dbv4's snake_case names onto our space-separated vocab, recovering `rules.yaml`
 renames. Tags dbv4 does not support sit at logit −30, and a pure-`softmax`
 group only emits a winner that clears its own threshold ("at most one" — dbv4
 was never CE-trained on our groups). What dbv4 cannot express is exactly what
-the sidecar covers: copyright, dataset OC characters, renamed generals, and
-an 8-way people-count softmax. `@artist` is deliberately not covered —
-artist attribution is not a tagger goal. `people_count` is nonetheless always
+the sidecar covers: copyright, characters dbv4 does not know, renamed generals,
+and an 8-way people-count softmax. Booru-`deprecated` names (`silver hair`,
+`light brown hair`, `black footwear` — dbv4's 2025 namespace dropped them) are
+*not* head rows: trained, they reached F1 ≈ 0.2, since their positives look
+exactly like the live tag's. `tag_rules.yaml` `aliases:` folds each onto its
+live name (`silver hair → grey hair`) at vocab-build and emit time instead. Two kinds of character are left out on
+purpose: `@artist` (attribution is not a tagger goal) and **artist OCs** —
+a tag whose trailing qualifier is a vocab artist handle, `shiro (mignon)`,
+whatever category booru filed it under.
+Such a name means nothing outside the dataset it came from, and a head trained
+on a few dozen positives fires it on any look-alike in a stranger's dataset;
+`train_sidecar.py::select_bce_rows` drops them (`--keep_artist_oc` restores,
+`sidecar.json["dropped_artist_oc"]` lists them, their thresholds are pinned
+to never-fire). Franchise characters dbv4 lacks (`cartethyia (wuthering
+waves)`) stay — they are what the head is for. `people_count` is nonetheless always
 taken from the count-tag rule (`taxonomy.classify_people`,
 `people_count_source="count-tag-rule"`), which beats the sidecar's own head;
 the sidecar softmax is exposed as `people_count_scores` only. Thresholds come
@@ -94,7 +106,7 @@ manifest, so the band is a property of the checkpoint, not a loader constant.
 `group_router.py` (`GroupRouter` + `compute_grouped_loss`, typed tag-group
 routing with sentinel + escape semantics — the inference rule, the calibrator
 and the benches all resolve groups through it), `tag_rules.py` (`tag_rules.yaml`
-loader/applier: replacements, always-remove, clothing dedup,
+loader/applier: replacements, tag aliases, always-remove, clothing dedup,
 `category_overrides`, `coverage_ignore`), `tag_groups.py`
 (`TagGroup`/`TagGroups`/`ResolvedGroup` and the three modes), `taxonomy.py`
 (Danbooru category taxonomy + the one count-tag regex) and `correction.py`.
@@ -124,7 +136,7 @@ External corpus paths are routed via one `.env` key —
 | `<corpus>/retrieved/{artist}/{stem}.{webp,jpg,png,jpeg}` | Source images, paired with `.txt` captions | Training input + label. ~12k images. |
 | `<corpus>/retrieved/{artist}/{stem}.txt` | Booru-style caption per image, in Anima format (`rating, count, characters, copyrights, @artists, generals`) | Multi-hot label after `tag_rules` normalization. |
 | `<corpus>/retrieved/.tag_cache.json` | `tag → integer type id` (0=general, 1=artist, 3=copyright, 4=character, 5=metadata, 6=deprecated) | Vocab categorization + canonical-emit-slot routing. |
-| `<corpus>/tag_rules.yaml` | Replacements + always-remove + clothing dedup + `category_overrides` + `coverage_ignore` | Vocab-build time and inference safety net. Snapshotted into the checkpoint. |
+| `<corpus>/tag_rules.yaml` | Replacements + `aliases` (retired name → live tag) + always-remove + clothing dedup + `category_overrides` + `coverage_ignore` | Vocab-build time and inference safety net. Snapshotted into the checkpoint. |
 | `<corpus>/tag_groups.yaml` | Typed groupings (`eye_color`, `hair_color`, `hair_length`, `rating`, `top_garment`, …) | Group routing at train + inference. Snapshotted into the checkpoint. |
 | `<corpus>/selected/` (optional) | Curated subset (already deduped) | Additional caption source. |
 

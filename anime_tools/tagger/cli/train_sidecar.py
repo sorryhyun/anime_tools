@@ -1,9 +1,10 @@
 """Train the dbv4 sidecar head on cached backend features.
 
-dbv4 (``animetimm/*.dbv4-full``) has no copyright category, none of our dataset
-OCs, and a 2025 danbooru namespace that renamed a few of our general tags
-(``black shoes`` → ``black footwear``). Those rows plus the 8-way people-count
-bucket are what this head emits; ``@artist`` is excluded.
+dbv4 (``animetimm/*.dbv4-full``) has no copyright category, misses the newer
+and minor characters in our vocab, and has a 2025 danbooru namespace that
+renamed a few of our general tags (``black shoes`` → ``black footwear``). Those
+rows plus the 8-way people-count bucket are what this head emits; ``@artist``
+and artist OCs (``shiro (mignon)``, see :func:`select_bce_rows`) are excluded.
 
 Four resumable stages, each skipped when its output exists: **cache** (one dbv4
 forward per ``dataset.json`` image → the fp16 MLP-head hidden feature plus the
@@ -34,7 +35,12 @@ from torch.utils.data import DataLoader, Dataset
 from anime_tools._device import add_device_arg, resolve_device
 from anime_tools._json import write_json
 from anime_tools.captions import tag_rules as tr
-from anime_tools.captions.taxonomy import classify_people
+from anime_tools.captions.taxonomy import (
+    artist_handles_of,
+    artist_oc_handle,
+    classify_people,
+)
+from anime_tools.tagger.cli.build_dbv4_ckpt import NEVER_FIRE
 from anime_tools.tagger.cli.calibrate import DEFAULT_SWEEP, calibrate_thresholds
 from anime_tools.tagger.cli.eval_metrics import (
     per_tag_average_precision,
@@ -59,6 +65,10 @@ logging.basicConfig(level=logging.INFO, format="%(message)s")
 log = logging.getLogger(__name__)
 
 # Sidecar candidates = vocab tags dbv4 cannot emit, restricted to these categories.
+# Not ``deprecated`` (booru's retired-tag type — ``silver hair``, ``black
+# footwear``): a head over them was measured at F1 ≈ 0.2 because their
+# positives look exactly like the live tag's (``grey hair``); tag_rules.yaml
+# ``aliases:`` folds them onto the live name instead.
 DEFAULT_CATEGORIES = ("copyright", "character", "general")
 
 
@@ -72,6 +82,13 @@ def parse_args() -> argparse.Namespace:
         "workspace/anima_tagger/dbv4/<arch>_hidden.safetensors",
     )
     p.add_argument("--categories", default=",".join(DEFAULT_CATEGORIES))
+    p.add_argument(
+        "--keep_artist_oc",
+        action="store_true",
+        help="also train rows for artist OCs (`name (handle)` where handle is a "
+        "vocab @artist). Off by default: those names mean nothing outside the "
+        "dataset they came from and only ever fire as false positives on it.",
+    )
     p.add_argument(
         "--no_people", action="store_true", help="skip the people-count head"
     )
@@ -87,6 +104,35 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--cache_only", action="store_true")
     p.add_argument("--limit", type=int, default=0, help="debug: first N images")
     return p.parse_args()
+
+
+def select_bce_rows(
+    unmatched: Sequence[tuple[int, str, str]],
+    cats: set[str],
+    vocab_tags: Sequence[dict],
+    *,
+    keep_artist_oc: bool = False,
+) -> tuple[list[int], list[str]]:
+    """Sidecar BCE rows: the vocab tags dbv4 cannot emit, in ``cats``.
+
+    Returns ``(bce_indices, dropped_artist_oc)``. An artist OC — a tag
+    qualified by a vocab ``@artist`` handle, ``shiro (mignon)``, whatever
+    category booru filed it under — is left out unless ``keep_artist_oc``: the head would learn it from a few dozen
+    positives and then fire it on any look-alike in a stranger's dataset,
+    where the name means nothing. Franchise characters dbv4 lacks
+    (``cartethyia (wuthering waves)``) are exactly what the head is for and
+    stay. A dropped row keeps its vocab slot and simply never fires.
+    """
+    handles = artist_handles_of(t["name"] for t in vocab_tags)
+    keep, dropped = [], []
+    for i, name, c in unmatched:
+        if c not in cats:
+            continue
+        if not keep_artist_oc and artist_oc_handle(name, handles) is not None:
+            dropped.append(name)
+            continue
+        keep.append(int(i))
+    return sorted(keep), dropped
 
 
 # Stage 1 — feature cache.
@@ -309,14 +355,18 @@ def main() -> None:
     # ---- labels ----
     cats = {c.strip() for c in args.categories.split(",") if c.strip()}
     by_index = {int(t["index"]): t for t in vocab["tags"]}
-    bce_indices = sorted(int(i) for i, _n, c in align.unmatched if c in cats)
+    bce_indices, dropped_oc = select_bce_rows(
+        align.unmatched, cats, vocab["tags"], keep_artist_oc=args.keep_artist_oc
+    )
     log.info(
-        "sidecar rows: %d (%s)",
+        "sidecar rows: %d (%s); artist OCs left out: %d %s",
         len(bce_indices),
         {
             c: sum(1 for i in bce_indices if by_index[i]["category"] == c)
             for c in sorted(cats)
         },
+        len(dropped_oc),
+        dropped_oc,
     )
     stem_pos = {s: i for i, s in enumerate(stems)}
     y_bce = multi_hot_from_manifest(
@@ -403,6 +453,10 @@ def main() -> None:
     # ---- stage 4: write ----
     thr_path = ckpt_dir / "thresholds.safetensors"
     thr_all = st_load(str(thr_path))["thresholds"].float()
+    # Every row the backbone cannot emit and this head does not carry must
+    # never fire — including a row a previous head carried (a dropped OC).
+    unmatched_idx = [int(i) for i, _n, _c in align.unmatched]
+    thr_all[torch.tensor(unmatched_idx)] = NEVER_FIRE
     thr_all[torch.tensor(bce_indices)] = thr_rows
     st_save({"thresholds": thr_all.contiguous()}, str(thr_path))
     head.cpu().save(
@@ -411,6 +465,7 @@ def main() -> None:
             "repo": d["repo"],
             "arch": d["arch"],
             "categories": sorted(cats),
+            "dropped_artist_oc": dropped_oc,
             "feature_cache": str(cache_path),
             "seed": args.seed,
         },
