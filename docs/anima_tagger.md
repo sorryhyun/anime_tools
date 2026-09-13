@@ -60,7 +60,8 @@ and an 8-way people-count softmax. Booru-`deprecated` names (`silver hair`,
 `light brown hair`, `black footwear` — dbv4's 2025 namespace dropped them) are
 *not* head rows: trained, they reached F1 ≈ 0.2, since their positives look
 exactly like the live tag's. `tag_rules.yaml` `aliases:` folds each onto its
-live name (`silver hair → grey hair`) at vocab-build and emit time instead. Two kinds of character are left out on
+live name (`silver hair → grey hair`) at vocab-build and emit time instead.
+Two kinds of character are left out on
 purpose: `@artist` (attribution is not a tagger goal) and **artist OCs** —
 a tag whose trailing qualifier is a vocab artist handle, `shiro (mignon)`,
 whatever category booru filed it under.
