@@ -85,6 +85,9 @@ export function ItemView(props: {
   /** The caption panel's own explanations, and the (?) in its header. */
   help: boolean;
   onHelp: () => void;
+  /** The caption editor's tag-group colouring, and its toggle. */
+  groups: boolean;
+  onGroups: () => void;
   onSaved: (saved: SavedCaption) => void;
   /** What the position stage last saw in this image — the caption panel's
       analysis badge. */
@@ -367,6 +370,8 @@ export function ItemView(props: {
                 <CaptionCard
                   help={props.help}
                   onHelp={props.onHelp}
+                  groups={props.groups}
+                  onGroups={props.onGroups}
                   rel={it().rel}
                   versions={it().versions}
                   kind={props.kind}

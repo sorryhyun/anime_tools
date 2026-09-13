@@ -9,7 +9,7 @@ from __future__ import annotations
 import csv
 import os
 import re
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -260,7 +260,9 @@ def correct_caption(
     if parsed.has_clauses:
         # Bucket-reordering would dissolve a clause tag's binding back into the
         # bag, so only the flat bag is corrected and the clauses re-appended.
-        clauses, clause_dropped = _drop_clause_tags(parsed.clauses, kb, options)
+        clauses, clause_dropped = _drop_clause_tags(
+            parsed.clauses, _group_dropper(kb, options.drop_groups)
+        )
         corrected = compose_position_caption(list(flat.tags), clauses)
         dropped = (*flat.dropped_tags, *clause_dropped)
     else:
@@ -272,6 +274,44 @@ def correct_caption(
         inserted_no_artist=flat.inserted_no_artist,
         unknown_tags=flat.unknown_tags,
         dropped_tags=dropped,
+    )
+
+
+@dataclass(frozen=True)
+class GroupDropResult:
+    text: str
+    dropped_tags: tuple[str, ...] = ()
+
+
+def drop_caption_groups(
+    text: str,
+    kb: TagKnowledgeBase,
+    selectors: Iterable[str],
+    *,
+    keep: Iterable[str] = (),
+) -> GroupDropResult:
+    """Strip every tag under ``selectors`` from ``text``, and change nothing else.
+
+    :func:`correct_caption`'s drop without the bucket reorder, trigger word and
+    ``@no-artist`` it wraps around it: what is left keeps the order it was
+    written in, so the one change a reader sees is the tags that went. A caption
+    with nothing to drop comes back as it arrived — a re-compose would still
+    respace its commas, and that is not a drop. ``keep`` names tags no selector
+    may take, compared by :func:`tag_key`.
+    """
+    drops = _group_dropper(kb, selectors, keep)
+    if drops is None:
+        return GroupDropResult(text)
+    parsed = parse_position_caption(text.replace("\n", ","))
+    flat: list[str] = []
+    dropped: list[str] = []
+    for tag in parsed.flat_tags:
+        (dropped if drops(tag) else flat).append(tag)
+    clauses, clause_dropped = _drop_clause_tags(parsed.clauses, drops)
+    if not dropped and not clause_dropped:
+        return GroupDropResult(text)
+    return GroupDropResult(
+        compose_position_caption(flat, clauses), (*dropped, *clause_dropped)
     )
 
 
@@ -361,14 +401,28 @@ def correct_tags(
     )
 
 
-def _drop_clause_tags(clauses, kb: TagKnowledgeBase, options: CaptionCorrectionOptions):
-    """Apply ``options.drop_groups`` inside position clauses.
+def _group_dropper(
+    kb: TagKnowledgeBase, selectors: Iterable[str], keep: Iterable[str] = ()
+) -> Callable[[str], bool] | None:
+    """``tag -> drop it?`` over drop-group ``selectors``, or ``None`` when there
+    is nothing to drop — the one rule the bag and the clauses are cut by."""
+    sels = tuple(selectors)
+    if not sels:
+        return None
+    kept = {tag_key(t) for t in keep if t.strip()}
+    return lambda tag: (
+        tag_key(tag) not in kept and should_drop_tag(normalize_tag(tag), kb, sels)
+    )
+
+
+def _drop_clause_tags(clauses, drops: Callable[[str], bool] | None):
+    """Apply a group drop inside position clauses.
 
     Only the dropped tags are removed; a clause left with no tags is removed
     whole, since a bare ``On the left`` binds nothing. A text clause's tags
     are quoted lines, not taxonomy tags — it passes through untouched.
     """
-    if not options.drop_groups:
+    if drops is None:
         return list(clauses), ()
     from dataclasses import replace
 
@@ -380,7 +434,7 @@ def _drop_clause_tags(clauses, kb: TagKnowledgeBase, options: CaptionCorrectionO
             continue
         tags = []
         for tag in clause.tags:
-            if should_drop_tag(normalize_tag(tag), kb, options.drop_groups):
+            if drops(tag):
                 dropped.append(tag)
             else:
                 tags.append(tag)

@@ -64,7 +64,8 @@ def test_every_stage_has_a_schema():
         if sc["available"]:
             assert sc["fields"], st.id
             assert all(
-                f["kind"] in ("bool", "int", "float", "str", "enum", "list", "masks")
+                f["kind"]
+                in ("bool", "int", "float", "str", "enum", "list", "multi", "masks")
                 for f in sc["fields"]
             )
 
@@ -263,6 +264,7 @@ def test_scoped_stages_are_the_ones_taking_a_pattern():
         "autotag",
         "position",
         "correct",
+        "drop_groups",
         "audit",
         "ocr",
         "masks_sam",
@@ -763,10 +765,11 @@ def test_the_audit_is_reached_through_the_position_form():
     _, sc = _stage("position")
     phase = next(f for f in sc["fields"] if f["dest"] == "multiview_audit")
     assert not phase["advanced"] and phase["choices"] == ["off", "report", "apply"]
-    # Curate keeps its two buttons' worth of stages.
+    # Curate picks between three stages, and the audit is none of them.
     assert [s.id for s in S.STAGES if s.panel == "Curate" and not s.hidden] == [
         "position",
         "correct",
+        "drop_groups",
     ]
 
 
@@ -780,6 +783,7 @@ def test_only_resized_tree_stages_get_the_preflight():
         "autotag",
         "position",
         "correct",
+        "drop_groups",
         "audit",
         "ocr",
         "masks_sam",
@@ -1009,6 +1013,46 @@ def test_tag_descriptions_are_the_caption_panel_s_kb(client, monkeypatch):
         "known": False,
         "source": correction.TAG_CSV_EN_NAME,
         "download_id": "danbooru_tags",
+    }
+
+
+def test_drop_groups_are_the_group_view_s_answer(client, monkeypatch):
+    """The editor's group view asks for a caption's tags at once and gets each
+    one's drop group back under the spelling it sent — the slug the Tag groups
+    stage resolves — with ``None`` for a tag no group takes."""
+    from anime_tools.captions import correction
+    from anime_tools.gui import tags as T
+
+    c, home = client
+    monkeypatch.setattr(correction, "_REPO_ROOT", home / "elsewhere")
+    monkeypatch.setattr(T, "_CACHE", None)
+
+    assert c.post("/api/tags/groups", json={"tags": ["1girl"]}).json() == {
+        "installed": False,
+        "groups": {},
+    }
+    assert c.post("/api/tags/groups", json={"tags": "1girl"}).status_code == 400
+
+    models = home / "models"
+    models.mkdir(parents=True, exist_ok=True)
+    (models / correction.TAG_CSV_NAME).write_text(
+        ROW
+        + '1girl,0,10,"[인물 > 인원수] count"\n'
+        + 'school_uniform,0,10,"[의상 > 상의] clothing"\n'
+        + 'backlighting,0,10,"[효과/연출 > 조명] lighting"\n',
+        encoding="utf-8",
+    )
+    sent = ["1girl", "school uniform", "backlighting", "@sincos", "masterpiece", " "]
+    assert c.post("/api/tags/groups", json={"tags": sent}).json() == {
+        "installed": True,
+        "groups": {
+            "1girl": "count",
+            "school uniform": "clothing",
+            # The coarse slug: `lighting` is a pick inside `effect`.
+            "backlighting": "effect",
+            "@sincos": "artist",
+            "masterpiece": None,
+        },
     }
 
 

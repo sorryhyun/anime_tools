@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import csv
 import threading
+from collections.abc import Iterable
 from pathlib import Path
 from typing import Any
 
@@ -23,6 +24,7 @@ from anime_tools.captions.correction import (
     normalize_tag,
     tag_key,
 )
+from anime_tools.captions.tag_drop_groups import tag_drop_group
 
 _LOCK = threading.Lock()
 _CACHE: tuple[tuple, TagKnowledgeBase, str | None] | None = None
@@ -140,3 +142,22 @@ def describe(tag: str) -> dict[str, Any]:
         exact=normalize_tag(tag) == info.name,
     )
     return out
+
+
+def groups(tags: Iterable[str]) -> dict[str, Any]:
+    """Which drop group each tag falls under, for the caption editor's group view.
+
+    The coarse slug :func:`tag_drop_group` answers — the resolution the Tag
+    groups stage drops by — keyed by each tag exactly as it was sent, so the
+    browser can look its own slice of the caption back up. ``None`` is a tag no
+    group takes, which no run would drop.
+    """
+    kb, _ = load()
+    if kb is None:
+        return {"installed": False, "groups": {}}
+    return {
+        "installed": True,
+        "groups": {
+            t: tag_drop_group(normalize_tag(t), kb) for t in dict.fromkeys(tags)
+        },
+    }

@@ -244,7 +244,31 @@ textarea.cap { display:block; position:relative; z-index:1; min-height:78px; ove
 .tb.cl { box-shadow:0 0 0 1px #7aa2f759 }
 .tb.hdr { box-shadow:0 0 0 1px #7aa2f7a6; background:#7aa2f714 }
 .tb.art { box-shadow:0 0 0 1px #e0af68a6; background:#e0af6814 }
+/* The group view: a tag's box wears the hue of the drop group the Tag groups
+   stage would remove it under (`gui/tags.py::groups`). Nineteen slugs are more
+   hues than an eye tells apart, so they share seven, by what a LoRA's trigger
+   word would learn in their place; a tag no group takes is dashed, since no run
+   drops it. `--g` is also what the legend's and the form's chips dot with. */
+.g-artist, .g-character, .g-copyright { --g:#e0af68 }
+.g-meta, .g-count { --g:#8b919c }
+.g-clothing, .g-accessory { --g:#f7768e }
+.g-pose, .g-action { --g:#7dcfff }
+.g-expression, .g-face, .g-hair, .g-body, .g-person { --g:#bb9af7 }
+.g-background, .g-effect { --g:#9ece6a }
+.g-object, .g-animal, .g-color { --g:#ff9e64 }
+.tb.g { box-shadow:0 0 0 1px color-mix(in srgb, var(--g) 75%, transparent); background:color-mix(in srgb, var(--g) 14%, transparent) }
+.tb.gx { box-shadow:none; background:none; outline:1px dashed #565e6e; outline-offset:-1px }
+.tb.mute { opacity:.2 }
 .tb.on { box-shadow:0 0 0 1px var(--accent) }
+.glegend { display:flex; flex-wrap:wrap; gap:4px; margin-top:4px }
+.gchip { display:flex; align-items:center; gap:5px; padding:1px 8px; border-radius:10px; background:none; border:1px solid var(--line); font-size:11px; font-family:var(--font-mono) }
+.gchip.on { background:var(--sel); border-color:var(--g, var(--dim)) }
+.gchip .dot, .chip .dot { width:6px; height:6px; background:var(--g, transparent) }
+.gchip.gx .dot { background:none; box-shadow:inset 0 0 0 1px var(--dim) }
+.chips { display:flex; flex-wrap:wrap; gap:4px }
+.chip { display:flex; align-items:center; gap:5px; padding:1px 8px; border:1px solid var(--line); border-radius:10px; background:none; font:12px var(--font-mono); color:var(--dim) }
+.chip:hover { color:var(--fg); border-color:var(--line); background:#ffffff0c }
+.chip.on, .chip.on:hover { color:var(--fg); background:var(--sel); border-color:var(--g, var(--accent)) }
 .parsed { margin-top:6px }
 .clause { display:flex; gap:8px; padding:3px 0; align-items:baseline }
 .ck { flex:none; min-width:12ch; color:var(--dim); font:11px var(--font-mono); text-transform:uppercase; letter-spacing:.04em }

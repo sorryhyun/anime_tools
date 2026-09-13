@@ -134,6 +134,23 @@ STAGES: tuple[Stage, ...] = (
         short="Correct",
     ),
     Stage(
+        id="drop_groups",
+        title="Drop tag groups",
+        request=f"{_STAGES}:DropGroupRequest",
+        run="anime_tools.stages.drop_groups:run_drop_groups",
+        module="anime_tools.stages.cli.drop_group_captions",
+        panel="Curate",
+        extra="stages",
+        report=("report_dir", "report.json"),
+        notes=(
+            "Removes the picked groups from the revised caption and moves nothing "
+            "else; a tag the Danbooru KB does not know is never dropped. The master "
+            "is read only for an image with no revised caption yet, and is never "
+            "edited."
+        ),
+        short="Tag groups",
+    ),
+    Stage(
         id="audit",
         title="Multiview audit",
         request=f"{_STAGES}:AuditRequest",

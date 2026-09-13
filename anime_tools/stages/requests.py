@@ -30,7 +30,7 @@ from anime_tools import workspace as WS
 from anime_tools._device import DEVICE_HELP
 from anime_tools._request import READ, WRITE, Request, arg
 from anime_tools.buckets import ALLOWED_TARGET_RES
-from anime_tools.captions.tag_drop_groups import drop_group_names
+from anime_tools.captions.tag_drop_groups import drop_group_names, parse_drop_groups
 from anime_tools.contract import AUTOTAG_MODES
 from anime_tools.downloads import DEFAULT_SAM3_CHECKPOINT, DEFAULT_SUBJECT_PROMPT_EMBED
 from anime_tools.masking._prompts import (
@@ -59,6 +59,7 @@ __all__ = [
     "AutotagRequest",
     "CorrectRequest",
     "DetectionRequest",
+    "DropGroupRequest",
     "ExportRequest",
     "MultiviewRequest",
     "OcrRequest",
@@ -679,7 +680,8 @@ class CorrectRequest(ApplyRequest):
     no_correct: bool = arg(
         False,
         help="Skip bucket-reordering — mirror the raw source caption verbatim as v0 "
-        "(the variant-only path: shuffle sidecars without reordering).",
+        "(the variant-only path: shuffle sidecars without reordering). "
+        "caption_drop_groups still applies.",
     )
     caption_shuffle_variants: int = arg(
         0,
@@ -719,6 +721,52 @@ class CorrectRequest(ApplyRequest):
                 "--caption_tag_randomize_rate > 0 requires --qwen3 and "
                 "--t5_tokenizer_path (tokenizer directories; `make` resolves them)."
             )
+
+
+@dataclass(frozen=True, kw_only=True)
+class DropGroupRequest(ApplyRequest):
+    """Drop whole tag groups — artists, clothing, lighting — from the revised captions.
+
+    Only the cut: every tag left keeps its place and nothing is added — no bucket
+    order, trigger word or @no-artist, which is what Correct wraps around the same
+    drop. The use is a style or concept LoRA, whose trigger word should learn what
+    the dropped tags would otherwise explain. A tag the Danbooru KB does not know
+    is never dropped. Reads the revised caption, the master only for an image that
+    has none yet, and never edits the master.
+    """
+
+    report_dir: str = _report_dir(f"{WS.REPORTS}/drop_groups")
+    groups: tuple[str, ...] = arg(
+        (),
+        nargs="*",
+        choices=drop_group_names(),
+        kind="multi",
+        read=tuple,
+        write=list,
+        metavar="GROUP",
+        help="Tag groups to drop. artist, character, copyright, meta and count go by "
+        "tag shape and Danbooru category; the rest by the KB's taxonomy path",
+    )
+    keep_tags: tuple[str, ...] = _csv(
+        (),
+        help="Comma-separated tags no group may take — a trigger word that is "
+        "itself an @artist, say",
+    )
+    category_paths: tuple[str, ...] = _csv(
+        (),
+        help="Comma-separated taxonomy-path prefixes, for a subgroup no slug names: "
+        "the [대분류 > 소분류] a tag's description in danbooru_tags_classified.csv "
+        "starts with",
+    )
+    tag_csv: str | None = arg(
+        None, help="danbooru_tags_classified.csv path (default: models/ lookup)"
+    )
+    recursive: bool = arg(True, help="Walk subfolders")
+
+    @property
+    def selectors(self) -> tuple[str, ...]:
+        """What the drop is handed: the slugs, then the literal path prefixes."""
+        return parse_drop_groups((*self.groups, *self.category_paths))
 
 
 @dataclass(frozen=True, kw_only=True)

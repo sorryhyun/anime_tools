@@ -1,8 +1,10 @@
-import { createEffect, For, Show } from "solid-js";
+import { createEffect, createMemo, createResource, createSignal, For, on, Show } from "solid-js";
+import { api } from "../api";
 import { createCaptionEditor } from "../captionEditor";
 import { t } from "../i18n";
 import { AnalysisView } from "./AnalysisView";
 import { BoxedCaption } from "./BoxedCaption";
+import type { GroupSolo } from "./BoxedCaption";
 import { CaptionDiff } from "./CaptionDiff";
 import { HelpToggle } from "./HelpToggle";
 import { ANALYSIS_KIND } from "../types";
@@ -44,6 +46,10 @@ export function CaptionCard(props: {
       opens them; the stage form's speaks for the dock alone. */
   help: boolean;
   onHelp: () => void;
+  /** Tint every tag by the drop group the Tag groups stage would remove it
+      under, with a legend of the groups this caption holds. */
+  groups: boolean;
+  onGroups: () => void;
   onSaved: (saved: SavedCaption) => void;
   /** What the position stage (and its audit phase) last saw in this image, and
       the resized image its masks were cut from. The badge exists only while
@@ -124,6 +130,52 @@ export function CaptionCard(props: {
   const hasAnalysis = () => !!(props.analysis?.position || props.analysis?.audit);
   const showAnalysis = () => props.kind === ANALYSIS_KIND && hasAnalysis();
 
+  /** The tags on screen, as the text between the offsets the parse returned —
+      the only cut made here — over the text that parse ran on. Headers are
+      grammar, not tags. */
+  const tagTexts = () => {
+    const p = ed.parsed();
+    const text = ed.snap().text;
+    return p
+      ? p.spans.filter((s) => s.kind !== "header").map((s) => text.slice(s.start, s.end))
+      : [];
+  };
+  /** The lookup's key: the distinct tags as JSON — a string, so a keystroke
+      that changes no tag asks nothing, and JSON rather than a join, since a
+      hand-written master may hold a newline inside a tag. Null while the view
+      is off, which asks nothing at all: the KB is loaded on the first question,
+      not on the first image. */
+  const groupKey = createMemo(() => {
+    const tags = props.groups && !past() ? [...new Set(tagTexts())] : [];
+    return tags.length ? JSON.stringify(tags) : null;
+  });
+  const [groupInfo] = createResource(groupKey, (key) =>
+    api.dropGroups(JSON.parse(key) as string[]),
+  );
+  /** `latest`, not the resource: while the next lookup is in flight the boxes
+      keep the colours they had, the way the editor keeps its last parse. */
+  const groupOf = (tag: string) => groupInfo.latest?.groups[tag];
+  const [solo, setSolo] = createSignal<GroupSolo>(undefined);
+  createEffect(
+    on(
+      () => props.rel,
+      () => setSolo(undefined),
+      { defer: true },
+    ),
+  );
+  /** The legend: each group this caption holds and how many of its tags fall
+      under it, largest first, the ungrouped last. */
+  const legend = () => {
+    const counts = new Map<string | null, number>();
+    for (const tag of tagTexts()) {
+      const g = groupOf(tag);
+      if (g !== undefined) counts.set(g, (counts.get(g) ?? 0) + 1);
+    }
+    return [...counts].sort(([a, x], [b, y]) =>
+      a === null ? 1 : b === null ? -1 : y - x || a.localeCompare(b),
+    );
+  };
+
   return (
     <div classList={{ card: true, sel: props.kind !== "image" }} ref={card}>
       {/* The ladder. A filled dot is a file on disk and a hollow one is not,
@@ -186,6 +238,16 @@ export function CaptionCard(props: {
                   <span class="badge">{t().item.readOnly}</span>
                 </Show>
                 <HelpToggle open={props.help} onToggle={props.onHelp} />
+                <Show when={!past()}>
+                  <button
+                    classList={{ vb: true, on: props.groups }}
+                    aria-pressed={props.groups}
+                    title={t().caption.groupsHint}
+                    onClick={() => props.onGroups()}
+                  >
+                    {t().caption.groups}
+                  </button>
+                </Show>
                 <span class="sp" />
                 <Show when={e().editable}>
                   <button
@@ -221,6 +283,8 @@ export function CaptionCard(props: {
                   dirty={ed.dirty()}
                   readOnly={!e().editable}
                   placeholder={e().exists ? "" : t().caption.empty}
+                  groupOf={props.groups ? groupOf : undefined}
+                  solo={solo()}
                   onInput={ed.setText}
                   onKeyDown={(ev) => {
                     // Cmd/Ctrl+Enter saves; Cmd/Ctrl+S is caught too, or the
@@ -247,6 +311,36 @@ export function CaptionCard(props: {
                 <Show when={props.help}> · {t().caption.lookUpHint}</Show>
                 <Show when={ed.dirty()}> · {t().caption.unsaved}</Show>
               </div>
+            )}
+          </Show>
+          <Show when={props.groups && groupInfo.latest}>
+            {(info) => (
+              <Show
+                when={info().installed}
+                fallback={<div class="dim hint">{t().caption.groupsNoKb}</div>}
+              >
+                {/* A chip shows its group alone; the same chip again, or
+                    another image, gives the rest back. */}
+                <div class="glegend">
+                  <For each={legend()}>
+                    {([g, n]) => (
+                      <button
+                        classList={{
+                          gchip: true,
+                          [g === null ? "gx" : `g-${g}`]: true,
+                          on: solo() === g,
+                        }}
+                        title={g === null ? t().caption.groupNoneHint : t().caption.groupSolo}
+                        onClick={() => setSolo(solo() === g ? undefined : g)}
+                      >
+                        <span class="dot" />
+                        {g ?? t().caption.groupNone}
+                        <span class="dim">{n}</span>
+                      </button>
+                    )}
+                  </For>
+                </div>
+              </Show>
             )}
           </Show>
         </Show>

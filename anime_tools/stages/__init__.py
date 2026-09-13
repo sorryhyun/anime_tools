@@ -1,5 +1,5 @@
 """Caption-master stages: resize, autotag, position clauses, correction +
-variants, OCR, multiview audit, export.
+variants, tag groups, OCR, multiview audit, export.
 
 The surface is one request object per stage (:mod:`requests`, torch-free) and
 the function that runs it — ``run_autotag(AutotagRequest(...))``, which lives in
@@ -15,6 +15,7 @@ __all__ = [
     "AutotagRequest",
     "CorrectRequest",
     "DetectionRequest",
+    "DropGroupRequest",
     "ExportRequest",
     "MultiviewRequest",
     "OcrRequest",
@@ -24,6 +25,7 @@ __all__ = [
     "run_audit",
     "run_autotag",
     "run_correct",
+    "run_drop_groups",
     "run_export",
     "run_ocr",
     "run_position",
@@ -39,6 +41,7 @@ _RUNNERS = {
     "run_ocr": "ocr",
     "run_position": "position_captions",
     "run_resize": "resize",
+    "run_drop_groups": "drop_groups",
 }
 """Which module each runner lives in — its stage's own, since a runner is that
 stage's ``main`` minus the parsing. ``registry.py`` names the same pairs as

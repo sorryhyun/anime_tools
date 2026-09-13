@@ -11,9 +11,9 @@ at the call that produces it.
 from __future__ import annotations
 
 import mimetypes
-from typing import Any
+from typing import Annotated, Any
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, Body, HTTPException, Request
 from fastapi.responses import FileResponse, Response
 
 from anime_tools.gui import dataset as D
@@ -187,6 +187,20 @@ def describe_tag(tag: str) -> dict[str, Any]:
     if not tag:
         raise HTTPException(400, "tag is required")
     return T.describe(tag)
+
+
+@router.post("/api/tags/groups")
+def drop_groups_of(body: Annotated[dict[str, Any], Body()]) -> dict[str, Any]:
+    """Which drop group each of a caption's tags falls under — the caption
+    editor's group view, asked only while that view is on.
+
+    A plain ``def``, like the describe route: the first call loads the KB, and
+    FastAPI runs it in the threadpool rather than on the loop a job streams on.
+    """
+    tags = body.get("tags")
+    if not isinstance(tags, list):
+        raise HTTPException(400, "tags must be a list")
+    return T.groups(s for t in tags if (s := str(t).strip()))
 
 
 @router.get("/api/thumb")

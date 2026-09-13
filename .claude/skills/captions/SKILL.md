@@ -51,6 +51,16 @@ LoRAs). Applies inside position clauses too (an emptied clause is removed whole)
 Setting it alone is enough to enable the correction pass. Note it is KB-faithful, so `thighhighs` is
 `accessory`, not `clothing`. CPU-only — no GPU involved.
 
+The **Tag groups** stage is the same drop without Correct around it:
+`python -m anime_tools.stages.cli.drop_group_captions --groups artist lighting` (`DropGroupRequest`,
+runner `stages/drop_groups.py`). `correction.drop_caption_groups` cuts the selectors and moves
+nothing else — no reorder, no trigger word, no `@no-artist` — and returns a caption it has nothing
+to cut from byte for byte. `--keep_tags` shields a tag from every selector, `--category_paths`
+takes literal prefixes; a write drops the stale `.variants.txt`, and the report is
+`REPLAY_SHAPES["drop_groups"]`. Correct's `--no_correct` keeps its drop too (it used to be ignored
+there). The GUI editor's **groups** view colours each tag by `tag_drop_group` through
+`POST /api/tags/groups`, so what a tick will take is visible before the run.
+
 ## Auto-tagging (`python -m anime_tools.stages.cli.autotag_captions`)
 
 Batch Anima Tagger over the dataset, writing `.txt` sidecars into the revised tree

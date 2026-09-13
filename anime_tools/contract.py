@@ -138,6 +138,20 @@ REPLAY_SHAPES: dict[str, ReplaySpec] = {
         drop_variants=True,
         history_by="correct",
     ),
+    # Text-only like ``correct``, and so no ``--from_report`` either. Its write
+    # drops the variants sidecar rather than rebuilding it: the sidecar's v0 is
+    # the caption before the cut.
+    "drop_groups": ReplaySpec(
+        stage="drop_group_captions",
+        rows_key="rows",
+        stats_key="stats",
+        ok_status="ok",
+        before_field="target_before",
+        after_field="proposed",
+        target_root="dst",
+        drop_variants=True,
+        history_by="drop_groups",
+    ),
     # The writable set is the verdict/confidence gate, not a row ``status``, so
     # ``row_filter`` is left open here and closed over the gate at replay time.
     # Same target and same bytes as ``apply_findings``: the revised caption, no

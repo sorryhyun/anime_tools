@@ -161,6 +161,12 @@ const zh: Dict = {
     unsaved: "未保存的预览",
     lookUpHint: "双击标签可查询词条",
     bag: "标签集合",
+    groups: "分组",
+    groupsHint: "按“标签分组”阶段删除它时所属的分组，给每个标签着色",
+    groupNone: "无分组",
+    groupNoneHint: "Danbooru KB 不认识这些标签，任何分组都不会删掉它们",
+    groupSolo: "只显示这个分组 — 再点一次显示全部",
+    groupsNoKb: "标签分组需要 Danbooru 标签库 — 在 设置 › 模型 中获取",
   },
   analysis: {
     badge: "分析",
@@ -259,6 +265,7 @@ const zh: Dict = {
       autotag: "自动生成标签",
       position: "人物位置标注",
       correct: "标签校正",
+      drop_groups: "删除标签分组",
       audit: "多视角审查",
       ocr: "识别图中文字",
       groups: "相似图片分组",
@@ -269,6 +276,7 @@ const zh: Dict = {
     shorts: {
       position: "人物位置标注",
       correct: "标签校正",
+      drop_groups: "标签分组",
       audit: "审查",
       masks_sam: "设置",
       masks_merge: "合并",
@@ -289,6 +297,10 @@ const zh: Dict = {
       correct:
         "在缩放后的预处理图片旁边写下校正过的标注。\n\n" +
         "就地校正 revised 标注，只有当一张图还没有 revised 时才去读 master，变体附文件是可选的。总是写入：没有试运行，也没有报告。",
+      drop_groups:
+        "从 revised 标注中整组删除标签（画师、服装、光照等）。\n\n" +
+        "只做删除：剩下的标签保持原位，也不添加任何东西 — 没有分桶排序、没有触发词、没有 @no-artist，那些是 Correct 围绕同一次删除所做的事。用于画风或概念 LoRA：让触发词去学被删掉的标签原本会解释的东西。Danbooru KB 不认识的标签永远不会被删。读的是 revised 标注，只有没有 revised 的图片才读 master，从不改动 master。\n\n" +
+        "默认试运行，--apply 才写，之后请重新跑一次 TE 编码。",
       audit:
         "审查 1girl 的标注，找出其实是同一个人多个视角的图片。\n\n" +
         "扫过位置阶段以 single-subject 跳过的图片，把 girl 提示词找到两个以上主体的全部报告出来。见 docs/multiview_audit.md。位置阶段用 --multiview_audit 把这一步当作自己的第一个阶段来跑，平常都是从那儿进来的。\n\n" +
@@ -317,6 +329,8 @@ const zh: Dict = {
       autotag:
         "把 revised 标注写在缩放树下；master 只在缺少时读取，从不改动。missing 会跳过标注已经说到的图片。",
       correct: "就地校正 revised 标注；master 只在还没有 revised 的图片上读取，从不改动。",
+      drop_groups:
+        "从 revised 标注中删除所选分组，其余一律不动；Danbooru KB 不认识的标签不会被删。master 只在还没有 revised 的图片上读取，从不改动。",
       ocr: "把 {stem}.ocr.txt 写进 OCR 树，布局与缩放树一致。不读也不写任何标注。",
       export:
         "唯一写到工作区之外的阶段：运行会复制到训练器读取的那棵树，已经一样的就跳过。Undo 能还原它覆盖掉的文本；被替换的像素无法撤销。",

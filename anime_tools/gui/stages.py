@@ -196,6 +196,7 @@ BASIC_FIELDS: dict[str, frozenset[str]] = {
             "caption_shuffle_variants",
         }
     ),
+    "drop_groups": frozenset({"groups", "keep_tags"}),
     "ocr": frozenset(
         {"det_conf", "min_det", "min_score", "min_chars", "skip_en", "strip_symbols"}
     ),
@@ -218,6 +219,7 @@ ROOT_FIELDS: dict[str, dict[str, str]] = {
     "autotag": {"src": "src", "dst": "dst"},
     "position": {"src": "src", "dst": "dst"},
     "correct": {"src": "src", "dst": "dst"},
+    "drop_groups": {"src": "src", "dst": "dst"},
     "audit": {"src": "src", "dst": "dst"},
     # OCR, grouping and the mask generator read the *resized* tree: one
     # geometry for the whole pipeline. A mask cut from master pixels lands off the

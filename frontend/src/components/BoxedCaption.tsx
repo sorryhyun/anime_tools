@@ -59,6 +59,24 @@ const boxClass = (s: Span) =>
     s.clause >= 0 && s.kind !== "header" ? " cl" : ""
   }`;
 
+/** The group view's classes for one tag's box: its group's hue (`g-<slug>`),
+    `gx` for a tag no group takes, nothing yet for one the lookup has not
+    answered, and `mute` for every box outside the group shown alone. A header
+    is grammar, not a tag, so it wears no group. */
+function groupClass(s: Span, tag: string, groupOf: GroupOf, solo: GroupSolo): string {
+  if (s.kind === "header") return solo === undefined ? "" : " mute";
+  const g = groupOf(tag);
+  if (g === undefined) return "";
+  const own = g === null ? " g gx" : ` g g-${g}`;
+  return solo !== undefined && solo !== g ? `${own} mute` : own;
+}
+
+/** A tag's drop group: a slug, `null` for none, `undefined` while unknown. */
+export type GroupOf = (tag: string) => string | null | undefined;
+/** The group shown alone — a slug, `null` for the ungrouped — or `undefined`
+    for all of them. */
+export type GroupSolo = string | null | undefined;
+
 export function BoxedCaption(props: {
   /** The live buffer — what the textarea holds. */
   text: string;
@@ -70,6 +88,10 @@ export function BoxedCaption(props: {
       dimmed: a read-only textarea still selects, copies and looks a tag up. */
   readOnly?: boolean;
   placeholder: string;
+  /** The group view: each tag's box tinted by the drop group it falls under.
+      Absent is the view off. */
+  groupOf?: GroupOf;
+  solo?: GroupSolo;
   onInput: (v: string) => void;
   onKeyDown: (e: KeyboardEvent & { currentTarget: HTMLTextAreaElement }) => void;
 }) {
@@ -117,7 +139,9 @@ export function BoxedCaption(props: {
           {(p) =>
             p.span ? (
               <span
-                class={`${boxClass(p.span)}${caret() >= p.span.start && caret() <= p.span.end ? " on" : ""}`}
+                class={`${boxClass(p.span)}${
+                  props.groupOf ? groupClass(p.span, p.text, props.groupOf, props.solo) : ""
+                }${caret() >= p.span.start && caret() <= p.span.end ? " on" : ""}`}
                 data-tb={p.i}
               >
                 {p.text}

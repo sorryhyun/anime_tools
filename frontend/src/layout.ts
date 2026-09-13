@@ -46,6 +46,10 @@ export function createLayout() {
   const [helpAreas, setHelpAreas] = persisted<HelpArea[]>("help", [], readAreas, (v) =>
     v.join(","),
   );
+  /** The caption editor's tag-group colouring. A preference rather than a look
+      at one caption: someone curating for a style LoRA wants it on for every
+      image they walk through. */
+  const [groupView, setGroupView] = persisted("groupview", false, asFlag, fromFlag);
 
   // A class on <body>, not a <Show>: the tree keeps its expanded folders and
   // its scroll position while it is folded away.
@@ -73,6 +77,8 @@ export function createLayout() {
     setLogOpen,
     guideOpen,
     setGuideOpen,
+    groupView,
+    toggleGroupView: () => setGroupView(!groupView()),
     helpOpen: (a: HelpArea) => helpAreas().includes(a),
     toggleHelp: (a: HelpArea) =>
       setHelpAreas((v) => (v.includes(a) ? v.filter((x) => x !== a) : [...v, a])),

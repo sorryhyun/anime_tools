@@ -23,6 +23,7 @@ export type StageId =
   | "autotag"
   | "position"
   | "correct"
+  | "drop_groups"
   | "audit"
   | "ocr"
   | "groups"
@@ -204,6 +205,12 @@ const en = {
     unsaved: "unsaved preview",
     lookUpHint: "double-click a tag to look it up",
     bag: "bag",
+    groups: "groups",
+    groupsHint: "tint every tag by the drop group the Tag groups stage would remove it under",
+    groupNone: "no group",
+    groupNoneHint: "the Danbooru KB does not know these tags, so no group drops them",
+    groupSolo: "show this group alone — click again for all",
+    groupsNoKb: "tag groups need the Danbooru tag KB — get it in Settings › Models",
   },
   analysis: {
     badge: "analysis",
@@ -324,6 +331,7 @@ const en = {
       autotag: "Autotag captions",
       position: "Character position tagging",
       correct: "Tag correction",
+      drop_groups: "Drop tag groups",
       audit: "Multiview audit",
       ocr: "OCR text",
       groups: "Group similar images",
@@ -336,6 +344,7 @@ const en = {
     shorts: {
       position: "Position tagging",
       correct: "Tag correction",
+      drop_groups: "Tag groups",
       audit: "Audit",
       masks_sam: "Setup",
       masks_merge: "Merge",

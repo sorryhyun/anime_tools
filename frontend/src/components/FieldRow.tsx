@@ -41,7 +41,7 @@ export function FieldRow(props: {
   const f = () => props.field;
   const cls = () => ({ dirty: !!props.dirty });
   return (
-    <div class="row" classList={{ wide: f().kind === "masks" }}>
+    <div class="row" classList={{ wide: f().kind === "masks" || f().kind === "multi" }}>
       <label classList={{ req: f().required }} title={f().help}>
         {f().label || f().flags[0] || f().dest}
       </label>
@@ -66,6 +66,37 @@ export function FieldRow(props: {
         </Match>
         <Match when={f().kind === "masks"}>
           <MaskList value={props.value} dirty={props.dirty} setValue={props.setValue} />
+        </Match>
+        {/* Any subset of the choices, one chip per choice. The value stays in
+            the choices' order whatever order they were clicked in, so the same
+            pick is the same argv. A chip wears `g-<choice>`, which is only a
+            colour where the choices are tag groups. */}
+        <Match when={f().kind === "multi"}>
+          <div class="chips" classList={cls()}>
+            <For each={(f().choices ?? []).map(String)}>
+              {(c) => {
+                const picked = () => (Array.isArray(props.value) ? props.value.map(String) : []);
+                // A button, not a label around a checkbox: `.row label` is the
+                // field's name and styles every label in the row as one.
+                return (
+                  <button
+                    type="button"
+                    classList={{ chip: true, [`g-${c}`]: true, on: picked().includes(c) }}
+                    aria-pressed={picked().includes(c)}
+                    onClick={() => {
+                      const next = new Set(picked());
+                      if (next.has(c)) next.delete(c);
+                      else next.add(c);
+                      props.setValue((f().choices ?? []).map(String).filter((x) => next.has(x)));
+                    }}
+                  >
+                    <span class="dot" />
+                    {c}
+                  </button>
+                );
+              }}
+            </For>
+          </div>
         </Match>
         <Match when={f().kind === "list"}>
           <textarea

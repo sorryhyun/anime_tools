@@ -165,6 +165,12 @@ const ko: Dict = {
     unsaved: "저장하지 않은 미리보기",
     lookUpHint: "태그를 더블클릭하면 뜻을 찾아봅니다",
     bag: "태그 묶음",
+    groups: "그룹",
+    groupsHint: "태그 그룹 스테이지가 어느 그룹으로 지울지에 따라 태그마다 색을 칠합니다",
+    groupNone: "그룹 없음",
+    groupNoneHint: "Danbooru KB가 모르는 태그라 어떤 그룹으로도 지워지지 않습니다",
+    groupSolo: "이 그룹만 보기 — 다시 누르면 전부",
+    groupsNoKb: "태그 그룹을 보려면 Danbooru 태그 KB가 필요합니다 — 설정 › 모델에서 받기",
   },
   analysis: {
     badge: "분석",
@@ -270,6 +276,7 @@ const ko: Dict = {
       autotag: "캡션 자동 태깅",
       position: "인물 위치 태깅",
       correct: "태그 교정",
+      drop_groups: "태그 그룹 제거",
       audit: "다중 시점 점검",
       ocr: "이미지 속 글자 인식",
       groups: "유사 이미지 그룹화",
@@ -280,6 +287,7 @@ const ko: Dict = {
     shorts: {
       position: "인물 위치 태깅",
       correct: "태그 교정",
+      drop_groups: "태그 그룹",
       audit: "점검",
       masks_sam: "설정",
       masks_merge: "합치기",
@@ -300,6 +308,10 @@ const ko: Dict = {
       correct:
         "리사이즈된 전처리 이미지 옆에 교정한 캡션을 씁니다.\n\n" +
         "revised 캡션을 제자리에서 교정하고, revised가 아직 없는 이미지에 대해서만 master를 읽습니다. 변형 사이드카는 선택입니다. 항상 씁니다: 드라이런도 리포트도 없습니다.",
+      drop_groups:
+        "revised 캡션에서 태그 그룹(작가, 의상, 조명 등)을 통째로 지웁니다.\n\n" +
+        "잘라내기만 합니다: 남은 태그는 제자리를 지키고 아무것도 더하지 않습니다 — 버킷 정렬도, 트리거 워드도, @no-artist도 없습니다. 그것은 같은 제거 둘레에서 Correct가 하는 일입니다. 화풍이나 콘셉트 LoRA에서, 지운 태그가 대신 설명했을 것을 트리거 워드가 배우게 하려는 스테이지입니다. Danbooru KB가 모르는 태그는 절대 지우지 않습니다. revised 캡션을 읽고, revised가 없는 이미지에서만 master를 읽으며, master는 편집하지 않습니다.\n\n" +
+        "기본은 드라이런이고 --apply가 씁니다. 뒤이어 TE 재인코딩을 도세요.",
       audit:
         "1girl 캡션 중 사실은 한 인물의 여러 시점인 이미지를 점검합니다.\n\n" +
         "위치 스테이지가 single-subject로 건너뛴 이미지를 훑어, girl 프롬프트가 인물을 둘 이상 찾아내는 이미지를 모두 보고합니다. docs/multiview_audit.md를 보세요. 위치 스테이지는 --multiview_audit로 이 점검을 자기 첫 단계로 돌리며, 보통은 그쪽이 들어오는 길입니다.\n\n" +
@@ -330,6 +342,8 @@ const ko: Dict = {
         "revised 캡션을 리사이즈된 트리 아래에 씁니다. master는 없을 때 대신 읽을 뿐 편집하지 않습니다. missing은 이미 캡션이 설명하는 이미지를 건너뜁니다.",
       correct:
         "revised 캡션을 제자리에서 교정합니다. master는 revised가 없는 이미지에서만 읽고, 편집하지 않습니다.",
+      drop_groups:
+        "고른 그룹을 revised 캡션에서 지우고 그 밖에는 아무것도 옮기지 않습니다. Danbooru KB가 모르는 태그는 지우지 않습니다. master는 revised가 없는 이미지에서만 읽고, 편집하지 않습니다.",
       ocr: "{stem}.ocr.txt를 리사이즈된 트리와 같은 구조로 OCR 트리에 씁니다. 캡션은 읽지도 쓰지도 않습니다.",
       export:
         "워크스페이스 바깥에 쓰는 유일한 스테이지입니다. 실행하면 트레이너가 읽는 트리로 복사하고, 이미 같은 것은 건너뜁니다. Undo는 덮어쓴 텍스트를 되돌리지만, 교체된 픽셀은 되돌릴 수 없습니다.",

@@ -3,7 +3,8 @@
 Caption-master stages and their thin CLIs: `resize.py`, `autotag.py` (modes
 `missing`/`merge`/`overwrite`; only `missing` is non-destructive), `position_captions.py` (SAM3
 instances → reading order → mask-blanked crops → tagger → clause rewrite; see
-`docs/position_captions.md`), `captions.py` (correction + mirror), `multiview_audit.py`
+`docs/position_captions.md`), `captions.py` (correction + mirror), `drop_groups.py` (whole tag
+groups cut from the revised caption, nothing else moved), `multiview_audit.py`
 (`docs/multiview_audit.md`), `ocr.py` (one path: the AnimeText
 text-block detector, detect-only, every box read by the manga VL reader through
 `anime_tools.ocr.reread.RereadEngine`, plus the optional `--mask_dir` components as `0.000`-score
@@ -14,8 +15,9 @@ skill; the caption grammar these stages write is the `captions` skill.
 ## Requests and runners
 
 The surface is a request object per stage (`requests.py`, torch-free): `ResizeRequest`,
-`AutotagRequest`, `PositionRequest`, `CorrectRequest`, `OcrRequest`, `AuditRequest`,
-`ExportRequest`, run by `run_<stage>(req)` **in the stage's own module** — the old CLI main minus
+`AutotagRequest`, `PositionRequest`, `CorrectRequest`, `DropGroupRequest`, `OcrRequest`,
+`AuditRequest`, `ExportRequest`, run by `run_<stage>(req)` **in the stage's own module** —
+the old CLI main minus
 the parsing (preflight, model load, the library call, `report.json`, the printed epilogue).
 Same base as
 masking's (`anime_tools/_request.py`), with two differences: flags are spelled with underscores
@@ -27,19 +29,20 @@ takes the other spelling as an alias (`--path_pattern` / `--path-pattern`). The 
 one-line shells (`build_parser()` = `Request.parser()`, `main()` = `run_<stage>(from_argv())`).
 
 A runner lives beside the library function it drives, because `registry.py` addresses it as
-`module:function` and resolves it lazily — nothing has to import seven stages to name one:
+`module:function` and resolves it lazily — nothing has to import eight stages to name one:
 
 | Runner | Module | Also there |
 |---|---|---|
 | `run_resize` | `resize.py` | `resized_tree()` + `RESIZE_FIRST`, the "run Resize first" preflight every other stage borrows |
 | `run_autotag` | `autotag.py` | `run_autotag_captions`, whose `tag_batch` is one forward per `--batch_size` images |
 | `run_position` | `position_captions.py` | `summarize()` (the report's own counts), `_run_flatten` |
-| `run_correct` | `captions.py` | |
+| `run_correct` | `captions.py` | `resolve_tag_csv`, the KB lookup both text stages share |
+| `run_drop_groups` | `drop_groups.py` | `drop_tag_groups`; the cut is `correction.drop_caption_groups`, Correct's drop minus its reorder |
 | `run_audit` | `multiview_audit.py` | `run_audit_phase` (the same sweep as the position stage's phase 1) |
 | `run_ocr` | `ocr.py` | `_vl_engine`; the library walk is `read_tree` |
 | `run_export` | `export_workspace.py` | the library call is `publish` |
 
-`anime_tools/stages/__init__.py` re-exports all seven lazily (`_RUNNERS` is the same mapping), so
+`anime_tools/stages/__init__.py` re-exports all eight lazily (`_RUNNERS` is the same mapping), so
 `from anime_tools.stages import run_autotag` still costs one module. `_report.py` (the `report.json`
 header, the dry-run footer) and `_progress.py` (`make_progress`) are the two things every runner
 shares; they were under `cli/` until the library depended on its own CLI package.
@@ -61,12 +64,12 @@ audit pins `min_instances=2` (`MultiviewRequest.MIN_INSTANCES`, applied by the s
 `requests.audit_options`) rather than exposing it. Validation lives in `__post_init__`
 (autotag mode, `--flatten` vs `--from_report`, the randomize tokenizers, resize tiers); a missing
 input tree is a `FileNotFoundError` the shell turns into `SystemExit`. `__init__.py` exposes all
-seventeen names lazily; `tests/test_registry_requests.py` round-trips every registered stage's
+nineteen names lazily; `tests/test_registry_requests.py` round-trips every registered stage's
 request through its parser and imports the request half torch-poisoned;
 `tests/test_stage_requests.py` keeps the stage-specific pins.
 
 `registry.py` is the stage list — `Stage(id, title, request="module:Class",
-run="module:function", module, panel, …)` for all ten stages, masking and grouping included —
+run="module:function", module, panel, …)` for all eleven stages, masking and grouping included —
 resolved lazily (`Stage.request_class()`, `Stage.runner()`), so the GUI server and the trainer can
 enumerate stages without importing one, and a driver can go from a stage id to the in-process
 `run_<stage>(req)` call without naming a runner.
@@ -172,7 +175,7 @@ Settings value each.
   `replay.undo_one` is the inverse — `apply_one` with the two texts swapped, except for that row,
   where the inverse of a create is a delete (the caption and its sidecars go, leaving the master
   as the ladder had it). The GUI's Undo (`gui/proposals.py`) and the audit's `revert_curated` are
-  both that call; the replay shapes are `contract.REPLAY_SHAPES`, bound by the four stage CLIs as
+  both that call; the replay shapes are `contract.REPLAY_SHAPES`, bound by the five stage CLIs as
   `REPLAY_SPEC`.
   `correct` carries a shape and no `--from_report` either: the pass is pure text, so re-running
   it is cheaper than the machinery to skip it, but its report is still what the GUI's Undo

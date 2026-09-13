@@ -20,6 +20,7 @@ import type {
   SavedCaption,
   Settings,
   Stage,
+  DropGroups,
   TagInfo,
   UndoResult,
   UpdateInfo,
@@ -109,6 +110,8 @@ export const api = {
   /** Parse an unsaved caption server-side; the grammar has one implementation. */
   parse: (text: string) => req<Parsed>("/api/dataset/parse", json("POST", { text })),
   describeTag: (tag: string) => req<TagInfo>(`/api/tags/describe?tag=${encodeURIComponent(tag)}`),
+  /** The drop group of each tag, for the caption editor's group view. */
+  dropGroups: (tags: string[]) => req<DropGroups>("/api/tags/groups", json("POST", { tags })),
   saveCaption: (rel: string, kind: CaptionKind, text: string) =>
     req<SavedCaption>("/api/dataset/item", json("PUT", { rel, kind, text })),
 };

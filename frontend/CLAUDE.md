@@ -150,6 +150,15 @@ with its instance label map coloured per pixel on a canvas over the resized imag
 whose rows solo their region on hover. A selection carried onto an image with no record falls
 back to the editor.
 
+The card's **groups** toggle (`layout.ts`'s `groupView`, a saved preference) tints each tag's box
+by the drop group the Tag groups stage cuts by. `CaptionCard` slices the tags out of the text at
+the parse's own span offsets, asks `/api/tags/groups` once per distinct tag set — nothing while the
+toggle is off, so the KB is never loaded for someone who does not use it — and hands
+`BoxedCaption` a `groupOf` lookup, drawn as `g-<slug>` classes. `styles.css` folds the nineteen
+slugs into seven hues through one `--g` variable, which the legend's chips (each solos its group)
+and the form's `multi` chips dot with too. That table is presentation only: which tag is in which
+group is the server's answer.
+
 `OcrPanel.tsx` is the other panel under the caption card, and its every line is a badge: the seq
 of a line clicked puts the preview on the **text boxes** view with that box drawn alone, the
 header count draws all of them, and clicking either again gives the rest back or leaves the view.
@@ -178,7 +187,9 @@ label): its checkbox saves on click and its upgrade is a job. `SettingsPane` / `
 `config.ts`, since that is what owns which dialog is open — a state module never
 imports from `components/`. `FieldRow.tsx` (`FieldRow`, `grouped`, `str`) is the
 one argparse-field input, shared by `StageForm` and the Advanced dialog's
-preflight block.
+preflight block. Its `multi` kind (a `nargs` field with `choices` — the Tag groups
+stage's `--groups`) is one toggle chip per choice, and keeps the value in the
+choices' order, so a pick is the same argv whichever order it was clicked in.
 
 `RevealButton.tsx` is the ↗ beside a path — the dataset root in the header, the
 image name on the address line — and the two spots share it rather than each

@@ -76,7 +76,7 @@ Two environment variables steer the installer:
 
 | Variable | Effect |
 |---|---|
-| `ANIME_TOOLS_VERSION=v0.7.0` | Install that tag instead of the latest release. |
+| `ANIME_TOOLS_VERSION=v0.7.3` | Install that tag instead of the latest release. |
 | `TORCH_INDEX=https://download.pytorch.org/whl/cu128` | Extra package index for torch. The PowerShell installer already defaults to the cu132 one (the channel a 50-series card needs); set this for an older CUDA runtime, or `…/whl/cpu` for none. On Linux it is only needed for a CPU-only build. |
 
 When it finishes, open a new shell so the PATH change is seen, then:
@@ -247,6 +247,12 @@ badge per version. The tag bag and each position clause are boxed in the text; t
 from the server's own parser, so the browser never guesses at a caption's structure.
 Double-click a tag to look it up in the Danbooru tag KB (once it is downloaded).
 
+The **groups** button in the editor's header tints every tag by the drop group the Tag groups
+stage (§7.3) would remove it under — seven hues shared by nineteen groups, and a dashed box for
+a tag the KB does not know, which no group ever drops. Under the editor it lists the groups this
+caption holds, with a count each; click one to see its tags alone, and again for all of them. It
+needs the Danbooru tag KB, and stays on from image to image until you turn it off.
+
 Save (⌘/Ctrl+Enter) writes `master` or `revised`; the other rungs are read-only. Every
 write pushes the text it replaced onto the history rung, by hand or by a stage alike. A save
 tells you what to do next: a downstream text-embedding re-encode always, and re-run Correct
@@ -267,8 +273,9 @@ image leaves it alone, and the next run over this one replaces it.
 ### 6.3 The dock is the stage runner
 
 The button strip along the bottom is the stage list: Resize sits behind the scenes, and
-the buttons are Autotag · Curate · OCR tagging · Grouping · Masks · Export. Curate holds two
-stages (Position tagging / Tag correction) and Masks holds two (Setup / Merge), picked inside
+the buttons are Autotag · Curate · OCR tagging · Grouping · Masks · Export. Curate holds three
+stages (Position tagging / Tag correction / Tag groups) and Masks holds two (Setup / Merge),
+picked inside
 the panel. One click opens a stage's form; a second click on the open one folds the dock away.
 
 The form is generated from the stage's own `--help`. It opens on the knobs a run changes its
@@ -393,6 +400,23 @@ row in Models (§5); its optional English row rewrites the descriptions the tag 
 > are re-attached to the fresh mirror), but tags Autotag `merge` added to the flat bag do not,
 > so run Correct before Autotag `merge`, not after.
 
+#### Drop tag groups
+
+The other caption stage under Curate. Reads the revised caption (the master, for an image with
+none yet) and the Danbooru tag KB. Writes the revised caption.
+
+Removes the groups you tick — `artist`, `clothing`, `lighting`, `pose`… — from every caption, and
+nothing else: the tags left keep their order, and no trigger word, `@no-artist` or bucket order is
+added. That is the difference from Correct's drop groups, which reorder around the same cut. It
+is for a style or concept LoRA, whose trigger word should learn what the dropped tags would
+otherwise explain. `keep_tags` protects a tag no group may take (a trigger word that is itself an
+`@artist`), and under Advanced `category_paths` names a KB subgroup no tick covers.
+
+A tag the KB does not know is never dropped, so turn on the editor's **groups** view (§6.2)
+first to see what a tick will take. A write removes the image's `.variants.txt`, whose `v0` is
+the caption before the cut; Undo puts the caption back. Follow a run with the trainer's
+text-embedding re-encode.
+
 ### 7.4 Position captions
 
 Reads resized images and their captions. Writes the revised caption. Models: SAM 3
@@ -507,6 +531,7 @@ stages spell flags with underscores (`--path_pattern`), grouping and masking wit
 | Autotag | `anime_tools.stages.cli.autotag_captions` | dry run → `report.json` |
 | Position | `anime_tools.stages.cli.position_captions` | dry run → `report.json` |
 | Correct | `anime_tools.stages.cli.correct_captions` | dry run → `report.json` |
+| Tag groups | `anime_tools.stages.cli.drop_group_captions` | dry run → `report.json` |
 | Audit | `anime_tools.stages.cli.audit_multiview` | dry run → `report.json` |
 | OCR | `anime_tools.stages.cli.ocr_captions` | dry run → `report.json` |
 | Groups | `anime_tools.grouping.cli.build_groups` | always writes `groups.json` |

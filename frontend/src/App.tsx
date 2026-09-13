@@ -136,6 +136,8 @@ export default function App() {
         proposalStage={stages.curTitle()}
         help={layout.helpOpen("caption")}
         onHelp={() => layout.toggleHelp("caption")}
+        groups={layout.groupView()}
+        onGroups={layout.toggleGroupView}
         onSaved={dataset.onSaved}
         analysis={dataset.analysis.error ? undefined : dataset.analysis()}
         onSetExcluded={dataset.setExcluded}

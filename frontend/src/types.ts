@@ -1,6 +1,6 @@
 // Mirrors anime_tools/gui/stages.py (schema()) and jobs.py (Job.to_dict()).
 
-export type FieldKind = "bool" | "int" | "float" | "str" | "enum" | "list" | "masks";
+export type FieldKind = "bool" | "int" | "float" | "str" | "enum" | "list" | "multi" | "masks";
 
 /** The two axes of a `masks` field's entries (`anime_tools/masking/requests.py`'s
     `MASK_ROLES` / `MASK_KINDS`). Spelled here, like `StageId`, because each one
@@ -625,6 +625,15 @@ export interface TagInfo {
   post_count?: number;
   /** False when the KB answered under another spelling than the one clicked. */
   exact?: boolean;
+}
+
+/** `/api/tags/groups` (`gui/tags.py::groups`): the drop group each tag falls
+    under, keyed by the tag exactly as it was sent. `null` is a tag no group
+    takes — the KB does not know it, so no Tag groups run would drop it.
+    `installed` false means there is no KB to ask, and `groups` is empty. */
+export interface DropGroups {
+  installed: boolean;
+  groups: Record<string, string | null>;
 }
 
 /** How far the job being followed has got, read off its own log. Two line

@@ -17,6 +17,8 @@ from anime_tools.captions.correction import (
     CaptionCorrectionOptions,
     TagKnowledgeBase,
     correct_caption,
+    drop_caption_groups,
+    find_tag_csv,
 )
 from anime_tools.captions.position_clauses import has_clauses
 from anime_tools.captions.taxonomy import normalize_tag
@@ -192,8 +194,9 @@ def write_corrected_preprocess_captions(
     revised caption is the one to edit (or delete, to re-mirror).
 
     ``correct`` (default True) bucket-reorders each caption; ``correct=False``
-    mirrors the raw source caption verbatim. Either way v0 lands in
-    ``{stem}.txt`` and anchors the variant sidecar.
+    mirrors the raw source caption verbatim, less ``options.drop_groups`` —
+    a drop is not a reorder, so turning the reorder off must not turn it off
+    too. Either way v0 lands in ``{stem}.txt`` and anchors the variant sidecar.
 
     With ``num_variants > 0`` each image also gets a ``{stem}.variants.txt``
     sidecar the TE step encodes verbatim: v0 the corrected caption, v1..v{N-1}
@@ -250,7 +253,12 @@ def write_corrected_preprocess_captions(
         if caption_path != dst_caption:
             stats.from_master += 1
 
-        corrected = correct_caption(raw, kb, options=options).text if correct else raw
+        if correct:
+            corrected = correct_caption(raw, kb, options=options).text
+        else:
+            corrected = drop_caption_groups(
+                raw, kb, options.drop_groups, keep=(options.trigger_word,)
+            ).text
         if has_clauses(corrected):
             stats.clauses_preserved += 1
         rows.append(
@@ -329,6 +337,20 @@ TE_NOTE = (
 )
 
 
+def resolve_tag_csv(tag_csv: str | None) -> Path:
+    """The Danbooru tag KB a caption stage types tags against: ``tag_csv`` when
+    given, the curation home's lookup otherwise. A missing one is a
+    ``FileNotFoundError`` naming the download, which each shell exits with."""
+    csv_path = resolve_path(tag_csv) if tag_csv else find_tag_csv(curation_home())
+    if csv_path is None or not csv_path.exists():
+        raise FileNotFoundError(
+            "danbooru_tags_classified.csv not found. Run "
+            "`python -m anime_tools.downloads danbooru_tags` first "
+            "(or the GUI's Settings > Models > Danbooru tag KB)."
+        )
+    return csv_path
+
+
 def run_correct(req: CorrectRequest):
     """Correct the revised captions in place — mirroring the master for an image
     that has none yet — plus variant sidecars. Returns ``(rows, stats)``.
@@ -337,22 +359,14 @@ def run_correct(req: CorrectRequest):
     than the machinery to skip it. The report it leaves is still what the GUI's
     Undo reads (``contract.REPLAY_SHAPES["correct"]``).
     """
-    from anime_tools.captions.correction import find_tag_csv, load_tag_knowledge_base
+    from anime_tools.captions.correction import load_tag_knowledge_base
     from anime_tools.captions.tag_drop_groups import parse_drop_groups
 
     # Home-anchored like every other runner: a bare ``workspace/resized`` must
     # name the curation home's tree, not the shell's cwd.
     src = resolve_path(req.src)
     dst = resized_tree(req.dst)
-    csv_path = (
-        resolve_path(req.tag_csv) if req.tag_csv else find_tag_csv(curation_home())
-    )
-    if csv_path is None or not csv_path.exists():
-        raise FileNotFoundError(
-            "danbooru_tags_classified.csv not found. Run "
-            "`python -m anime_tools.downloads danbooru_tags` first "
-            "(or the GUI's Settings > Models > Danbooru tag KB)."
-        )
+    csv_path = resolve_tag_csv(req.tag_csv)
 
     # The erasure pool (identity-randomize only) needs both tokenizers, loaded
     # tokenizer-only — no encoder weights.
