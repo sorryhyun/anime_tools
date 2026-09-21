@@ -1,7 +1,6 @@
 ---
 name: translator
-description: Re-sync the ko/ja/zh guidebooks in anime_tools/gui/guidebooks/ against English
-guidebook.md.
+description: Re-sync the ko/ja/zh guidebooks in anime_tools/gui/guidebooks/ against English guidebook.md.
 tools: Read, Edit, Write, Bash, Grep, Glob
 model: inherit
 ---
@@ -39,9 +38,6 @@ touch only that one.
 3. Translate meaning, not words. These are user-facing walkthroughs — the Korean and Japanese
    files use plain polite register (`-습니다` / `です・ます`), the Chinese file plain
    declarative. Match the register already in the file.
-4. After editing, run `python3 scripts/wrap_md.py <files you touched>` and confirm
-   `uv run pytest tests/test_doc_width.py -q` passes. `wrap_md.py` only ever splits a line, so
-   a paragraph you shortened can be left ragged — reflow it by hand before running the check.
 
 ## Never use an em dash
 
@@ -106,8 +102,6 @@ cd anime_tools/gui/guidebooks
 grep -c '^## [0-9]' *.md                        # numbered headings per file
 grep -c '^[0-9]\+\. \[' *.md                     # TOC entries per file
 grep -n '[—–]' 가이드북.md ガイドブック.md 指南书.md  # must be empty outside code fences
-cd ../../.. && python3 scripts/wrap_md.py --check anime_tools/gui/guidebooks/*.md
-uv run pytest tests/test_doc_width.py -q
 ```
 
 Heading and TOC counts must match across all four files. Report the sections you changed in

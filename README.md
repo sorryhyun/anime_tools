@@ -141,7 +141,7 @@ workspace/                                       everything the tools write
   masks_sam/<rel>/  masks/<rel>/                   the SAM3 generator's tree, and the merge
   captions/<stage>/report.json  groups/groups.json  ocr/  export/report.json
   _excluded/excluded.json  _excluded/{resized,masks,ocr}/  images taken out of the pipeline, and their files
-(export_target_dir)/resized/ masks/ _excluded/   the published dataset    ← written only by Export (--combine_ocr attaches ocr/ lines to each published caption)
+(export_target_dir)/resized/ masks/ _excluded/   the published dataset    ← written only by Export (originals from src; --resize_cap / --webp / --combine_ocr)
 models/captioners/anima-tagger-dbv4/            tagger checkpoint (auto-fetched from sorryhyun/anima-tagger)
 models/sam3/  models/pe/  models/animetext/       SAM3 / PE-Spatial / OCR text-block detector
 models/paddleocr_vl_1.6*/                             the manga VL reader (VL-1.6 base + LoRA/tower)

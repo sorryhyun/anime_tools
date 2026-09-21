@@ -116,6 +116,23 @@ def walk_images(
     return paths
 
 
+def suffix_key(path: Path) -> str:
+    """A path's extension, case-folded: ``.JPG`` and ``.jpg`` are one format."""
+    return path.suffix.lower()
+
+
+def sibling_image(directory: Path, stem: str) -> Path | None:
+    """The image named ``stem`` in ``directory``, whatever its extension: the
+    resize step may re-encode (``.jpg`` master → ``.png`` resized), so the
+    source and resized trees are matched on stem, not on the full relative
+    path."""
+    for ext in IMAGE_EXTENSIONS:
+        p = directory / f"{stem}{ext}"
+        if p.is_file():
+            return p
+    return None
+
+
 def safe_walk(
     top: str | os.PathLike, *, followlinks: bool = True
 ) -> Iterator[tuple[str, list[str], list[str]]]:

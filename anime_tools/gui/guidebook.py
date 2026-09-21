@@ -3,8 +3,8 @@
 The four books live beside this module rather than under ``docs/`` because the
 panel serves them: ``packages.find`` ships only ``anime_tools*``, so a
 ``uv tool install`` has no ``docs/`` tree to read and the menu row would open an
-empty window on every installed copy. They stay plain markdown checked in at
-100 columns like every other doc here — the browser renders them
+empty window on every installed copy. They stay plain markdown checked in
+like every other doc here — the browser renders them
 (``frontend/src/components/Markdown.tsx``), and GitHub renders them in place.
 
 Relative links inside a book are written from *this* directory

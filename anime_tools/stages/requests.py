@@ -44,8 +44,8 @@ from anime_tools.stages._options import (
     DEFAULT_BATCH_SIZE,
     DEFAULT_CROP_ANCHOR,
     DEFAULT_IDENTITY_CONFIDENCE,
-    DEFAULT_MIN_PIXELS,
     DEFAULT_MULTIVIEW_PROB,
+    EXPORT_CAP_TOKENS,
     EXTRA_CHARACTER,
     MULTIPLE_VIEWS,
     PositionCaptionOptions,
@@ -94,6 +94,9 @@ OCR_DRAWER = "Combine OCR"
 
 DETECTOR = "Detector"
 """The OCR stage's group for the text-block detector's knobs."""
+
+RESIZE_CAP_DRAWER = "Resize cap"
+"""Export's drawer: the downscale switch and the token ceiling it holds to."""
 
 VL_READER = "VL reader"
 """The OCR stage's group for the manga VL reader and the optional text-mask
@@ -924,11 +927,6 @@ class ResizeRequest(DatasetRequest):
         "(unset) = a single 1024 tier. Must match the trainer's configured "
         "target_res or both sides keep re-resizing each other.",
     )
-    min_pixels: int = arg(
-        DEFAULT_MIN_PIXELS,
-        help=f"Skip images below this pixel count (default: {DEFAULT_MIN_PIXELS:,} = "
-        "0.5MP; 0 disables). Smaller images would be upscaled to fill a tier.",
-    )
     recursive: bool = arg(
         True, help="Walk subfolders, mirroring the layout under --dst (default: on)"
     )
@@ -994,9 +992,12 @@ class ResizeRequest(DatasetRequest):
 class ExportRequest(StageRequest):
     """Publish the workspace to the paths the trainer reads.
 
-    The one operation in the package that writes outside ``workspace/``: resized
-    images, masks and captions are copied under ``--out``, and whatever curation
-    excluded is copied beside them under ``<out>/_excluded/``.
+    The one operation in the package that writes outside ``workspace/``: images,
+    masks and captions are copied under ``--out``, and whatever curation
+    excluded is copied beside them under ``<out>/_excluded/``. The image each
+    resized one stands for publishes as its original under ``--src`` —
+    downscaled to ``--resize_cap_tokens`` with ``--resize_cap``, re-encoded as
+    WebP with ``--webp``.
 
     Takes no ``--path_pattern``, which is why it is not a
     :class:`DatasetRequest`: an export is the workspace or it is a partial
@@ -1011,7 +1012,8 @@ class ExportRequest(StageRequest):
 
     src: str = arg(
         WS.SOURCE_ROOT,
-        help="Caption master dir — where a revised master publishes back to",
+        help="Source dir — each published image is its original here, and a "
+        "revised master publishes back to it",
     )
     dst: str = arg(WS.RESIZED, help="Resized tree to publish (the workspace's)")
     masks: str = arg(WS.MASKS, help=f"Workspace mask dir (default: {WS.MASKS})")
@@ -1076,7 +1078,36 @@ class ExportRequest(StageRequest):
         help=f"The OCR tree the sidecars are read from, mirroring --dst "
         f"(default: {WS.OCR}) — where the OCR stage wrote them",
     )
+    resize_cap: bool = arg(
+        False,
+        gate="resize_cap",
+        group=RESIZE_CAP_DRAWER,
+        help="Downscale each published image whose 16 px patch grid is over "
+        "--resize_cap_tokens to that ceiling, keeping its aspect; an image at or "
+        "under it is copied as it is. Off by default: every image publishes as "
+        "the original under --src, byte for byte",
+    )
+    resize_cap_tokens: int = arg(
+        EXPORT_CAP_TOKENS,
+        gate="resize_cap",
+        group=RESIZE_CAP_DRAWER,
+        help=f"The token ceiling (default: {EXPORT_CAP_TOKENS}, the 1024 tier's top, "
+        "~1024² pixels). Pixels = tokens × 256: 2160 is ~768², 6300 ~1280², "
+        "8640 ~1536²",
+    )
+    webp: bool = arg(
+        False,
+        help="Publish every image as {stem}.webp (quality 95) instead of in its "
+        "original format. An original already in WebP, and under the cap when "
+        "--resize_cap is on, is still copied byte for byte",
+    )
     apply: bool = arg(
         False, help="Copy for real (default: list what would be copied and stop)"
     )
     report_dir: str = _report_dir(f"{WS.REPORTS}/export")
+
+    def __post_init__(self) -> None:
+        if self.resize_cap and self.resize_cap_tokens <= 0:
+            raise ValueError(
+                f"--resize_cap_tokens must be positive, got {self.resize_cap_tokens}"
+            )

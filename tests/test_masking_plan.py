@@ -229,8 +229,8 @@ def test_a_gated_group_names_its_switch_where_the_gui_reads_it():
     """A drawer is a field's ``gate`` metadata naming the switch (the switch
     names itself). The GUI form reads it off the schema; the generated parser
     also stamps the argparse group with ``GATE_ATTR`` for anyone introspecting.
-    Export's *Combine OCR* drawer is the one carrier since the MIT text-mask
-    stage (two detector drawers) left the package.
+    Export's *Combine OCR* and *Resize cap* drawers are the carriers since the
+    MIT text-mask stage (two detector drawers) left the package.
     """
     from anime_tools._request import args_of
     from anime_tools.gui import stages as S
@@ -248,6 +248,7 @@ def test_a_gated_group_names_its_switch_where_the_gui_reads_it():
     fields = {f["dest"]: f for f in S.schema(S.BY_ID["export"])["fields"]}
     assert fields["combine_ocr"]["gate"] == "combine_ocr"
     assert fields["ocr_dir"]["gate"] == "combine_ocr"
+    assert fields["resize_cap_tokens"]["gate"] == "resize_cap"
     assert fields["apply"]["gate"] is None
 
     parser = ExportRequest.parser()
@@ -256,4 +257,4 @@ def test_a_gated_group_names_its_switch_where_the_gui_reads_it():
         for g in parser._action_groups
         if getattr(g, S.GATE_ATTR, None)
     }
-    assert stamped == {"combine_ocr": "Combine OCR"}
+    assert stamped == {"combine_ocr": "Combine OCR", "resize_cap": "Resize cap"}

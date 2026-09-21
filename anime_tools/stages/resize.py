@@ -36,11 +36,7 @@ from anime_tools.buckets import (
 
 # Re-exported: the defaults live in the leaf every stage request reads, so the
 # GUI's schema build does not import this module (and PIL) to read a number.
-from anime_tools.stages._options import (
-    CROP_ANCHORS,
-    DEFAULT_CROP_ANCHOR,
-    DEFAULT_MIN_PIXELS,
-)
+from anime_tools.stages._options import CROP_ANCHORS, DEFAULT_CROP_ANCHOR
 from anime_tools.stages._progress import make_progress
 from anime_tools.stages._report import write_stage_report
 
@@ -63,16 +59,6 @@ def resized_tree(dst: str) -> Path:
             f"resized dir not found: {resized_dir} — {RESIZE_FIRST}"
         )
     return resized_dir
-
-
-def below_min_pixels(size: tuple[int, int], min_pixels: int) -> bool:
-    """Would this image be skipped for being too small? ``min_pixels`` 0 = never.
-
-    The floor is on the *source* pixels, and a skip means nothing lands in the
-    resized tree — invisible to every other stage, not merely left out of
-    training.
-    """
-    return min_pixels > 0 and size[0] * size[1] < min_pixels
 
 
 MARGIN_SIDES = ("top", "right", "bottom", "left")
@@ -218,11 +204,6 @@ class ResizeStats:
     seen: int = 0
     """Images enumerated under the source root, before any filter."""
     written: int = 0
-    skipped_small: int = 0
-    """Below ``min_pixels``."""
-    too_small: list[str] = field(default_factory=list)
-    """``"<path>: <W>x<H>"`` per skip — named rather than counted, since a
-    skipped image is invisible to every downstream stage."""
     skipped_excluded: int = 0
     """Named in the caller's ``skip`` set (a curation decision), left out
     before any header is read."""
@@ -439,7 +420,6 @@ def run_resize_images(
     options: ResizeOptions | None = None,
     path_pattern: str | None = None,
     recursive: bool = True,
-    min_pixels: int = DEFAULT_MIN_PIXELS,
     overwrite: bool = False,
     workers: int = 4,
     skip: Collection[str] | None = None,
@@ -447,7 +427,7 @@ def run_resize_images(
 ) -> ResizeStats:
     """Resize every image under ``src`` into ``dst``, mirroring the subdir layout.
 
-    Images below ``min_pixels`` are skipped rather than upscaled. ``skip`` names
+    ``skip`` names
     images to leave out by their :func:`rel_key` (the trainer GUI's curation
     decisions); they are applied after ``path_pattern`` and never opened. This
     stage always writes (there is no dry run): it is idempotent, and an
@@ -473,10 +453,6 @@ def run_resize_images(
         if error or raw is None:
             stats.failed += 1
             stats.failures.append(f"{image_path}: {error}")
-            continue
-        if below_min_pixels(raw, min_pixels):
-            stats.skipped_small += 1
-            stats.too_small.append(f"{image_path}: {raw[0]}x{raw[1]}")
             continue
         pending.append((image_path, size))
 
@@ -549,7 +525,6 @@ def run_resize(req: ResizeRequest) -> ResizeStats:
         options=options,
         path_pattern=req.path_pattern or "*",
         recursive=req.recursive,
-        min_pixels=req.min_pixels,
         overwrite=req.overwrite,
         workers=req.workers,
         skip=skip,
@@ -567,7 +542,6 @@ def run_resize(req: ResizeRequest) -> ResizeStats:
             "crop_anchor": options.crop_anchor,
             "crop_margins": list(options.crop_margins),
             "max_ratio": options.max_ratio,
-            "min_pixels": req.min_pixels,
             "overwrite": req.overwrite,
             "skip": list(skip),
             "excluded": list(ledger),
@@ -575,30 +549,23 @@ def run_resize(req: ResizeRequest) -> ResizeStats:
                 "seen": stats.seen,
                 "written": stats.written,
                 "skipped_current": stats.skipped_current,
-                "skipped_small": stats.skipped_small,
                 "skipped_excluded": stats.skipped_excluded,
                 "failed": stats.failed,
             },
             "buckets": dict(sorted(stats.buckets.items())),
             "failures": stats.failures,
-            "too_small": stats.too_small,
         },
     )
 
     print(
         f"Resized: {stats.written} written, "
         f"{stats.skipped_current} already current, "
-        f"{stats.skipped_small} below {req.min_pixels:,} px, "
         f"{stats.skipped_excluded} excluded "
         f"(--skip + {len(ledger)} in the ledger), "
         f"{stats.failed} failed ({stats.seen} images seen)"
     )
     for line in stats.failures:
         print(f"  fail: {line}")
-    # A skip here means invisible to every later stage, so name each file rather
-    # than counting them.
-    for line in stats.too_small:
-        print(f"  too small: {line}")
     if stats.buckets:
         print("Bucket distribution:")
         for reso, count in sorted(stats.buckets.items()):

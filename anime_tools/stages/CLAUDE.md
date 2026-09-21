@@ -121,6 +121,27 @@ Export is the only thing that writes outside the workspace. Six artifact kinds
 `--from_report`, and `revert_export` restores text it overwrote — an overwritten pixel reports
 `not-undoable`.
 
+The `image` row publishes the *original*, not the resized PNG: `plan_export` walks the resized
+tree for which images there are, then `_walk.sibling_image` finds each one's file under `--src`
+by directory + stem (the resized copy only when the original is gone), and it lands at
+`<out>/resized/<rel dir>/<stem><its suffix>`. Two knobs make that row a render
+(`ExportRow.render`, `_render`) rather than a copy: `--resize_cap` (a drawer, like Combine OCR)
+downscales an original over `--resize_cap_tokens` (default `_options.EXPORT_CAP_TOKENS`, the 1024
+tier's 4200) to that token count at its aspect — decided
+from the header, so an image under it stays a byte copy — and `--webp` re-encodes every original
+not already WebP as `{stem}.webp`. A render is stamped with the source's mtime and compared by
+mtime + header size, so a re-export is still a stat and a header read. Export never deletes, so a
+stem that changed suffix since the last export (the old `.png` beside a new `.jpg` / `.webp`)
+is named as `stale` in the report and the epilogue — the trainer refuses a folder with two images
+of one stem.
+
+The `mask` row follows its image: the workspace mask is at the resized geometry, so
+`_render_mask` maps it back through the resize's own crop — `_uncrop` inverts `resize_to_bucket`
+over `margin_box`, reading the anchor and margins off the resized PNG's `anima_resize_*` keys and
+edge-padding the strip the crop threw away — then scales it (NEAREST) to the published image's
+size, capped or not. The row carries `ref` (the original) and `fit` (the resized image); it is a
+plain copy only when there is no original and no cap.
+
 The `caption` row reads the ladder, not one file (`_caption_source`): the revised caption, else the
 master — overlay (`workspace/master/`) first, hand-written (`--src`) behind it, the same
 overlay-first rule `gui.dataset.caption_paths` and `resolve_caption` read. Nothing copies a master

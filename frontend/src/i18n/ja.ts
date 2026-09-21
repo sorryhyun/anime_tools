@@ -97,10 +97,6 @@ const ja: Dict = {
     noView: (view) => `この画像には${view}がありません`,
     readOnly: "読み取り専用",
     /** {0} は下限値、例: "0.50 MP"。ピクセル数チップに付きます。 */
-    aboveFloor: (floor: string) => `リサイズ下限 ${floor} 以上`,
-    /** {0} は下限値。この画像でステージを回しても何も起きない理由です。 */
-    belowFloor: (floor: string) =>
-      `リサイズ下限 ${floor} 未満 — この画像はリサイズされないため、workspace/resized を歩く各ステージからは見えません。⚙ 設定 › Preprocess で下限を下げてください。`,
     zoomHint: "⌘/Ctrl+スクロールで拡大 · ドラッグで移動 · ダブルクリックで元に戻す",
     exclude: "除外",
     excludeHint:

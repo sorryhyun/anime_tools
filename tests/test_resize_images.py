@@ -248,20 +248,17 @@ def test_a_tier_change_re_resizes_only_what_moved(tmp_path):
         assert im.size == select_bucket(1600, 900, [1536])[1]
 
 
-def test_min_pixels_skips_small_images_instead_of_upscaling(tmp_path):
+def test_there_is_no_pixel_floor(tmp_path):
+    """A small image is resized like any other: there is no floor, so nothing
+    the source tree holds is invisible to the pipeline for its size."""
     src, dst = tmp_path / "master", tmp_path / "resized"
     _write_image(src / "small.png", (200, 200))
-    _write_image(src / "big.png", (1600, 900))
 
     stats = run_resize_images(src=src, dst=dst, workers=1)
 
-    assert stats.written == 1 and stats.skipped_small == 1
-    assert not (dst / "small.png").exists()
-    # A skip here makes the image invisible to every stage, so it is named rather
-    # than merely counted.
-    assert len(stats.too_small) == 1
-    assert "small.png" in stats.too_small[0] and "200x200" in stats.too_small[0]
-    assert run_resize_images(src=src, dst=dst, workers=1, min_pixels=0).written == 1
+    assert stats.written == 1
+    with Image.open(dst / "small.png") as im:
+        assert im.size == select_bucket(200, 200)[1]
 
 
 def test_path_pattern_narrows_to_one_image(tmp_path):
@@ -393,7 +390,6 @@ def test_skip_leaves_the_named_images_out_before_any_header_is_read(tmp_path):
         src=src,
         dst=dst,
         workers=1,
-        min_pixels=0,
         # Backslashes are accepted so a Windows-written decision file matches.
         skip={"char_aki\\drop.png", "broken.png"},
     )
@@ -468,16 +464,14 @@ def test_cli_writes_the_tree_and_a_report(tmp_path):
     report = json.loads((report_dir / "report.json").read_text(encoding="utf-8"))
     assert report["stats"] == {
         "seen": 2,
-        "written": 1,
+        "written": 2,
         "skipped_current": 0,
-        "skipped_small": 1,
         "skipped_excluded": 0,
         "failed": 0,
     }
     assert report["target_res"] == [1024]
     assert report["skip"] == []
-    assert sum(report["buckets"].values()) == 1
-    assert len(report["too_small"]) == 1
+    assert sum(report["buckets"].values()) == 2
 
 
 def test_cli_rejects_an_unknown_tier(tmp_path):

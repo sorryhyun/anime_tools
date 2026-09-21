@@ -79,8 +79,8 @@ def _tracked_markdown() -> list[Path]:
     out = subprocess.run(
         ["git", "-C", str(ROOT), "ls-files", "-z", "*.md"],
         capture_output=True,
-        # Same reason as `test_doc_width`: the CJK guidebook filenames are
-        # undecodable in cp949/cp932, so the decoding is pinned to UTF-8.
+        # The CJK guidebook filenames are undecodable in cp949/cp932, so the
+        # decoding is pinned to UTF-8.
         encoding="utf-8",
         check=True,
     ).stdout

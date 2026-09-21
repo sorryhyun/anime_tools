@@ -2,12 +2,26 @@
 
 Six artifact kinds, and where each lands:
 
-``image``     ``workspace/resized/<rel>``           → ``--out/resized/<rel>``
+``image``     ``--src/<dir>/<stem>.*``              → ``--out/resized/<dir>/<stem>.*``
 ``caption``   ``workspace/resized/<rel>.txt``       → ``--out/resized/<rel>.txt``
 ``variants``  ``workspace/resized/<rel>.variants.txt`` → beside the caption
 ``mask``      ``workspace/masks/<sub>/<stem>_mask.png`` → ``--out/masks/…``
 ``master``    ``workspace/master/<rel>.txt``        → ``--src/<rel>.txt``
 ``index``     ``workspace/captions/caption_index.json`` → ``--out/captions/…``
+
+The ``image`` row publishes the *original* each resized image stands for —
+the file under ``--src`` with the same directory and stem, whatever its
+extension, byte for byte (the resized PNG only when the original has gone).
+The trainer buckets it itself. Two knobs make it a *render* instead
+(:func:`_render`): ``resize_cap`` (:attr:`ExportPaths.cap`, the request's
+``resize_cap_tokens``, 4200 by default) downscales an original over that token
+count to it at its native aspect, and ``webp`` (:attr:`ExportPaths.webp`) re-encodes every original not
+already in WebP as ``{stem}.webp``. A render carries the original's mtime, so a
+re-export compares it by mtime and header size without a decode (:func:`_same`).
+The ``mask`` row follows its image: the workspace mask is at the resized
+geometry, so it is mapped back through the resize's own crop (the anchor and
+margins stamped on the resized PNG, the cropped-away strip edge-padded) and
+scaled to the published image's size (:func:`_render_mask`).
 
 The ``caption`` row reads the caption ladder rather than one file
 (:func:`_caption_source`): the revised caption when there is one, the master
@@ -60,6 +74,8 @@ Torch-free.
 
 from __future__ import annotations
 
+import math
+import os
 import shutil
 from collections import Counter
 from collections.abc import Callable, Mapping
@@ -69,7 +85,7 @@ from typing import TYPE_CHECKING
 
 from anime_tools import workspace as WS
 from anime_tools._env import resolve_path
-from anime_tools._walk import walk_images
+from anime_tools._walk import IMAGE_EXTENSIONS, sibling_image, suffix_key, walk_images
 from anime_tools.captions._sidecar import render_rows, sidecar_header
 from anime_tools.captions.ocr_sidecar import (
     DEFAULT_MIN_DET,
@@ -132,6 +148,14 @@ class ExportPaths:
     ocr_min_glyph: float = DEFAULT_MIN_GLYPH
     """The glyph size, in the read image's pixels, a sidecar line needs to
     reach the published caption (``--ocr_min_glyph``)."""
+    cap: int = 0
+    """The token ceiling a published image is held to, or 0 to publish every
+    original at its own size. ``--resize_cap_tokens`` under ``--resize_cap``."""
+    webp: bool = False
+    """Publish every image as ``{stem}.webp`` (``--webp``)."""
+
+
+WEBP_QUALITY = 95
 
 
 @dataclass
@@ -161,6 +185,19 @@ class ExportRow:
     """Came out of the excluded tree, so it publishes under ``<out>/_excluded/``
     rather than into the tree the trainer reads. The kind is the live one, so
     nothing about the compare or the revert changes."""
+    cap: int = 0
+    """The token ceiling an ``image`` row downscales its source to, or 0. Set
+    only on a source that is over the export's cap."""
+    render: bool = False
+    """Written by :func:`_render` / :func:`_render_mask` rather than copied: an
+    image downscaled, re-encoded or both (the format is the destination's
+    suffix), or a mask fitted to the published image."""
+    ref: str = ""
+    """A ``mask`` row's original image: the published image's size is read off
+    it (capped by ``cap``), and the mask is fitted to that."""
+    fit: str = ""
+    """A ``mask`` row's resized image — the geometry the mask was drawn at, and
+    whose ``anima_resize_*`` keys say how the resize cropped."""
 
     @property
     def combined(self) -> bool:
@@ -180,6 +217,11 @@ class ExportStats:
     excluded: int = 0
     """Rows published under ``<out>/_excluded/`` rather than into the trainer's
     tree."""
+    capped: int = 0
+    """Images published downscaled to the cap."""
+    rendered: int = 0
+    """Images published re-encoded (capped, converted or both) rather than
+    copied."""
     by_kind: Counter = field(default_factory=Counter)
     skipped: Counter = field(default_factory=Counter)
 
@@ -193,6 +235,8 @@ class ExportStats:
             "overwrote": self.overwrote,
             "combined": self.combined,
             "excluded": self.excluded,
+            "capped": self.capped,
+            "rendered": self.rendered,
             "by_kind": dict(sorted(self.by_kind.items())),
             "skipped": dict(sorted(self.skipped.items())),
         }
@@ -229,6 +273,150 @@ def _derive(row: ExportRow) -> None:
         )
 
 
+def capped_size(size: tuple[int, int], cap: int) -> tuple[int, int] | None:
+    """``size`` downscaled so its 16 px patch grid holds at most ``cap`` tokens,
+    aspect kept — or ``None`` when it already does (or ``cap`` is 0).
+
+    Floored, so the result never lands a token over the ceiling.
+    """
+    w, h = size
+    if cap <= 0 or w * h <= cap * 256:
+        return None
+    scale = math.sqrt(cap * 256 / (w * h))
+    return max(1, math.floor(w * scale)), max(1, math.floor(h * scale))
+
+
+def _oriented(path: Path) -> tuple[int, int] | None:
+    """An image's upright ``(W, H)`` from its header, or ``None`` if unreadable."""
+    from PIL import Image
+
+    from anime_tools.stages.resize import _oriented_size
+
+    try:
+        with Image.open(path) as im:
+            return _oriented_size(im)
+    except (OSError, ValueError):
+        return None
+
+
+def _render_size(row: ExportRow) -> tuple[int, int] | None:
+    """The upright size a rendered row writes — its image's, capped — read now."""
+    size = _oriented(Path(row.ref or row.src))
+    if size is None:
+        return None
+    return capped_size(size, row.cap) or size
+
+
+def _render(row: ExportRow, dst: Path) -> None:
+    """Write the source upright, downscaled to the cap if it has one, in the
+    format ``dst``'s suffix names, then give it the source's mtime — which is
+    what :func:`_same` recognises it by."""
+    from PIL import Image, ImageOps
+
+    from anime_tools.stages.resize import _collect_metadata
+
+    src = Path(row.src)
+    fmt = Image.registered_extensions().get(suffix_key(dst), "PNG")
+    with Image.open(src) as im:
+        save_kwargs = _collect_metadata(im)
+        img = ImageOps.exif_transpose(im)
+        # The transpose rewrote the orientation tag; the source's would turn
+        # the upright pixels a second time.
+        save_kwargs.pop("exif", None)
+        if exif := img.info.get("exif"):
+            save_kwargs["exif"] = exif
+        if img.mode == "P":
+            img = img.convert("RGBA")
+        if target := capped_size(img.size, row.cap):
+            img = img.resize(target, Image.Resampling.LANCZOS)
+        else:
+            img.load()
+    if fmt == "JPEG":
+        if img.mode not in ("RGB", "L", "CMYK"):
+            img = img.convert("RGB")
+        save_kwargs["quality"] = 95
+    elif fmt == "WEBP":
+        if img.mode not in ("RGB", "RGBA"):
+            img = img.convert("RGBA" if "A" in img.mode else "RGB")
+        save_kwargs["quality"] = WEBP_QUALITY
+    if fmt != "PNG":
+        save_kwargs.pop("pnginfo", None)
+    img.save(dst, format=fmt, **save_kwargs)
+    st = src.stat()
+    os.utime(dst, ns=(st.st_atime_ns, st.st_mtime_ns))
+
+
+def _uncrop(mask, orig: tuple[int, int], anchor: str, margins):
+    """A mask drawn on a resized image, back on the ``orig``-sized original.
+
+    The inverse of ``resize_to_bucket`` over ``margin_box``: the cover-scale's
+    cropped-away strip and the margins are edge-padded (no one drew there), the
+    scale is undone with NEAREST so a hard mask stays hard.
+    """
+    import numpy as np
+    from PIL import Image
+
+    from anime_tools.stages.resize import CROP_ANCHORS, margin_box
+
+    W, H = orig
+    bw, bh = mask.size
+    x0, y0, x1, y1 = margin_box(W, H, margins)
+    ww, wh = x1 - x0, y1 - y0
+    if ww / wh > bw / bh:
+        nw, nh = round(bh * ww / wh), bh
+    else:
+        nw, nh = bw, round(bw * wh / ww)
+    ax, ay = CROP_ANCHORS[anchor]
+    left, top = round((nw - bw) * ax), round((nh - bh) * ay)
+    scaled = np.pad(
+        np.asarray(mask), ((top, nh - bh - top), (left, nw - bw - left)), mode="edge"
+    )
+    work = Image.fromarray(scaled).resize((ww, wh), Image.Resampling.NEAREST)
+    full = np.pad(np.asarray(work), ((y0, H - y1), (x0, W - x1)), mode="edge")
+    return Image.fromarray(full)
+
+
+def _render_mask(row: ExportRow, dst: Path) -> None:
+    """Fit the workspace mask to the published image and stamp the mask's mtime.
+
+    Through the resize's crop when the mask's image was resized from ``ref``;
+    a plain scale when there is no original (``fit`` is ``ref``).
+    """
+    from PIL import Image
+
+    from anime_tools.stages.resize import (
+        _ANCHOR_KEY,
+        _MARGINS_KEY,
+        normalize_crop_anchor,
+        normalize_crop_margins,
+    )
+
+    target = _render_size(row)
+    orig = _oriented(Path(row.ref))
+    if target is None or orig is None:
+        raise OSError(f"cannot read the image this mask belongs to: {row.ref}")
+    src = Path(row.src)
+    with Image.open(src) as m:
+        mask = m.convert("L")
+    if row.fit and Path(row.fit) != Path(row.ref):
+        with Image.open(row.fit) as fit:
+            bucket = fit.size
+            text = getattr(fit, "text", {}) or {}
+        if mask.size != bucket:
+            mask = mask.resize(bucket, Image.Resampling.NEAREST)
+        mask = _uncrop(
+            mask,
+            orig,
+            normalize_crop_anchor(text.get(_ANCHOR_KEY)),
+            normalize_crop_margins(text.get(_MARGINS_KEY)),
+        )
+    if mask.size != target:
+        mask = mask.resize(target, Image.Resampling.NEAREST)
+    mask.save(dst, format="PNG")
+    st = src.stat()
+    os.utime(dst, ns=(st.st_atime_ns, st.st_mtime_ns))
+
+
 def _published(row: ExportRow) -> bytes:
     """The bytes this row puts at its destination."""
     if row.combined:
@@ -240,12 +428,18 @@ def _same(row: ExportRow, dst: Path) -> bool:
     """Is the destination already what this row publishes?
 
     Pixels are compared by ``(size, mtime_ns)``, which :func:`shutil.copy2`
-    preserves, so an unchanged image compares equal without being read.
+    preserves, so an unchanged image compares equal without being read. A
+    render is never the source's byte size; it carries the source's mtime, and
+    its header says whether it was rendered at this row's size.
     """
     try:
         if row.kind in TEXT_KINDS:
             return _published(row) == dst.read_bytes()
         a, b = Path(row.src).stat(), dst.stat()
+        if row.render:
+            return a.st_mtime_ns == b.st_mtime_ns and _oriented(dst) == _render_size(
+                row
+            )
         return (a.st_size, a.st_mtime_ns) == (b.st_size, b.st_mtime_ns)
     except OSError:
         return False
@@ -349,8 +543,10 @@ def plan_export(paths: ExportPaths) -> list[ExportRow]:
     rows: list[ExportRow] = []
     for image in walk_images(paths.resized, recursive=True):
         rel = image.relative_to(paths.resized)
-        out_image = paths.out / "resized" / rel
-        rows.append(_row(rel, "image", image, out_image))
+        source = sibling_image(paths.src / rel.parent, rel.stem) or image
+        suffix = ".webp" if paths.webp else source.suffix
+        out_image = paths.out / "resized" / rel.with_suffix(suffix)
+        rows.append(_image_row(rel, source, out_image, cap=paths.cap))
 
         ocr = ocr_sidecar_path(paths.ocr / rel) if paths.ocr is not None else None
         caption = _caption_source(paths, image, rel)
@@ -383,13 +579,9 @@ def plan_export(paths: ExportPaths) -> list[ExportRow]:
 
         mask = _mask_source(paths.masks, paths.resized, image, rel)
         if mask.is_file():
+            dst = paths.out / "masks" / mask.relative_to(paths.masks)
             rows.append(
-                _row(
-                    rel,
-                    "mask",
-                    mask,
-                    paths.out / "masks" / mask.relative_to(paths.masks),
-                )
+                _mask_row(rel, mask, dst, image=image, source=source, cap=paths.cap)
             )
 
         revised = paths.master / rel.with_suffix(".txt")
@@ -404,6 +596,67 @@ def plan_export(paths: ExportPaths) -> list[ExportRow]:
             _row(rel, "index", paths.index, paths.out / "captions" / paths.index.name)
         )
     return rows + _excluded_rows(paths)
+
+
+def _image_row(rel: Path, source: Path, dst: Path, *, cap: int) -> ExportRow:
+    """The ``image`` row: a verbatim copy, or a render when ``source`` is over
+    ``cap`` or ``dst`` names another format. The cap is decided from the
+    header, so an image under it is never decoded."""
+    size = _oriented(source) if cap else None
+    over = size is not None and capped_size(size, cap) is not None
+    converts = suffix_key(dst) != suffix_key(source)
+    return _decide(
+        ExportRow(
+            rel=rel.as_posix(),
+            kind="image",
+            src=str(source),
+            dst=str(dst),
+            cap=cap if over else 0,
+            render=over or converts,
+        )
+    )
+
+
+def _mask_row(
+    rel: Path, mask: Path, dst: Path, *, image: Path, source: Path, cap: int
+) -> ExportRow:
+    """The ``mask`` row, fitted to what the ``image`` row publishes: a render
+    unless that is the resized image itself at its own size."""
+    size = _oriented(source) if cap else None
+    over = size is not None and capped_size(size, cap) is not None
+    render = source != image or over
+    return _decide(
+        ExportRow(
+            rel=rel.as_posix(),
+            kind="mask",
+            src=str(mask),
+            dst=str(dst),
+            cap=cap if render else 0,
+            render=render,
+            ref=str(source) if render else "",
+            fit=str(image) if render else "",
+        )
+    )
+
+
+def stale_siblings(rows: list[ExportRow]) -> list[Path]:
+    """Images beside a published one that share its stem but not its suffix.
+
+    The ``.png`` an earlier export published sits beside the ``.jpg`` original
+    (or the ``.webp``) this one does, and the trainer refuses a folder with two
+    images of one stem. Export never deletes, so these are named instead.
+    """
+    exts = dict.fromkeys(suffix_key(Path(f"x{e}")) for e in IMAGE_EXTENSIONS)
+    out: list[Path] = []
+    for row in rows:
+        if row.kind != "image":
+            continue
+        dst = Path(row.dst)
+        for ext in exts:
+            other = dst.with_suffix(ext)
+            if ext != suffix_key(dst) and other.is_file():
+                out.append(other)
+    return out
 
 
 def _excluded_rows(paths: ExportPaths) -> list[ExportRow]:
@@ -496,6 +749,8 @@ def export_one(row: ExportRow, *, apply: bool, decided: bool = False) -> str:
         # newline in it (every variants sidecar) ever compares identical --
         # it republishes every run and reverts as drifted.
         dst.write_bytes(_published(row))
+    elif row.render:
+        (_render_mask if row.kind == "mask" else _render)(row, dst)
     else:
         shutil.copy2(row.src, dst)
     row.status = "created" if row.status == "would-create" else "overwrote"
@@ -527,11 +782,15 @@ def _run(
             stats.by_kind[row.kind] += 1
             stats.combined += row.combined
             stats.excluded += row.excluded
+            stats.capped += row.kind == "image" and bool(row.cap)
+            stats.rendered += row.kind == "image" and row.render
             setattr(stats, status, getattr(stats, status) + 1)
         elif status.startswith("would-"):
             stats.by_kind[row.kind] += 1
             stats.combined += row.combined
             stats.excluded += row.excluded
+            stats.capped += row.kind == "image" and bool(row.cap)
+            stats.rendered += row.kind == "image" and row.render
         else:
             stats.skip(status)
         if progress:
@@ -565,9 +824,20 @@ _REVERT = {"created": "remove", "overwrote": "restore"}
 """Apply status → what putting that row back means. Anything else published
 nothing and so has nothing to undo."""
 
-ROW_FIELDS = ("rel", "kind", "src", "dst", "status", "before", "ocr", "text")
-"""The text fields a report round-trips. ``excluded`` is read separately, being
-the one field that is not a string."""
+ROW_FIELDS = (
+    "rel",
+    "kind",
+    "src",
+    "dst",
+    "status",
+    "before",
+    "ocr",
+    "text",
+    "ref",
+    "fit",
+)
+"""The text fields a report round-trips. ``excluded``, ``cap`` and ``render``
+are read separately, being the fields that are not strings."""
 
 
 def rows_from_report(report: Mapping[str, object]) -> list[ExportRow]:
@@ -577,6 +847,8 @@ def rows_from_report(report: Mapping[str, object]) -> list[ExportRow]:
         ExportRow(
             **{k: str(r.get(k) or "") for k in ROW_FIELDS},
             excluded=bool(r.get("excluded")),
+            cap=int(r.get("cap") or 0),
+            render=bool(r.get("render")),
         )
         for r in (raw if isinstance(raw, list) else [])
         if isinstance(r, Mapping)
@@ -642,6 +914,8 @@ def run_export(req: ExportRequest):
         ocr=resolve_path(req.ocr_dir) if req.combine_ocr else None,
         ocr_min_det=req.ocr_min_det,
         ocr_min_glyph=req.ocr_min_glyph,
+        cap=req.resize_cap_tokens if req.resize_cap else 0,
+        webp=req.webp,
     )
     if not paths.resized.is_dir():
         raise FileNotFoundError(
@@ -649,6 +923,7 @@ def run_export(req: ExportRequest):
             "Run the Resize stage first."
         )
     rows, stats = publish(paths, apply=req.apply, progress=make_progress(50))
+    stale = stale_siblings(rows)
     path = write_stage_report(
         resolve_path(req.report_dir),
         {
@@ -664,6 +939,9 @@ def run_export(req: ExportRequest):
             "ocr_dir": str(paths.ocr) if paths.ocr is not None else None,
             "ocr_min_det": req.ocr_min_det,
             "ocr_min_glyph": req.ocr_min_glyph,
+            "resize_cap": paths.cap,
+            "webp": paths.webp,
+            "stale": [str(p) for p in stale],
             "stats": stats.to_dict(),
             "rows": [r.to_dict() for r in rows],
         },
@@ -671,9 +949,14 @@ def run_export(req: ExportRequest):
     print(f"\nreport → {path}")
     combined = f", {stats.combined} with OCR attached" if req.combine_ocr else ""
     excluded = f", {stats.excluded} under _excluded/" if stats.excluded else ""
+    capped = f", {stats.capped} downscaled to {paths.cap} tokens" if paths.cap else ""
+    webp = f", {stats.rendered} re-encoded" if paths.webp else ""
+    # Named, not deleted: Export removes nothing it did not write this run.
+    for p in stale:
+        print(f"  stale: {p} shares its stem with a published image — remove it")
     print_dry_run_footer(
         req.apply,
         f"published: {stats.created} created, "
-        f"{stats.overwrote} overwritten{combined}{excluded}",
+        f"{stats.overwrote} overwritten{combined}{excluded}{capped}{webp}",
     )
     return rows, stats

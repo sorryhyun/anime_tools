@@ -26,7 +26,6 @@ from anime_tools.gui import dataset as D
 from anime_tools.gui import stages as S
 from anime_tools.gui.jobs import Step
 from anime_tools.gui.settings import load_settings
-from anime_tools.stages.resize import DEFAULT_MIN_PIXELS
 
 __all__ = [
     "LOOPBACK_HOSTS",
@@ -35,7 +34,6 @@ __all__ = [
     "is_loopback",
     "make_output_dirs",
     "mask_root",
-    "preprocess_min_pixels",
     "preprocess_steps",
     "report_root",
     "root_paths",
@@ -130,22 +128,6 @@ def mask_root(settings: Mapping[str, Any], roots: D.Roots) -> str:
     return _root_beside(settings, S.MASK_SETTING, roots.masks)
 
 
-def preprocess_min_pixels(settings: Mapping[str, Any]) -> int:
-    """The resize floor the preflight runs at, from the Settings *Preprocess*
-    block — the stage's own default when blank, 0 when turned off.
-
-    Read here rather than off the schema dump, because the item route must answer
-    while the schemas are still loading.
-    """
-    got = (settings.get(S.PREPROCESS_SETTINGS_KEY) or {}).get("min_pixels")
-    if got is None or str(got).strip() == "":
-        return DEFAULT_MIN_PIXELS
-    try:
-        return max(0, int(got))
-    except (TypeError, ValueError):
-        return DEFAULT_MIN_PIXELS
-
-
 def root_paths(roots: D.Roots) -> dict[str, str]:
     """The dataset roots, home-relative, for the fields bound to them
     (``S.ROOT_FIELDS``)."""
@@ -187,10 +169,6 @@ class RunContext:
     @property
     def root_paths(self) -> dict[str, str]:
         return root_paths(self.roots)
-
-    @property
-    def min_pixels(self) -> int:
-        return preprocess_min_pixels(self.settings)
 
     def bindings(self) -> dict[str, Any]:
         """The four keyword arguments ``S.resolved_schema`` and ``S.build_argv``

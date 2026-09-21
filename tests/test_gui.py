@@ -841,13 +841,13 @@ def test_settings_preprocess_block_configures_the_preflight(client, monkeypatch)
     monkeypatch.setitem(S.ROOT_FIELDS, "stub", {"src": "src", "dst": "dst"})
     c.put(
         "/api/settings",
-        json={"preprocess": {"min_pixels": 0, "target_res": [1024, 1536]}},
+        json={"preprocess": {"workers": 1, "target_res": [1024, 1536]}},
     )
 
     job = _await_job(c, c.post("/api/jobs", json={"stage": "stub"}))
     argv = job["steps"][0]["argv"]
 
-    assert argv[argv.index("--min_pixels") + 1] == "0"
+    assert argv[argv.index("--workers") + 1] == "1"
     assert argv[argv.index("--target_res") + 1 : argv.index("--target_res") + 3] == [
         "1024",
         "1536",

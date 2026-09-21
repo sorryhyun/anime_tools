@@ -232,6 +232,161 @@ def test_an_empty_workspace_yields_no_rows(tmp_path):
     assert plan_export(p) == []
 
 
+# ---- the image row: the original, capped or re-encoded ------------------
+
+
+def _original(path: Path, size: tuple[int, int]) -> None:
+    from PIL import Image
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    Image.new("RGB", size, (10, 20, 30)).save(path, quality=90)
+
+
+def _size(path: Path) -> tuple[int, int]:
+    from PIL import Image
+
+    with Image.open(path) as im:
+        return im.size
+
+
+def test_the_image_row_publishes_the_original_byte_for_byte(ws):
+    """The resized PNG only says which image; the original under ``--src`` is
+    what publishes, in its own format, and the resized copy only when the
+    original has gone."""
+    _original(ws.src / "a.jpg", (2400, 1600))
+    rows, _ = publish(ws, apply=True)
+    (a,) = [r for r in _by(rows, "image") if r.rel == "a.png"]
+    assert Path(a.src) == ws.src / "a.jpg" and not a.render
+    out = ws.out / "resized" / "a.jpg"
+    assert out.read_bytes() == (ws.src / "a.jpg").read_bytes()
+    # The caption follows the stem, whatever the image's suffix.
+    assert (ws.out / "resized" / "a.txt").is_file()
+    (b,) = [r for r in _by(rows, "image") if r.rel == "sub/b.png"]
+    assert Path(b.src) == ws.resized / "sub" / "b.png"
+
+
+def test_capped_size_holds_the_token_ceiling():
+    from anime_tools.stages.export_workspace import capped_size
+
+    assert capped_size((1024, 1024), 4200) is None  # 4096 tokens: under
+    w, h = capped_size((4000, 2000), 4200)
+    assert (w // 16) * (h // 16) <= 4200 and w * h <= 4200 * 256
+    assert abs(w / h - 2.0) < 0.01 and w * h > 4100 * 256
+    assert capped_size((4000, 2000), 0) is None
+
+
+def test_resize_cap_downscales_only_what_is_over_it(ws):
+    from dataclasses import replace
+
+    from anime_tools.stages._options import EXPORT_CAP_TOKENS
+
+    _original(ws.src / "a.jpg", (3000, 2000))
+    _original(ws.src / "sub" / "b.png", (800, 600))
+    capped = replace(ws, cap=EXPORT_CAP_TOKENS)
+    _, stats = publish(capped, apply=True)
+    assert stats.capped == 1 and stats.rendered == 1
+    w, h = _size(ws.out / "resized" / "a.jpg")
+    assert w * h <= EXPORT_CAP_TOKENS * 256 and abs(w / h - 1.5) < 0.01
+    small = ws.out / "resized" / "sub" / "b.png"
+    assert small.read_bytes() == (ws.src / "sub" / "b.png").read_bytes()
+
+    # A render carries the source's mtime, so a second export is a no-op …
+    _, stats = publish(capped, apply=True)
+    assert stats.created == stats.overwrote == 0
+    # … and turning the cap off publishes the original over it.
+    _, stats = publish(ws, apply=True)
+    assert stats.by_kind["image"] == 1
+    assert _size(ws.out / "resized" / "a.jpg") == (3000, 2000)
+
+
+def test_webp_re_encodes_every_image_and_names_the_stale_sibling(ws):
+    from dataclasses import replace
+
+    from anime_tools.stages.export_workspace import stale_siblings
+
+    _original(ws.src / "a.jpg", (640, 480))
+    publish(ws, apply=True)  # an earlier export left a.jpg and b.png behind
+    rows, stats = publish(replace(ws, webp=True), apply=True)
+    out = ws.out / "resized" / "a.webp"
+    assert _size(out) == (640, 480) and stats.rendered == 2
+    assert (ws.out / "resized" / "sub" / "b.webp").is_file()
+    assert sorted(stale_siblings(rows)) == [
+        ws.out / "resized" / "a.jpg",
+        ws.out / "resized" / "sub" / "b.png",
+    ]
+
+    # Created renders revert like copies: the header and mtime still match.
+    _, rstats = revert_export(rows, apply=True)
+    assert not out.exists() and rstats.removed >= 2
+
+
+def test_uncrop_inverts_the_resize_crop():
+    """A mask drawn on the resized image lands back where it was on the
+    original, through the anchor crop and the margins alike."""
+    import numpy as np
+    from PIL import Image
+
+    from anime_tools.stages.export_workspace import _uncrop
+    from anime_tools.stages.resize import margin_box, resize_to_bucket
+
+    orig = (1600, 900)
+    truth = np.full((900, 1600), 255, np.uint8)
+    truth[:, :800] = 0  # the left half is masked
+    for anchor, margins in (("center", (0, 0, 0, 0)), ("top", (10, 0, 0, 5))):
+        box = margin_box(*orig, margins)
+        drawn = resize_to_bucket(
+            Image.fromarray(truth).crop(box), (1024, 512), crop_anchor=anchor
+        )
+        back = np.asarray(_uncrop(drawn, orig, anchor, margins))
+        assert back.shape == (900, 1600)
+        inside = back[box[1] : box[3], box[0] : box[2]]
+        want = truth[box[1] : box[3], box[0] : box[2]]
+        assert (inside != want).mean() < 0.01
+
+
+def test_the_mask_is_fitted_to_the_published_image(tmp_path):
+    """The workspace mask is at the resized geometry; what publishes is the
+    size of the image beside it, capped or not."""
+    import numpy as np
+    from PIL import Image
+
+    from anime_tools.stages.resize import ResizeOptions, process_image
+
+    paths = ExportPaths(
+        resized=tmp_path / "resized",
+        masks=tmp_path / "masks",
+        master=tmp_path / "master",
+        index=tmp_path / "index.json",
+        src=tmp_path / "src",
+        out=tmp_path / "out",
+    )
+    _original(paths.src / "a.jpg", (3000, 2000))
+    paths.resized.mkdir()
+    process_image(paths.src / "a.jpg", paths.resized, ResizeOptions())
+    with Image.open(paths.resized / "a.png") as im:
+        bw, bh = im.size
+    drawn = np.full((bh, bw), 255, np.uint8)
+    drawn[:, : bw // 2] = 0
+    paths.masks.mkdir()
+    Image.fromarray(drawn).save(paths.masks / "a_mask.png")
+
+    for cap, want in ((0, (3000, 2000)), (4200, None)):
+        from dataclasses import replace
+
+        rows, _ = publish(replace(paths, cap=cap), apply=True)
+        (mask,) = _by(rows, "mask")
+        assert mask.render and mask.status in ("created", "overwrote")
+        got = _size(paths.out / "masks" / "a_mask.png")
+        assert got == (want or _size(paths.out / "resized" / "a.jpg"))
+        with Image.open(paths.out / "masks" / "a_mask.png") as m:
+            arr = np.asarray(m)
+        w = arr.shape[1]
+        assert arr[:, : w // 2 - 4].max() == 0 and arr[:, w // 2 + 4 :].min() == 255
+        # Stamped with the mask's mtime: a second export leaves it alone.
+        _, stats = publish(replace(paths, cap=cap), apply=True)
+        assert stats.by_kind["mask"] == 0
+
+
 # ---- putting it back ----------------------------------------------------
 
 

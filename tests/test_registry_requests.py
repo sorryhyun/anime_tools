@@ -69,7 +69,6 @@ CASES: dict[str, Request] = {
         dst="d",
         path_pattern="a/*",
         target_res=(1024, 768),
-        min_pixels=0,
         recursive=False,
         overwrite=True,
         workers=1,
@@ -214,6 +213,8 @@ CASES: dict[str, Request] = {
         master="mm",
         index="i.json",
         out="o",
+        resize_cap=True,
+        webp=True,
         apply=True,
         report_dir="rep",
     ),
@@ -345,7 +346,7 @@ def test_resolving_every_request_stays_import_light():
     ``registry.py`` names each request lazily so nothing heavy is imported to
     *list* the stages — but the GUI resolves every class to build its form, and
     a request that reached into its own stage module for one default (a
-    ``DEFAULT_MIN_PIXELS``, a ``PositionCaptionOptions``) undid that on every
+    ``DEFAULT_CROP_ANCHOR``, a ``PositionCaptionOptions``) undid that on every
     schema build: measured at 360 modules with numpy, PIL and yaml along. The
     defaults live in leaves instead (``stages/_options.py``,
     ``masking/_prompts.py``), so this is the assertion that keeps them there.
@@ -377,7 +378,6 @@ def test_the_request_defaults_are_spelled_once():
     """
     from anime_tools.stages import _options, multiview_audit, position_captions, resize
 
-    assert resize.DEFAULT_MIN_PIXELS is _options.DEFAULT_MIN_PIXELS
     assert resize.CROP_ANCHORS is _options.CROP_ANCHORS
     assert resize.DEFAULT_CROP_ANCHOR is _options.DEFAULT_CROP_ANCHOR
     assert multiview_audit.MULTIPLE_VIEWS is _options.MULTIPLE_VIEWS

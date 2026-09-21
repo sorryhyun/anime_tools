@@ -533,11 +533,6 @@ export interface ImageInfo {
   height?: number;
   /** `width * height`, or null when the header would not read. */
   pixels: number | null;
-  /** Below the resize floor (`ItemDetail.min_pixels`), so this image never
-      lands in `workspace/resized` and every stage that walks that tree sees
-      nothing for it. `null` means *unmeasured*, not fine: only the source image
-      is asked, and only while the floor is on. */
-  too_small: boolean | null;
 }
 
 /** One line the OCR stage read out of the image, from `{stem}.ocr.txt`. Not a
@@ -564,9 +559,6 @@ export interface ItemDetail {
   dir: string;
   name: string;
   stem: string;
-  /** The resize preflight's floor in pixels, from Settings › Preprocess — what
-      `ImageInfo.too_small` was decided against, so the panel can name it. */
-  min_pixels: number;
   image: ImageInfo | null;
   resized: ImageInfo | null;
   mask: ImageInfo | null;

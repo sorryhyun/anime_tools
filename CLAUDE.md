@@ -33,7 +33,6 @@ make gui                      # anime-tools-gui dev server (GUI_HOST / GUI_PORT 
 make frontend                 # rebuild the committed anime_tools/gui/static/ bundle; CI fails on drift
 uv run pytest -q              # CPU-only unless ANIMA_TEST_GPU=1
 uv run ruff check . && uv run ruff format --check .   # keep clean; config is user-level, not in pyproject
-python3 scripts/wrap_md.py **/*.md                    # semantic-wrap markdown at 100 cols (--check to report)
 ```
 
 Python >= 3.13. `[tool.uv] override-dependencies = ["numpy>=2.0"]` overrides sam3's stale `numpy<2`
@@ -42,15 +41,9 @@ dropped 2026-09-09 along with the tagger's exported graph, and the AnimeText det
 the vendored `vision/yolo12.py`; the `model-catalog` skill has the why.
 
 `make hooks` points `core.hooksPath` at `scripts/hooks`. Pre-commit formats staged files only
-(`ruff check --fix --exit-zero` + `ruff format`, prettier on `frontend/`, `scripts/wrap_md.py` on
-`.md`) and never blocks the commit. It re-stages in place, so a file with unstaged edits gets those
+(`ruff check --fix --exit-zero` + `ruff format`, prettier on `frontend/`) and never blocks the
+commit. It re-stages in place, so a file with unstaged edits gets those
 in the commit too — the hook names them on the way past. Bypass with `--no-verify`.
-
-`scripts/wrap_md.py` only ever splits a line over 100 columns, never joins two, and breaks on
-sentence/clause boundaries rather than at the column — a greedy fill re-wraps everything below an
-edited sentence, which is the churn it exists to stop. Fenced code, tables, headings, quotes, link
-definitions and unbreakable tokens (long URLs) are skipped. `tests/test_doc_width.py` asserts the
-fixpoint (`wrap_text(t) == t`), not a width, over every tracked `.md` — these files included.
 
 CLIs are `python -m` modules: `anime_tools.tagger.cli`, `anime_tools.stages.cli.*`,
 `anime_tools.grouping.cli.*`, `anime_tools.masking.cli.*`, `anime_tools.downloads`. The
@@ -66,10 +59,12 @@ CLI and GUI halves can't drift.
 
 `resize` populates `workspace/resized/`, and every stage that opens an image reads that tree —
 masking and grouping included, so there is one geometry in the pipeline. An image only in the master
-tree is invisible to the rest, which is why the GUI runs resize as an automatic preflight. Two
-consequences are pinned by tests: the near-twin feature cache needs its `(size, mtime_ns)` stamp
-because resize rewrites files under a key that doesn't move, and `resize`'s `min_pixels` skip means
-"invisible to the pipeline", so it names each dropped file rather than counting it.
+tree is invisible to the rest, which is why the GUI runs resize as an automatic preflight, and why
+resize has no pixel floor: every source image lands in the tree. The near-twin feature cache needs
+its `(size, mtime_ns)` stamp because resize rewrites files under a key that doesn't move.
+The resized tree is the pipeline's geometry, not what ships: Export publishes each image's original
+from `src` (`--resize_cap` holds it to `--resize_cap_tokens`, 4200 by default; `--webp`
+re-encodes it), with each mask fitted back to that image's size.
 
 Caption stages write the revised caption under `workspace/resized/` and read it first —
 the correction pass included, which corrects it in place; the hand-written master under the
@@ -137,7 +132,6 @@ Each of these is implemented in one package but bites from any of them.
   `_progress.ProgressBar` (`advance` / `note` / `tick`). No stage uses `tqdm`: its carriage
   returns are noise in the GUI's log and match nothing its bar reads. A stage that prints
   neither has no bar.
-- Markdown is wrapped at 100 columns by `scripts/wrap_md.py`; run it on any `.md` you edit.
 
 ## Shared infra (stdlib-level leaves, not trainer imports)
 

@@ -421,7 +421,6 @@ pre.log { margin:0; font:12px/1.4 var(--font-mono); white-space:pre-wrap; word-b
 .badge.running { color:var(--warn) } .badge.done { color:var(--ok) } .badge.failed, .badge.cancelled { color:var(--err) }
 /* The pixel-count chip in the preview's size line. --warn is not "small" but
    "the resize preflight skips this, so every stage sees nothing for it". */
-.badge.px { color:var(--ok) } .badge.px.below { color:var(--warn) }
 table { border-collapse:collapse; font-size:12px; width:100% }
 td, th { border-bottom:1px solid var(--line); padding:4px 6px; text-align:left; vertical-align:top; max-width:360px; overflow:hidden; text-overflow:ellipsis }
 th { color:var(--dim); position:sticky; top:0; background:var(--bg) }

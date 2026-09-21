@@ -3,7 +3,7 @@ nothing heavier than the stdlib.
 
 ``registry.py`` is deliberately import-light, so a caller can list the stages
 without importing one — but the GUI resolves each request class to build its
-form, and a request declaring ``arg(DEFAULT_MIN_PIXELS)`` used to reach for the
+form, and a request declaring ``arg(DEFAULT_CROP_ANCHOR)`` used to reach for the
 whole stage module to read one number. Measured: that cost the schema build
 numpy, PIL and yaml. So the numbers live here and each owning stage re-exports
 them, which is also what keeps a default spelled once.
@@ -17,22 +17,21 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from anime_tools.buckets import EDGE_TOKEN_BANDS
+
 __all__ = [
     "CROP_ANCHORS",
     "DEFAULT_BATCH_SIZE",
     "DEFAULT_CROP_ANCHOR",
     "DEFAULT_IDENTITY_CONFIDENCE",
-    "DEFAULT_MIN_PIXELS",
     "DEFAULT_MULTIVIEW_PROB",
+    "EXPORT_CAP_TOKENS",
     "EXTRA_CHARACTER",
     "MULTIPLE_VIEWS",
     "PositionCaptionOptions",
 ]
 
 # --- resize (``stages/resize.py``) -------------------------------------------
-
-DEFAULT_MIN_PIXELS = 500_000
-"""0.5MP. Below this an image cannot fill a 1024 tier without visible upscale."""
 
 DEFAULT_CROP_ANCHOR = "center"
 CROP_ANCHORS: dict[str, tuple[float, float]] = {
@@ -46,6 +45,13 @@ CROP_ANCHORS: dict[str, tuple[float, float]] = {
     "bottom": (0.5, 1.0),
     "bottom_right": (1.0, 1.0),
 }
+
+# --- export (``stages/export_workspace.py``) -------------------------------
+
+EXPORT_CAP_TOKENS = EDGE_TOKEN_BANDS[1024][1]
+"""The token ceiling ``--resize_cap`` holds a published image to: the top of the
+1024 tier's band (4200 patches of 16 px, ~1024² pixels). An image over it is
+downscaled to it at its native aspect; one under it publishes as it is."""
 
 # --- autotag (``stages/autotag.py``) -----------------------------------------
 

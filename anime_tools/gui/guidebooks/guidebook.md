@@ -351,10 +351,8 @@ Reads `(source_dir)/`. Writes `workspace/resized/<rel>.png`.
 
 Every image lands in the bucket tier that resizes it the least, keeping its native aspect
 inside that tier's token band. The geometry is deterministic, so a re-run finds every image
-already at its bucket and skips it. Images under the pixel floor (0.5 MP by default) are
-skipped and named in the report — such an image is never
-resized, so no stage sees it; the image panel says so on the pixel-count chip, and the floor
-is in ⚙ Advanced settings › Preprocess.
+already at its bucket and skips it. There is no size floor: a small image is scaled up into its
+bucket like any other, so every image in the source tree reaches the stages.
 
 You never click it: the GUI runs it as the first step of every stage that reads the resized
 tree, and a run over one image resizes just that image. Already-current images are skipped, so
@@ -502,11 +500,21 @@ change one. See [`docs/masking.md`](../../../docs/masking.md).
 Reads the workspace. Writes `(export_target_dir)/` — and, for a revised master,
 `(source_dir)/`.
 
-The only stage that writes outside the workspace. It publishes six artifact kinds — resized
-image, revised caption, variants sidecar, mask, revised master, caption index — each decided on
+The only stage that writes outside the workspace. It publishes six artifact kinds — image,
+revised caption, variants sidecar, mask, revised master, caption index — each decided on
 its own against its destination: identical files are skipped (byte compare for text, size and
 mtime for pixels), so re-exporting an unchanged dataset is a walk and a stat apiece. It always
 copies, never links, so the export tree survives the workspace being cleared.
+
+The image it publishes is the original from `(source_dir)/`, not the resized copy the stages
+read — the trainer buckets it itself. Two options change that. **Resize cap** (`resize_cap`)
+opens a token field (`resize_cap_tokens`, 4200 by default: the 1024 tier's ceiling, about
+1024×1024 pixels; pixels are tokens × 256) and downscales any original over it to that size,
+keeping its aspect; smaller images publish untouched. **WebP** (`webp`) re-encodes every image as
+`{stem}.webp`. Masks always follow their image: each one is mapped back from the resized copy it
+was drawn on and published at the published image's size. If a previous export left the same
+image under another extension, Export does not delete it; it names it as stale in the log, and
+you should remove it, since the trainer refuses two images with one name.
 
 From the CLI it is dry-run by default and lists what it would copy. In the GUI Run copies,
 and Undo restores the text it overwrote from the export's own ledger; an overwritten
@@ -592,9 +600,8 @@ Windows: torch has no CUDA. PyPI's Windows torch is CPU-only. Reinstall with the
 installer, which defaults to the CUDA index, or set `TORCH_INDEX` explicitly.
 
 A stage sees no images / does nothing for this image. The image is not under
-`workspace/resized/`. Either it sits under the resize floor (the pixel-count chip says so;
-lower the floor in ⚙ Advanced settings › Preprocess) or the `src` root does not point at your
-dataset.
+`workspace/resized/`. Most likely the `src` root does not point at your dataset, or the image
+was excluded.
 
 "saved — .variants.txt is now stale". You edited a revised caption that had variants. Re-run
 Correct with the same variant count, then re-encode the text embeddings downstream.

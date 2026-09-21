@@ -124,7 +124,7 @@ def dataset_item(
 ) -> dict[str, Any]:
     ctx = RunContext.load(src=src, dst=dst, masks=masks)
     try:
-        return D.item_detail(ctx.roots, rel, min_pixels=ctx.min_pixels)
+        return D.item_detail(ctx.roots, rel)
     except D.DatasetError as e:
         # 404, not the app-wide 400: the roots resolved, this image is
         # simply not in the dataset.

@@ -133,10 +133,6 @@ const en = {
     noView: (view: string) => `no ${view} for this image`,
     readOnly: "read-only",
     /** {0} is the floor, e.g. "0.50 MP". Shown on the pixel-count chip. */
-    aboveFloor: (floor: string) => `above the ${floor} resize floor`,
-    /** {0} is the floor. Why a stage over this image does nothing at all. */
-    belowFloor: (floor: string) =>
-      `below the ${floor} resize floor — this image is never resized, so the stages, which walk workspace/resized, see nothing for it. Lower it in ⚙ Settings › Preprocess.`,
     zoomHint: "⌘/Ctrl+scroll magnifies · drag to pan · double-click fits again",
     exclude: "exclude",
     excludeHint:

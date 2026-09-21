@@ -31,7 +31,7 @@ export function slug(text: string): string {
 function inline(src: string, href: (raw: string) => string): JSX.Element[] {
   const out: JSX.Element[] = [];
   // The `_` form is guarded against the middle of a word: these books are full
-  // of `path_pattern` and `min_pixels` written outside backticks, and CommonMark
+  // of `path_pattern` and `combine_ocr` written outside backticks, and CommonMark
   // does not emphasise there either.
   const re =
     /`([^`]+)`|\[([^\]]*)\]\(([^)]+)\)|\*\*([^*]+)\*\*|\*([^*]+)\*|(?<![\p{L}\p{N}])_([^_]+)_(?![\p{L}\p{N}])/gu;

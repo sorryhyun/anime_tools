@@ -41,9 +41,9 @@ from anime_tools import workspace as WS
 from anime_tools._env import curation_home, resolve_path, workspace_dir
 from anime_tools._json import read_json
 from anime_tools._walk import (
-    IMAGE_EXTENSIONS,
     filter_paths_by_glob,
     glob_images_pathlib,
+    sibling_image,
 )
 from anime_tools.captions.history import (
     history_sidecar_path,
@@ -69,7 +69,6 @@ from anime_tools.grouping.groups import MANIFEST_VERSION
 from anime_tools.gui.settings import load_settings
 from anime_tools.masking._masks import mask_name
 from anime_tools.stages._analysis import ANALYSIS_SUBDIR, analysis_paths
-from anime_tools.stages.resize import DEFAULT_MIN_PIXELS, below_min_pixels
 
 SETTINGS_KEY = "dataset"
 DEFAULT_ROOTS = WS.DEFAULT_ROOTS
@@ -355,7 +354,7 @@ def item_pattern(rel: str) -> str:
     """A ``path_pattern`` matching exactly the one dataset image ``rel``.
 
     ``<dir>/<stem>.*``, not the full filename, because the stage matches against
-    the *resized* tree where the extension may differ (:func:`_sibling_image`);
+    the *resized* tree where the extension may differ (:func:`sibling_image`);
     that cannot widen the match, since ``_walk.assert_unique_stems`` refuses two
     images sharing a stem in one folder.
 
@@ -371,22 +370,11 @@ def item_pattern(rel: str) -> str:
     return glob.escape(p.with_suffix("").as_posix()) + ".*"
 
 
-def _sibling_image(directory: Path, stem: str) -> Path | None:
-    """The image named ``stem`` in ``directory``, whatever its extension: the
-    resize step may re-encode (``.jpg`` master → ``.png`` resized), so the
-    revised tree is matched on stem, not on the full relative path."""
-    for ext in IMAGE_EXTENSIONS:
-        p = directory / f"{stem}{ext}"
-        if p.is_file():
-            return p
-    return None
-
-
 def rel_for_image(roots: Roots, image: str) -> str | None:
     """The dataset rel a stage report's ``image`` names, or ``None``.
 
     Reports name images relative to the **resized** tree, so the join back is on
-    directory + stem (:func:`_sibling_image`). An image the source tree no longer
+    directory + stem (:func:`sibling_image`). An image the source tree no longer
     has is dropped rather than raising.
     """
     try:
@@ -395,7 +383,7 @@ def rel_for_image(roots: Roots, image: str) -> str | None:
         return None
     if (roots.src / rel).is_file():
         return rel.as_posix()
-    p = _sibling_image(roots.src / rel.parent, rel.stem)
+    p = sibling_image(roots.src / rel.parent, rel.stem)
     return p.relative_to(roots.src).as_posix() if p else None
 
 
@@ -563,7 +551,7 @@ def _row(
 
     ``captions`` is one flag per dotted :data:`CAPTION_LADDER` rung, one stat
     apiece so this stays cheap for a whole-dataset listing. ``resized`` is matched on *stem*
-    (:func:`_sibling_image`) and is a row flag rather than a caption dot: it says
+    (:func:`sibling_image`) and is a row flag rather than a caption dot: it says
     whether the stages downstream of resize can see this image.
 
     ``excluded`` is told rather than looked up, since it is one set membership
@@ -578,7 +566,7 @@ def _row(
         "name": name,
         "stem": rel.stem,
         "captions": {r.kind: caps[r.kind].is_file() for r in CAPTION_LADDER if r.dot},
-        "resized": _sibling_image(roots.dst / rel.parent, rel.stem) is not None,
+        "resized": sibling_image(roots.dst / rel.parent, rel.stem) is not None,
         "mask": mask_path(roots, rel) is not None,
         "excluded": excluded,
     }
@@ -678,13 +666,8 @@ def load_groups(report_root: str) -> dict[str, Any]:
     return out
 
 
-def _image_info(p: Path | None, *, min_pixels: int = 0) -> dict[str, Any] | None:
-    """One image file as the panel gets it: where it is, how big, how many pixels.
-
-    ``min_pixels`` is the resize floor, applied to the *source* image only. An
-    image under it never reaches ``workspace/resized/``, which every stage walks,
-    so ``too_small`` is what keeps a run that sees zero images legible.
-    """
+def _image_info(p: Path | None) -> dict[str, Any] | None:
+    """One image file as the panel gets it: where it is, how big, how many pixels."""
     if p is None or not p.is_file():
         return None
     info: dict[str, Any] = {"path": rel_to_home(p), "bytes": p.stat().st_size}
@@ -699,13 +682,6 @@ def _image_info(p: Path | None, *, min_pixels: int = 0) -> dict[str, Any] | None
         info["width"] = info["height"] = None
     size = (info["width"], info["height"])
     info["pixels"] = size[0] * size[1] if None not in size else None
-    # ``None`` means *unmeasured* (no floor applied, or the header would not
-    # read), not "fine"; the panel shows no chip for it.
-    info["too_small"] = (
-        below_min_pixels(size, min_pixels)
-        if min_pixels > 0 and None not in size
-        else None
-    )
     return info
 
 
@@ -859,15 +835,8 @@ def ocr_lines(roots: Roots, rel: Path) -> list[dict[str, Any]]:
     return [{**line.to_dict(), "usable": line.seq in keep} for line in lines]
 
 
-def item_detail(
-    roots: Roots, rel_str: str, *, min_pixels: int = DEFAULT_MIN_PIXELS
-) -> dict[str, Any]:
-    """One image and everything hanging off it, for the item panel.
-
-    ``min_pixels`` is the resize preflight's floor (the Settings *Preprocess*
-    block), threaded in by the caller. It rides along in the answer as well as
-    being applied, so the panel can say what the floor was.
-    """
+def item_detail(roots: Roots, rel_str: str) -> dict[str, Any]:
+    """One image and everything hanging off it, for the item panel."""
     rel = _rel_key(rel_str)
     src_image = roots.src / rel
     if not src_image.is_file():
@@ -879,12 +848,11 @@ def item_detail(
         "dir": "" if parent == "." else parent,
         "name": src_image.name,
         "stem": rel.stem,
-        "min_pixels": int(min_pixels),
         # The whole ledger row, not a flag: the panel says when it was excluded
         # and why, which is the part a curator coming back to it needs.
         "excluded": entry.to_dict() if entry else None,
-        "image": _image_info(src_image, min_pixels=min_pixels),
-        "resized": _image_info(_sibling_image(roots.dst / rel.parent, rel.stem)),
+        "image": _image_info(src_image),
+        "resized": _image_info(sibling_image(roots.dst / rel.parent, rel.stem)),
         "mask": _image_info(mask_path(roots, rel)),
         "versions": caption_versions(roots, rel),
         "ocr": ocr_lines(roots, rel),
