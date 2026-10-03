@@ -1101,6 +1101,14 @@ class ExportRequest(StageRequest):
         "original format. An original already in WebP, and under the cap when "
         "--resize_cap is on, is still copied byte for byte",
     )
+    sidecars_only: bool = arg(
+        False,
+        help="Publish no images: only captions, variants, masks, the revised "
+        "master and the caption index, at the paths they would have beside "
+        "them, and no _excluded/ mirror. For a trainer that resizes from --src "
+        "itself and reads exclusions from the ledger; each mask is fitted to "
+        "its original at full size. Excludes --resize_cap and --webp",
+    )
     apply: bool = arg(
         False, help="Copy for real (default: list what would be copied and stop)"
     )
@@ -1110,4 +1118,9 @@ class ExportRequest(StageRequest):
         if self.resize_cap and self.resize_cap_tokens <= 0:
             raise ValueError(
                 f"--resize_cap_tokens must be positive, got {self.resize_cap_tokens}"
+            )
+        if self.sidecars_only and (self.resize_cap or self.webp):
+            raise ValueError(
+                "--sidecars_only publishes no images, so --resize_cap and --webp "
+                "have nothing to shape"
             )

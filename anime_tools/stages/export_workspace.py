@@ -55,6 +55,13 @@ carries the sidecar it read (``ocr``) and the text it publishes (``text``); the
 text is re-derived from disk whenever the row is decided, and a revert compares
 against the text recorded at the time.
 
+With ``sidecars_only`` (:attr:`ExportPaths.images` off) no pixels publish at
+all: no ``image`` rows and no excluded mirror, only the decisions -- captions,
+variants, masks, the master and the index. The trainer then resizes from
+``--src`` itself, skipping what the ``_excluded`` ledger names, and the captions
+land beside the PNGs it writes. Each mask is fitted to its original at the
+original's own size, the geometry the trainer's resize starts from.
+
 The excluded tree (:mod:`anime_tools.exclude`) publishes as a straight mirror
 under ``<out>/_excluded/``: same kinds, same compare, no OCR combine (its
 sidecars moved in with it) and no master row (a hand-written caption never left
@@ -153,6 +160,10 @@ class ExportPaths:
     original at its own size. ``--resize_cap_tokens`` under ``--resize_cap``."""
     webp: bool = False
     """Publish every image as ``{stem}.webp`` (``--webp``)."""
+    images: bool = True
+    """Publish the images (and the excluded mirror), or only the sidecars
+    beside where they would land. Off is ``--sidecars_only``; ``cap`` and
+    ``webp`` then have nothing to shape."""
 
 
 WEBP_QUALITY = 95
@@ -541,12 +552,15 @@ def plan_export(paths: ExportPaths) -> list[ExportRow]:
     report, where the file vanished after the plan.
     """
     rows: list[ExportRow] = []
+    # No image publishes, so a mask is fitted to the original as it is.
+    cap = paths.cap if paths.images else 0
     for image in walk_images(paths.resized, recursive=True):
         rel = image.relative_to(paths.resized)
         source = sibling_image(paths.src / rel.parent, rel.stem) or image
         suffix = ".webp" if paths.webp else source.suffix
         out_image = paths.out / "resized" / rel.with_suffix(suffix)
-        rows.append(_image_row(rel, source, out_image, cap=paths.cap))
+        if paths.images:
+            rows.append(_image_row(rel, source, out_image, cap=paths.cap))
 
         ocr = ocr_sidecar_path(paths.ocr / rel) if paths.ocr is not None else None
         caption = _caption_source(paths, image, rel)
@@ -580,9 +594,7 @@ def plan_export(paths: ExportPaths) -> list[ExportRow]:
         mask = _mask_source(paths.masks, paths.resized, image, rel)
         if mask.is_file():
             dst = paths.out / "masks" / mask.relative_to(paths.masks)
-            rows.append(
-                _mask_row(rel, mask, dst, image=image, source=source, cap=paths.cap)
-            )
+            rows.append(_mask_row(rel, mask, dst, image=image, source=source, cap=cap))
 
         revised = paths.master / rel.with_suffix(".txt")
         if revised.is_file():
@@ -595,7 +607,9 @@ def plan_export(paths: ExportPaths) -> list[ExportRow]:
         rows.append(
             _row(rel, "index", paths.index, paths.out / "captions" / paths.index.name)
         )
-    return rows + _excluded_rows(paths)
+    # Sidecars only: the trainer reads exclusions from the ledger, and an
+    # archive of captions without their images is nothing to look at.
+    return rows + (_excluded_rows(paths) if paths.images else [])
 
 
 def _image_row(rel: Path, source: Path, dst: Path, *, cap: int) -> ExportRow:
@@ -916,6 +930,7 @@ def run_export(req: ExportRequest):
         ocr_min_glyph=req.ocr_min_glyph,
         cap=req.resize_cap_tokens if req.resize_cap else 0,
         webp=req.webp,
+        images=not req.sidecars_only,
     )
     if not paths.resized.is_dir():
         raise FileNotFoundError(
@@ -941,6 +956,7 @@ def run_export(req: ExportRequest):
             "ocr_min_glyph": req.ocr_min_glyph,
             "resize_cap": paths.cap,
             "webp": paths.webp,
+            "sidecars_only": req.sidecars_only,
             "stale": [str(p) for p in stale],
             "stats": stats.to_dict(),
             "rows": [r.to_dict() for r in rows],

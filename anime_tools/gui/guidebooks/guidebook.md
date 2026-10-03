@@ -516,6 +516,12 @@ was drawn on and published at the published image's size. If a previous export l
 image under another extension, Export does not delete it; it names it as stale in the log, and
 you should remove it, since the trainer refuses two images with one name.
 
+**Sidecars only** (`sidecars_only`) publishes no images at all: only captions, variants, masks,
+the revised master and the caption index, and no `_excluded/` copy. Use it when the trainer
+resizes from `(source_dir)/` itself: the captions land where its resized images will be, each
+mask is published at its original's full size, and exclusions reach the trainer through the
+workspace ledger. It cannot be combined with Resize cap or WebP.
+
 From the CLI it is dry-run by default and lists what it would copy. In the GUI Run copies,
 and Undo restores the text it overwrote from the export's own ledger; an overwritten
 pixel cannot be restored and is reported as such. Only what Export wrote leaves the workspace.

@@ -142,6 +142,12 @@ edge-padding the strip the crop threw away — then scales it (NEAREST) to the p
 size, capped or not. The row carries `ref` (the original) and `fit` (the resized image); it is a
 plain copy only when there is no original and no cap.
 
+`--sidecars_only` (`ExportPaths.images` off) publishes no pixels: no `image` rows and no
+`_excluded/` mirror, only `caption`/`variants`/`mask`/`master`/`index` at the paths they would
+have had. It is for a trainer that resizes from `--src` itself and reads exclusions from the
+`workspace/_excluded` ledger. Masks are fitted to the original uncapped; the request refuses it
+together with `--resize_cap` or `--webp`.
+
 The `caption` row reads the ladder, not one file (`_caption_source`): the revised caption, else the
 master — overlay (`workspace/master/`) first, hand-written (`--src`) behind it, the same
 overlay-first rule `gui.dataset.caption_paths` and `resolve_caption` read. Nothing copies a master

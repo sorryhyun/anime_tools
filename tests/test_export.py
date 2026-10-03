@@ -387,6 +387,38 @@ def test_the_mask_is_fitted_to_the_published_image(tmp_path):
         assert stats.by_kind["mask"] == 0
 
 
+def test_sidecars_only_publishes_no_pixels(ws):
+    """The decisions without the images: captions beside where the trainer's
+    own resize will write, the mask at the original's size, no excluded
+    mirror."""
+    from dataclasses import replace
+
+    _original(ws.src / "a.jpg", (1200, 800))
+    _txt(ws.resized.parent / "_excluded" / "resized" / "c.txt", "gone")
+    write_png(ws.resized.parent / "_excluded" / "resized" / "c.png")
+    paths = replace(
+        ws, images=False, cap=4200, excluded=ws.resized.parent / "_excluded"
+    )
+    rows, stats = publish(paths, apply=True)
+    assert {r.kind for r in rows} == {"caption", "variants", "mask", "master", "index"}
+    assert not any(r.excluded for r in rows) and stats.excluded == 0
+    assert not list((ws.out / "resized").rglob("*.png"))
+    assert not list((ws.out / "resized").rglob("*.jpg"))
+    assert (ws.out / "resized" / "a.txt").is_file()
+    assert (ws.out / "resized" / "a.variants.txt").is_file()
+    # Fitted to the original uncapped, whatever cap the paths carry.
+    assert _size(ws.out / "masks" / "a_mask.png") == (1200, 800)
+    _, stats = publish(paths, apply=True)
+    assert stats.created == stats.overwrote == 0
+
+
+def test_sidecars_only_refuses_the_image_knobs():
+    ExportRequest(sidecars_only=True)
+    for knob in ({"resize_cap": True}, {"webp": True}):
+        with pytest.raises(ValueError, match="sidecars_only"):
+            ExportRequest(sidecars_only=True, **knob)
+
+
 # ---- putting it back ----------------------------------------------------
 
 

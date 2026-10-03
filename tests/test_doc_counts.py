@@ -117,7 +117,11 @@ EXPOSES = re.compile(r"\bexposes all\s+([a-z]+)\s+names\b")
 def _package_docs() -> list[Path]:
     """Every ``anime_tools/<pkg>/CLAUDE.md`` that states its ``__init__``'s
     export count."""
-    return [p for p in DOCS if p.name == "CLAUDE.md" and EXPOSES.search(p.read_text())]
+    return [
+        p
+        for p in DOCS
+        if p.name == "CLAUDE.md" and EXPOSES.search(p.read_text(encoding="utf-8"))
+    ]
 
 
 @pytest.mark.parametrize(
@@ -132,7 +136,7 @@ def test_documented_export_count_matches_that_package(path):
     import importlib
 
     module = importlib.import_module(".".join(path.parent.relative_to(ROOT).parts))
-    word = EXPOSES.search(path.read_text()).group(1)
+    word = EXPOSES.search(path.read_text(encoding="utf-8")).group(1)
     assert word in NUMBER_WORDS, f"{path.name} states no number: {word!r}"
     assert NUMBER_WORDS[word] == len(module.__all__)
 
