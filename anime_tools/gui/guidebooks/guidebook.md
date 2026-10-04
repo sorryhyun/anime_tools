@@ -242,7 +242,7 @@ through and wearing `⊘` is one you excluded (§6.5).
 
 ### 6.2 The caption editor
 
-Selecting an image shows it (source / mask / overlay) beside its captions, one editor with a
+Selecting an image shows it (source / mask / text boxes) beside its captions, one editor with a
 badge per version. The tag bag and each position clause are boxed in the text; the boxes come
 from the server's own parser, so the browser never guesses at a caption's structure.
 Double-click a tag to look it up in the Danbooru tag KB (once it is downloaded).
@@ -487,7 +487,7 @@ Read resized images. Write `workspace/masks_sam/` and its merge under
   one. The default is one row keeping the subject through the shipped soft prompt; balloons
   and lettering are ordinary ignore rows.
 - Merge takes the pixel-wise minimum of its input trees into `workspace/masks/`, the tree the
-  sidebar shows as mask / overlay and Export publishes. The default input is the generator's
+  sidebar tints pink and Export publishes. The default input is the generator's
   tree; a missing input is skipped, and a hand-painted tree can be listed beside it.
 
 The two directories are one setting, not two fields, because a second tree merged in beside

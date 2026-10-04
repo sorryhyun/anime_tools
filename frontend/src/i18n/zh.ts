@@ -84,11 +84,10 @@ const zh: Dict = {
     keys: "↑/↓ 或 j/k 切换图片 · ⌘/Ctrl+Enter 保存标注",
     views: {
       image: "原图",
-      mask: "掩膜",
-      overlay: "叠加",
+      overlay: "掩膜",
       ocr: "文本框",
     },
-    overlayHint: "把掩膜以 40% 叠在图片上",
+    overlayHint: "在图片上用粉色标出训练时排除的区域",
     overlayNeeds: "需要同时有图片和掩膜",
     notGenerated: "尚未生成",
     noOverlay: "这张图没有可叠加的内容",

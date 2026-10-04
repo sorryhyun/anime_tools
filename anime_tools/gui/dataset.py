@@ -441,7 +441,7 @@ def excluded_trees(roots: Roots) -> Trees:
 
     ``resized`` and ``masks`` follow the dataset roots, so a relocated root is
     honoured; the OCR sidecars and ``_excluded`` itself are workspace trees no
-    root names, resolved the way :func:`ocr_lines` resolves the first of them.
+    root names, resolved the way :func:`ocr_path` resolves the first of them.
     """
     ws = workspace_dir()
     return Trees(
@@ -818,7 +818,7 @@ def caption_versions(roots: Roots, rel: Path) -> list[dict[str, Any]]:
 
 
 def ocr_lines(roots: Roots, rel: Path) -> list[dict[str, Any]]:
-    """The image's ``{stem}.ocr.txt`` from the OCR tree, or ``[]``.
+    """The lines of the image's ``{stem}.ocr.txt`` (:func:`ocr_path`), or ``[]``.
 
     Not a :data:`CAPTION_LADDER` rung: it holds the words *in the picture*, not a
     text that could be written back into the caption. Joined by the same relative
@@ -831,11 +831,32 @@ def ocr_lines(roots: Roots, rel: Path) -> list[dict[str, Any]]:
     never re-derived in the browser — the panel only draws the line it got back
     differently.
     """
-    txt = rel.with_suffix(".txt")
-    sidecar = ocr_sidecar_path(workspace_dir() / WS.OCR_SUBDIR / txt)
-    lines = read_ocr(sidecar)
+    path = ocr_path(roots, rel)
+    lines = read_ocr(path) if path else []
     keep = {line.seq for line in usable_lines(lines)}
     return [{**line.to_dict(), "usable": line.seq in keep} for line in lines]
+
+
+def ocr_path(roots: Roots, rel: Path) -> Path | None:
+    """The workspace's ``{stem}.ocr.txt``, else the one under ``<out>/ocr`` —
+    the trainer's own OCR tree, which Export never writes."""
+    txt = rel.with_suffix(".txt")
+    for root in (workspace_dir() / WS.OCR_SUBDIR, roots.out / "ocr"):
+        p = ocr_sidecar_path(root / txt)
+        if p.is_file():
+            return p
+    return None
+
+
+def drawn_on(roots: Roots, rel: Path, p: Path | None) -> Path | None:
+    """The resized image a mask or OCR file at ``p`` was made on, whose pixels
+    its geometry is in: the workspace's for a workspace file, the trainer's
+    ``<out>/resized`` for a published one."""
+    if p is None:
+        return None
+    ours = p.is_relative_to(roots.masks) or p.is_relative_to(workspace_dir())
+    tree = roots.dst if ours else roots.out / "resized"
+    return sibling_image(tree / rel.parent, rel.stem)
 
 
 def item_detail(roots: Roots, rel_str: str) -> dict[str, Any]:
@@ -846,6 +867,7 @@ def item_detail(roots: Roots, rel_str: str) -> dict[str, Any]:
         raise DatasetError(f"not in the dataset: {rel.as_posix()}")
     parent = rel.parent.as_posix()
     entry = excluded_entries(roots).get(rel.as_posix())
+    mask = mask_path(roots, rel)
     return {
         "rel": rel.as_posix(),
         "dir": "" if parent == "." else parent,
@@ -856,9 +878,13 @@ def item_detail(roots: Roots, rel_str: str) -> dict[str, Any]:
         "excluded": entry.to_dict() if entry else None,
         "image": _image_info(src_image),
         "resized": _image_info(sibling_image(roots.dst / rel.parent, rel.stem)),
-        "mask": _image_info(mask_path(roots, rel)),
+        "mask": _image_info(mask),
+        # What each is drawn over: a mask or a box is in the pixels of the
+        # resized copy it was made on, not the source's.
+        "mask_base": _image_info(drawn_on(roots, rel, mask)),
         "versions": caption_versions(roots, rel),
         "ocr": ocr_lines(roots, rel),
+        "ocr_base": _image_info(drawn_on(roots, rel, ocr_path(roots, rel))),
     }
 
 

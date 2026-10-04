@@ -84,11 +84,10 @@ const ko: Dict = {
     keys: "↑/↓ 또는 j/k로 이미지 이동 · ⌘/Ctrl+Enter로 캡션 저장",
     views: {
       image: "원본",
-      mask: "마스크",
-      overlay: "겹쳐 보기",
+      overlay: "마스크",
       ocr: "텍스트 박스",
     },
-    overlayHint: "이미지 위에 마스크를 40%로 겹칩니다",
+    overlayHint: "학습에서 빠지는 영역을 이미지 위에 분홍색으로 표시합니다",
     overlayNeeds: "이미지와 마스크가 모두 있어야 합니다",
     notGenerated: "생성되지 않음",
     noOverlay: "이 이미지에는 겹쳐 볼 것이 없습니다",

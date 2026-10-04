@@ -86,11 +86,10 @@ const ja: Dict = {
     keys: "↑/↓ または j/k で画像を移動 · ⌘/Ctrl+Enter でキャプションを保存",
     views: {
       image: "元画像",
-      mask: "マスク",
-      overlay: "重ね表示",
+      overlay: "マスク",
       ocr: "テキストボックス",
     },
-    overlayHint: "画像の上にマスクを 40% で重ねます",
+    overlayHint: "学習から外れる領域を画像の上にピンクで示します",
     overlayNeeds: "画像とマスクの両方が必要です",
     notGenerated: "未生成",
     noOverlay: "この画像に重ねるものがありません",

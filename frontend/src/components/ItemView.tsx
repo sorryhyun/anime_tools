@@ -17,14 +17,14 @@ import type {
   VersionKind,
 } from "../types";
 
-/** The two files a preview can show, plus the two composed views: `overlay`,
-    the mask drawn over the image at 40%, which is how a mask is audited, and
-    `ocr`, the text boxes drawn over the pixels they were read from. The resized
-    pixels get no tab of their own (the source re-encoded onto the bucket
-    geometry is the same picture), but are still the overlay's base when there
-    is no source and always the boxes' base, since the boxes are in that copy's
-    coordinates. */
-const FILE_VIEWS = ["image", "mask"] as const;
+/** The source file, plus the two composed views: `overlay`, the mask's area
+    tinted over the image — the only way a mask is shown, since it is audited
+    against the picture — and `ocr`, the text boxes drawn over the pixels they
+    were read from. The resized pixels get no tab of their own (the source
+    re-encoded onto the bucket geometry is the same picture), but are both
+    composed views' base: a mask and a box are in the coordinates of the resized
+    copy they were made on (`mask_base` / `ocr_base`). */
+const FILE_VIEWS = ["image"] as const;
 type FileView = (typeof FILE_VIEWS)[number];
 type View = FileView | "overlay" | "ocr";
 const viewLabel = (v: View) => t().item.views[v];
@@ -112,14 +112,15 @@ export function ItemView(props: {
   }
   const zp = createZoomPan();
 
-  /** Overlay needs a mask and something to draw it over. */
-  const base = () => props.item?.image ?? props.item?.resized ?? null;
+  /** Overlay needs a mask and something to draw it over: the resized copy it
+      was made on, else whatever picture there is (stretched to fit). */
+  const base = () => props.item?.mask_base ?? props.item?.resized ?? props.item?.image ?? null;
   const overlayOk = createMemo(() => !!props.item?.mask && !!base());
   /** What the OCR boxes are drawn over: the resized copy the stage read, and
       only while its pixel size is known — the box coordinates are that image's,
       so without it there is nothing to scale them by. */
   const ocrBase = createMemo(() => {
-    const img = props.item?.resized ?? props.item?.image ?? null;
+    const img = props.item?.ocr_base ?? props.item?.resized ?? props.item?.image ?? null;
     return img?.width && img.height ? img : null;
   });
   const boxesOk = createMemo(() => !!props.item?.ocr.length && !!ocrBase());
@@ -273,6 +274,18 @@ export function ItemView(props: {
                         <div class="overlay" style={zp.style()}>
                           <img src={api.fileUrl(base()!.path)} alt={it().rel} draggable={false} />
                           <img class="ov" src={api.fileUrl(it().mask!.path)} alt="" />
+                          {/* Black — what the loss leaves out — becomes pink;
+                              white becomes clear, so the picture stays as it
+                              is. Alpha is taken off the mask's own alpha too,
+                              or the letterbox around a fitted mask would tint. */}
+                          <svg class="defs" aria-hidden="true">
+                            <filter id="mask-tint" color-interpolation-filters="sRGB">
+                              <feColorMatrix
+                                type="matrix"
+                                values="0 0 0 0 1  0 0 0 0 0.2  0 0 0 0 0.6  -0.6 0 0 0.6 0"
+                              />
+                            </filter>
+                          </svg>
                         </div>
                       </div>
                       <div class="dim hint mono" title={`${it().mask!.path} · ${base()!.path}`}>

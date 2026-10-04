@@ -121,11 +121,10 @@ const en = {
     keys: "↑/↓ or j/k walk the images · ⌘/Ctrl+Enter saves a caption",
     views: {
       image: "source",
-      mask: "mask",
-      overlay: "overlay",
+      overlay: "mask",
       ocr: "text boxes",
     },
-    overlayHint: "the mask at 40% over the image",
+    overlayHint: "what the loss leaves out, tinted pink over the image",
     overlayNeeds: "needs an image and a mask",
     notGenerated: "not generated",
     noOverlay: "no overlay for this image",

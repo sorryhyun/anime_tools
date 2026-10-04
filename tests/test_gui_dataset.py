@@ -160,9 +160,43 @@ def test_a_published_mask_shows_until_the_workspace_has_one(client, home):
     assert it["mask"]["path"] == "post_image_dataset/masks/sub/b_mask.png"
     assert c.get("/api/files", params={"path": it["mask"]["path"]}).status_code == 200
 
+    # No trainer resize of it yet: nothing to draw the published mask over.
+    assert it["mask_base"] is None
+    write_png(home / "post_image_dataset" / "resized" / "sub" / "b.png", (6, 6))
+    it = c.get("/api/dataset/item", params={"rel": "sub/b.jpg"}).json()
+    assert it["mask_base"]["path"] == "post_image_dataset/resized/sub/b.png"
+
     write_png(home / "workspace" / "masks" / "sub" / "b_mask.png")
     it = c.get("/api/dataset/item", params={"rel": "sub/b.jpg"}).json()
     assert it["mask"]["path"] == "workspace/masks/sub/b_mask.png"
+    # …and a workspace mask is drawn over the workspace's resized copy.
+    assert it["mask_base"]["path"] == "workspace/resized/sub/b.png"
+
+
+def test_published_ocr_shows_over_the_trainers_resized_copy(client, home):
+    """The trainer's own ``<out>/ocr`` tree is read when the workspace has no
+    sidecar, and its boxes are drawn over ``<out>/resized``, whose pixels they
+    are in; a workspace sidecar wins and draws over the workspace copy."""
+    c, _ = client
+    sidecar = (
+        "# anima caption ocr — auto-generated, do not hand-edit\n1\t1,1,4,4\t0.9\t{}\n"
+    )
+    out = home / "post_image_dataset"
+    (out / "ocr" / "sub").mkdir(parents=True)
+    (out / "ocr" / "sub" / "b.ocr.txt").write_text(
+        sidecar.format("あ"), encoding="utf-8"
+    )
+    write_png(out / "resized" / "sub" / "b.png", (6, 6))
+    it = c.get("/api/dataset/item", params={"rel": "sub/b.jpg"}).json()
+    assert [ln["text"] for ln in it["ocr"]] == ["あ"]
+    assert it["ocr_base"]["path"] == "post_image_dataset/resized/sub/b.png"
+
+    ws = home / "workspace" / "ocr" / "sub"
+    ws.mkdir(parents=True)
+    (ws / "b.ocr.txt").write_text(sidecar.format("い"), encoding="utf-8")
+    it = c.get("/api/dataset/item", params={"rel": "sub/b.jpg"}).json()
+    assert [ln["text"] for ln in it["ocr"]] == ["い"]
+    assert it["ocr_base"]["path"] == "workspace/resized/sub/b.png"
 
 
 def test_missing_source_root_is_reported_not_raised(client, home):

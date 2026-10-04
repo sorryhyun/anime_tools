@@ -562,12 +562,17 @@ export interface ItemDetail {
   image: ImageInfo | null;
   resized: ImageInfo | null;
   mask: ImageInfo | null;
+  /** The resized copy the mask was made on — the workspace's, or the trainer's
+      for a published mask — and so what it is drawn over. */
+  mask_base: ImageInfo | null;
   /** Every caption this image has, oldest first: the ladder's file rungs, then
       the sidecar expanded into one entry per label. The panel's badge row. */
   versions: CaptionEntry[];
   /** The text found *in* the picture, in reading order. Empty both for an image
       the OCR stage never ran on and for one it found no text in. */
   ocr: OcrLine[];
+  /** The resized copy the boxes were read from; their coordinates are its pixels. */
+  ocr_base: ImageInfo | null;
   /** The exclusion ledger's row, or `null` for an image still in the pipeline.
       The whole row rather than a flag, because the panel says when it was
       excluded and why. */
