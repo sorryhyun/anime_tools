@@ -112,14 +112,25 @@ export function BoxedCaption(props: {
     fit();
     // The caption pane is drag-resizable, so a rewrap can happen with the text
     // untouched. Width only: refitting on our own height change would loop.
+    // The refit waits a frame: resizing the observed textarea inside the
+    // callback is what the browser reports as "ResizeObserver loop completed
+    // with undelivered notifications".
     let width = ta.clientWidth;
+    let frame = 0;
     const ro = new ResizeObserver(() => {
-      if (ta.clientWidth === width) return;
-      width = ta.clientWidth;
-      fit();
+      if (frame) return;
+      frame = requestAnimationFrame(() => {
+        frame = 0;
+        if (ta.clientWidth === width) return;
+        width = ta.clientWidth;
+        fit();
+      });
     });
     ro.observe(ta);
-    onCleanup(() => ro.disconnect());
+    onCleanup(() => {
+      ro.disconnect();
+      cancelAnimationFrame(frame);
+    });
   });
 
   /** The tag the caret is in — what a double-click looks up. */
