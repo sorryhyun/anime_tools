@@ -105,10 +105,13 @@ loads no model and needs no resize preflight.
 
 ## 5. Running it
 
-From the GUI: Masks → Subject, then Masks → Merge. The generator's form shows the prompts,
+From the GUI: Masks → Subject, which runs the merge after the generator in the same job, with
+the Merge form's last saved inputs; Masks → Merge alone re-merges, e.g. after listing a
+hand-painted tree. The generator's form shows the prompts,
 thresholds, dilation and `force`; the walk flags are bound
 to the dataset roots and hidden, and `--device` is resolved by the child. The sidebar marks an
-image that has a merged mask, and selecting it shows the mask beside the source and resized
+image that has a merged mask — or, until it has one, a mask already published under
+`<out>/masks` — and selecting it shows the mask beside the source and resized
 images. Jobs run one at a time as subprocesses; the `name: what` progress line is the same
 text the CLI prints beside its bar.
 
