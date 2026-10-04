@@ -20,7 +20,12 @@ from anime_tools._env import curation_home, resolve_path
 from anime_tools._json import read_json
 from anime_tools.gui import proposals as P
 from anime_tools.gui import stages as S
-from anime_tools.gui._context import RunContext, make_output_dirs, preprocess_steps
+from anime_tools.gui._context import (
+    RunContext,
+    follow_up_steps,
+    make_output_dirs,
+    preprocess_steps,
+)
 from anime_tools.gui.jobs import Step
 from anime_tools.gui.settings import edit_settings
 
@@ -87,6 +92,7 @@ async def start_job(request: Request) -> dict[str, Any]:
     steps = [
         *preprocess_steps(stage, ctx, schemas=store.get()),
         Step(stage.module, argv, stage.id),
+        *follow_up_steps(stage, ctx, schemas=store.get()),
     ]
     try:
         job = request.app.state.jobs.start(

@@ -6,7 +6,7 @@ The trees it joins are keyed by the *same relative path* in each
 ``src``     ``<source>/<rel>``                 source image + hand-written master caption
 ``master``  ``workspace/master/<rel>``         the revised master overlay (empty until Phase 2 fills it)
 ``dst``     ``workspace/resized/<rel>``        resized image + revised caption + ``.variants.txt`` + ``.history.txt``
-``masks``   ``workspace/masks/<rel>``          ``{stem}_mask.png`` (nested; flat is the legacy fallback)
+``masks``   ``workspace/masks/<rel>``          ``{stem}_mask.png`` (nested; flat is the legacy fallback; ``<out>/masks`` when neither)
 ``out``     ``<export>/``                      the export destination, written by Export
 
 Beside them sits ``workspace/_excluded/``, which is not a root and does not join
@@ -388,17 +388,20 @@ def rel_for_image(roots: Roots, image: str) -> str | None:
 
 
 def mask_path(roots: Roots, rel: Path) -> Path | None:
-    """``masks/<subdir>/{stem}_mask.png``, or the legacy flat one.
+    """``masks/<subdir>/{stem}_mask.png``, or the legacy flat one; failing both,
+    the same two under the published ``<out>/masks``.
 
     The name comes from ``masking._masks.mask_name``. The flat fallback is this
-    reader's alone, so an older mask tree stays browsable.
+    reader's alone, so an older mask tree stays browsable. The published tree
+    comes last, so a mask the trainer already holds shows before any workspace
+    run, and a workspace mask still wins once one exists.
     """
     name = mask_name(rel.stem)
-    nested = roots.masks / rel.parent / name
-    if nested.is_file():
-        return nested
-    flat = roots.masks / name
-    return flat if flat.is_file() else None
+    for root in (roots.masks, roots.out / "masks"):
+        for p in (root / rel.parent / name, root / name):
+            if p.is_file():
+                return p
+    return None
 
 
 def caption_paths(roots: Roots, rel: Path) -> dict[str, Path]:

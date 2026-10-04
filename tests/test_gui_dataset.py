@@ -148,6 +148,23 @@ def test_the_listing_default_is_the_cap_not_a_smaller_number():
     assert inspect.signature(dataset_list).parameters["limit"].default == D.MAX_ITEMS
 
 
+def test_a_published_mask_shows_until_the_workspace_has_one(client, home):
+    """A mask only the export tree holds (one the trainer already had) is the
+    row's mask; a workspace mask, once written, wins over it."""
+    c, _ = client
+    published = home / "post_image_dataset" / "masks" / "sub" / "b_mask.png"
+    write_png(published)
+    by_rel = {i["rel"]: i for i in c.get("/api/dataset").json()["items"]}
+    assert by_rel["sub/b.jpg"]["mask"]
+    it = c.get("/api/dataset/item", params={"rel": "sub/b.jpg"}).json()
+    assert it["mask"]["path"] == "post_image_dataset/masks/sub/b_mask.png"
+    assert c.get("/api/files", params={"path": it["mask"]["path"]}).status_code == 200
+
+    write_png(home / "workspace" / "masks" / "sub" / "b_mask.png")
+    it = c.get("/api/dataset/item", params={"rel": "sub/b.jpg"}).json()
+    assert it["mask"]["path"] == "workspace/masks/sub/b_mask.png"
+
+
 def test_missing_source_root_is_reported_not_raised(client, home):
     c, _ = client
     body = c.get("/api/dataset", params={"src": "nowhere"}).json()

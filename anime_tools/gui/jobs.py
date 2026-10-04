@@ -61,8 +61,10 @@ class Job:
 
     @property
     def argv(self) -> list[str]:
-        """The stage's own command — the last step; earlier ones are preflight."""
-        return self.steps[-1].command() if self.steps else []
+        """The stage's own command — the step labelled with :attr:`stage`, else the
+        last; the others are a preflight before it or a follow-up after it."""
+        own = [st for st in self.steps if st.label == self.stage]
+        return (own or self.steps[-1:])[0].command() if self.steps else []
 
     @property
     def state(self) -> str:

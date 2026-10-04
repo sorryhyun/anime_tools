@@ -26,6 +26,7 @@ __all__ = [
     "AUTO_FIELDS",
     "BASIC_FIELDS",
     "BY_ID",
+    "FOLLOW_UPS",
     "GATE_ATTR",
     "MASK_FIELDS",
     "MASK_SETTING",
@@ -249,6 +250,16 @@ NO_PREFLIGHT: frozenset[str] = frozenset({PREPROCESS_STAGE, "export"})
 ``export`` is bound to ``dst`` but publishes the resized tree rather than
 consuming it, so an empty one is a refusal, not a hidden step.
 """
+
+FOLLOW_UPS: dict[str, str] = {
+    # The generator writes only its own tree; the merge is what fills the
+    # ``masks`` root the sidebar shows and Export publishes, so a run that
+    # stopped at the generator left both empty.
+    "masks_sam": "masks_merge",
+}
+"""stage id → the stage that runs right after it in the same job, with that
+stage's last saved form (so a hand-painted tree listed on the merge form is
+merged in too)."""
 
 
 def preprocess_for(stage_id: str) -> str | None:

@@ -810,6 +810,28 @@ def test_a_dst_bound_stage_runs_resize_first(client, monkeypatch):
     assert "step 1/2" in body and "step 2/2" in body
 
 
+def test_a_follow_up_runs_after_the_stage_in_the_same_job(client, monkeypatch):
+    """The SAM run is followed by the merge: only the merge fills the ``masks``
+    root the sidebar shows and Export publishes."""
+    from PIL import Image
+
+    c, home = client
+    assert S.FOLLOW_UPS["masks_sam"] == "masks_merge"
+    monkeypatch.setitem(S.FOLLOW_UPS, "stub", "masks_merge")
+    sam = home / "workspace" / "masks_sam" / "a_mask.png"
+    sam.parent.mkdir(parents=True)
+    Image.new("L", (8, 8), 255).save(sam)  # a mask is single-channel
+
+    job = _await_job(c, c.post("/api/jobs", json={"stage": "stub", "values": {"n": 1}}))
+
+    assert job["state"] == "done", job
+    assert [st["label"] for st in job["steps"]] == ["stub", "masks_merge"]
+    # The job is still labelled by its own stage, not by the step that ran last.
+    assert job["argv"][:3] == [sys.executable, "-m", "stub_stage"]
+    # The generator's tree, merged into the root the sidebar and Export read.
+    assert (home / "workspace" / "masks" / "a_mask.png").is_file()
+
+
 def test_a_stage_without_a_preflight_is_a_single_step(client):
     c, _home = client
     job = _await_job(c, c.post("/api/jobs", json={"stage": "stub", "values": {"n": 1}}))

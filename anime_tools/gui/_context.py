@@ -31,6 +31,7 @@ __all__ = [
     "LOOPBACK_HOSTS",
     "NO_CACHE",
     "RunContext",
+    "follow_up_steps",
     "is_loopback",
     "make_output_dirs",
     "mask_root",
@@ -226,3 +227,25 @@ def preprocess_steps(
         pre, S.report_path(pre, sc["fields"], values, ctx.report_root), ctx.roots
     )
     return [Step(pre.module, argv, pre.id)]
+
+
+def follow_up_steps(
+    stage: S.Stage, ctx: RunContext, *, schemas: Mapping[str, Any]
+) -> list[Step]:
+    """The stage that runs after ``stage`` (``S.FOLLOW_UPS``), or nothing.
+
+    Its form is the one it was last run with — the per-stage memory the jobs
+    route saves under ``values`` — bound to the same roots as ``stage``. One that
+    is unavailable is left off rather than failing the job.
+    """
+    nxt = S.BY_ID.get(S.FOLLOW_UPS.get(stage.id, ""))
+    sc = schemas.get(nxt.id) if nxt else None
+    if nxt is None or sc is None or not sc["available"]:
+        return []
+    saved = (ctx.settings.get("values") or {}).get(nxt.id) or {}
+    values = S.form_values(sc["fields"], saved)
+    argv = S.build_argv(sc, values, **ctx.bindings())
+    make_output_dirs(
+        nxt, S.report_path(nxt, sc["fields"], values, ctx.report_root), ctx.roots
+    )
+    return [Step(nxt.module, argv, nxt.id)]
