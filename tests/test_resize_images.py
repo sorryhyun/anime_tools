@@ -196,6 +196,72 @@ def test_a_changed_source_still_re_resizes(tmp_path):
         assert im.size == select_bucket(900, 1600)[1]
 
 
+def _write_cutout(path, size=(1600, 900)):
+    """RGBA cutout: an opaque red block on a transparent field whose hidden RGB
+    is black — what ``convert("RGB")`` would expose."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    im = Image.new("RGBA", size, (0, 0, 0, 0))
+    im.paste((255, 0, 0, 255), (size[0] // 4, size[1] // 4, size[0] // 2, size[1] // 2))
+    im.save(path)
+    return path
+
+
+def test_transparency_is_composited_onto_white(tmp_path):
+    src, dst = tmp_path / "master", tmp_path / "resized"
+    _write_cutout(src / "cutw.webp")
+    _write_cutout(src / "cut.png")
+
+    run_resize_images(src=src, dst=dst, workers=1)
+
+    for name in ("cut.png", "cutw.png"):
+        with Image.open(dst / name) as im:
+            assert im.mode == "RGB"
+            assert im.getpixel((2, 2)) == (255, 255, 255)
+            w, h = im.size
+            r, g, b = im.getpixel((w * 3 // 8, h * 3 // 8))
+            assert r > 200 and g < 60 and b < 60
+
+
+def test_paletted_trns_is_composited_onto_white(tmp_path):
+    src, dst = tmp_path / "master", tmp_path / "resized"
+    src.mkdir()
+    im = Image.new("P", (1600, 900), 0)
+    im.putpalette([0, 0, 0, 255, 0, 0] + [0] * 762)
+    im.info["transparency"] = 0
+    im.save(src / "pal.png", transparency=0)
+
+    run_resize_images(src=src, dst=dst, workers=1)
+
+    with Image.open(dst / "pal.png") as out:
+        assert out.getpixel((2, 2)) == (255, 255, 255)
+
+
+def test_an_alpha_dropped_output_is_not_current(tmp_path):
+    """An output written before the composite (no alpha stamp) is rewritten by a
+    plain rerun; once stamped, the rerun skips it."""
+    src, dst = tmp_path / "master", tmp_path / "resized"
+    _write_cutout(src / "cut.png")
+    bucket = select_bucket(1600, 900)[1]
+    dst.mkdir()
+    Image.new("RGB", bucket, (0, 0, 0)).save(dst / "cut.png")
+
+    first = run_resize_images(src=src, dst=dst, workers=1)
+    second = run_resize_images(src=src, dst=dst, workers=1)
+
+    assert (first.written, first.skipped_current) == (1, 0)
+    assert (second.written, second.skipped_current) == (0, 1)
+    with Image.open(dst / "cut.png") as im:
+        assert im.getpixel((2, 2)) == (255, 255, 255)
+
+
+def test_an_opaque_source_carries_no_alpha_stamp(tmp_path):
+    src, dst = tmp_path / "master", tmp_path / "resized"
+    _write_image(src / "0001.png", (1600, 900))
+    run_resize_images(src=src, dst=dst, workers=1)
+    with Image.open(dst / "0001.png") as im:
+        assert "anima_resize_alpha" not in (getattr(im, "text", {}) or {})
+
+
 def test_exif_rotation_is_read_off_the_header(tmp_path):
     # Orientation only swaps the size, so the skip check reads it from the header;
     # missing it would measure a rotated image on the wrong aspect.

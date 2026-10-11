@@ -67,6 +67,11 @@ MARGIN_SIDES = ("top", "right", "bottom", "left")
 _ANCHOR_KEY = "anima_resize_crop_anchor"
 _BUCKET_RESOS_KEY = "anima_resize_bucket_resos"
 _MARGINS_KEY = "anima_resize_crop_margins"
+# Stamped only on outputs of a source with alpha, so an output written before
+# the white composite (alpha dropped, the RGB under transparency exposed) is
+# not current and gets rewritten.
+_ALPHA_KEY = "anima_resize_alpha"
+_ALPHA_FLATTEN = "white"
 
 
 def normalize_target_res(target_res: Iterable[int] | int | str | None) -> list[int]:
@@ -252,6 +257,26 @@ def _metadata_signature(options: ResizeOptions) -> dict[str, str]:
     }
 
 
+def _has_alpha(src: Image.Image) -> bool:
+    """Does the source carry transparency? Header-only: the mode and a PNG
+    ``tRNS`` chunk are both known before any pixel decode."""
+    return src.mode in ("RGBA", "LA", "PA", "RGBa", "La") or "transparency" in src.info
+
+
+def _flatten_alpha(img: Image.Image) -> Image.Image:
+    """RGB with transparency composited onto white.
+
+    ``convert("RGB")`` drops the alpha and keeps whatever RGB sits under a
+    transparent pixel — often an encoder's leftover streaks — while a cutout's
+    ``transparent background`` tag means white.
+    """
+    if not _has_alpha(img):
+        return img.convert("RGB")
+    rgba = img.convert("RGBA")
+    background = Image.new("RGBA", rgba.size, (255, 255, 255, 255))
+    return Image.alpha_composite(background, rgba).convert("RGB")
+
+
 def _oriented_size(src: Image.Image) -> tuple[int, int]:
     """``(W, H)`` as :func:`PIL.ImageOps.exif_transpose` would leave it, from the
     header alone — which is what lets an already-resized image be skipped
@@ -308,6 +333,7 @@ def process_image(
     rel_dir: str = "",
     overwrite: bool = False,
     size_hint: tuple[int, int] | None = None,
+    has_alpha: bool | None = None,
 ) -> tuple[str, tuple[int, int], bool]:
     """Resize one image into ``out_dir / rel_dir / {stem}.png``.
 
@@ -318,26 +344,31 @@ def process_image(
     Nothing above that skip may decode — not the source (``exif_transpose``
     copies, and a copy loads) nor the output (``.text`` on a PNG loads) — hence
     the header-only geometry via :func:`_oriented_size`, with the metadata read
-    and the transpose *after* the skip. ``size_hint`` is that oriented size when
-    the caller already read it.
+    and the transpose *after* the skip. ``size_hint`` / ``has_alpha`` are that
+    oriented size and :func:`_has_alpha` when the caller already read them.
     """
     target_dir = out_dir / rel_dir if rel_dir else out_dir
     out_path = target_dir / f"{image_path.stem}.png"
     signature = _metadata_signature(options)
 
     if not overwrite:
-        if size_hint is None:
+        if size_hint is None or has_alpha is None:
             try:
                 with Image.open(image_path) as probe:
                     size_hint = _oriented_size(probe)
+                    has_alpha = _has_alpha(probe)
             except Exception:  # noqa: BLE001 — let the real open below report it
                 size_hint = None
         if size_hint is not None:
             bucket = _bucket_for_size(size_hint, options)
+            if has_alpha:
+                signature = {**signature, _ALPHA_KEY: _ALPHA_FLATTEN}
             if _is_current(out_path, bucket, signature):
                 return out_path.name, bucket, True
 
     with Image.open(image_path) as src:
+        if _has_alpha(src):
+            signature = {**_metadata_signature(options), _ALPHA_KEY: _ALPHA_FLATTEN}
         save_kwargs = _collect_metadata(src)
         img = ImageOps.exif_transpose(src)
         box = margin_box(*img.size, options.crop_margins)
@@ -357,7 +388,7 @@ def process_image(
                 pnginfo.add_text(key, value)
 
         out_img = resize_to_bucket(
-            img.convert("RGB").crop(box), bucket, crop_anchor=options.crop_anchor
+            _flatten_alpha(img).crop(box), bucket, crop_anchor=options.crop_anchor
         )
 
     target_dir.mkdir(parents=True, exist_ok=True)
@@ -369,21 +400,21 @@ def process_image(
 
 def _probe(
     image_path: Path,
-) -> tuple[Path, tuple[int, int] | None, tuple[int, int] | None, str]:
-    """``(path, raw size, oriented size, error)`` from the header alone.
+) -> tuple[Path, tuple[int, int] | None, tuple[int, int] | None, bool, str]:
+    """``(path, raw size, oriented size, has alpha, error)`` from the header alone.
 
     Module-level and picklable so :func:`_probe_sizes` can run it in the pool.
     """
     try:
         with Image.open(image_path) as im:
-            return image_path, im.size, _oriented_size(im), ""
+            return image_path, im.size, _oriented_size(im), _has_alpha(im), ""
     except Exception as exc:  # noqa: BLE001 — one bad file must not abort the pass
-        return image_path, None, None, str(exc)
+        return image_path, None, None, False, str(exc)
 
 
 def _probe_sizes(
     images: list[Path], workers: int
-) -> list[tuple[Path, tuple[int, int] | None, tuple[int, int] | None, str]]:
+) -> list[tuple[Path, tuple[int, int] | None, tuple[int, int] | None, bool, str]]:
     """Read every source header, in the pool — source order preserved.
 
     ``Image.open`` on a webp demuxes the whole file (~2 ms each), and it is pure
@@ -446,15 +477,15 @@ def run_resize_images(
         stats.skipped_excluded = len(images) - len(kept)
         images = kept
 
-    # ``(path, oriented size)``: one header read per image, carried into
-    # ``process_image`` so it need not re-open the file.
-    pending: list[tuple[Path, tuple[int, int] | None]] = []
-    for image_path, raw, size, error in _probe_sizes(images, workers):
+    # ``(path, oriented size, has alpha)``: one header read per image, carried
+    # into ``process_image`` so it need not re-open the file.
+    pending: list[tuple[Path, tuple[int, int] | None, bool]] = []
+    for image_path, raw, size, alpha, error in _probe_sizes(images, workers):
         if error or raw is None:
             stats.failed += 1
             stats.failures.append(f"{image_path}: {error}")
             continue
-        pending.append((image_path, size))
+        pending.append((image_path, size, alpha))
 
     dst.mkdir(parents=True, exist_ok=True)
     total = len(pending)
@@ -471,7 +502,8 @@ def run_resize_images(
             progress(index, total, f"{name} {'skip' if skipped else '→ ' + key}")
 
     args = [
-        (p, dst, options, _rel_dir_of(p, src), overwrite, size) for p, size in pending
+        (p, dst, options, _rel_dir_of(p, src), overwrite, size, alpha)
+        for p, size, alpha in pending
     ]
 
     if workers <= 1:
