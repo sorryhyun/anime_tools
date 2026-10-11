@@ -4,6 +4,7 @@ row has to point where the loader actually looks."""
 from __future__ import annotations
 
 from dataclasses import replace
+from pathlib import Path
 
 import pytest
 
@@ -123,7 +124,7 @@ def test_the_tag_kb_lands_where_correction_looks_for_it(home):
 
 
 def test_a_pinned_row_is_installed_only_at_its_revision(home, monkeypatch):
-    """The SFX reader's file names never changed across Hub revisions, so
+    """The SFX reader's adapter file names are shared across Hub revisions, so
     existence is not enough: the row is installed only when the ``REVISION``
     stamp under its dest names the pinned commit, and ``fetch`` writes it."""
     from anime_tools.downloads._assets import REVISION_STAMP
@@ -140,14 +141,16 @@ def test_a_pinned_row_is_installed_only_at_its_revision(home, monkeypatch):
     assert row.missing() == list(DL.SFX_READER_FILES)  # stale stamp: same
     (dest / REVISION_STAMP).write_text(row.revision + "\n")
     assert row.installed
-    (dest / DL.SFX_READER_TOWER_FILE).unlink()
-    assert row.missing() == [DL.SFX_READER_TOWER_FILE]  # right stamp, file gone
+    (dest / DL.SFX_READER_LM_FILE).unlink()
+    assert row.missing() == [DL.SFX_READER_LM_FILE]  # right stamp, file gone
 
     seen: list[dict[str, object]] = []
 
     def fake_download(**kwargs):
         seen.append(kwargs)
-        path = dest / kwargs["filename"]
+        # local_dir keeps the repo's v4/ layout; fetch flattens it
+        path = Path(kwargs["local_dir"]) / kwargs["filename"]
+        path.parent.mkdir(parents=True, exist_ok=True)
         path.write_bytes(b"y")
         return str(path)
 
@@ -155,8 +158,10 @@ def test_a_pinned_row_is_installed_only_at_its_revision(home, monkeypatch):
     (dest / REVISION_STAMP).unlink()
     row.fetch(log=lambda _msg: None)
     assert {k["revision"] for k in seen} == {row.revision}
+    assert {k["filename"] for k in seen} == {f"v4/{n}" for n in DL.SFX_READER_FILES}
     assert (dest / REVISION_STAMP).read_text().strip() == row.revision
     assert row.installed
+    assert not (dest / DL.SFX_READER_SUBFOLDER).exists()
 
 
 def test_a_built_row_runs_its_build_after_fetching(home, monkeypatch):

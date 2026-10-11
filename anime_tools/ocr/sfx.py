@@ -5,13 +5,14 @@ effects drawn onto the artwork — ``ぱんぱん``, ``びくっ``, ``ばるん`
 as ``はんぱん`` / ``でくv`` / nothing from the CTC stack this package retired.
 :class:`SfxReader` is the reader for those lines and the speech alike: a crop
 in, a string out, no detection. It is the
-PaddleOCR-VL-1.6 base with a LoRA on the language model **and a fully
-fine-tuned vision tower**, trained on the Manga109-s COO onomatopoeia
-polygons plus a 1 : 1 replay of the ``<text>`` speech boxes (official COO
-book split; COO test exact 81.7 %, doujin SFX gate 38 / 71 vs 2 stock —
-``sorryhyun/paddleocr-vl-1.6-manga-lora``, Manga109-s attribution on the
-card). It reads ``♡`` / ``ー`` / small kana natively, vertical or horizontal,
-so it needs no symbol patching.
+PaddleOCR-VL-1.6 base with a LoRA on the vision tower + projector **and fully
+fine-tuned ERNIE decoder layers** (v4), trained on the Manga109-s COO
+onomatopoeia polygons plus a 1 : 1 replay of the ``<text>`` speech boxes
+(official COO book split) and 3,838 KO / ZH SFX crops pseudo-labelled by the
+stock model (COO test SFX exact 85.0 %, KO 26 / 48 and ZH 29 / 48 against
+stock's 21 / 31 — ``sorryhyun/paddleocr-vl-1.6-manga-lora`` ``v4/``,
+Manga109-s attribution on the card). It reads ``♡`` / ``ー`` / small kana
+natively, vertical or horizontal, so it needs no symbol patching.
 
 What it is not: a page reader. Feed it the crops a detector has already
 boxed — the AnimeText text-block detector (:mod:`anime_tools.ocr.animetext`,
@@ -35,8 +36,8 @@ the longest speech on each page. A dot run is now one ``…`` before anything
 counts it.
 
 Weights are two catalog rows (:mod:`anime_tools.downloads`): ``vl16_base``
-(the Apache-2.0 base, 1.9 GB) and ``sfx_reader`` (adapter 24 MB + tower
-878 MB). :meth:`SfxReader.load` fetches what is missing.
+(the Apache-2.0 base, 1.9 GB) and ``sfx_reader`` (tower LoRA 143 MB + LM
+layers 510 MB). :meth:`SfxReader.load` fetches what is missing.
 """
 
 from __future__ import annotations
@@ -50,7 +51,7 @@ from functools import cache, cached_property
 from pathlib import Path
 from typing import Any
 
-from anime_tools.downloads import SFX_READER_ADAPTER_FILES, SFX_READER_TOWER_FILE
+from anime_tools.downloads import SFX_READER_ADAPTER_FILES, SFX_READER_LM_FILE
 
 PROMPT = "OCR:"
 """The crop task of the base model's chat template; the fine-tune kept it."""
@@ -268,7 +269,7 @@ class SfxReader:
         batch_size: int = 16,
         fetch: bool = True,
     ) -> SfxReader:
-        """Base + adapter merged + fine-tuned tower, in bf16 on ``device``
+        """Base + tower adapter merged + fine-tuned LM layers, in bf16 on ``device``
         (auto when ``None``).
 
         ``base_dir`` / ``adapter_dir`` default to the catalog rows and are
@@ -283,7 +284,7 @@ class SfxReader:
         device = resolve_device(device)
         base = Path(base_dir) if base_dir else _ensure("vl16_base", fetch)
         adapter = Path(adapter_dir) if adapter_dir else _ensure("sfx_reader", fetch)
-        for name in (*SFX_READER_ADAPTER_FILES, SFX_READER_TOWER_FILE):
+        for name in (*SFX_READER_ADAPTER_FILES, SFX_READER_LM_FILE):
             if not (adapter / name).is_file():
                 raise SfxWeightsMissing(adapter, "sfx_reader")
 
@@ -296,13 +297,13 @@ class SfxReader:
             str(base), dtype=torch.bfloat16, attn_implementation="sdpa"
         )
         model = PeftModel.from_pretrained(model, str(adapter)).merge_and_unload()
-        # The tower is a plain state dict under the base model's key names; the
-        # adapter only ever touched the language model.
-        tower = load_file(str(adapter / SFX_READER_TOWER_FILE))
-        unexpected = model.load_state_dict(tower, strict=False).unexpected_keys
+        # The decoder layers are a plain state dict under the base model's key
+        # names; the adapter only ever touched the tower and projector.
+        lm = load_file(str(adapter / SFX_READER_LM_FILE))
+        unexpected = model.load_state_dict(lm, strict=False).unexpected_keys
         if unexpected:
             raise RuntimeError(
-                f"tower.safetensors carries keys the base has no home for: {unexpected[:5]}"
+                f"{SFX_READER_LM_FILE} carries keys the base has no home for: {unexpected[:5]}"
             )
         model = model.to(device).eval()
         processor = AutoProcessor.from_pretrained(str(base))

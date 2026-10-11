@@ -142,7 +142,7 @@ def test_the_reader_rows_land_where_the_loader_looks(home):
     # The loader checks for exactly the files the row fetches.
     assert set(DL.SFX_READER_FILES) == {
         *DL.SFX_READER_ADAPTER_FILES,
-        DL.SFX_READER_TOWER_FILE,
+        DL.SFX_READER_LM_FILE,
     }
     assert "model.safetensors" in DL.VL16_BASE_FILES
     # The OCR stage reads every box with it (2026-09-07, no other reader), so

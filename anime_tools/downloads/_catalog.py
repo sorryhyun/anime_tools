@@ -35,6 +35,7 @@ from anime_tools.downloads._locations import (
     SFX_READER_FILES,
     SFX_READER_REPO,
     SFX_READER_REVISION,
+    SFX_READER_SUBFOLDER,
     SOFT_PROMPT_DIR,
     SOFT_PROMPT_FILENAME,
     SOFT_PROMPT_GH_REPO,
@@ -179,18 +180,19 @@ def catalog() -> tuple[Asset, ...]:
         Asset(
             id="sfx_reader",
             pack="ocr",
-            title="Manga SFX reader (VL-1.6 LoRA + tower)",
+            title="Manga SFX reader v4 (VL-1.6 tower LoRA + LM)",
             repo=SFX_READER_REPO,
+            subfolder=SFX_READER_SUBFOLDER,
             files=SFX_READER_FILES,
             revision=SFX_READER_REVISION,
             dest=default_sfx_reader_dir(),
             used_by="OCR text (the manga VL reader; anime_tools.ocr.sfx)",
             stages=("ocr",),
-            notes="0.9 GB (adapter 24 MB + fine-tuned vision tower). Reads every "
+            notes="0.65 GB (tower LoRA 143 MB + fine-tuned LM layers 510 MB). Reads every "
             "box the detector finds — balloon speech, hearts, small kana and the "
             "hand-lettered onomatopoeia a print recognizer garbles; a crop reader, "
             "not a detector. Needs the base above; both fetched on first use. "
-            "Trained on Manga109-s (COO).",
+            "Trained on Manga109-s (COO) plus KO / ZH SFX; reads JA, KO and ZH.",
         ),
         Asset(
             id="animetext_det",

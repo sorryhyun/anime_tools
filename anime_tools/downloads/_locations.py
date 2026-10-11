@@ -65,20 +65,24 @@ VL16_BASE_FILES = (
 )
 VL16_BASE_DIR = "models/paddleocr_vl_1.6"
 
-# The manga SFX reader: a peft LoRA on the base's language model plus its
-# fully fine-tuned vision tower, trained on Manga109-s / COO (attribution and
-# citations on the model card). Weights only — no Manga109-s image ships.
+# The manga SFX reader, **v4** under the repo's ``v4/`` subfolder: a peft LoRA
+# on the base's vision tower + projector plus its fully fine-tuned ERNIE
+# decoder layers, trained on Manga109-s / COO and KO / ZH pseudo-labelled SFX
+# (attribution and citations on the model card). Weights only — no Manga109-s
+# image ships. The repo root still holds v3 (LM LoRA + ``tower.safetensors``).
 SFX_READER_REPO = "sorryhyun/paddleocr-vl-1.6-manga-lora"
+SFX_READER_SUBFOLDER = "v4"
 SFX_READER_ADAPTER_FILES = ("adapter_config.json", "adapter_model.safetensors")
-SFX_READER_TOWER_FILE = "tower.safetensors"
-SFX_READER_FILES = (*SFX_READER_ADAPTER_FILES, SFX_READER_TOWER_FILE)
+SFX_READER_LM_FILE = "lm.safetensors"
+SFX_READER_FILES = (*SFX_READER_ADAPTER_FILES, SFX_READER_LM_FILE)
 SFX_READER_DIR = "models/paddleocr_vl_1.6_manga_lora"
-SFX_READER_REVISION = "26292839d1469c14212a12a1e01b5b1fe01bff15"
-"""Hub commit of the reader the package ships — **v3** (``vl16_b2_norm4``:
-spaced targets + the glyph fold, heart as the single-token ``♥``; v2
-``4caffe65``, v1 ``3b5fe022``). The file names never changed across the three,
-so the catalog row pins this and stamps it under the dest — an install that
-predates the pin re-fetches instead of reading v1 under a v3 name."""
+SFX_READER_REVISION = "9fe3d41e3c98b98a664dbe01d7c7b567e98e8d9f"
+"""Hub commit of the reader the package ships — **v4** (``vl16_p2b_kozh``:
+tower LoRA + LM fine-tune, KO / ZH restored to the stock level; v3
+``26292839``, v2 ``4caffe65``, v1 ``3b5fe022``, all at the repo root). The
+adapter file names are shared with v3, so the catalog row pins this and stamps
+it under the dest — an install that predates the pin re-fetches instead of
+reading a v3 adapter under a v4 name."""
 
 # The AnimeText text-block detector: a YOLO12-l trained on deepghs/AnimeText
 # (735k anime / manga pages, one class), the OCR stage's one detector.
