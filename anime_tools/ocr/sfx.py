@@ -9,7 +9,7 @@ PaddleOCR-VL-1.6 base with a LoRA on the vision tower + projector **and fully
 fine-tuned ERNIE decoder layers** (v4), trained on the Manga109-s COO
 onomatopoeia polygons plus a 1 : 1 replay of the ``<text>`` speech boxes
 (official COO book split) and 3,838 KO / ZH SFX crops pseudo-labelled by the
-stock model (COO test SFX exact 85.0 %, KO 26 / 48 and ZH 29 / 48 against
+stock model (COO test SFX exact 86.9 %, KO 26 / 48 and ZH 30 / 48 against
 stock's 21 / 31 — ``sorryhyun/paddleocr-vl-1.6-manga-lora`` ``v4/``,
 Manga109-s attribution on the card). It reads ``♡`` / ``ー`` / small kana
 natively, vertical or horizontal, so it needs no symbol patching.

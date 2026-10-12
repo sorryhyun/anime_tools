@@ -76,10 +76,11 @@ SFX_READER_ADAPTER_FILES = ("adapter_config.json", "adapter_model.safetensors")
 SFX_READER_LM_FILE = "lm.safetensors"
 SFX_READER_FILES = (*SFX_READER_ADAPTER_FILES, SFX_READER_LM_FILE)
 SFX_READER_DIR = "models/paddleocr_vl_1.6_manga_lora"
-SFX_READER_REVISION = "9fe3d41e3c98b98a664dbe01d7c7b567e98e8d9f"
+SFX_READER_REVISION = "926eafb13514baf26c8b3fea9eb4ed8c365013bf"
 """Hub commit of the reader the package ships — **v4** (``vl16_p2b_kozh``:
-tower LoRA + LM fine-tune, KO / ZH restored to the stock level; v3
-``26292839``, v2 ``4caffe65``, v1 ``3b5fe022``, all at the repo root). The
+tower LoRA + LM fine-tune, 2 epochs, KO / ZH restored to the stock level;
+the 1-epoch v4 was ``9fe3d41e``; v3 ``26292839``, v2 ``4caffe65``, v1
+``3b5fe022``, all at the repo root). The
 adapter file names are shared with v3, so the catalog row pins this and stamps
 it under the dest — an install that predates the pin re-fetches instead of
 reading a v3 adapter under a v4 name."""
