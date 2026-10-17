@@ -26,6 +26,7 @@ from anime_tools.captions.taxonomy import (
     is_rating_tag,
     strip_artist_prefix,
 )
+from anime_tools.contract import is_caption_sidecar
 from anime_tools.tagger.schema import (
     PEOPLE_COUNT_LABELS,
     RATINGS,
@@ -43,7 +44,8 @@ logger = logging.getLogger(__name__)
 
 
 def find_caption_files(roots: Sequence[Path]) -> list[Path]:
-    """Discover all ``.txt`` caption files under the given roots.
+    """Discover all ``.txt`` caption files under the given roots, skipping the
+    sidecars that also end in ``.txt`` (``contract.is_caption_sidecar``).
 
     Returns files in root order (sorted within each root for determinism); a
     stem appearing under multiple roots is *not* deduped here — that is
@@ -59,6 +61,7 @@ def find_caption_files(roots: Sequence[Path]) -> list[Path]:
                 p
                 for p in root.rglob("*.txt")
                 if not any(part.startswith(".") for part in p.parts)
+                and not is_caption_sidecar(p.name)
             )
         )
     return out

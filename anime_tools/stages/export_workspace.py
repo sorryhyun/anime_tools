@@ -1,9 +1,10 @@
 """Publish the workspace to the paths the trainer reads.
 
-Six artifact kinds, and where each lands:
+Seven artifact kinds, and where each lands:
 
 ``image``     ``--src/<dir>/<stem>.*``              → ``--out/resized/<dir>/<stem>.*``
 ``caption``   ``workspace/resized/<rel>.txt``       → ``--out/resized/<rel>.txt``
+``layout``    the published caption, as layout JSON → ``--out/resized/<rel>.layout.txt``
 ``variants``  ``workspace/resized/<rel>.variants.txt`` → beside the caption
 ``mask``      ``workspace/masks/<sub>/<stem>_mask.png`` → ``--out/masks/…``
 ``master``    ``workspace/master/<rel>.txt``        → ``--src/<rel>.txt``
@@ -55,6 +56,24 @@ carries the sidecar it read (``ocr``) and the text it publishes (``text``); the
 text is re-derived from disk whenever the row is decided, and a revert compares
 against the text recorded at the time.
 
+With ``caption_format`` ``layout_json`` (:attr:`ExportPaths.layout_kb` set)
+each ``caption`` row gets a ``layout`` row beside it: ``{stem}.layout.txt``
+(:data:`~anime_tools.contract.LAYOUT_JSON_SUFFIX`), the MOSS-Image layout-JSON
+prompt (:func:`~anime_tools.captions.layout_json.layout_json`) of exactly the
+text the caption row publishes — OCR clauses included under ``combine_ocr`` —
+stripped, as the trainer strips the ``.txt`` it would otherwise convert. It is
+always a render, decided and reverted the way a combined row is (``text``
+re-derived at decide time, revert compared against the recorded text), and it
+carries the tag CSV it typed the caption against (``tag_csv``). The ``.txt``
+stays the Anima caption. No ``layout`` row for ``variants`` or the excluded
+mirror. Exporting again as ``anima`` takes an earlier ``.layout.txt`` beside a
+caption it publishes away: a ``layout`` row with :attr:`ExportRow.remove` set,
+listed by a dry run, deleted by ``--apply``, its text kept in ``before`` so the
+revert writes it back. It is Export's own derived artifact, and a stale one
+would be read: the trainer prefers the sidecar while it is not older than the
+``.txt``, and a ``.txt`` re-copied with its source's mtime can be older. That is
+the one file Export deletes.
+
 With ``sidecars_only`` (:attr:`ExportPaths.images` off) no pixels publish at
 all: no ``image`` rows and no excluded mirror, only the decisions -- captions,
 variants, masks, the master and the index. The trainer then resizes from
@@ -87,11 +106,12 @@ import shutil
 from collections import Counter
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
+from functools import lru_cache
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 from anime_tools import workspace as WS
-from anime_tools._env import resolve_path
+from anime_tools._env import curation_home, resolve_path
 from anime_tools._walk import IMAGE_EXTENSIONS, sibling_image, suffix_key, walk_images
 from anime_tools.captions._sidecar import render_rows, sidecar_header
 from anime_tools.captions.ocr_sidecar import (
@@ -105,6 +125,7 @@ from anime_tools.captions.variants import (
     read_variants_sidecar,
     variants_sidecar_path,
 )
+from anime_tools.contract import LAYOUT_JSON_SUFFIX
 from anime_tools.masking._masks import mask_name, mask_path_for
 from anime_tools.stages._progress import make_progress
 from anime_tools.stages._report import (
@@ -116,14 +137,14 @@ from anime_tools.stages._report import (
 if TYPE_CHECKING:
     from anime_tools.stages.requests import ExportRequest
 
-KINDS = ("image", "caption", "variants", "mask", "master", "index")
+KINDS = ("image", "caption", "layout", "variants", "mask", "master", "index")
 """Every artifact kind, in the order :func:`plan_export` emits them per image."""
 
-TEXT_KINDS = frozenset({"caption", "variants", "master", "index"})
+TEXT_KINDS = frozenset({"caption", "layout", "variants", "master", "index"})
 """Kinds compared (and reverted) by content rather than by stat. Captions are
 small enough for a byte compare; pixels go by ``(size, mtime_ns)``."""
 
-COMBINE_KINDS = frozenset({"caption", "variants"})
+COMBINE_KINDS = frozenset({"caption", "layout", "variants"})
 """The kinds ``combine_ocr`` renders with the text clause attached — what the
 trainer encodes. The master is hand-written and stays so; the index carries no
 caption text."""
@@ -164,6 +185,10 @@ class ExportPaths:
     """Publish the images (and the excluded mirror), or only the sidecars
     beside where they would land. Off is ``--sidecars_only``; ``cap`` and
     ``webp`` then have nothing to shape."""
+    layout_kb: Path | None = None
+    """The danbooru tag CSV a ``layout`` row types its caption against, or
+    ``None`` to publish no ``{stem}.layout.txt``. Set by ``--caption_format
+    layout_json``."""
 
 
 WEBP_QUALITY = 95
@@ -190,8 +215,11 @@ class ExportRow:
     """The glyph floor the combine held the sidecar's lines to; on the row for
     the same reason as ``ocr_min_det``."""
     text: str = ""
-    """What a combined row publishes — the source with the text clause attached.
-    Empty for a verbatim copy, whose bytes are the source's."""
+    """What a combined or ``layout`` row publishes — the source with the text
+    clause attached, or the layout JSON of the published caption. Empty for a
+    verbatim copy, whose bytes are the source's."""
+    tag_csv: str = ""
+    """The tag CSV a ``layout`` row typed the caption against."""
     excluded: bool = False
     """Came out of the excluded tree, so it publishes under ``<out>/_excluded/``
     rather than into the tree the trainer reads. The kind is the live one, so
@@ -209,10 +237,20 @@ class ExportRow:
     fit: str = ""
     """A ``mask`` row's resized image — the geometry the mask was drawn at, and
     whose ``anima_resize_*`` keys say how the resize cropped."""
+    remove: bool = False
+    """Takes the destination away rather than publishing to it: a ``layout``
+    row for a ``{stem}.layout.txt`` an earlier ``layout_json`` export left
+    beside a caption this ``anima`` export publishes. ``before`` holds its text,
+    which is what the revert writes back."""
 
     @property
     def combined(self) -> bool:
         return bool(self.ocr)
+
+    @property
+    def derived(self) -> bool:
+        """Publishes :attr:`text` rather than the source's bytes."""
+        return self.combined or self.kind == "layout"
 
     def to_dict(self) -> dict[str, object]:
         return dict(vars(self))
@@ -223,6 +261,8 @@ class ExportStats:
     rows: int = 0
     created: int = 0
     overwrote: int = 0
+    removed: int = 0
+    """Stale ``{stem}.layout.txt`` files taken away (:attr:`ExportRow.remove`)."""
     combined: int = 0
     """Rows published (or, dry, to be published) with the OCR clause attached."""
     excluded: int = 0
@@ -244,6 +284,7 @@ class ExportStats:
             "rows": self.rows,
             "created": self.created,
             "overwrote": self.overwrote,
+            "removed": self.removed,
             "combined": self.combined,
             "excluded": self.excluded,
             "capped": self.capped,
@@ -270,11 +311,36 @@ def _combine(kind: str, src: Path, lines, *, min_det: float, min_glyph: float) -
     return render_rows(sidecar_header("variants"), rows)
 
 
+@lru_cache(maxsize=2)
+def _tag_kb(path: str):
+    from anime_tools.captions.correction import load_tag_knowledge_base
+
+    return load_tag_knowledge_base(path)
+
+
 def _derive(row: ExportRow) -> None:
-    """Refresh a combined row's ``text`` from the source and sidecar as they
+    """Refresh a derived row's ``text`` from the source and sidecar as they
     are on disk now. A sidecar that has gone away publishes the caption with
-    no text clause — the OCR pass deletes it when it finds nothing."""
-    if row.combined:
+    no text clause — the OCR pass deletes it when it finds nothing.
+
+    A ``layout`` row derives the caption text its ``caption`` row publishes
+    (combined or verbatim, by the same ``ocr``), then its layout JSON."""
+    if row.kind == "layout":
+        from anime_tools.captions.layout_json import layout_json
+
+        caption = (
+            _combine(
+                "caption",
+                Path(row.src),
+                read_ocr(Path(row.ocr)),
+                min_det=row.ocr_min_det,
+                min_glyph=row.ocr_min_glyph,
+            )
+            if row.combined
+            else Path(row.src).read_text(encoding="utf-8")
+        )
+        row.text = layout_json(caption.strip(), _tag_kb(row.tag_csv))
+    elif row.combined:
         row.text = _combine(
             row.kind,
             Path(row.src),
@@ -430,7 +496,7 @@ def _render_mask(row: ExportRow, dst: Path) -> None:
 
 def _published(row: ExportRow) -> bytes:
     """The bytes this row puts at its destination."""
-    if row.combined:
+    if row.derived:
         return row.text.encode("utf-8")
     return Path(row.src).read_bytes()
 
@@ -460,6 +526,14 @@ def _decide(row: ExportRow) -> ExportRow:
     """Fill in ``status`` (and ``before``) from what is on disk right now."""
     src, dst = Path(row.src), Path(row.dst)
     text = row.kind in TEXT_KINDS
+    if row.remove:
+        try:
+            row.before = dst.read_text(encoding="utf-8", newline="")
+            row.status = "would-remove"
+        except OSError:
+            # Already gone: the destination is what this row asks for.
+            row.status = "identical"
+        return row
     if not src.is_file():
         row.status = "missing-source"
         return row
@@ -488,10 +562,11 @@ def _row(
     min_det: float = DEFAULT_MIN_DET,
     min_glyph: float = DEFAULT_MIN_GLYPH,
     excluded: bool = False,
+    tag_csv: Path | None = None,
 ) -> ExportRow:
     """One row, decided. ``ocr`` (the image's sidecar, when combining) marks it
     combined only if the sidecar exists — an image with no text publishes its
-    caption verbatim, as a plain copy."""
+    caption verbatim, as a plain copy. ``tag_csv`` is a ``layout`` row's KB."""
     combined = ocr is not None and kind in COMBINE_KINDS and ocr.is_file()
     return _decide(
         ExportRow(
@@ -503,8 +578,15 @@ def _row(
             ocr_min_det=min_det,
             ocr_min_glyph=min_glyph,
             excluded=excluded,
+            tag_csv=str(tag_csv) if tag_csv is not None else "",
         )
     )
+
+
+def layout_sidecar_path(caption: Path) -> Path:
+    """``{stem}.layout.txt`` beside a ``{stem}.txt`` caption — the spelling the
+    trainer's MOSS cache reads (``caption.with_suffix(LAYOUT_JSON_SUFFIX)``)."""
+    return caption.with_suffix(LAYOUT_JSON_SUFFIX)
 
 
 def _mask_source(masks: Path, images: Path, image: Path, rel: Path) -> Path:
@@ -565,17 +647,46 @@ def plan_export(paths: ExportPaths) -> list[ExportRow]:
         ocr = ocr_sidecar_path(paths.ocr / rel) if paths.ocr is not None else None
         caption = _caption_source(paths, image, rel)
         if caption is not None:
+            out_caption = out_image.with_suffix(".txt")
             rows.append(
                 _row(
                     rel,
                     "caption",
                     caption,
-                    out_image.with_suffix(".txt"),
+                    out_caption,
                     ocr=ocr,
                     min_det=paths.ocr_min_det,
                     min_glyph=paths.ocr_min_glyph,
                 )
             )
+            out_layout = layout_sidecar_path(out_caption)
+            if paths.layout_kb is not None:
+                rows.append(
+                    _row(
+                        rel,
+                        "layout",
+                        caption,
+                        out_layout,
+                        ocr=ocr,
+                        min_det=paths.ocr_min_det,
+                        min_glyph=paths.ocr_min_glyph,
+                        tag_csv=paths.layout_kb,
+                    )
+                )
+            elif out_layout.is_file():
+                # An earlier layout_json export's sidecar, which the trainer
+                # would read over this caption: taken away, kept in `before`.
+                rows.append(
+                    _decide(
+                        ExportRow(
+                            rel=rel.as_posix(),
+                            kind="layout",
+                            src="",
+                            dst=str(out_layout),
+                            remove=True,
+                        )
+                    )
+                )
 
         variants = variants_sidecar_path(image.with_suffix(".txt"))
         if variants.is_file():
@@ -658,7 +769,8 @@ def stale_siblings(rows: list[ExportRow]) -> list[Path]:
 
     The ``.png`` an earlier export published sits beside the ``.jpg`` original
     (or the ``.webp``) this one does, and the trainer refuses a folder with two
-    images of one stem. Export never deletes, so these are named instead.
+    images of one stem. An image is not Export's to delete (only its own
+    layout-JSON sidecars are), so these are named instead.
     """
     exts = dict.fromkeys(suffix_key(Path(f"x{e}")) for e in IMAGE_EXTENSIONS)
     out: list[Path] = []
@@ -671,6 +783,22 @@ def stale_siblings(rows: list[ExportRow]) -> list[Path]:
             if ext != suffix_key(dst) and other.is_file():
                 out.append(other)
     return out
+
+
+def resolve_layout_kb() -> Path:
+    """The danbooru tag CSV ``--caption_format layout_json`` types captions
+    against — the curation home's, the lookup the trainer's own conversion
+    makes. A missing one is a ``FileNotFoundError`` naming the download."""
+    from anime_tools.captions.correction import find_tag_csv
+
+    csv = find_tag_csv(curation_home())
+    if csv is None:
+        raise FileNotFoundError(
+            "layout_json needs the danbooru tag CSV (danbooru_tags_classified.csv): "
+            "run `python -m anime_tools.downloads danbooru_tags` first "
+            "(or the GUI's Settings > Models > Danbooru tag KB)."
+        )
+    return csv
 
 
 def _excluded_rows(paths: ExportPaths) -> list[ExportRow]:
@@ -756,8 +884,12 @@ def export_one(row: ExportRow, *, apply: bool, decided: bool = False) -> str:
     if not apply:
         return row.status
     dst = Path(row.dst)
+    if row.remove:
+        dst.unlink()
+        row.status = "removed"
+        return row.status
     dst.parent.mkdir(parents=True, exist_ok=True)
-    if row.combined:
+    if row.derived:
         # `_published` is the comparison, so it is also the write: text mode
         # translates LF to CRLF on Windows, and then no combined row with a
         # newline in it (every variants sidecar) ever compares identical --
@@ -792,7 +924,7 @@ def _run(
     stats = ExportStats(rows=len(rows))
     for i, row in enumerate(rows, 1):
         status = export_one(row, apply=apply, decided=decided)
-        if status in ("created", "overwrote"):
+        if status in ("created", "overwrote", "removed"):
             stats.by_kind[row.kind] += 1
             stats.combined += row.combined
             stats.excluded += row.excluded
@@ -834,7 +966,7 @@ class RevertStats:
         }
 
 
-_REVERT = {"created": "remove", "overwrote": "restore"}
+_REVERT = {"created": "remove", "overwrote": "restore", "removed": "recreate"}
 """Apply status → what putting that row back means. Anything else published
 nothing and so has nothing to undo."""
 
@@ -849,9 +981,10 @@ ROW_FIELDS = (
     "text",
     "ref",
     "fit",
+    "tag_csv",
 )
-"""The text fields a report round-trips. ``excluded``, ``cap`` and ``render``
-are read separately, being the fields that are not strings."""
+"""The text fields a report round-trips. ``excluded``, ``cap``, ``render`` and
+``remove`` are read separately, being the fields that are not strings."""
 
 
 def rows_from_report(report: Mapping[str, object]) -> list[ExportRow]:
@@ -863,6 +996,7 @@ def rows_from_report(report: Mapping[str, object]) -> list[ExportRow]:
             excluded=bool(r.get("excluded")),
             cap=int(r.get("cap") or 0),
             render=bool(r.get("render")),
+            remove=bool(r.get("remove")),
         )
         for r in (raw if isinstance(raw, list) else [])
         if isinstance(r, Mapping)
@@ -890,6 +1024,8 @@ def revert_export(
         dst = Path(row.dst)
         if verb is None:
             row.status = "nothing-to-undo"
+        elif verb == "recreate":
+            _recreate(row, dst, apply=apply, stats=stats)
         elif not dst.exists():
             row.status = "already-undone"
         elif not _same(row, dst):
@@ -912,11 +1048,31 @@ def revert_export(
     return rows, stats
 
 
+def _recreate(row: ExportRow, dst: Path, *, apply: bool, stats: RevertStats) -> None:
+    """Put back a file a ``remove`` row deleted, from the text it recorded —
+    unless something has been written there since."""
+    if dst.exists():
+        try:
+            same = dst.read_bytes() == row.before.encode("utf-8")
+        except OSError:
+            same = False
+        row.status = "already-undone" if same else "drifted"
+    elif not apply:
+        row.status = "would-recreate"
+    else:
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        dst.write_bytes(row.before.encode("utf-8"))
+        row.status = "restored"
+        stats.restored += 1
+
+
 # ---- the stage runner ----------------------------------------------------
 
 
 def run_export(req: ExportRequest):
     """Publish the workspace under ``out``. Returns ``(rows, stats)``."""
+    # Before the walk: a missing KB would otherwise surface on the first row.
+    layout_kb = resolve_layout_kb() if req.caption_format == "layout_json" else None
     paths = ExportPaths(
         resized=resolve_path(req.dst),
         masks=resolve_path(req.masks),
@@ -931,6 +1087,7 @@ def run_export(req: ExportRequest):
         cap=req.resize_cap_tokens if req.resize_cap else 0,
         webp=req.webp,
         images=not req.sidecars_only,
+        layout_kb=layout_kb,
     )
     if not paths.resized.is_dir():
         raise FileNotFoundError(
@@ -957,6 +1114,8 @@ def run_export(req: ExportRequest):
             "resize_cap": paths.cap,
             "webp": paths.webp,
             "sidecars_only": req.sidecars_only,
+            "caption_format": req.caption_format,
+            "tag_csv": str(layout_kb) if layout_kb is not None else None,
             "stale": [str(p) for p in stale],
             "stats": stats.to_dict(),
             "rows": [r.to_dict() for r in rows],
@@ -967,12 +1126,19 @@ def run_export(req: ExportRequest):
     excluded = f", {stats.excluded} under _excluded/" if stats.excluded else ""
     capped = f", {stats.capped} downscaled to {paths.cap} tokens" if paths.cap else ""
     webp = f", {stats.rendered} re-encoded" if paths.webp else ""
-    # Named, not deleted: Export removes nothing it did not write this run.
+    layout = (
+        f", {stats.by_kind['layout']} layout JSON"
+        if paths.layout_kb is not None
+        else ""
+    )
+    removed = f", {stats.removed} stale layout JSON removed" if stats.removed else ""
+    # Named, not deleted: the only files Export removes are its own stale
+    # layout-JSON sidecars (`ExportRow.remove`).
     for p in stale:
         print(f"  stale: {p} shares its stem with a published image — remove it")
     print_dry_run_footer(
         req.apply,
-        f"published: {stats.created} created, "
-        f"{stats.overwrote} overwritten{combined}{excluded}{capped}{webp}",
+        f"published: {stats.created} created, {stats.overwrote} overwritten"
+        f"{combined}{excluded}{capped}{webp}{layout}{removed}",
     )
     return rows, stats

@@ -136,7 +136,9 @@ Each of these is implemented in one package but bites from any of them.
 ## Shared infra (stdlib-level leaves, not trainer imports)
 
 - `contract.py` (pinned torch-free): the constants both sides of the seam spell — autotag
-  stdio sentinels and modes, tagger checkpoint file sets, `REPLAY_REPORT_NAME`, `GATE_ATTR` (the
+  stdio sentinels and modes, tagger checkpoint file sets, Export's
+  `EXPORT_CAPTION_FORMATS` + `LAYOUT_JSON_SUFFIX`, `CAPTION_SIDECAR_SUFFIXES` + `is_caption_sidecar`
+  (the `{stem}.*.txt` files that are not captions), `REPLAY_REPORT_NAME`, `GATE_ATTR` (the
   stamp the generated parser leaves on a drawer's argparse group), `ReplaySpec` + `REPLAY_SHAPES`,
   `CONTRACT_VERSION`. Anything the GUI server or the trainer needs without importing a stage goes
   here; the stage re-exports it.

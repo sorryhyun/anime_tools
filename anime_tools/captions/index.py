@@ -42,6 +42,7 @@ from anime_tools._walk import (
 from anime_tools.captions.position_clauses import parse_caption
 from anime_tools.captions.taxonomy import is_artist_tag, is_count_tag, is_rating_tag
 from anime_tools.captions.vocab_io import load_vocab, names_by_category
+from anime_tools.contract import is_caption_sidecar
 
 DEFAULT_VOCAB = "models/captioners/anima-tagger-dbv4/vocab.json"
 # A contract artifact, published under the export tree's ``captions/`` by Export.
@@ -141,7 +142,9 @@ def _vocab_typed_non_copyright(tag: str, vsets: dict[str, set[str]]) -> bool:
 
 
 def _iter_captions(src: Path, path_pattern: str | None = None):
-    """Yield ``(key, rel_path, text)`` for every ``.txt`` under ``src``.
+    """Yield ``(key, rel_path, text)`` for every ``.txt`` caption under ``src`` —
+    the sidecars that also end in ``.txt`` (``contract.is_caption_sidecar``) are
+    not captions.
 
     ``--src`` is often a symlink to a tree of (possibly symlinked) artist
     dirs, so the root is resolved and walked with ``followlinks=True``. The key
@@ -150,7 +153,7 @@ def _iter_captions(src: Path, path_pattern: str | None = None):
     root = Path(os.path.realpath(src))
     for dirpath, _dirnames, filenames in safe_walk(root, followlinks=True):
         for name in filenames:
-            if not name.endswith(".txt"):
+            if not name.endswith(".txt") or is_caption_sidecar(name):
                 continue
             abs_path = Path(dirpath) / name
             if path_pattern and path_pattern != "*":

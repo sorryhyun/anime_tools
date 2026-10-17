@@ -31,7 +31,11 @@ from anime_tools._device import DEVICE_HELP
 from anime_tools._request import READ, WRITE, Request, arg
 from anime_tools.buckets import ALLOWED_TARGET_RES
 from anime_tools.captions.tag_drop_groups import drop_group_names, parse_drop_groups
-from anime_tools.contract import AUTOTAG_MODES
+from anime_tools.contract import (
+    AUTOTAG_MODES,
+    EXPORT_CAPTION_FORMATS,
+    LAYOUT_JSON_SUFFIX,
+)
 from anime_tools.downloads import DEFAULT_SAM3_CHECKPOINT, DEFAULT_SUBJECT_PROMPT_EMBED
 from anime_tools.masking._prompts import (
     CHECKPOINT_HELP,
@@ -997,7 +1001,8 @@ class ExportRequest(StageRequest):
     excluded is copied beside them under ``<out>/_excluded/``. The image each
     resized one stands for publishes as its original under ``--src`` —
     downscaled to ``--resize_cap_tokens`` with ``--resize_cap``, re-encoded as
-    WebP with ``--webp``.
+    WebP with ``--webp``. ``--caption_format layout_json`` also publishes each
+    caption's MOSS-Image layout-JSON prompt beside it as ``{stem}.layout.txt``.
 
     Takes no ``--path_pattern``, which is why it is not a
     :class:`DatasetRequest`: an export is the workspace or it is a partial
@@ -1109,12 +1114,26 @@ class ExportRequest(StageRequest):
         "itself and reads exclusions from the ledger; each mask is fitted to "
         "its original at full size. Excludes --resize_cap and --webp",
     )
+    caption_format: str = arg(
+        "anima",
+        choices=EXPORT_CAPTION_FORMATS,
+        help="anima: publish {stem}.txt only (default). layout_json: also publish "
+        f"{{stem}}{LAYOUT_JSON_SUFFIX} beside it — the MOSS-Image layout-JSON "
+        "prompt of the published caption (OCR clauses included under "
+        "--combine_ocr), which the trainer's MOSS cache uses instead of "
+        "converting; needs the danbooru tag CSV. The .txt stays Anima format "
+        "either way",
+    )
     apply: bool = arg(
         False, help="Copy for real (default: list what would be copied and stop)"
     )
     report_dir: str = _report_dir(f"{WS.REPORTS}/export")
 
     def __post_init__(self) -> None:
+        if self.caption_format not in EXPORT_CAPTION_FORMATS:
+            raise ValueError(
+                f"--caption_format must be one of {list(EXPORT_CAPTION_FORMATS)}"
+            )
         if self.resize_cap and self.resize_cap_tokens <= 0:
             raise ValueError(
                 f"--resize_cap_tokens must be positive, got {self.resize_cap_tokens}"

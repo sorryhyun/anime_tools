@@ -622,3 +622,193 @@ def test_a_gui_master_edit_is_what_fills_the_overlay(tmp_path):
 
     publish(paths, apply=True)
     assert (paths.src / "a.txt").read_text(encoding="utf-8") == "1girl, solo, smile"
+
+
+# ---- the layout-JSON sidecar ------------------------------------------------
+
+
+@pytest.fixture
+def tag_csv(tmp_path):
+    path = tmp_path / "tags.csv"
+    path.write_text(
+        """name,category,post_count,description
+1girl,0,10,"[인물 > 인원수] count"
+1boy,0,10,"[인물 > 인원수] count"
+solo,0,10,"[인물 > 인원수] count"
+cat,0,10,"[동물 > 고양이] general"
+""",
+        encoding="utf-8",
+    )
+    return path
+
+
+@pytest.fixture
+def layout(ws, tag_csv):
+    """``ws`` exported with ``--caption_format layout_json``."""
+    return ExportPaths(**{**vars(ws), "layout_kb": tag_csv})
+
+
+def _trainer_layout(caption: Path, tag_csv: Path) -> str:
+    """What the trainer's MOSS cache converts a published ``.txt`` into."""
+    from anime_tools.captions.correction import load_tag_knowledge_base
+    from anime_tools.captions.layout_json import layout_json
+
+    raw = caption.read_text(encoding="utf-8").strip()
+    return layout_json(raw, load_tag_knowledge_base(tag_csv))
+
+
+def test_layout_json_publishes_beside_the_caption(layout, tag_csv):
+    """Byte for byte what the trainer would convert the published `.txt` into,
+    for a revised caption and for one the ladder read off the master; the
+    `.txt` itself stays the Anima caption."""
+    from anime_tools.contract import LAYOUT_JSON_SUFFIX
+
+    _txt(layout.src / "sub" / "b.txt", "1boy, solo\n")
+    rows, stats = publish(layout, apply=True)
+    assert sorted(r.rel for r in _by(rows, "layout")) == ["a.png", "sub/b.png"]
+    for stem in ("a", "sub/b"):
+        caption = layout.out / "resized" / f"{stem}.txt"
+        sidecar = layout.out / "resized" / f"{stem}{LAYOUT_JSON_SUFFIX}"
+        got = sidecar.read_text(encoding="utf-8")
+        assert got == _trainer_layout(caption, tag_csv)
+        assert not got.endswith("\n")
+    a = json.loads((layout.out / "resized" / "a.layout.txt").read_text("utf-8"))
+    assert a["items"] == [{"label": "subject", "position": "left", "caption": "cat"}]
+    assert (layout.out / "resized" / "a.txt").read_text(
+        encoding="utf-8"
+    ) == "1girl, solo. On the left, cat."
+    assert stats.by_kind["layout"] == 2
+
+
+def test_anima_publishes_no_layout_row(ws):
+    rows, _ = publish(ws, apply=True)
+    assert _by(rows, "layout") == []
+    assert not list(ws.out.rglob("*.layout.txt"))
+
+
+def test_layout_json_under_combine_ocr_carries_the_text_items(ocr, tag_csv):
+    paths = ExportPaths(**{**vars(ocr), "layout_kb": tag_csv})
+    rows, stats = publish(paths, apply=True)
+    (row,) = _by(rows, "layout")
+    assert row.combined and row.ocr
+    got = (paths.out / "resized" / "a.layout.txt").read_text(encoding="utf-8")
+    assert got == _trainer_layout(paths.out / "resized" / "a.txt", tag_csv)
+    texts = [i["text"] for i in json.loads(got)["items"] if i["label"] == "text"]
+    assert texts == ["大丈夫", "本当に"]
+    # caption, variants and the layout row each carry the clause.
+    assert stats.combined == 3
+
+
+def test_layout_json_twice_publishes_nothing_the_second_time(layout):
+    publish(layout, apply=True)
+    rows, stats = publish(layout, apply=True)
+    assert stats.created == stats.overwrote == 0
+    assert {r.status for r in _by(rows, "layout")} == {"identical"}
+
+
+def test_a_changed_caption_republishes_its_layout_and_reverts(layout, tag_csv):
+    publish(layout, apply=True)
+    first = (layout.out / "resized" / "a.layout.txt").read_text(encoding="utf-8")
+    _txt(layout.resized / "a.txt", "1girl, cat")
+    rows, _ = publish(layout, apply=True)
+    (row,) = _by(rows, "layout")
+    assert row.status == "overwrote" and row.before == first
+    sidecar = layout.out / "resized" / "a.layout.txt"
+    assert sidecar.read_text(encoding="utf-8") == _trainer_layout(
+        layout.out / "resized" / "a.txt", tag_csv
+    )
+    # Undo reads the rows back out of the report, `tag_csv` included.
+    again = rows_from_report(
+        json.loads(json.dumps({"rows": [r.to_dict() for r in rows]}))
+    )
+    assert [r.to_dict() for r in again] == [r.to_dict() for r in rows]
+    _, stats = revert_export(again, apply=True)
+    assert sidecar.read_text(encoding="utf-8") == first
+    assert stats.skipped.get("drifted", 0) == 0
+
+
+def test_layout_json_skips_the_excluded_mirror_and_rides_sidecars_only(layout):
+    from dataclasses import replace
+
+    excluded = layout.resized.parent / "_excluded"
+    _txt(excluded / "resized" / "c.txt", "gone")
+    write_png(excluded / "resized" / "c.png")
+    rows, _ = publish(replace(layout, excluded=excluded), apply=True)
+    assert [r.rel for r in _by(rows, "caption") if r.excluded] == ["c.png"]
+    assert not any(r.excluded for r in _by(rows, "layout"))
+    assert not list((layout.out / "_excluded").rglob("*.layout.txt"))
+
+    out = layout.out.parent / "sidecars"
+    rows, _ = publish(replace(layout, out=out, images=False), apply=True)
+    assert not _by(rows, "image") and len(_by(rows, "layout")) == 1
+    assert (out / "resized" / "a.layout.txt").is_file()
+
+
+def test_exporting_as_anima_removes_the_layout_and_revert_restores_it(layout, ws):
+    """A `.layout.txt` beside a caption an `anima` export publishes is taken
+    away — the trainer would read it over the `.txt` — and the revert writes
+    back the text the report kept."""
+    publish(layout, apply=True)
+    sidecar = ws.out / "resized" / "a.layout.txt"
+    published = sidecar.read_text(encoding="utf-8")
+
+    rows, _ = publish(ws, apply=False)
+    (row,) = _by(rows, "layout")
+    assert row.remove and row.status == "would-remove" and row.before == published
+    assert sidecar.is_file()
+
+    rows, stats = publish(ws, apply=True)
+    assert not sidecar.exists() and stats.removed == 1
+    assert [r.status for r in _by(rows, "layout")] == ["removed"]
+    # Nothing else beside it is touched, and a second export has nothing to do.
+    assert (ws.out / "resized" / "a.txt").is_file()
+    assert _by(publish(ws, apply=True)[0], "layout") == []
+
+    again = rows_from_report(
+        json.loads(json.dumps({"rows": [r.to_dict() for r in rows]}))
+    )
+    assert [r.to_dict() for r in again] == [r.to_dict() for r in rows]
+    _, rstats = revert_export(again, apply=True)
+    assert sidecar.read_text(encoding="utf-8") == published
+    assert rstats.skipped.get("drifted", 0) == 0
+    # Already back: a second revert leaves it alone.
+    _, rstats = revert_export(rows_from_report({"rows": [r.to_dict() for r in rows]}))
+    assert rstats.skipped["already-undone"] == 1
+
+
+def test_anima_removes_no_layout_json_but_its_own(layout, ws):
+    """Only a `.layout.txt` beside a caption this export publishes in the live
+    tree: one under `_excluded/` or beside an uncaptioned image stays."""
+    from dataclasses import replace
+
+    stray = ws.out / "resized" / "sub" / "b.layout.txt"
+    archived = ws.out / "_excluded" / "resized" / "c.layout.txt"
+    _txt(stray, "{}")
+    _txt(archived, "{}")
+    excluded = ws.resized.parent / "_excluded"
+    _txt(excluded / "resized" / "c.txt", "gone")
+    write_png(excluded / "resized" / "c.png")
+    rows, _ = publish(replace(ws, excluded=excluded), apply=True)
+    assert [r.rel for r in _by(rows, "layout")] == []
+    assert stray.is_file() and archived.is_file()
+
+
+def test_caption_format_is_validated_and_a_missing_kb_fails_early(
+    tmp_path, monkeypatch
+):
+    from anime_tools.captions import correction
+    from anime_tools.stages.export_workspace import run_export
+
+    assert ExportRequest().caption_format == "anima"
+    with pytest.raises(ValueError, match="caption_format"):
+        ExportRequest(caption_format="moss")
+    monkeypatch.setattr(correction, "find_tag_csv", lambda *a, **k: None)
+    req = ExportRequest(
+        dst=str(tmp_path / "missing"),
+        out=str(tmp_path / "o"),
+        caption_format="layout_json",
+    )
+    with pytest.raises(
+        FileNotFoundError, match="layout_json needs the danbooru tag CSV"
+    ):
+        run_export(req)

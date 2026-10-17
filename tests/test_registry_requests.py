@@ -215,6 +215,7 @@ CASES: dict[str, Request] = {
         out="o",
         resize_cap=True,
         webp=True,
+        caption_format="layout_json",
         apply=True,
         report_dir="rep",
     ),

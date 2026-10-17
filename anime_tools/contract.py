@@ -34,6 +34,38 @@ AUTOTAG_ERROR_PREFIX = "ANIMA_AUTOTAG_ERROR\t"
 AUTOTAG_MODES = ("missing", "merge", "overwrite")
 """``--mode``: only ``missing`` is non-destructive (see ``docs/anima_tagger.md``)."""
 
+# --- Export's published caption formats (``stages/export_workspace.py``) ------
+EXPORT_CAPTION_FORMATS = ("anima", "layout_json")
+"""``--caption_format``: ``anima`` publishes ``{stem}.txt`` only; ``layout_json``
+also publishes ``{stem}`` + :data:`LAYOUT_JSON_SUFFIX` beside it. The ``.txt``
+is the Anima caption under both."""
+LAYOUT_JSON_SUFFIX = ".layout.txt"
+"""``{stem}.layout.txt``, beside the published ``{stem}.txt``: the MOSS-Image
+layout-JSON prompt of that caption — ``captions.layout_json.layout_json(text,
+kb)`` of the ``.txt``'s stripped text, UTF-8, no trailing newline. The trainer's
+MOSS cache reads it instead of converting the caption itself. It ends in
+``.txt``, so a caption walk must skip it (:data:`CAPTION_SIDECAR_SUFFIXES`)."""
+
+# --- caption sidecars ---------------------------------------------------------
+CAPTION_SIDECAR_SUFFIXES = (
+    ".variants.txt",
+    ".history.txt",
+    ".ocr.txt",
+    LAYOUT_JSON_SUFFIX,
+)
+"""The ``{stem}<suffix>`` files that sit beside a ``{stem}.txt`` caption and end
+in ``.txt`` without being one: variants, history, OCR lines, the layout-JSON
+prompt. A walk that collects captions by suffix skips these
+(:func:`is_caption_sidecar`); ``tests/test_contract_sidecars.py`` pins the tuple
+to each owner's own constant."""
+
+
+def is_caption_sidecar(name: str) -> bool:
+    """Is the file ``name`` one of :data:`CAPTION_SIDECAR_SUFFIXES` rather than
+    a caption?"""
+    return name.lower().endswith(CAPTION_SIDECAR_SUFFIXES)
+
+
 # --- tagger checkpoint layout (``tagger/dbv4_meta.py``) -----------------------
 # Our half of the tagger — vocab / rules / groups / thresholds / sidecar — is
 # fetched into ``models/captioners/`` when a required file is missing.

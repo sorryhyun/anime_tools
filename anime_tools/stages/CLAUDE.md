@@ -115,8 +115,8 @@ caption exists.
 
 ## Export
 
-Export is the only thing that writes outside the workspace. Six artifact kinds
-(`image`/`caption`/`variants`/`mask`/`master`/`index`), each decided against the destination
+Export is the only thing that writes outside the workspace. Seven artifact kinds
+(`image`/`caption`/`layout`/`variants`/`mask`/`master`/`index`), each decided against the destination
 (`identical` by byte compare for text, `(size, mtime_ns)` for pixels). It always copies, takes no
 `--from_report`, and `revert_export` restores text it overwrote — an overwritten pixel reports
 `not-undoable`.
@@ -130,8 +130,8 @@ downscales an original over `--resize_cap_tokens` (default `_options.EXPORT_CAP_
 tier's 4200) to that token count at its aspect — decided
 from the header, so an image under it stays a byte copy — and `--webp` re-encodes every original
 not already WebP as `{stem}.webp`. A render is stamped with the source's mtime and compared by
-mtime + header size, so a re-export is still a stat and a header read. Export never deletes, so a
-stem that changed suffix since the last export (the old `.png` beside a new `.jpg` / `.webp`)
+mtime + header size, so a re-export is still a stat and a header read. Export does not delete an
+image, so a stem that changed suffix since the last export (the old `.png` beside a new `.jpg` / `.webp`)
 is named as `stale` in the report and the epilogue — the trainer refuses a folder with two images
 of one stem.
 
@@ -168,6 +168,31 @@ and `--ocr_min_glyph`, both recorded on the row), carries `ocr` + `text` in the
 report (`text` re-derived at decide time — a sidecar deleted since the plan publishes the caption
 bare; revert compares against the recorded text), and counts under `stats.combined`. Exporting
 again without the knob takes the clause back. The trainer must `make preprocess-te` after either.
+
+`--caption_format` (`contract.EXPORT_CAPTION_FORMATS`, a dropdown on the form; default `anima`)
+picks what a caption publishes as. `anima` is the `.txt` alone. `layout_json` adds a `layout` row
+per `caption` row: `{stem}.layout.txt` (`contract.LAYOUT_JSON_SUFFIX`) beside the `.txt`, holding
+exactly `captions.layout_json.layout_json(text.strip(), kb)` of the text the caption row publishes —
+after the OCR combine when that is on, so text lines become `text` items — UTF-8, no trailing
+newline. That is what the trainer's MOSS cache would convert the published `.txt` into, and it
+reads the sidecar instead. The row is a render like a combined one (`ExportRow.derived`: `text`
+re-derived at decide time, revert compared against the recorded text, `before` kept for restore)
+and carries the KB it typed against (`tag_csv`); the KB is the curation home's `find_tag_csv`,
+resolved before the walk so a missing CSV fails the run up front (`resolve_layout_kb`). The `.txt`
+stays Anima format. No `layout` row for `variants` or the excluded mirror; `--sidecars_only` keeps
+it (it is a sidecar). Re-exporting as `anima` takes an earlier `.layout.txt` beside a caption it
+publishes in the live tree away — a `layout` row with `remove` set: `would-remove` dry, `removed`
+on `--apply` (counted in `stats.removed` and the epilogue), its text kept in `before` so the revert
+writes it back (`recreate`; `already-undone` / `drifted` if something is there again). It is the one
+file Export deletes, because it is Export's own derived artifact and a stale one would be read: the
+trainer prefers the sidecar while it is not older than the `.txt`, and a `.txt` re-copied with its
+source's older mtime can be. Nothing under `_excluded/` and nothing beside an image with no
+published caption is touched.
+
+`.layout.txt` ends in `.txt`, so it is in `contract.CAPTION_SIDECAR_SUFFIXES` beside `.variants.txt`
+/ `.history.txt` / `.ocr.txt`; the two walks that collect captions by suffix
+(`captions/index.py::_iter_captions`, `tagger/cli/vocab.py::find_caption_files`) skip all four
+through `contract.is_caption_sidecar`. Every other caption read goes image → `{stem}.txt`.
 
 `--excluded_dir` adds a second, smaller plan over `workspace/_excluded/`
 (`anime_tools/exclude/`): `_excluded/resized` walked as the live resized tree is,

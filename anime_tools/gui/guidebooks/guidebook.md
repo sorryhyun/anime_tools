@@ -501,7 +501,8 @@ Reads the workspace. Writes `(export_target_dir)/` — and, for a revised master
 `(source_dir)/`.
 
 The only stage that writes outside the workspace. It publishes six artifact kinds — image,
-revised caption, variants sidecar, mask, revised master, caption index — each decided on
+revised caption, variants sidecar, mask, revised master, caption index (plus a layout-JSON
+caption when **Caption format** asks for one) — each decided on
 its own against its destination: identical files are skipped (byte compare for text, size and
 mtime for pixels), so re-exporting an unchanged dataset is a walk and a stat apiece. It always
 copies, never links, so the export tree survives the workspace being cleared.
@@ -521,6 +522,16 @@ the revised master and the caption index, and no `_excluded/` copy. Use it when 
 resizes from `(source_dir)/` itself: the captions land where its resized images will be, each
 mask is published at its original's full size, and exclusions reach the trainer through the
 workspace ledger. It cannot be combined with Resize cap or WebP.
+
+**Caption format** (`caption_format`) is a dropdown. `anima` (the default) publishes each
+caption as `{stem}.txt` and nothing else. `layout_json` also publishes `{stem}.layout.txt`
+beside it: the same caption converted into the MOSS-Image layout-JSON prompt (with the OCR text
+lines included when Combine OCR is on), which the trainer's MOSS-Image cache reads instead of
+converting the caption itself. The `.txt` stays in Anima format either way, so one export serves
+both model lines. It needs the Danbooru tag KB (Settings > Models); without it the run stops
+before copying anything. Switching back to `anima` removes the `.layout.txt` an earlier export
+left beside each caption it publishes, so the trainer cannot read an out-of-date one; Undo puts
+them back.
 
 From the CLI it is dry-run by default and lists what it would copy. In the GUI Run copies,
 and Undo restores the text it overwrote from the export's own ledger; an overwritten

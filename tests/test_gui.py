@@ -314,6 +314,25 @@ def test_a_shut_drawer_sends_none_of_its_knobs():
     assert argv == [*bound, "--combine_ocr", "--ocr_dir", "elsewhere"]
 
 
+def test_export_caption_format_is_a_saved_dropdown():
+    """``--caption_format`` is a select over the contract's formats, sent only
+    off its default, and kept in the saved form like Export's other knobs."""
+    from anime_tools.contract import EXPORT_CAPTION_FORMATS
+
+    _, sc = _stage("export")
+    (f,) = [f for f in sc["fields"] if f["dest"] == "caption_format"]
+    assert f["kind"] == "enum" and f["default"] == "anima"
+    assert tuple(f["choices"]) == EXPORT_CAPTION_FORMATS
+    assert not (f["root"] or f["setting"] or f["report"] or f["advanced"])
+    roots = {"src": "s", "dst": "d", "masks": "m", "master": "mm", "out": "o"}
+    bound = S.build_argv(sc, {}, roots=roots)
+    assert "--caption_format" not in bound
+    argv = S.build_argv(sc, {"caption_format": "layout_json"}, roots=roots)
+    assert argv == [*bound, "--caption_format", "layout_json"]
+    saved = {"caption_format": "layout_json", "sidecars_only": True}
+    assert S.form_values(sc["fields"], saved) == saved
+
+
 def test_export_destinations_are_bound_and_on_the_panel():
     """Export keeps ``--out`` / ``--index`` on its form as ``overridable`` paths
     (a per-run choice); every other bound field stays hidden."""

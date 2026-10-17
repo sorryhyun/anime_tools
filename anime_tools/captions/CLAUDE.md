@@ -38,7 +38,9 @@ or touching this package**. This file is the module map. Docs: `docs/position_ca
 - `layout_json.py` maps a caption onto MOSS-Image's layout-JSON prompt (`summary` meta /
   characters / series / artists / caption, one `items` entry per position clause and per
   text line), classifying through `correction.tag_kind`. The trainer's MOSS line encodes
-  it at cache and generate time; the caption on disk stays Anima-format.
+  it at cache and generate time; the caption on disk stays Anima-format. Export's
+  `--caption_format layout_json` publishes it beside the caption as `{stem}.layout.txt`
+  (`contract.LAYOUT_JSON_SUFFIX`), which the trainer reads instead of converting.
 - `clause_rewrite.py` / `clause_vocabulary.py` / `group_router.py` / `caption_layout.py` are the
   position-clause rewrite: which tag may enter which clause, and what moves out of the bag. Gate
   and group sets are data in `data/clause_vocabulary.yaml` (the trainer's
