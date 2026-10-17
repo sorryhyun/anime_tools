@@ -443,6 +443,15 @@ def _drop_clause_tags(clauses, drops: Callable[[str], bool] | None):
     return kept, tuple(dropped)
 
 
+def tag_kind(tag: str, kb: TagKnowledgeBase) -> str:
+    """The :func:`correct_tags` bucket ``tag`` sorts into under default options
+    (``quality`` / ``meta`` / ``year`` / ``safety`` / ``count`` / ``character``
+    / ``copyright`` / ``artist`` / ``general``); unknown to the KB is
+    ``general``."""
+    kind = _classify_tag(normalize_tag(tag), kb, CaptionCorrectionOptions())
+    return kind or "general"
+
+
 def _classify_tag(
     tag: str, kb: TagKnowledgeBase, options: CaptionCorrectionOptions
 ) -> str | None:

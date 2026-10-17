@@ -35,6 +35,10 @@ or touching this package**. This file is the module map. Docs: `docs/position_ca
   bucket ordering; `tag_drop_groups.py` is `--caption_drop_groups`; `index.py` builds
   `caption_index.json`; `shuffle.py` owns the `@no-artist` sentinel and Anima-prefix shuffle;
   `tokenizers.py` is the length check behind `CorrectRequest`'s randomize tokenizers.
+- `layout_json.py` maps a caption onto MOSS-Image's layout-JSON prompt (`summary` meta /
+  characters / series / artists / caption, one `items` entry per position clause and per
+  text line), classifying through `correction.tag_kind`. The trainer's MOSS line encodes
+  it at cache and generate time; the caption on disk stays Anima-format.
 - `clause_rewrite.py` / `clause_vocabulary.py` / `group_router.py` / `caption_layout.py` are the
   position-clause rewrite: which tag may enter which clause, and what moves out of the bag. Gate
   and group sets are data in `data/clause_vocabulary.yaml` (the trainer's
