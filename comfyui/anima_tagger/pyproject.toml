@@ -1,7 +1,7 @@
 [project]
 name = "comfyui-anima-tagger"
-description = "Anima Tagger for ComfyUI: a multi-label image tagger trained on the Anima caption distribution. Provides a loader (image -> tagger socket) and a captioner (image -> caption string), reusable in DirectEdit, prompt pre-fill, and any workflow that needs Anima-formatted tags."
-version = "0.3.0"
+description = "Anima Tagger for ComfyUI: a multi-label image tagger trained on the Anima caption distribution. Provides a loader (image -> tagger socket) and a captioner (image -> caption string), reusable in DirectEdit, prompt pre-fill, and any workflow that needs Anima-formatted tags. Also maps an Anima caption onto MOSS-Image's layout-JSON prompt."
+version = "0.4.0"
 license = { file = "LICENSE" }
 # The tagger itself is the `anime_tools` package (git dependency, see
 # requirements.txt); torch / numpy / pillow come with ComfyUI.

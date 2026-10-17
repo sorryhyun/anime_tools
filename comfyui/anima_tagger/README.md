@@ -4,12 +4,13 @@ Multi-label image tagger trained on the Anima caption distribution.
 Drop in an image, get back a comma-separated tag string in exactly Anima's training-time T5 format —
 `rating, count, characters, copyrights, @artists, generals`, underscores replaced by spaces.
 
-Two nodes in the `anima` category:
+Three nodes in the `anima` category:
 
 | Node | Inputs | Outputs | Use |
 |------|--------|---------|-----|
 | Anima Tagger Loader | `tagger_dir` (STRING) | `tagger` (ANIMA_TAGGER) | Load the checkpoint once; ComfyUI memoizes the output so the tagger persists across graph runs. |
 | Anima Tagger Caption | `tagger` (ANIMA_TAGGER), `image` (IMAGE) | `caption` (STRING) | Tag an image. Drop the STRING into any text input. |
+| Anima Caption → MOSS Layout JSON | `caption` (STRING) | `prompt` (STRING) | Map an Anima-format caption onto MOSS-Image's layout-JSON prompt (below). |
 
 ## What it's for
 
@@ -105,11 +106,27 @@ DirectEdit owns its own ψ_tar logic and only needs the `ANIMA_TAGGER` socket �
 see
 [`comfyui-anima-directedit`](https://github.com/sorryhyun/anima_lora/tree/main/custom_nodes/comfyui-anima-directedit).
 
+### Prompt a MOSS-Image LoRA trained on layout-JSON captions
+
+```
+[Anima Caption → MOSS Layout JSON] ──► prompt ──► [CLIPTextEncode (MOSS-Image TE)] ──► [KSampler] ──► …
+   caption: safe, 1girl, akita neru, vocaloid, @artist, yellow eyes. On the left, holding phone.
+```
+
+The anima_lora MOSS trainer's `caption_format=layout_json` (the default) encodes every
+training caption through `anime_tools.captions.layout_json`; this node runs the same
+function, so a prompt typed in Anima format reaches the text encoder as the same string:
+rating / meta, characters, series and `@artists` get their own `summary` keys, the rest of
+the tags become `summary.caption`, each `On the …` clause a `subject` item, each quoted
+text line a `text` item. The danbooru tag KB (`danbooru_tags_classified.csv`) is read from
+`<HOME>/models/` and downloaded there on first use. Needs `anime-tools` 0.7.13 or newer.
+
 ## Files
 
 | File | Role |
 |------|------|
 | `nodes.py` | `AnimaTaggerLoader` + `AnimaTaggerCaption`. |
+| `moss_layout.py` | `AnimaCaptionToMossLayout` (torch-free). |
 | `__init__.py` | Re-exports `NODE_CLASS_MAPPINGS` / `NODE_DISPLAY_NAME_MAPPINGS`. |
 | `pyproject.toml` | ComfyUI Registry metadata. |
 
