@@ -19,6 +19,8 @@ vocaloid,3,10,"[작품 > series] copyright"
 highres,5,10,"[메타 > 화질] resolution meta"
 long_hair,0,10,"[머리카락 > 머리 길이] general"
 necktie,0,10,"[의상 > 넥타이] general"
+cropped,5,10,"[메타 > 구도] meta"
+sincos,1,10,"[작가] artist"
 """,
         encoding="utf-8",
     )
@@ -36,9 +38,20 @@ def test_flat_bag_splits_into_summary_fields(tmp_path):
             "meta": ["highres", "sensitive"],
             "characters": ["hatsune miku"],
             "series": ["vocaloid"],
-            "artists": ["sincos"],
+            "artists": ["@sincos"],
             "caption": "1girl, long hair, unknown tag",
         }
+    }
+
+
+def test_visual_meta_reads_as_caption(tmp_path):
+    summary = caption_to_layout(
+        "highres, cropped, 1girl, long hair, sincos", _kb(tmp_path)
+    )["summary"]
+    assert summary == {
+        "meta": ["highres"],
+        "artists": ["@sincos"],
+        "caption": "1girl, cropped, long hair",
     }
 
 

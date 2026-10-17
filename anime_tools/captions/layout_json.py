@@ -9,15 +9,18 @@ shape without inventing anything — every tag lands in exactly one field::
     On the left, necktie. Japanese text reads as "満足でしょうか"
 
     {"summary":{"meta":["sensitive"],"characters":["hatsune miku"],
-     "series":["vocaloid"],"artists":["sincos"],"caption":"1girl, long hair"},
+     "series":["vocaloid"],"artists":["@sincos"],"caption":"1girl, long hair"},
      "items":[{"label":"subject","position":"left","caption":"necktie"},
               {"label":"text","caption":"Japanese text","text":"満足でしょうか"}]}
 
 Position clauses keep their relative position word (no boxes: the position
 stage does not persist them); a clause's character names move to the item's
 ``characters``. Each quoted line of a text clause is its own ``text`` item, in
-reading order. ``@no-artist`` is an Anima sentinel and is left out. Empty
-fields are omitted, except ``summary.caption``.
+reading order. Artists carry the Anima ``@`` (added to a bare KB artist name);
+``@no-artist`` is an Anima sentinel and is left out. Danbooru meta tags that
+describe the pixels (``cropped``, ``scan``, ``jpeg artifacts``, … —
+``_VISUAL_META``) go to ``summary.caption``; the rest of the meta category stays
+in ``summary.meta``. Empty fields are omitted, except ``summary.caption``.
 
 The serialization is compact (``","`` / ``":"``, no ASCII escaping) like the
 MOSS gallery prompts, and deterministic for a given caption and KB — training
@@ -34,10 +37,36 @@ from anime_tools.captions.position_clauses import (
     PositionClause,
     as_parsed,
 )
-from anime_tools.captions.taxonomy import canonical_rating, strip_artist_prefix
+from anime_tools.captions.taxonomy import (
+    canonical_rating,
+    normalize_tag,
+    strip_artist_prefix,
+)
 
 # correct_tags buckets that read as image metadata, in Anima emit order.
 _META_KINDS = ("quality", "meta", "year", "safety")
+
+# Danbooru meta-category tags that describe what is in the image, not the post.
+_VISUAL_META = frozenset(
+    {
+        "cropped",
+        "scan",
+        "magazine scan",
+        "tall image",
+        "wide image",
+        "jpeg artifacts",
+        "lowres",
+        "upscaled",
+        "rotated",
+        "color halftone",
+        "colorized",
+        "decensored",
+        "hard-translated",
+        "nude filter",
+        "photo (medium)",
+        "game cg",
+    }
+)
 
 _TEXT_CAPTIONS = {
     TEXT_PREFIXES[0]: "Japanese text",
@@ -54,7 +83,9 @@ def _summary(tags, kb: TagKnowledgeBase) -> dict:
     general: list[str] = []
     for tag in tags:
         kind = tag_kind(tag, kb)
-        if kind in meta:
+        if kind == "meta" and normalize_tag(tag) in _VISUAL_META:
+            general.append(tag)
+        elif kind in meta:
             meta[kind].append(canonical_rating(tag) or tag)
         elif kind == "character":
             characters.append(tag)
@@ -62,7 +93,7 @@ def _summary(tags, kb: TagKnowledgeBase) -> dict:
             series.append(tag)
         elif kind == "artist":
             if tag != "@no-artist":
-                artists.append(strip_artist_prefix(tag))
+                artists.append("@" + strip_artist_prefix(tag))
         elif kind == "count":
             counts.append(tag)
         else:
