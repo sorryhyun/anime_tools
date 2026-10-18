@@ -63,12 +63,12 @@ def test_clauses_become_items_in_order(tmp_path):
     )
     assert layout["items"] == [
         {
-            "label": "subject",
+            "label": "character",
             "position": "left",
             "characters": ["hatsune miku"],
             "caption": "necktie",
         },
-        {"label": "subject", "position": "right", "characters": ["kasane teto"]},
+        {"label": "character", "position": "right", "characters": ["kasane teto"]},
         {"label": "text", "caption": "Japanese text", "text": "満足でしょうか"},
         {"label": "text", "caption": "Japanese text", "text": "「はい、」"},
     ]
@@ -86,3 +86,55 @@ def test_serialization_is_compact_and_unescaped(tmp_path):
         '"caption":"Japanese sound effect","text":"ドン"}]}'
     )
     assert json.loads(text)["items"][0]["text"] == "ドン"
+
+
+def test_text_items_take_centred_boxes_and_the_top_level_keys(tmp_path):
+    """Only text items take a box, clamped to the canvas; the coordinate keys
+    ride along only when one did."""
+    text = layout_json(
+        '1girl. On the left, necktie. Japanese text reads as "あ", "い"',
+        _kb(tmp_path),
+        text_boxes={"あ": (100, 50, 140, 210), "う": (0, 0, 1, 1)},
+        size=(400, 300),
+    )
+    layout = json.loads(text)
+    assert layout["items"] == [
+        {"label": "character", "position": "left", "caption": "necktie"},
+        {
+            "label": "text",
+            "caption": "Japanese text",
+            "text": "あ",
+            "bbox": [-100, -100, 60, -60],
+        },
+        {"label": "text", "caption": "Japanese text", "text": "い"},
+    ]
+    assert list(layout)[-2:] == ["bbox_coord_space", "bbox_format"]
+    assert (layout["bbox_coord_space"], layout["bbox_format"]) == (
+        "abs_centralized",
+        "yxyx",
+    )
+
+
+def test_no_matching_box_keeps_the_plain_shape(tmp_path):
+    caption = '1girl. Japanese text reads as "あ"'
+    kb = _kb(tmp_path)
+    assert layout_json(caption, kb, text_boxes={}, size=(64, 64)) == layout_json(
+        caption, kb
+    )
+
+
+def test_centered_box_clamps_to_the_canvas():
+    from anime_tools.captions.layout_json import centered_box
+
+    assert centered_box((-5, 10, 950, 400), (944, 1136)) == [-558, -472, -168, 472]
+
+
+def test_text_boxes_key_lines_as_the_clause_spells_them():
+    from anime_tools.captions.ocr_sidecar import OcrLine, text_boxes
+
+    lines = [
+        OcrLine(seq=1, box=(0, 0, 60, 60), score=0.9, text='say "hi"'),
+        OcrLine(seq=2, box=(0, 100, 60, 160), score=0.9, text='say "hi"'),
+        OcrLine(seq=3, box=(0, 0, 2, 2), score=0.9, text="tiny"),
+    ]
+    assert text_boxes(lines) == {"say ”hi”": (0, 0, 60, 60)}

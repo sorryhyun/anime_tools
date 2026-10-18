@@ -36,8 +36,9 @@ or touching this package**. This file is the module map. Docs: `docs/position_ca
   `caption_index.json`; `shuffle.py` owns the `@no-artist` sentinel and Anima-prefix shuffle;
   `tokenizers.py` is the length check behind `CorrectRequest`'s randomize tokenizers.
 - `layout_json.py` maps a caption onto MOSS-Image's layout-JSON prompt (`summary` meta /
-  characters / series / artists / caption, one `items` entry per position clause and per
-  text line), classifying through `correction.tag_kind`. The trainer's MOSS line encodes
+  characters / series / artists / caption, one `character` item per position clause and one
+  `text` item per text line; a text item takes a `bbox` only from `text_boxes`, and the
+  top-level `bbox_coord_space` / `bbox_format` appear only then), classifying through `correction.tag_kind`. The trainer's MOSS line encodes
   it at cache and generate time; the caption on disk stays Anima-format. Export's
   `--caption_format layout_json` publishes it beside the caption as `{stem}.layout.txt`
   (`contract.LAYOUT_JSON_SUFFIX`), which the trainer reads instead of converting.

@@ -117,8 +117,8 @@ The anima_lora MOSS trainer's `caption_format=layout_json` (the default) encodes
 training caption through `anime_tools.captions.layout_json`; this node runs the same
 function, so a prompt typed in Anima format reaches the text encoder as the same string:
 rating / meta, characters, series and `@artists` get their own `summary` keys, the rest of
-the tags become `summary.caption`, each `On the …` clause a `subject` item, each quoted
-text line a `text` item. The danbooru tag KB (`danbooru_tags_classified.csv`) is read from
+the tags become `summary.caption`, each `On the …` clause a `character` item, each quoted
+text line a `text` item (no `bbox`: that comes only from Export's OCR boxes). The danbooru tag KB (`danbooru_tags_classified.csv`) is read from
 `<HOME>/models/` and downloaded there on first use. Needs `anime-tools` 0.7.13 or newer.
 
 ## Files

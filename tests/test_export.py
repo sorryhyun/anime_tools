@@ -673,7 +673,8 @@ def test_layout_json_publishes_beside_the_caption(layout, tag_csv):
         assert got == _trainer_layout(caption, tag_csv)
         assert not got.endswith("\n")
     a = json.loads((layout.out / "resized" / "a.layout.txt").read_text("utf-8"))
-    assert a["items"] == [{"label": "subject", "position": "left", "caption": "cat"}]
+    assert a["items"] == [{"label": "character", "position": "left", "caption": "cat"}]
+    assert "bbox_format" not in a
     assert (layout.out / "resized" / "a.txt").read_text(
         encoding="utf-8"
     ) == "1girl, solo. On the left, cat."
@@ -687,14 +688,40 @@ def test_anima_publishes_no_layout_row(ws):
 
 
 def test_layout_json_under_combine_ocr_carries_the_text_items(ocr, tag_csv):
+    """Text items take their OCR boxes, centred on the resized image the OCR
+    read; the character item takes none. That is the one difference from the
+    trainer's own conversion of the published `.txt`."""
+    write_png(ocr.resized / "a.png", size=(240, 160))
     paths = ExportPaths(**{**vars(ocr), "layout_kb": tag_csv})
     rows, stats = publish(paths, apply=True)
     (row,) = _by(rows, "layout")
     assert row.combined and row.ocr
-    got = (paths.out / "resized" / "a.layout.txt").read_text(encoding="utf-8")
-    assert got == _trainer_layout(paths.out / "resized" / "a.txt", tag_csv)
-    texts = [i["text"] for i in json.loads(got)["items"] if i["label"] == "text"]
-    assert texts == ["大丈夫", "本当に"]
+    assert Path(row.fit) == ocr.resized / "a.png"
+    got = json.loads(
+        (paths.out / "resized" / "a.layout.txt").read_text(encoding="utf-8")
+    )
+    assert got["items"] == [
+        {"label": "character", "position": "left", "caption": "cat"},
+        {
+            "label": "text",
+            "caption": "Japanese text",
+            "text": "大丈夫",
+            "bbox": [-80, -120, -40, 0],
+        },
+        {
+            "label": "text",
+            "caption": "Japanese text",
+            "text": "本当に",
+            "bbox": [-20, -120, 20, 0],
+        },
+    ]
+    assert got["bbox_coord_space"] == "abs_centralized"
+    assert got["bbox_format"] == "yxyx"
+    plain = json.loads(_trainer_layout(paths.out / "resized" / "a.txt", tag_csv))
+    for item in got["items"]:
+        item.pop("bbox", None)
+    del got["bbox_coord_space"], got["bbox_format"]
+    assert got == plain
     # caption, variants and the layout row each carry the clause.
     assert stats.combined == 3
 

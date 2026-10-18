@@ -79,7 +79,7 @@ class AnimaCaptionToMossLayout:
         "anima_lora MOSS trainer encodes with caption_format=layout_json. "
         "Rating / meta, characters, series and @artists get their own summary "
         "keys, the remaining tags become summary.caption, each position clause "
-        "a subject item, each quoted text line a text item. Use it in front of "
+        "a character item, each quoted text line a text item. Use it in front of "
         "the text encoder for a LoRA trained on layout-JSON captions."
     )
 

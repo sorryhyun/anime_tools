@@ -245,6 +245,23 @@ def usable_lines(
     ]
 
 
+def text_boxes(
+    lines: Iterable[OcrLine],
+    *,
+    min_det: float = DEFAULT_MIN_DET,
+    min_glyph: float = DEFAULT_MIN_GLYPH,
+) -> dict[str, tuple[int, int, int, int]]:
+    """Each line :func:`with_ocr_clause` would publish → its box, keyed by the
+    text as the clause spells it (an ASCII ``"`` rewritten to ``”``, stripped).
+    A line said more than once keeps the first box, as the clause keeps the
+    first line. :func:`~anime_tools.captions.layout_json.layout_json`'s
+    ``text_boxes``."""
+    out: dict[str, tuple[int, int, int, int]] = {}
+    for ln in usable_lines(lines, min_det=min_det, min_glyph=min_glyph):
+        out.setdefault(ln.text.replace('"', "”").strip(), ln.box)
+    return out
+
+
 def with_ocr_clause(
     caption: str,
     lines: Sequence[OcrLine],

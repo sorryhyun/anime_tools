@@ -173,9 +173,10 @@ again without the knob takes the clause back. The trainer must `make preprocess-
 picks what a caption publishes as. `anima` is the `.txt` alone. `layout_json` adds a `layout` row
 per `caption` row: `{stem}.layout.txt` (`contract.LAYOUT_JSON_SUFFIX`) beside the `.txt`, holding
 exactly `captions.layout_json.layout_json(text.strip(), kb)` of the text the caption row publishes —
-after the OCR combine when that is on, so text lines become `text` items — UTF-8, no trailing
-newline. That is what the trainer's MOSS cache would convert the published `.txt` into, and it
-reads the sidecar instead. The row is a render like a combined one (`ExportRow.derived`: `text`
+after the OCR combine when that is on, so text lines become `text` items, each with its OCR `bbox`
+(`ocr_sidecar.text_boxes`, framed by the resized image the OCR read: `ExportRow.fit`) — UTF-8, no
+trailing newline. The trainer's MOSS cache reads the sidecar in place of converting the published
+`.txt`; its own conversion has no boxes. The row is a render like a combined one (`ExportRow.derived`: `text`
 re-derived at decide time, revert compared against the recorded text, `before` kept for restore)
 and carries the KB it typed against (`tag_csv`); the KB is the curation home's `find_tag_csv`,
 resolved before the walk so a missing CSV fails the run up front (`resolve_layout_kb`). The `.txt`

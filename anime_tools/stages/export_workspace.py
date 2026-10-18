@@ -61,7 +61,11 @@ each ``caption`` row gets a ``layout`` row beside it: ``{stem}.layout.txt``
 (:data:`~anime_tools.contract.LAYOUT_JSON_SUFFIX`), the MOSS-Image layout-JSON
 prompt (:func:`~anime_tools.captions.layout_json.layout_json`) of exactly the
 text the caption row publishes — OCR clauses included under ``combine_ocr`` —
-stripped, as the trainer strips the ``.txt`` it would otherwise convert. It is
+stripped, as the trainer strips the ``.txt`` it would otherwise convert. Under
+``combine_ocr`` each text item also carries its OCR box
+(:func:`~anime_tools.captions.ocr_sidecar.text_boxes`), framed by the resized
+image the OCR read (``fit``), so the trainer's live conversion of the same
+``.txt`` lacks the boxes and this sidecar is the only place they appear. It is
 always a render, decided and reverted the way a combined row is (``text``
 re-derived at decide time, revert compared against the recorded text), and it
 carries the tag CSV it typed the caption against (``tag_csv``). The ``.txt``
@@ -119,6 +123,7 @@ from anime_tools.captions.ocr_sidecar import (
     DEFAULT_MIN_GLYPH,
     ocr_sidecar_path,
     read_ocr,
+    text_boxes,
     with_ocr_clause,
 )
 from anime_tools.captions.variants import (
@@ -236,7 +241,9 @@ class ExportRow:
     it (capped by ``cap``), and the mask is fitted to that."""
     fit: str = ""
     """A ``mask`` row's resized image — the geometry the mask was drawn at, and
-    whose ``anima_resize_*`` keys say how the resize cropped."""
+    whose ``anima_resize_*`` keys say how the resize cropped. A combined
+    ``layout`` row's resized image — the one the OCR read, whose size frames
+    its text items' ``bbox``."""
     remove: bool = False
     """Takes the destination away rather than publishing to it: a ``layout``
     row for a ``{stem}.layout.txt`` an earlier ``layout_json`` export left
@@ -328,18 +335,27 @@ def _derive(row: ExportRow) -> None:
     if row.kind == "layout":
         from anime_tools.captions.layout_json import layout_json
 
-        caption = (
-            _combine(
-                "caption",
-                Path(row.src),
-                read_ocr(Path(row.ocr)),
-                min_det=row.ocr_min_det,
-                min_glyph=row.ocr_min_glyph,
-            )
-            if row.combined
-            else Path(row.src).read_text(encoding="utf-8")
+        if not row.combined:
+            caption = Path(row.src).read_text(encoding="utf-8")
+            row.text = layout_json(caption.strip(), _tag_kb(row.tag_csv))
+            return
+        lines = read_ocr(Path(row.ocr))
+        caption = _combine(
+            "caption",
+            Path(row.src),
+            lines,
+            min_det=row.ocr_min_det,
+            min_glyph=row.ocr_min_glyph,
         )
-        row.text = layout_json(caption.strip(), _tag_kb(row.tag_csv))
+        size = _oriented(Path(row.fit)) if row.fit else None
+        boxes = (
+            text_boxes(lines, min_det=row.ocr_min_det, min_glyph=row.ocr_min_glyph)
+            if size is not None
+            else None
+        )
+        row.text = layout_json(
+            caption.strip(), _tag_kb(row.tag_csv), text_boxes=boxes, size=size
+        )
     elif row.combined:
         row.text = _combine(
             row.kind,
@@ -563,10 +579,12 @@ def _row(
     min_glyph: float = DEFAULT_MIN_GLYPH,
     excluded: bool = False,
     tag_csv: Path | None = None,
+    fit: Path | None = None,
 ) -> ExportRow:
     """One row, decided. ``ocr`` (the image's sidecar, when combining) marks it
     combined only if the sidecar exists — an image with no text publishes its
-    caption verbatim, as a plain copy. ``tag_csv`` is a ``layout`` row's KB."""
+    caption verbatim, as a plain copy. ``tag_csv`` is a ``layout`` row's KB,
+    ``fit`` the resized image its OCR boxes were read on."""
     combined = ocr is not None and kind in COMBINE_KINDS and ocr.is_file()
     return _decide(
         ExportRow(
@@ -579,6 +597,7 @@ def _row(
             ocr_min_glyph=min_glyph,
             excluded=excluded,
             tag_csv=str(tag_csv) if tag_csv is not None else "",
+            fit=str(fit) if fit is not None and combined else "",
         )
     )
 
@@ -671,6 +690,7 @@ def plan_export(paths: ExportPaths) -> list[ExportRow]:
                         min_det=paths.ocr_min_det,
                         min_glyph=paths.ocr_min_glyph,
                         tag_csv=paths.layout_kb,
+                        fit=image,
                     )
                 )
             elif out_layout.is_file():
