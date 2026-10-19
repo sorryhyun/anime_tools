@@ -8,7 +8,7 @@ shape without inventing anything — every tag lands in exactly one field::
     sensitive, 1girl, hatsune miku, vocaloid, @sincos, long hair.
     On the left, necktie. Japanese text reads as "満足でしょうか"
 
-    {"summary":{"meta":["sensitive"],"characters":["hatsune miku"],
+    {"summary":{"meta":["sfw"],"characters":["hatsune miku"],
      "series":["vocaloid"],"artists":["@sincos"],"caption":"1girl, long hair"},
      "items":[{"label":"character","position":"left","caption":"necktie"},
               {"label":"text","caption":"Japanese text","text":"満足でしょうか",
@@ -27,7 +27,10 @@ only when some item has a box. Artists carry the Anima ``@`` (added to a bare KB
 ``@no-artist`` is an Anima sentinel and is left out. Danbooru meta tags that
 describe the pixels (``cropped``, ``scan``, ``jpeg artifacts``, … —
 ``_VISUAL_META``) go to ``summary.caption``; the rest of the meta category stays
-in ``summary.meta``. Empty fields are omitted, except ``summary.caption``.
+in ``summary.meta``. The rating collapses to ``sfw`` (safe / general, sensitive)
+or ``nsfw`` (nsfw / questionable, explicit) — MOSS follows the binary better
+than the four booru classes. Empty fields are omitted, except
+``summary.caption``.
 
 The serialization is compact (``","`` / ``":"``, no ASCII escaping) like the
 MOSS gallery prompts, and deterministic for a given caption, KB and boxes —
@@ -76,6 +79,9 @@ _VISUAL_META = frozenset(
     }
 )
 
+# Canonical Anima rating → the binary MOSS reads.
+_SFW = {"safe": "sfw", "sensitive": "sfw", "nsfw": "nsfw", "explicit": "nsfw"}
+
 _TEXT_CAPTIONS = {
     TEXT_PREFIXES[0]: "Japanese text",
     TEXT_PREFIXES[1]: "Japanese sound effect",
@@ -93,8 +99,10 @@ def _summary(tags, kb: TagKnowledgeBase) -> dict:
         kind = tag_kind(tag, kb)
         if kind == "meta" and normalize_tag(tag) in _VISUAL_META:
             general.append(tag)
+        elif kind == "safety":
+            meta[kind].append(_SFW[canonical_rating(tag)])
         elif kind in meta:
-            meta[kind].append(canonical_rating(tag) or tag)
+            meta[kind].append(tag)
         elif kind == "character":
             characters.append(tag)
         elif kind == "copyright":

@@ -35,7 +35,7 @@ def test_flat_bag_splits_into_summary_fields(tmp_path):
     )
     assert layout == {
         "summary": {
-            "meta": ["highres", "sensitive"],
+            "meta": ["highres", "sfw"],
             "characters": ["hatsune miku"],
             "series": ["vocaloid"],
             "artists": ["@sincos"],
@@ -76,7 +76,23 @@ def test_clauses_become_items_in_order(tmp_path):
 
 def test_no_artist_sentinel_and_legacy_rating(tmp_path):
     summary = caption_to_layout("general, 1girl, @no-artist", _kb(tmp_path))["summary"]
-    assert summary == {"meta": ["safe"], "caption": "1girl"}
+    assert summary == {"meta": ["sfw"], "caption": "1girl"}
+
+
+def test_ratings_collapse_to_sfw_nsfw(tmp_path):
+    kb = _kb(tmp_path)
+    for rating, want in (
+        ("safe", "sfw"),
+        ("sensitive", "sfw"),
+        ("questionable", "nsfw"),
+        ("nsfw", "nsfw"),
+        ("explicit", "nsfw"),
+    ):
+        summary = caption_to_layout(f"{rating}, 1girl", kb)["summary"]
+        assert summary["meta"] == [want], rating
+    # Two ratings that collapse to the same class emit it once.
+    summary = caption_to_layout("sensitive, general, 1girl", kb)["summary"]
+    assert summary["meta"] == ["sfw"]
 
 
 def test_serialization_is_compact_and_unescaped(tmp_path):
