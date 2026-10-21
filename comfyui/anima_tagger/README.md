@@ -10,7 +10,6 @@ Three nodes in the `anima` category:
 |------|--------|---------|-----|
 | Anima Tagger Loader | `tagger_dir` (STRING) | `tagger` (ANIMA_TAGGER) | Load the checkpoint once; ComfyUI memoizes the output so the tagger persists across graph runs. |
 | Anima Tagger Caption | `tagger` (ANIMA_TAGGER), `image` (IMAGE) | `caption` (STRING) | Tag an image. Drop the STRING into any text input. |
-| Anima Caption → MOSS Layout JSON | `caption` (STRING) | `prompt` (STRING) | Map an Anima-format caption onto MOSS-Image's layout-JSON prompt (below). |
 
 ## What it's for
 
@@ -108,25 +107,15 @@ see
 
 ### Prompt a MOSS-Image LoRA trained on layout-JSON captions
 
-```
-[Anima Caption → MOSS Layout JSON] ──► prompt ──► [CLIPTextEncode (MOSS-Image TE)] ──► [KSampler] ──► …
-   caption: safe, 1girl, akita neru, vocaloid, @artist, yellow eyes. On the left, holding phone.
-```
-
-The anima_lora MOSS trainer's `caption_format=layout_json` (the default) encodes every
-training caption through `anime_tools.captions.layout_json`; this node runs the same
-function, so a prompt typed in Anima format reaches the text encoder as the same string:
-rating / meta, characters, series and `@artists` get their own `summary` keys, the rest of
-the tags become `summary.caption`, each `On the …` clause a `character` item, each quoted
-text line a `text` item (no `bbox`: that comes only from Export's OCR boxes). The danbooru tag KB (`danbooru_tags_classified.csv`) is read from
-`<HOME>/models/` and downloaded there on first use. Needs `anime-tools` 0.7.13 or newer.
+The **Anima Caption → MOSS Layout JSON** node moved to
+[MOSS Toolkit](https://github.com/sorryhyun/ComfyUI-MOSS-Toolkit) (`comfyui-moss-toolkit`)
+with its node id unchanged; install that pack for workflows that use it.
 
 ## Files
 
 | File | Role |
 |------|------|
 | `nodes.py` | `AnimaTaggerLoader` + `AnimaTaggerCaption`. |
-| `moss_layout.py` | `AnimaCaptionToMossLayout` (torch-free). |
 | `__init__.py` | Re-exports `NODE_CLASS_MAPPINGS` / `NODE_DISPLAY_NAME_MAPPINGS`. |
 | `pyproject.toml` | ComfyUI Registry metadata. |
 
