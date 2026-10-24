@@ -16,8 +16,9 @@ from typing import Any
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import JSONResponse, Response, StreamingResponse
 
-from anime_tools._env import curation_home, resolve_path
+from anime_tools._env import resolve_path
 from anime_tools._json import read_json
+from anime_tools.gui import dataset as D
 from anime_tools.gui import proposals as P
 from anime_tools.gui import stages as S
 from anime_tools.gui._context import (
@@ -61,7 +62,8 @@ async def start_job(request: Request) -> dict[str, Any]:
     """Start a stage.
 
     ``rel`` scopes the run to one dataset image by narrowing the stage's
-    ``--path_pattern``; without it the run uses the Settings pattern.
+    ``--path_pattern``; without it the run uses the Settings pattern. ``space``
+    is the sidebar's: ``temp`` runs the stage over the drop area, inside it.
     """
     store = request.app.state.schemas
     body = await request.json()
@@ -76,7 +78,11 @@ async def start_job(request: Request) -> dict[str, Any]:
     rel = str(body.get("rel") or "").strip()
     # One read for the whole request: the roots, the stage defaults and the
     # preflight's knobs all come out of it.
-    ctx = RunContext.load()
+    ctx = RunContext.load(space=str(body.get("space") or ""))
+    if ctx.space == D.TEMP_SPACE and stage.id == S.EXPORT_STAGE:
+        # Export publishes the dataset to the trainer; the drop area is
+        # scratch beside it, and shipping it is what it exists not to do.
+        raise HTTPException(400, "Export publishes the dataset, not the temp area")
     if rel:
         # Refuse rather than silently run the batch: a stage with no
         # --path_pattern has nothing to narrow.
@@ -98,10 +104,12 @@ async def start_job(request: Request) -> dict[str, Any]:
         job = request.app.state.jobs.start(
             stage.id,
             steps,
-            home=curation_home(),
+            home=ctx.home,
             report_path=report,
             values=values,
             apply=apply,
+            space=ctx.space,
+            env=ctx.env,
         )
     except RuntimeError as e:
         raise HTTPException(409, str(e)) from e
@@ -198,7 +206,7 @@ def _proposals(request: Request, job_id: str) -> tuple[Any, dict[str, P.Proposal
     """A finished run and what it proposes, keyed by dataset rel. ``P.read``
     is report-mtime cached, so a second ask is a dict lookup."""
     job, path = _report_of(request, job_id)
-    return job, P.read(path, RunContext.load().roots, job.stage)
+    return job, P.read(path, RunContext.load(space=job.space).roots, job.stage)
 
 
 @router.get("/api/jobs/{job_id}/proposals")
@@ -236,6 +244,6 @@ def job_undo(request: Request, job_id: str) -> dict[str, Any]:
     if not job.apply:
         raise HTTPException(400, "that run wrote nothing — nothing to undo")
     try:
-        return P.undo(path, RunContext.load().roots, job.stage)
+        return P.undo(path, RunContext.load(space=job.space).roots, job.stage)
     except OSError as e:
         raise HTTPException(500, f"undo failed: {e}") from e

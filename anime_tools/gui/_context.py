@@ -16,12 +16,13 @@ catches it.
 from __future__ import annotations
 
 from collections.abc import Mapping
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from pathlib import Path, PurePosixPath
 from typing import Any
 
 from fastapi import Request
 
+from anime_tools._env import curation_home, models_dir
 from anime_tools.gui import dataset as D
 from anime_tools.gui import stages as S
 from anime_tools.gui.jobs import Step
@@ -40,6 +41,7 @@ __all__ = [
     "root_paths",
     "roots_for",
     "stage_defaults",
+    "temp_defaults",
 ]
 
 NO_CACHE = {"cache-control": "no-cache"}
@@ -129,6 +131,24 @@ def mask_root(settings: Mapping[str, Any], roots: D.Roots) -> str:
     return _root_beside(settings, S.MASK_SETTING, roots.masks)
 
 
+def temp_defaults(defaults: Mapping[str, str]) -> dict[str, str]:
+    """The Settings stage values as a run inside the drop area needs them.
+
+    That run's working directory is the drop area, so a home-relative path
+    (``--tagger_dir models/…``) is pinned to the real home — only one that
+    exists there, since a value can also be a Hub id. The Settings pattern is
+    dropped: it names folders of the dataset, which the drop area does not have.
+    """
+    home = curation_home()
+    out: dict[str, str] = {}
+    for k, v in defaults.items():
+        if k == S.SCOPE_FIELD:
+            continue
+        p = Path(v).expanduser()
+        out[k] = str(home / p) if not p.is_absolute() and (home / p).exists() else v
+    return out
+
+
 def root_paths(roots: D.Roots) -> dict[str, str]:
     """The dataset roots, home-relative, for the fields bound to them
     (``S.ROOT_FIELDS``)."""
@@ -152,12 +172,24 @@ class RunContext:
     """The ⚙ Settings stage values a form's fields fall back to."""
     report_root: str
     mask_root: str
+    space: str = D.DATASET_SPACE
+    """``D.SPACES``: the dataset, or the drop area the GUI's temp mode shows."""
+    home: Path = field(default_factory=curation_home)
+    """The curation home a job over this context runs in (its cwd and
+    ``ANIME_TOOLS_HOME``) — the drop area's own, for the temp space."""
+    env: dict[str, str] = field(default_factory=dict)
+    """What such a job's environment adds on top of :attr:`home`."""
 
     @classmethod
-    def load(cls, **overrides: str) -> RunContext:
+    def load(cls, *, space: str = "", **overrides: str) -> RunContext:
         """One settings read, then everything derived from it. ``overrides`` are
-        per-request root spellings (``src`` / ``dst`` / ``masks``)."""
+        per-request root spellings (``src`` / ``dst`` / ``masks``); ``space``
+        picks the dataset (blank) or the drop area, which takes no overrides."""
         settings = load_settings()
+        if space == D.TEMP_SPACE:
+            return cls._temp(settings)
+        if space not in ("", D.DATASET_SPACE):
+            raise D.DatasetError(f"unknown space: {space!r}")
         roots = roots_for(settings, **overrides)
         return cls(
             settings=settings,
@@ -167,8 +199,37 @@ class RunContext:
             mask_root=mask_root(settings, roots),
         )
 
+    @classmethod
+    def _temp(cls, settings: Mapping[str, Any]) -> RunContext:
+        """The drop area (``WS.TEMP``) as a curation home of its own.
+
+        A job runs *in* it, so every CLI default spelled home-relative — the OCR
+        tree, the exclusion ledger — lands inside it without a flag naming it.
+        What *is* bound is spelled absolute (:attr:`root_paths`, the report and
+        mask roots), since the server resolves those against the real home and
+        the child against this one. The weights stay where the real home keeps
+        them.
+        """
+        roots = D.temp_roots()
+        workspace = str(roots.workspace)
+        return cls(
+            settings=settings,
+            roots=roots,
+            defaults=temp_defaults(stage_defaults(settings)),
+            report_root=workspace,
+            mask_root=workspace,
+            space=D.TEMP_SPACE,
+            home=D.temp_home(),
+            env={
+                "ANIME_TOOLS_MODELS": str(models_dir()),
+                "ANIME_TOOLS_WORKSPACE": workspace,
+            },
+        )
+
     @property
     def root_paths(self) -> dict[str, str]:
+        if self.space == D.TEMP_SPACE:
+            return {name: str(p) for name, p in self.roots.items()}
         return root_paths(self.roots)
 
     def bindings(self) -> dict[str, Any]:

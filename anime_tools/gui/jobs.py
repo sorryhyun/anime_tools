@@ -55,6 +55,9 @@ class Job:
     report_path: str | None = None
     values: dict[str, Any] = field(default_factory=dict)
     apply: bool = False
+    space: str = "dataset"
+    """Which trees the run was over (``gui.dataset.SPACES``) — what its report is
+    read back against, since a drop-area run names rels the dataset may not have."""
     cancelled: bool = False
     _proc: subprocess.Popen | None = field(default=None, repr=False)
     _cond: threading.Condition = field(default_factory=threading.Condition, repr=False)
@@ -95,6 +98,7 @@ class Job:
             "lines": self.total_lines,
             "report_path": self.report_path,
             "apply": self.apply,
+            "space": self.space,
             "values": self.values,
         }
 
@@ -141,6 +145,7 @@ class JobManager:
         report_path: str | None = None,
         values: dict[str, Any] | None = None,
         apply: bool = False,
+        space: str = "dataset",
         env: dict[str, str] | None = None,
     ) -> Job:
         """Queue a job's steps into the single slot and start pumping them.
@@ -161,6 +166,7 @@ class JobManager:
                 report_path=report_path,
                 values=values or {},
                 apply=apply,
+                space=space,
             )
             self.jobs[job.id] = job
         child_env = {

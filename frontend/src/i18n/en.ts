@@ -79,6 +79,14 @@ const en = {
     modeTreeHint: "The folders the dataset is stored in",
     modeGroups: "groups",
     modeGroupsHint: "The near-twin components the Groups stage found",
+    modeTemp: "temp",
+    modeTempHint:
+      "Images dropped onto the window — kept in workspace/_temp, stages run over them there, and Export never ships them",
+    tempEmpty: "Drag images or folders onto the window to open them here.",
+    tempClear: "Delete everything in the temp area",
+    tempClearArmed: "Click again to delete the dropped images and everything runs made from them",
+    tempClearConfirm: "delete?",
+    uploading: (done: number, total: number) => `uploading ${done}/${total}…`,
     rescan: "Rescan the dataset",
     collapse: "Collapse the sidebar",
     filter: "filter…",
@@ -118,7 +126,7 @@ const en = {
   item: {
     loading: "loading…",
     pick: "Pick an image on the left.",
-    keys: "↑/↓ or j/k walk the images · ⌘/Ctrl+Enter saves a caption",
+    keys: "↑/↓ or j/k walk the images · shift/⌘/Ctrl+click compares several · ⌘/Ctrl+Enter saves a caption",
     views: {
       image: "source",
       overlay: "mask",
@@ -147,6 +155,19 @@ const en = {
     /** Files left behind because the live path is occupied again. */
     excludeKept: (n: number) =>
       `${n} file${n === 1 ? "" : "s"} stayed in _excluded — the live path is taken`,
+  },
+  compare: {
+    /** {0} is how many images are picked. */
+    title: (n: number) => `${n} images`,
+    hint: "shift+click widens the range · ⌘/Ctrl+click adds or drops one · Esc closes",
+    open: "Open this image alone",
+    noCaption: "no caption yet",
+    /** {0} is how many picked images are not drawn. */
+    more: (n: number) => `+ ${n} more not shown — narrow the pick to see them`,
+  },
+  drop: {
+    title: "Drop to open in temp",
+    hint: "copied into workspace/_temp — the dataset is not touched",
   },
   ocr: {
     title: "text in the image",

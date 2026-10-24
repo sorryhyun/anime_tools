@@ -84,6 +84,10 @@ walks `workspace/resized/` and the image has left it. Export republishes the who
 `python -m anime_tools.exclude` are the two ways in; the source image and its hand-written
 master are never touched, so putting one back is the same move reversed.
 
+Files dropped onto the GUI go to `workspace/_temp/`, a curation home of its own (the default
+roots laid out again under it) that GUI runs over it run inside; Export refuses it, and clearing
+it is `rmtree`. Nothing there is part of the dataset.
+
 `python -m anime_tools.workspace.migrate` moves a pre-workspace tree over. Any `--apply` that
 touches captions must be followed by the trainer's TE re-encode.
 

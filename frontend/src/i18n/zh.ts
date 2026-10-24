@@ -48,6 +48,14 @@ const zh: Dict = {
     modeTreeHint: "数据集所在的目录结构",
     modeGroups: "分组",
     modeGroupsHint: "Groups 阶段找出的近似图片分组",
+    modeTemp: "临时",
+    modeTempHint:
+      "拖放到窗口上的图片 — 存放在 workspace/_temp，阶段也在其中运行，Export 不会导出它们",
+    tempEmpty: "把图片或文件夹拖放到窗口上即可在这里打开。",
+    tempClear: "删除临时区的全部内容",
+    tempClearArmed: "再点一次即删除拖入的图片及由其运行出的所有结果",
+    tempClearConfirm: "删除？",
+    uploading: (done, total) => `正在上传 ${done}/${total}…`,
     rescan: "重新扫描数据集",
     collapse: "收起侧栏",
     filter: "过滤…",
@@ -81,7 +89,7 @@ const zh: Dict = {
   item: {
     loading: "加载中…",
     pick: "请在左侧选择一张图片。",
-    keys: "↑/↓ 或 j/k 切换图片 · ⌘/Ctrl+Enter 保存标注",
+    keys: "↑/↓ 或 j/k 切换图片 · shift/⌘/Ctrl+点击可比较多张 · ⌘/Ctrl+Enter 保存标注",
     views: {
       image: "原图",
       overlay: "掩膜",
@@ -107,6 +115,17 @@ const zh: Dict = {
     excludedFiles: (n: number) => `workspace/_excluded 中有 ${n} 个文件`,
     /** 因原位置已被占用而留下的文件。 */
     excludeKept: (n: number) => `有 ${n} 个文件留在 _excluded — 原路径已被占用`,
+  },
+  compare: {
+    title: (n) => `${n} 张图片`,
+    hint: "shift+点击扩大范围 · ⌘/Ctrl+点击逐张加入或移除 · Esc 关闭",
+    open: "单独打开这张图片",
+    noCaption: "尚无标注",
+    more: (n) => `另有 ${n} 张未显示 — 缩小选择范围即可查看`,
+  },
+  drop: {
+    title: "松开即在临时中打开",
+    hint: "将复制到 workspace/_temp — 不会改动数据集",
   },
   ocr: {
     title: "图像中的文字",

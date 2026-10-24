@@ -13,6 +13,8 @@
         export/report.json              the export ledger
         _excluded/excluded.json         what was taken out of the pipeline
         _excluded/{resized,masks,ocr}/    and the files it was taken out of
+        _temp/                          the GUI's drop area: a curation home of
+                                        its own, never exported
       (export_target_dir)/            OUTPUT -- written only by Export (the
                                       ``out`` root's default name)
         resized/  masks/
@@ -131,6 +133,18 @@ move and not a lookup.
 EXCLUDED_MANIFEST = "excluded.json"
 """The ledger, at the root of :data:`EXCLUDED`. Inside the tree rather than
 beside it, so moving the directory moves the record of what is in it."""
+
+TEMP_SUBDIR = "_temp"
+TEMP = f"{WORKSPACE}/{TEMP_SUBDIR}"
+"""The drop area: images dragged onto the GUI from outside the dataset.
+
+A curation home of its own rather than a sixth root: :data:`DEFAULT_ROOTS` laid
+out again under it (``_temp/image_dataset``, ``_temp/workspace/resized``, …), and
+a stage run over it runs *in* it, so every home-relative CLI default -- the OCR
+tree, the exclusion ledger, the reports -- lands inside the drop area without a
+flag naming it. Nothing walks from here into the dataset: Export refuses it,
+and clearing it is ``rmtree``.
+"""
 
 LEGACY_ROOTS: dict[str, str] = {
     # root name -> where its default pointed before the workspace.

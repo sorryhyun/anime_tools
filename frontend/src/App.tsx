@@ -7,10 +7,13 @@ import { t } from "./i18n";
 import { createLayout } from "./layout";
 import { createRunner } from "./runner";
 import { createStages } from "./stages";
+import { createTemp } from "./temp";
 import { createUpdates, isUpdateJob } from "./updates";
 import type { Stage } from "./types";
+import { CompareView } from "./components/CompareView";
 import { DatasetTree } from "./components/DatasetTree";
 import { Dock } from "./components/Dock";
+import { DropZone } from "./components/DropZone";
 import { Guidebook } from "./components/Guidebook";
 import { Header } from "./components/Header";
 import { Icon } from "./components/Icon";
@@ -33,6 +36,7 @@ export default function App() {
   const config = createConfig();
   const layout = createLayout();
   const dataset = createDataset(config);
+  const temp = createTemp(dataset);
   const stages = createStages(config);
   const runner = createRunner({
     config,
@@ -117,7 +121,12 @@ export default function App() {
         grouped={dataset.grouped()}
         resetKey={`${dataset.treeMode()}|${dataset.debouncedQuery()}|${dataset.reload()}`}
         sel={dataset.sel()}
-        onSelect={dataset.setSel}
+        onPick={dataset.pick}
+        picked={dataset.pickedSet()}
+        tempCount={temp.count()}
+        upload={temp.upload()}
+        tempError={temp.error()}
+        onClearTemp={() => void temp.clear()}
         query={dataset.query()}
         onQuery={dataset.setQuery}
         onRefresh={dataset.refresh}
@@ -125,23 +134,35 @@ export default function App() {
         onCollapse={() => layout.setSidebar(false)}
       />
 
-      <ItemView
-        item={dataset.item()}
-        loading={dataset.item.loading}
-        error={dataset.item.error ? String(dataset.item.error) : undefined}
-        kind={dataset.sel()?.kind ?? "image"}
-        canReveal={!!config.info()?.can_reveal}
-        onSelectCaption={(kind) => dataset.setSel({ rel: dataset.sel()?.rel ?? "", kind })}
-        proposal={runner.shownProposal()}
-        proposalStage={stages.curTitle()}
-        help={layout.helpOpen("caption")}
-        onHelp={() => layout.toggleHelp("caption")}
-        groups={layout.groupView()}
-        onGroups={layout.toggleGroupView}
-        onSaved={dataset.onSaved}
-        analysis={dataset.analysis.error ? undefined : dataset.analysis()}
-        onSetExcluded={dataset.setExcluded}
-      />
+      {/* Two or more rows picked is compare view, in the item panel's place. */}
+      <Show
+        when={dataset.picked().length > 1}
+        fallback={
+          <ItemView
+            item={dataset.item()}
+            loading={dataset.item.loading}
+            error={dataset.item.error ? String(dataset.item.error) : undefined}
+            kind={dataset.sel()?.kind ?? "image"}
+            canReveal={!!config.info()?.can_reveal}
+            onSelectCaption={(kind) => dataset.setSel({ rel: dataset.sel()?.rel ?? "", kind })}
+            proposal={runner.shownProposal()}
+            proposalStage={stages.curTitle()}
+            help={layout.helpOpen("caption")}
+            onHelp={() => layout.toggleHelp("caption")}
+            groups={layout.groupView()}
+            onGroups={layout.toggleGroupView}
+            onSaved={dataset.onSaved}
+            analysis={dataset.analysis.error ? undefined : dataset.analysis()}
+            onSetExcluded={dataset.setExcluded}
+          />
+        }
+      >
+        <CompareView
+          rels={dataset.picked()}
+          onOpen={(rel) => dataset.pick(rel, "image")}
+          onClose={() => dataset.setPicked([])}
+        />
+      </Show>
 
       <Dock
         open={layout.dockOpen()}
@@ -203,6 +224,8 @@ export default function App() {
 
       {/* The manual, over everything: it is read *about* the panel behind it,
           so it is a window of its own and not a pane of Settings. */}
+      <DropZone on={temp.dragging()} />
+
       <Guidebook open={layout.guideOpen()} onClose={() => layout.setGuideOpen(false)} />
 
       {/* One card for every tag chip in the app; it floats, so it is mounted at

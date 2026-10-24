@@ -48,6 +48,14 @@ const ko: Dict = {
     modeTreeHint: "데이터셋이 저장된 폴더 구조",
     modeGroups: "그룹",
     modeGroupsHint: "Groups 스테이지가 찾아낸 근접 쌍 묶음",
+    modeTemp: "임시",
+    modeTempHint:
+      "창에 끌어다 놓은 이미지 — workspace/_temp에 보관되고, 스테이지도 그 안에서 돌며, Export는 내보내지 않습니다",
+    tempEmpty: "이미지나 폴더를 창에 끌어다 놓으면 여기서 열립니다.",
+    tempClear: "임시 영역 전부 지우기",
+    tempClearArmed: "한 번 더 누르면 놓은 이미지와 그것으로 돌린 결과가 모두 지워집니다",
+    tempClearConfirm: "지울까요?",
+    uploading: (done, total) => `올리는 중 ${done}/${total}…`,
     rescan: "데이터셋 다시 훑기",
     collapse: "사이드바 접기",
     filter: "필터…",
@@ -81,7 +89,7 @@ const ko: Dict = {
   item: {
     loading: "불러오는 중…",
     pick: "왼쪽에서 이미지를 고르세요.",
-    keys: "↑/↓ 또는 j/k로 이미지 이동 · ⌘/Ctrl+Enter로 캡션 저장",
+    keys: "↑/↓ 또는 j/k로 이미지 이동 · shift/⌘/Ctrl+클릭으로 여러 장 비교 · ⌘/Ctrl+Enter로 캡션 저장",
     views: {
       image: "원본",
       overlay: "마스크",
@@ -109,6 +117,17 @@ const ko: Dict = {
     /** 원래 자리가 이미 차 있어 남겨둔 파일. */
     excludeKept: (n: number) =>
       `파일 ${n}개는 _excluded에 남았습니다 — 원래 경로가 이미 차 있습니다`,
+  },
+  compare: {
+    title: (n) => `이미지 ${n}장`,
+    hint: "shift+클릭으로 범위 넓히기 · ⌘/Ctrl+클릭으로 한 장씩 넣고 빼기 · Esc로 닫기",
+    open: "이 이미지만 열기",
+    noCaption: "아직 캡션 없음",
+    more: (n) => `+ ${n}장 더 있음 — 보려면 고른 범위를 좁히세요`,
+  },
+  drop: {
+    title: "놓으면 임시에서 열립니다",
+    hint: "workspace/_temp로 복사됩니다 — 데이터셋은 건드리지 않습니다",
   },
   ocr: {
     title: "이미지 속 텍스트",

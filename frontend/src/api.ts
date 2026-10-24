@@ -19,7 +19,9 @@ import type {
   ProposalIndex,
   SavedCaption,
   Settings,
+  Space,
   Stage,
+  TempSummary,
   DropGroups,
   TagInfo,
   UndoResult,
@@ -45,6 +47,16 @@ const json = (method: string, body: unknown): RequestInit => ({
   body: JSON.stringify(body),
 });
 
+/** The space every dataset call is answered against. Read at request time
+    rather than passed by each caller: the sidebar's mode decides it, and the
+    caption editor, the runner and the item panel all ask the server about
+    "this image" without knowing which tree it is in. `dataset.ts` binds it. */
+let space: () => Space = () => "dataset";
+/** `space=temp` for the drop area; nothing at all for the dataset, so its URLs
+    are the ones they always were. */
+const sp = () => (space() === "temp" ? "temp" : "");
+const spaceQ = (sep: "?" | "&") => (sp() ? `${sep}space=${sp()}` : "");
+
 export const api = {
   info: () => req<Info>("/api/info"),
   stages: () => req<Stage[]>("/api/stages"),
@@ -66,7 +78,7 @@ export const api = {
   /** `rel` narrows the run to that one dataset image (the stage's own
       `--path_pattern`); omit it to run the batch the Settings pattern names. */
   start: (stage: string, values: Values, apply: boolean, rel?: string | null) =>
-    req<Job>("/api/jobs", json("POST", { stage, values, apply, rel: rel ?? "" })),
+    req<Job>("/api/jobs", json("POST", { stage, values, apply, rel: rel ?? "", space: sp() })),
   cancel: (id: string) => req<{ cancelled: boolean }>(`/api/jobs/${id}/cancel`, { method: "POST" }),
   report: (id: string) => req<{ path: string; report: unknown }>(`/api/jobs/${id}/report`),
   /** Which images a finished Run changed -- the index only. */
@@ -87,33 +99,49 @@ export const api = {
   thumbUrl: (path: string, size = 96) => `/api/thumb?path=${encodeURIComponent(path)}&size=${size}`,
 
   // ---- dataset ----
+  bindSpace: (read: () => Space) => {
+    space = read;
+  },
   datasetRoots: () => req<DatasetRoots>("/api/dataset/roots"),
   putDatasetRoots: (body: Record<string, string>) =>
     req<DatasetRoots>("/api/dataset/roots", json("PUT", body)),
   dataset: (q: { q?: string; pattern?: string; limit?: number } = {}) => {
     const p = new URLSearchParams();
     for (const [k, v] of Object.entries(q)) if (v) p.set(k, String(v));
+    if (sp()) p.set("space", sp());
     return req<DatasetList>(`/api/dataset?${p}`);
   },
   /** The near-twin components the Groups stage wrote -- rels only, joined
       against the listing above by the sidebar's group view. */
-  groups: () => req<DatasetGroups>("/api/dataset/groups"),
-  item: (rel: string) => req<ItemDetail>(`/api/dataset/item?rel=${encodeURIComponent(rel)}`),
-  analysis: (rel: string) => req<Analysis>(`/api/dataset/analysis?rel=${encodeURIComponent(rel)}`),
+  groups: () => req<DatasetGroups>(`/api/dataset/groups${spaceQ("?")}`),
+  item: (rel: string) =>
+    req<ItemDetail>(`/api/dataset/item?rel=${encodeURIComponent(rel)}${spaceQ("&")}`),
+  analysis: (rel: string) =>
+    req<Analysis>(`/api/dataset/analysis?rel=${encodeURIComponent(rel)}${spaceQ("&")}`),
   items: (rels: string[]) =>
-    req<{ items: DatasetItem[] }>("/api/dataset/items", json("POST", { rels })),
+    req<{ items: DatasetItem[] }>("/api/dataset/items", json("POST", { rels, space: sp() })),
   /** Take one image out of the pipeline, or put it back. Instant, not a job:
       it moves the image's files between `workspace/` and `workspace/_excluded/`
       and answers with the row as it now is. */
   setExcluded: (rel: string, excluded: boolean, note = "") =>
-    req<ExcludeResult>("/api/dataset/exclude", json("POST", { rel, excluded, note })),
+    req<ExcludeResult>("/api/dataset/exclude", json("POST", { rel, excluded, note, space: sp() })),
   /** Parse an unsaved caption server-side; the grammar has one implementation. */
   parse: (text: string) => req<Parsed>("/api/dataset/parse", json("POST", { text })),
   describeTag: (tag: string) => req<TagInfo>(`/api/tags/describe?tag=${encodeURIComponent(tag)}`),
   /** The drop group of each tag, for the caption editor's group view. */
   dropGroups: (tags: string[]) => req<DropGroups>("/api/tags/groups", json("POST", { tags })),
   saveCaption: (rel: string, kind: CaptionKind, text: string) =>
-    req<SavedCaption>("/api/dataset/item", json("PUT", { rel, kind, text })),
+    req<SavedCaption>("/api/dataset/item", json("PUT", { rel, kind, text, space: sp() })),
+
+  // ---- the drop area ----
+  temp: () => req<TempSummary>("/api/temp"),
+  /** One dropped file, as the raw body, at `rel` under the drop area. */
+  putTempFile: (rel: string, file: Blob) =>
+    req<{ rel: string; image: boolean }>(`/api/temp/file?rel=${encodeURIComponent(rel)}`, {
+      method: "PUT",
+      body: file,
+    }),
+  clearTemp: () => req<{ removed: number }>("/api/temp", { method: "DELETE" }),
 };
 
 /** Any thrown error as a failed status line. */

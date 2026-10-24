@@ -123,6 +123,8 @@ export interface Job {
   lines: number;
   report_path: string | null;
   apply: boolean;
+  /** The trees the run was over; its report is read back against them. */
+  space: Space;
   values: Record<string, unknown>;
 }
 
@@ -388,9 +390,21 @@ export interface Sel {
   kind: NodeKind;
 }
 
-/** The sidebar's two orderings of the same rows: the folder tree the dataset
-    is stored in, and the near-twin components the Groups stage found in it. */
-export type TreeMode = "tree" | "groups";
+/** The sidebar's modes: two orderings of the dataset — the folder tree it is
+    stored in, and the near-twin components the Groups stage found in it — and
+    `temp`, the folder tree of the drop area instead. */
+export type TreeMode = "tree" | "groups" | "temp";
+
+/** Which trees a request is answered against (`gui/dataset.py::SPACES`): the
+    dataset the roots name, or the drop area under `workspace/_temp/`, which is
+    a curation home of its own and is never exported. */
+export type Space = "dataset" | "temp";
+
+/** `GET /api/temp` — whether the drop area holds anything. */
+export interface TempSummary {
+  root: string;
+  count: number;
+}
 
 /** One caption of one image: a rung of the ladder, already parsed. `editable`
     is the rung's, not the file's — a variant is read-only whether or not it is

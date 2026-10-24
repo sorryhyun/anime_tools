@@ -49,6 +49,14 @@ const ja: Dict = {
     modeTreeHint: "データセットが置かれているフォルダ構成",
     modeGroups: "グループ",
     modeGroupsHint: "Groups ステージが見つけた近似画像のまとまり",
+    modeTemp: "一時",
+    modeTempHint:
+      "ウィンドウにドロップした画像 — workspace/_temp に置かれ、ステージもその中で実行され、Export は書き出しません",
+    tempEmpty: "画像やフォルダをウィンドウにドロップするとここで開きます。",
+    tempClear: "一時領域をすべて削除",
+    tempClearArmed: "もう一度押すと、ドロップした画像とそこから実行した結果がすべて削除されます",
+    tempClearConfirm: "削除？",
+    uploading: (done, total) => `アップロード中 ${done}/${total}…`,
     rescan: "データセットを再スキャン",
     collapse: "サイドバーを畳む",
     filter: "絞り込み…",
@@ -83,7 +91,7 @@ const ja: Dict = {
   item: {
     loading: "読み込み中…",
     pick: "左から画像を選んでください。",
-    keys: "↑/↓ または j/k で画像を移動 · ⌘/Ctrl+Enter でキャプションを保存",
+    keys: "↑/↓ または j/k で画像を移動 · shift/⌘/Ctrl+クリックで複数を比較 · ⌘/Ctrl+Enter でキャプションを保存",
     views: {
       image: "元画像",
       overlay: "マスク",
@@ -110,6 +118,17 @@ const ja: Dict = {
     excludedFiles: (n: number) => `workspace/_excluded に ${n} 件`,
     /** 元の場所がふさがっていて残したファイル。 */
     excludeKept: (n: number) => `${n} 件は _excluded に残りました — 元のパスがふさがっています`,
+  },
+  compare: {
+    title: (n) => `${n} 枚の画像`,
+    hint: "shift+クリックで範囲を広げる · ⌘/Ctrl+クリックで1枚ずつ追加・除外 · Esc で閉じる",
+    open: "この画像だけを開く",
+    noCaption: "キャプションはまだありません",
+    more: (n) => `ほか ${n} 枚は非表示 — 見るには選択を絞ってください`,
+  },
+  drop: {
+    title: "ドロップすると一時で開きます",
+    hint: "workspace/_temp にコピーされます — データセットには触れません",
   },
   ocr: {
     title: "画像内のテキスト",

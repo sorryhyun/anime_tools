@@ -797,3 +797,68 @@ def test_a_request_reads_the_settings_file_once(home, monkeypatch):
 
     assert len(reads) == 1
     assert ctx.roots.src == home / "image_dataset"
+
+
+# -- the drop area: images dragged onto the window ---------------------------
+
+
+def _png_bytes(tmp_path: Path) -> bytes:
+    p = tmp_path / "dropped.png"
+    write_png(p)
+    return p.read_bytes()
+
+
+def test_a_drop_lands_in_the_temp_area_and_lists_apart_from_the_dataset(
+    client, tmp_path
+):
+    c, home = client
+    temp = home / "workspace" / "_temp"
+    assert c.get("/api/temp").json()["count"] == 0
+
+    r = c.put("/api/temp/file?rel=drop/x.png", content=_png_bytes(tmp_path))
+    assert r.json() == {"rel": "drop/x.png", "image": True}
+    r = c.put("/api/temp/file?rel=drop/x.txt", content=b"1girl, solo")
+    assert r.json()["image"] is False
+    # The drop area is a curation home of its own, laid out like the real one.
+    assert (temp / "image_dataset" / "drop" / "x.png").is_file()
+    assert c.get("/api/temp").json()["count"] == 1
+
+    got = c.get("/api/dataset?space=temp").json()
+    assert [i["rel"] for i in got["items"]] == ["drop/x.png"]
+    assert got["root"] == "workspace/_temp/image_dataset"
+    # ...and the dataset's own listing does not see it.
+    assert {i["rel"] for i in c.get("/api/dataset").json()["items"]} == {
+        "a.png",
+        "sub/b.jpg",
+    }
+
+    item = c.get("/api/dataset/item?rel=drop/x.png&space=temp").json()
+    master = next(v for v in item["versions"] if v["kind"] == "master")
+    assert master["text"] == "1girl, solo"
+    assert c.get("/api/dataset/item?rel=drop/x.png").status_code == 404
+
+    # An edit stays inside the drop area too.
+    c.put(
+        "/api/dataset/item",
+        json={"rel": "drop/x.png", "kind": "master", "text": "1girl", "space": "temp"},
+    )
+    assert (temp / "workspace" / "master" / "drop" / "x.txt").is_file()
+    assert not (home / "workspace" / "master" / "drop").exists()
+
+
+def test_a_drop_takes_images_and_captions_only(client, tmp_path):
+    c, _ = client
+    data = _png_bytes(tmp_path)
+    for rel in ("../x.png", "x.exe", "x.variants.txt", "/abs.png"):
+        assert c.put(f"/api/temp/file?rel={rel}", content=data).status_code == 400, rel
+    assert c.get("/api/dataset?space=nowhere").status_code == 400
+
+
+def test_clearing_the_temp_area_removes_it_whole(client, tmp_path):
+    c, home = client
+    c.put("/api/temp/file?rel=x.png", content=_png_bytes(tmp_path))
+    assert c.delete("/api/temp").json() == {"removed": 1}
+    assert not (home / "workspace" / "_temp").exists()
+    assert c.get("/api/temp").json()["count"] == 0
+    # The dataset is never under it.
+    assert (home / "image_dataset" / "a.png").is_file()

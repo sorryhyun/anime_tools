@@ -7,6 +7,7 @@ const PATHS = {
   refresh: ["M20 11a8 8 0 1 0-2.3 5.7", "M20 4v7h-7"],
   chevronLeft: ["M15 5l-7 7 7 7"],
   chevronRight: ["M9 5l7 7-7 7"],
+  trash: ["M4 7h16", "M9 7V4h6v3", "M6 7l1 13h10l1-13", "M10 11v6", "M14 11v6"],
 } as const;
 
 export type IconName = keyof typeof PATHS;

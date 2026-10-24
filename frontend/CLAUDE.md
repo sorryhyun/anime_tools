@@ -66,7 +66,14 @@ nothing fetched, no business rule lives there. The state is five composables at
   reporting on. It also owns the sidebar's two shapes and the `drawOrder` over
   them, which is what ↑/↓ (and j/k) walk: the flat listing is not the order the
   rows are drawn in, since a folder's subfolders come before its own files and
-  group view is a different sequence entirely.
+  group view is a different sequence entirely. The third mode, `temp`, is not an
+  ordering but another set of trees: `space()` follows it and is bound into
+  `api` (`bindSpace`), so every dataset call — the caption save and a Run
+  included — is answered against the drop area while it is up, and each space
+  keeps the image it was left on. A shift-click (a range along `drawOrder`) or
+  ⌘/Ctrl-click (a toggle) gathers `picked`; two or more swaps `ItemView` for
+  `CompareView`, and the selection stays on the row the pick hangs off, so any
+  move of it clears the pick.
 - `stages.ts` — the stage registry and the form over the open one, including
   how the dock's buttons bucket stages into panels. Every field comes from the
   stage's request dataclass (`gui/stages.py` walks the same field list the CLI
@@ -98,7 +105,10 @@ nothing fetched, no business rule lives there. The state is five composables at
   past — so the button stays after it, while the fill is drawn only while
   something is running.
 
-Plus `downloads.ts` (a weights fetch: the same job slot, but it reports into
+Plus `temp.ts` (the window-level file drop: a drag carrying files raises
+`DropZone`, a drop is uploaded file by file to `/api/temp/file` and opens the
+sidebar's temp mode on the first image it brought; the clear is two clicks on
+one button, never a dialog), `downloads.ts` (a weights fetch: the same job slot, but it reports into
 the Settings dialog rather than the dock), `updates.ts` (the same shape again
 for the self-update: `/api/update` once on load and again on Check now — the
 six-hour cache is the server's, so nothing here polls — and the upgrade as a job

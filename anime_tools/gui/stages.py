@@ -26,6 +26,7 @@ __all__ = [
     "AUTO_FIELDS",
     "BASIC_FIELDS",
     "BY_ID",
+    "EXPORT_STAGE",
     "FOLLOW_UPS",
     "GATE_ATTR",
     "MASK_FIELDS",
@@ -154,6 +155,10 @@ PREPROCESS_STAGE = "resize"
 panel: every stage bound to ``dst`` walks ``workspace/resized/``, so an image only
 in the caption master is invisible to it. Idempotent, so the preflight is cheap."""
 
+EXPORT_STAGE = "export"
+"""The one stage that writes outside the workspace — so the one a run over the
+GUI's drop area (``gui.dataset.TEMP_SPACE``) is refused."""
+
 PREPROCESS_SETTINGS_KEY = "preprocess"
 """Where the resize form's values live in the settings file. It has no panel, so
 its knobs are set once in ⚙ Settings."""
@@ -244,7 +249,7 @@ ROOT_FIELDS: dict[str, dict[str, str]] = {
 }
 
 
-NO_PREFLIGHT: frozenset[str] = frozenset({PREPROCESS_STAGE, "export"})
+NO_PREFLIGHT: frozenset[str] = frozenset({PREPROCESS_STAGE, EXPORT_STAGE})
 """Stages the resize preflight never runs in front of.
 
 ``export`` is bound to ``dst`` but publishes the resized tree rather than

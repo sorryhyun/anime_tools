@@ -72,7 +72,15 @@ stay, because Settings' placeholders are those values computed against *empty* s
   The sidebar draws one listing in two orderings,
   `tree` and `groups`;
   `load_groups` reads `<report_root>/<GROUPS_SUBPATH>` and answers rels only, so filters and
-  pending dots mean the same thing in both modes. A missing groups manifest is not an error; an
+  pending dots mean the same thing in both modes. The sidebar's third mode is the drop area
+  (`WS.TEMP`, `temp_roots()`): every dataset route and `POST /api/jobs` take `space=temp`, which
+  `RunContext.load` answers with the default roots laid out again under `workspace/_temp/` — a
+  curation home of its own. A job over it runs *in* it (cwd and `ANIME_TOOLS_HOME`, with the
+  weights pinned back to the real `models_dir`), so unbound home-relative defaults (OCR tree,
+  exclusion ledger) land inside it; what is bound is spelled absolute, the Settings pattern is
+  dropped, `Job.space` is what its report is read back against, and Export is refused.
+  `/api/temp` counts it, `PUT /api/temp/file` takes one dropped file as the raw body, and
+  `DELETE /api/temp` removes it whole (409 while a temp job runs). A missing groups manifest is not an error; an
   unparseable one is a 400. `POST /api/dataset/exclude` is the ⊘ button:
   `anime_tools.exclude` seen from the server, an instant move rather than a job (there is
   nothing to run and no report to undo), answering with the ledger row and the sidebar row it

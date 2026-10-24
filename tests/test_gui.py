@@ -768,6 +768,35 @@ def test_settings_pattern_and_rel_pick_the_run_scope(client):
     assert "--device" not in batch["argv"] + one["argv"]
 
 
+def test_a_temp_run_runs_inside_the_drop_area(client):
+    """``space=temp`` runs the stage with the drop area as its curation home:
+    what is bound is spelled absolute, the Settings pattern (which names
+    dataset folders) is left off, and the report is read back from there."""
+    c, home = client
+    temp = home / "workspace" / "_temp"
+    c.put("/api/settings", json={"stage_defaults": {"path_pattern": "sub/*"}})
+    job = _await_job(c, c.post("/api/jobs", json={"stage": "stub", "space": "temp"}))
+    assert job["state"] == "done", job
+    assert job["space"] == "temp"
+    assert _opt(job["argv"], "--report_dir") == str(temp / "workspace" / "out")
+    assert "sub/*" not in job["argv"]
+    assert (temp / "workspace" / "out" / "report.json").is_file()
+    assert c.get(f"/api/jobs/{job['id']}/report").json()["report"]["rows"] == [{"k": 1}]
+    c.put("/api/settings", json={"stage_defaults": {}})
+
+
+def test_export_is_refused_over_the_drop_area(client):
+    c, _ = client
+    r = c.post("/api/jobs", json={"stage": "export", "space": "temp"})
+    assert r.status_code == 400
+    if "unavailable" not in r.text:
+        assert "temp area" in r.json()["detail"]
+    assert (
+        c.post("/api/jobs", json={"stage": "stub", "space": "elsewhere"}).status_code
+        == 400
+    )
+
+
 # -- the resize preflight: an implicit first step, not a panel -------------
 
 

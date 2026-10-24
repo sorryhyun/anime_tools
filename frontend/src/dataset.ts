@@ -1,8 +1,16 @@
-import { createEffect, createMemo, createResource, createSignal, on, onCleanup } from "solid-js";
+import {
+  batch,
+  createEffect,
+  createMemo,
+  createResource,
+  createSignal,
+  on,
+  onCleanup,
+} from "solid-js";
 import { api } from "./api";
 import { persisted } from "./state";
 import { build, drawOrder, regroup } from "./tree";
-import type { ItemDetail, NodeKind, SavedCaption, Sel, TreeMode } from "./types";
+import type { ItemDetail, NodeKind, SavedCaption, Sel, Space, TreeMode } from "./types";
 import type { Config } from "./config";
 
 /** `#rel|kind` — the dataset item is what a GUI link should point at now. */
@@ -13,6 +21,10 @@ function parseHash(): Sel | null {
   if (cut < 0) return { rel: raw, kind: "image" };
   return { rel: raw.slice(0, cut), kind: raw.slice(cut + 1) as NodeKind };
 }
+
+/** How a click on a sidebar row lands: alone, as the far end of a range from
+    the selected row (shift), or toggled in and out of the pick (⌘/Ctrl). */
+export type PickHow = "only" | "range" | "toggle";
 
 /** The image browser: the listing the sidebar draws, which row is selected, and
  * the detail of that one row.
@@ -25,21 +37,64 @@ export function createDataset(config: Config) {
   const [query, setQuery] = createSignal("");
   const [debouncedQuery, setDebouncedQuery] = createSignal("");
   const [reload, setReload] = createSignal(0);
-  const [list, { refetch: refetchList, mutate: mutateList }] = createResource(
-    () => [debouncedQuery(), config.roots(), reload()] as const,
-    ([q]) => api.dataset({ q }),
-  );
-  const [sel, setSel] = createSignal<Sel | null>(parseHash());
   /** Which ordering the sidebar is showing. The grouping manifest is fetched
       only while group view is up -- the Groups stage may never have written
       it. */
-  const [treeMode, setTreeMode] = persisted<TreeMode>("treemode", "tree", (raw) =>
-    raw === "groups" ? "groups" : "tree",
+  const [treeMode, setMode] = persisted<TreeMode>("treemode", "tree", (raw) =>
+    raw === "groups" || raw === "temp" ? raw : "tree",
   );
+  /** The temp mode is not a third ordering but another set of trees: every
+      dataset call the page makes is answered against the drop area while it is
+      up, which is why the space is bound into `api` rather than passed. */
+  const space = createMemo<Space>(() => (treeMode() === "temp" ? "temp" : "dataset"));
+  api.bindSpace(space);
+  const [list, { refetch: refetchList, mutate: mutateList }] = createResource(
+    () => [debouncedQuery(), config.roots(), reload(), space()] as const,
+    ([q]) => api.dataset({ q }),
+  );
+  const [sel, setSel] = createSignal<Sel | null>(parseHash());
   const [groups] = createResource(
     () => (treeMode() === "groups" ? ([config.roots(), reload()] as const) : false),
     api.groups,
   );
+  /** The rows a shift- or ⌘/Ctrl-click gathered, in draw order. Two or more is
+      compare view; the selection stays on the row the range was drawn from, so
+      the address, the hash and a per-image Run all still name one image. */
+  const [picked, setPicked] = createSignal<string[]>([]);
+  const pickedSet = createMemo(() => new Set(picked()));
+  // A pick hangs off the row it was drawn from; the selection moving anywhere
+  // else (the arrows, Back, a link) is a new place, not a wider range.
+  createEffect(
+    on(
+      () => sel()?.rel,
+      () => setPicked([]),
+      { defer: true },
+    ),
+  );
+
+  /** Each space keeps the image it was left on: going to the drop area and back
+      is a look at something else, not a reason to lose your place. */
+  const left: Record<Space, Sel | null> = { dataset: null, temp: null };
+  /** Switch the sidebar's mode. `land` is where a switch into another space
+      should open instead of where that space was left (a drop opens on what it
+      brought). */
+  function setTreeMode(mode: TreeMode, land?: Sel | null) {
+    const from = space();
+    const to: Space = mode === "temp" ? "temp" : "dataset";
+    batch(() => {
+      if (from !== to) {
+        left[from] = sel();
+        setPicked([]);
+        setSel(land !== undefined ? land : left[to]);
+      } else if (land !== undefined) setSel(land);
+      setMode(mode);
+    });
+  }
+  /** The drop area was emptied: nothing there to come back to. */
+  function leaveTemp() {
+    left.temp = null;
+    if (space() === "temp") setTreeMode("tree");
+  }
   const [item, { mutate: mutateItem, refetch: refetchItem }] = createResource<
     ItemDetail | undefined,
     string
@@ -94,6 +149,11 @@ export function createDataset(config: Config) {
       is best-effort.) */
   const onKey = (e: KeyboardEvent) => {
     const mod = e.metaKey || e.ctrlKey;
+    if (e.key === "Escape" && picked().length > 1) {
+      e.preventDefault();
+      setPicked([]);
+      return;
+    }
     const k = e.key.toLowerCase();
     if (e.key === "F5" || (mod && k === "r")) {
       e.preventDefault();
@@ -123,6 +183,34 @@ export function createDataset(config: Config) {
     window.removeEventListener("hashchange", onHash);
     window.removeEventListener("keydown", onKey, true);
   });
+
+  /** A click on a row. A range runs from the selected row to this one along
+      `order` — the rows as drawn, so it is what the eye sees between them in
+      either view. A toggle starts from the selected row too, so ⌘/Ctrl-clicking
+      one other image is already a pair. A pick that shrinks back to one image
+      is a plain selection of it. */
+  function pick(rel: string, kind: NodeKind, how: PickHow = "only") {
+    const anchor = sel()?.rel;
+    if (how === "only" || !anchor || anchor === rel) {
+      setPicked([]);
+      setSel({ rel, kind });
+      return;
+    }
+    if (how === "range") {
+      const rels = order();
+      const a = rels.indexOf(anchor);
+      const b = rels.indexOf(rel);
+      if (a < 0 || b < 0) return pick(rel, kind);
+      setPicked(rels.slice(Math.min(a, b), Math.max(a, b) + 1));
+      return;
+    }
+    const now = new Set(picked().length ? picked() : [anchor]);
+    if (!now.delete(rel)) now.add(rel);
+    const next = order().filter((r) => now.has(r));
+    if (next.length > 1) return setPicked(next);
+    setPicked([]);
+    if (next[0]) setSel({ rel: next[0], kind: "image" });
+  }
 
   /** Fold a just-saved caption back into the loaded item and its tree row,
       so neither has to be re-fetched.
@@ -197,8 +285,14 @@ export function createDataset(config: Config) {
     sel,
     setSel,
     rel: () => sel()?.rel ?? null,
+    picked,
+    pickedSet,
+    setPicked,
+    pick,
+    space,
     treeMode,
     setTreeMode,
+    leaveTemp,
     groups,
     tree,
     grouped,

@@ -30,8 +30,9 @@ from __future__ import annotations
 import base64
 import glob
 import os
+import shutil
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from functools import lru_cache
 from io import BytesIO
 from pathlib import Path
@@ -41,6 +42,7 @@ from anime_tools import workspace as WS
 from anime_tools._env import curation_home, resolve_path, workspace_dir
 from anime_tools._json import read_json
 from anime_tools._walk import (
+    IMAGE_EXTENSIONS,
     filter_paths_by_glob,
     glob_images_pathlib,
     sibling_image,
@@ -57,6 +59,7 @@ from anime_tools.captions.ocr_sidecar import (
 )
 from anime_tools.captions.position_clauses import parse_caption, tag_spans
 from anime_tools.captions.variants import read_variants_sidecar, variants_sidecar_path
+from anime_tools.contract import is_caption_sidecar
 from anime_tools.exclude import (
     Entry,
     ExclusionError,
@@ -192,6 +195,10 @@ class Roots:
     dst: Path
     masks: Path
     out: Path
+    workspace: Path = field(default_factory=workspace_dir)
+    """The workspace the trees above belong to — where the trees no root names
+    live (the OCR sidecars, ``_excluded``). Not a root: nothing binds a flag to
+    it, and the temp area (:func:`temp_roots`) is the one caller that moves it."""
 
     def items(self) -> tuple[tuple[str, Path], ...]:
         return tuple((name, getattr(self, name)) for name in DEFAULT_ROOTS)
@@ -443,7 +450,7 @@ def excluded_trees(roots: Roots) -> Trees:
     honoured; the OCR sidecars and ``_excluded`` itself are workspace trees no
     root names, resolved the way :func:`ocr_path` resolves the first of them.
     """
-    ws = workspace_dir()
+    ws = roots.workspace
     return Trees(
         resized=roots.dst,
         masks=roots.masks,
@@ -494,6 +501,71 @@ def set_excluded(
         **result.to_dict(),
         "row": _row(roots, rel, rel.name, excluded=rel.as_posix() in entries),
     }
+
+
+# ---- the temp area: images dropped onto the window ------------------------- #
+
+DATASET_SPACE = "dataset"
+TEMP_SPACE = "temp"
+SPACES = (DATASET_SPACE, TEMP_SPACE)
+"""What a request is answered against: the dataset the roots name, or the drop
+area under :data:`~anime_tools.workspace.TEMP`."""
+
+_TEMP_SUFFIXES = frozenset(e.lower() for e in IMAGE_EXTENSIONS) | {".txt"}
+"""What a drop may bring: images, and the captions beside them (which land as
+the drop area's hand-written masters)."""
+
+
+def temp_home() -> Path:
+    """The drop area — a curation home of its own, home-relative like every
+    default root rather than under ``ANIME_TOOLS_WORKSPACE``, so it is inside
+    what :func:`reachable` allows wherever the workspace was pointed."""
+    return curation_home() / WS.TEMP
+
+
+def temp_roots() -> Roots:
+    """:data:`DEFAULT_ROOTS` laid out again under :func:`temp_home`. Saved
+    Settings roots do not move it: they name the dataset, which this is not."""
+    home = temp_home()
+    return Roots(
+        **{name: home / default for name, default in DEFAULT_ROOTS.items()},
+        workspace=home / WS.WORKSPACE,
+    )
+
+
+def temp_summary() -> dict[str, Any]:
+    """Whether the drop area holds anything — what decides that the sidebar
+    draws its third mode at all."""
+    src = temp_roots().src
+    n = len(glob_images_pathlib(src, recursive=True)) if src.is_dir() else 0
+    return {"root": rel_to_home(src), "count": n}
+
+
+def save_temp_file(rel_str: str, data: bytes) -> dict[str, Any]:
+    """Write one dropped file into the drop area's source tree, at the path it
+    had under whatever was dropped (a folder keeps its subfolders).
+
+    An image or a caption only; a ``{stem}.*.txt`` sidecar is refused, since in
+    the source tree it would be read as nothing at all. A second drop of the same
+    name replaces the first.
+    """
+    rel = _rel_key(rel_str)
+    if rel.suffix.lower() not in _TEMP_SUFFIXES or is_caption_sidecar(rel.name):
+        raise DatasetError(f"not an image or a caption: {rel.as_posix()}")
+    dest = temp_roots().src / rel
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    dest.write_bytes(data)
+    return {"rel": rel.as_posix(), "image": rel.suffix.lower() != ".txt"}
+
+
+def clear_temp() -> dict[str, Any]:
+    """Delete the drop area — the source tree and everything a run made from it.
+    The dataset is never under it, so this is the whole of what clearing means."""
+    removed = temp_summary()["count"]
+    home = temp_home()
+    if home.is_dir():
+        shutil.rmtree(home)
+    return {"removed": removed}
 
 
 def list_items(
@@ -841,7 +913,7 @@ def ocr_path(roots: Roots, rel: Path) -> Path | None:
     """The workspace's ``{stem}.ocr.txt``, else the one under ``<out>/ocr`` —
     the trainer's own OCR tree, which Export never writes."""
     txt = rel.with_suffix(".txt")
-    for root in (workspace_dir() / WS.OCR_SUBDIR, roots.out / "ocr"):
+    for root in (roots.workspace / WS.OCR_SUBDIR, roots.out / "ocr"):
         p = ocr_sidecar_path(root / txt)
         if p.is_file():
             return p
@@ -854,7 +926,7 @@ def drawn_on(roots: Roots, rel: Path, p: Path | None) -> Path | None:
     ``<out>/resized`` for a published one."""
     if p is None:
         return None
-    ours = p.is_relative_to(roots.masks) or p.is_relative_to(workspace_dir())
+    ours = p.is_relative_to(roots.masks) or p.is_relative_to(roots.workspace)
     tree = roots.dst if ours else roots.out / "resized"
     return sibling_image(tree / rel.parent, rel.stem)
 

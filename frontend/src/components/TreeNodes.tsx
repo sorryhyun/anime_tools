@@ -1,4 +1,5 @@
 import { createEffect, For, Show } from "solid-js";
+import type { PickHow } from "../dataset";
 import { t } from "../i18n";
 import type { Folder, Folding, Grouped } from "../tree";
 import type { DatasetItem, NodeKind, Rung, Sel, VersionKind } from "../types";
@@ -14,7 +15,9 @@ export interface TreeCtx {
       cannot come apart from the `captions` map on each row. */
   ladder: () => Rung[];
   sel: () => Sel | null;
-  select: (rel: string, kind: NodeKind) => void;
+  select: (rel: string, kind: NodeKind, how?: PickHow) => void;
+  /** The rows a shift- or ⌘/Ctrl-click gathered for compare view. */
+  picked: () => Set<string>;
   /** Rels the last Run changed, so a batch's diff can be walked down. */
   pending: () => Set<string> | undefined;
 }
@@ -96,10 +99,24 @@ export function ImageNode(p: { ctx: TreeCtx; it: DatasetItem; depth: number; wit
   return (
     <div
       ref={row}
-      classList={{ tn: true, img: true, sel: isSel(), excluded: p.it.excluded }}
+      classList={{
+        tn: true,
+        img: true,
+        sel: isSel(),
+        picked: p.ctx.picked().has(p.it.rel),
+        excluded: p.it.excluded,
+      }}
       style={{ "padding-left": `${8 + p.depth * 12}px` }}
       title={p.it.rel}
-      onClick={() => p.ctx.select(p.it.rel, "image")}
+      // A shift-click would otherwise also select the row labels in between.
+      onMouseDown={(e) => e.shiftKey && e.preventDefault()}
+      onClick={(e) =>
+        p.ctx.select(
+          p.it.rel,
+          "image",
+          e.shiftKey ? "range" : e.metaKey || e.ctrlKey ? "toggle" : "only",
+        )
+      }
     >
       <span class="tl">
         <Show when={p.withDir && p.it.dir}>

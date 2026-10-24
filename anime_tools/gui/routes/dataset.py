@@ -3,7 +3,9 @@ caption write, the exclusion toggle, the tag panel, thumbnails and file reads.
 
 The roots every route here reads come from one settings snapshot
 (:class:`~anime_tools.gui._context.RunContext`), with the per-request
-``src`` / ``dst`` / ``masks`` overrides folded in. ``D.DatasetError`` is left to
+``src`` / ``dst`` / ``masks`` overrides folded in — or, with ``space=temp``, the
+drop area the sidebar's temp mode shows, which the ``/api/temp`` routes fill and
+clear. ``D.DatasetError`` is left to
 the app-wide 400 handler except where a route owes a 404 instead, which it says
 at the call that produces it.
 """
@@ -30,10 +32,13 @@ from anime_tools.gui.settings import edit_settings, load_settings
 router = APIRouter()
 
 
-def _overrides(body: dict[str, Any]) -> dict[str, str]:
-    """The root spellings a POST/PUT body may carry, blanks included (they fall
-    back to the saved roots)."""
-    return {k: str(body.get(k) or "") for k in D.DEFAULT_ROOTS}
+def _context(body: dict[str, Any]) -> RunContext:
+    """The context a POST/PUT body names: its ``space`` and the root spellings it
+    may carry, blanks included (they fall back to the saved roots)."""
+    return RunContext.load(
+        space=str(body.get("space") or ""),
+        **{k: str(body.get(k) or "") for k in D.DEFAULT_ROOTS},
+    )
 
 
 @router.get("/api/dataset/roots")
@@ -80,9 +85,10 @@ def dataset_list(
     pattern: str = "",
     q: str = "",
     limit: int = D.MAX_ITEMS,
+    space: str = "",
 ) -> dict[str, Any]:
     return D.list_items(
-        RunContext.load(src=src, dst=dst, masks=masks).roots,
+        RunContext.load(space=space, src=src, dst=dst, masks=masks).roots,
         pattern=pattern or None,
         query=q,
         limit=limit,
@@ -90,22 +96,22 @@ def dataset_list(
 
 
 @router.get("/api/dataset/groups")
-def dataset_groups() -> dict[str, Any]:
+def dataset_groups(space: str = "") -> dict[str, Any]:
     """The near-twin components the **Groups** stage wrote, rels only.
 
     The client joins them onto the ``/api/dataset`` rows it already has, so one
     filter and one truncation serve both sidebar orderings. The path is derived
     like a stage's report, so it follows Settings.
     """
-    return D.load_groups(RunContext.load().report_root)
+    return D.load_groups(RunContext.load(space=space).report_root)
 
 
 @router.get("/api/dataset/analysis")
-def dataset_analysis(rel: str) -> dict[str, Any]:
+def dataset_analysis(rel: str, space: str = "") -> dict[str, Any]:
     """The caption panel's analysis badge: what the position stage (and its
     multiview audit phase) last recorded about this image, masks included.
     Derived like the groups manifest, so it follows Settings."""
-    return D.load_analysis(RunContext.load().report_root, rel)
+    return D.load_analysis(RunContext.load(space=space).report_root, rel)
 
 
 @router.post("/api/dataset/items")
@@ -114,15 +120,14 @@ async def dataset_items(request: Request) -> dict[str, Any]:
     re-walking the source root."""
     body = await request.json()
     rels = [str(r) for r in (body.get("rels") or [])][: D.MAX_ITEMS]
-    ctx = RunContext.load(**_overrides(body))
-    return {"items": D.item_rows(ctx.roots, rels)}
+    return {"items": D.item_rows(_context(body).roots, rels)}
 
 
 @router.get("/api/dataset/item")
 def dataset_item(
-    rel: str, src: str = "", dst: str = "", masks: str = ""
+    rel: str, src: str = "", dst: str = "", masks: str = "", space: str = ""
 ) -> dict[str, Any]:
-    ctx = RunContext.load(src=src, dst=dst, masks=masks)
+    ctx = RunContext.load(space=space, src=src, dst=dst, masks=masks)
     try:
         return D.item_detail(ctx.roots, rel)
     except D.DatasetError as e:
@@ -134,7 +139,7 @@ def dataset_item(
 @router.put("/api/dataset/item")
 async def put_dataset_item(request: Request) -> dict[str, Any]:
     body = await request.json()
-    ctx = RunContext.load(**_overrides(body))
+    ctx = _context(body)
     try:
         return D.write_caption(
             ctx.roots,
@@ -156,13 +161,44 @@ async def dataset_exclude(request: Request) -> dict[str, Any]:
     the inverse gesture is the same route with ``excluded: false``.
     """
     body = await request.json()
-    ctx = RunContext.load(**_overrides(body))
+    ctx = _context(body)
     return D.set_excluded(
         ctx.roots,
         str(body.get("rel") or ""),
         excluded=bool(body.get("excluded")),
         note=str(body.get("note") or ""),
     )
+
+
+@router.get("/api/temp")
+def temp_summary() -> dict[str, Any]:
+    """How many images the drop area holds — whether the sidebar draws its
+    temp mode at all."""
+    return D.temp_summary()
+
+
+@router.put("/api/temp/file")
+async def put_temp_file(request: Request, rel: str) -> dict[str, Any]:
+    """One dropped file, as the raw request body, at ``rel`` under the drop
+    area's source tree. One file per request rather than a multipart form: the
+    browser sends a drop file by file anyway, and a body needs no parser."""
+    try:
+        return D.save_temp_file(rel, await request.body())
+    except OSError as e:
+        raise HTTPException(500, f"write failed: {e}") from e
+
+
+@router.delete("/api/temp")
+def clear_temp(request: Request) -> dict[str, Any]:
+    """Empty the drop area. Refused while a run is over it, which would find
+    its trees gone from under it."""
+    running = request.app.state.jobs.running
+    if running is not None and running.space == D.TEMP_SPACE:
+        raise HTTPException(409, f"job {running.id} is running over the temp area")
+    try:
+        return D.clear_temp()
+    except OSError as e:
+        raise HTTPException(500, f"cannot clear the temp area: {e}") from e
 
 
 @router.post("/api/dataset/parse")
