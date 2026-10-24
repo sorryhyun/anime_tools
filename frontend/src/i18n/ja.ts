@@ -125,6 +125,17 @@ const ja: Dict = {
     open: "この画像だけを開く",
     noCaption: "キャプションはまだありません",
     more: (n) => `ほか ${n} 枚は非表示 — 見るには選択を絞ってください`,
+    modes: { grid: "グリッド", slider: "スライダー", diff: "差分" },
+    modeHint: "2 枚の比べ方: 横に並べる、線で切り替えて重ねる、ピクセル差分",
+    swap: "左右を入れ替える",
+    sliderHint: "線をドラッグして 2 枚を切り替え · Ctrl/⌘+スクロールで拡大、ドラッグで移動",
+    diffHint: "黒は同一、明るいほど差が大きい · Ctrl/⌘+スクロールで拡大",
+    diffing: "差分を計算中…",
+    gainHint: "差分を強調 — 255 段階中の数段階の差は ×1 では黒く見えます",
+    diffStats: (mean, changed, threshold, size) =>
+      `平均 |Δ| ${mean}% · ピクセルの ${changed}% が ${threshold}/255 を超えて異なる · ${size} で計算`,
+    sizeMismatch: (a, b) =>
+      `サイズが異なります (${a} / ${b}) — 右の画像を左の画像の枠に合わせて引き伸ばしています`,
   },
   drop: {
     title: "ドロップすると一時で開きます",

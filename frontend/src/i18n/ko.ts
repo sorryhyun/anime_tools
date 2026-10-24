@@ -124,6 +124,17 @@ const ko: Dict = {
     open: "이 이미지만 열기",
     noCaption: "아직 캡션 없음",
     more: (n) => `+ ${n}장 더 있음 — 보려면 고른 범위를 좁히세요`,
+    modes: { grid: "격자", slider: "슬라이더", diff: "차이" },
+    modeHint: "두 이미지를 비교하는 방식: 나란히, 선으로 밀어 겹쳐 보기, 픽셀 차이",
+    swap: "왼쪽과 오른쪽 바꾸기",
+    sliderHint: "선을 드래그해 두 이미지를 오가며 보기 · Ctrl/⌘+스크롤로 확대, 드래그로 이동",
+    diffHint: "검은색은 동일, 밝을수록 차이가 큼 · Ctrl/⌘+스크롤로 확대",
+    diffing: "차이를 계산하는 중…",
+    gainHint: "차이를 증폭 — 255 중 몇 단계 차이는 ×1에서 검게 보입니다",
+    diffStats: (mean, changed, threshold, size) =>
+      `평균 |Δ| ${mean}% · 픽셀의 ${changed}%가 ${threshold}/255 넘게 다름 · ${size} 기준`,
+    sizeMismatch: (a, b) =>
+      `크기가 다릅니다 (${a} / ${b}) — 오른쪽 이미지를 왼쪽 이미지의 틀에 맞춰 늘렸습니다`,
   },
   drop: {
     title: "놓으면 임시에서 열립니다",

@@ -164,6 +164,22 @@ const en = {
     noCaption: "no caption yet",
     /** {0} is how many picked images are not drawn. */
     more: (n: number) => `+ ${n} more not shown — narrow the pick to see them`,
+    /** The mode control, shown only while exactly two are picked. */
+    modes: { grid: "grid", slider: "slider", diff: "diff" },
+    modeHint:
+      "how the two images are compared: side by side, wiped across each other, or their pixel difference",
+    swap: "Swap left and right",
+    sliderHint: "drag the line to wipe between the two · Ctrl/⌘+scroll zooms, drag pans",
+    diffHint: "black is identical, brighter is further apart · Ctrl/⌘+scroll zooms",
+    diffing: "computing the difference…",
+    gainHint: "Amplify the difference — a few levels out of 255 is black at ×1",
+    /** {0} mean difference %, {1} changed-pixel %, {2} the threshold out of 255,
+        {3} the W×H the difference was computed at. */
+    diffStats: (mean: string, changed: string, threshold: number, size: string) =>
+      `mean |Δ| ${mean}% · ${changed}% of pixels differ by more than ${threshold}/255 · at ${size}`,
+    /** {0} left image's W×H, {1} right image's. */
+    sizeMismatch: (a: string, b: string) =>
+      `sizes differ (${a} vs ${b}) — the right one is stretched onto the left one's frame`,
   },
   drop: {
     title: "Drop to open in temp",

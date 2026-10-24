@@ -122,6 +122,16 @@ const zh: Dict = {
     open: "单独打开这张图片",
     noCaption: "尚无标注",
     more: (n) => `另有 ${n} 张未显示 — 缩小选择范围即可查看`,
+    modes: { grid: "网格", slider: "滑块", diff: "差异" },
+    modeHint: "两张图片的比较方式：并排、用分割线叠加切换，或像素差异",
+    swap: "交换左右",
+    sliderHint: "拖动分割线在两张之间切换 · Ctrl/⌘+滚轮缩放，拖动平移",
+    diffHint: "黑色表示相同，越亮差异越大 · Ctrl/⌘+滚轮缩放",
+    diffing: "正在计算差异…",
+    gainHint: "放大差异 — 255 级中仅差几级的像素在 ×1 下是黑色",
+    diffStats: (mean, changed, threshold, size) =>
+      `平均 |Δ| ${mean}% · ${changed}% 的像素差异超过 ${threshold}/255 · 按 ${size} 计算`,
+    sizeMismatch: (a, b) => `尺寸不同（${a} / ${b}）— 右侧图片已拉伸到左侧图片的画框`,
   },
   drop: {
     title: "松开即在临时中打开",

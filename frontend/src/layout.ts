@@ -18,6 +18,14 @@ export const HELP_AREAS = [
 ] as const;
 export type HelpArea = (typeof HELP_AREAS)[number];
 
+/** How compare view lays two picked images against each other: side by side,
+    one wiped across the other, or their pixel difference. Only `grid` exists
+    for three or more. */
+export const COMPARE_MODES = ["grid", "slider", "diff"] as const;
+export type CompareMode = (typeof COMPARE_MODES)[number];
+const isCompareMode = (v: string): v is CompareMode =>
+  (COMPARE_MODES as readonly string[]).includes(v);
+
 const isArea = (v: string): v is HelpArea => (HELP_AREAS as readonly string[]).includes(v);
 /** Stored as the comma-joined list of what is open. An older `"1"`/`"0"` under
     the same key parses to nothing open, which is the off state it meant. */
@@ -50,6 +58,11 @@ export function createLayout() {
       at one caption: someone curating for a style LoRA wants it on for every
       image they walk through. */
   const [groupView, setGroupView] = persisted("groupview", false, asFlag, fromFlag);
+  /** A preference for the same reason: whoever walks near-twin pairs with the
+      slider wants it again on the next pair, not the grid. */
+  const [compareMode, setCompareMode] = persisted<CompareMode>("comparemode", "grid", (raw) =>
+    isCompareMode(raw) ? raw : "grid",
+  );
 
   // A class on <body>, not a <Show>: the tree keeps its expanded folders and
   // its scroll position while it is folded away.
@@ -79,6 +92,8 @@ export function createLayout() {
     setGuideOpen,
     groupView,
     toggleGroupView: () => setGroupView(!groupView()),
+    compareMode,
+    setCompareMode,
     helpOpen: (a: HelpArea) => helpAreas().includes(a),
     toggleHelp: (a: HelpArea) =>
       setHelpAreas((v) => (v.includes(a) ? v.filter((x) => x !== a) : [...v, a])),

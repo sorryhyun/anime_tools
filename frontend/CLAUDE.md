@@ -160,6 +160,16 @@ with its instance label map coloured per pixel on a canvas over the resized imag
 whose rows solo their region on hover. A selection carried onto an image with no record falls
 back to the editor.
 
+`CompareView` is a grid of tiles for any pick, and for a pick of exactly two it can lay one over
+the other instead — `layout.ts`'s `compareMode` (a saved preference; any other pick size is the
+grid whatever it says). `slider` stacks the right image over the left and clips it at a line you
+drag; `diff` paints their per-pixel difference through `imageDiff.ts` (both images on the left
+one's grid, capped at `DIFF_MAX_SIDE`, with a gain for differences a few levels out of 255). Both
+put the right image on the left one's frame, stretched if the shapes differ and said so in the bar,
+so the wipe and the diff line the pair up the same way, and both zoom with `zoomPan.ts`. The diff
+reads pixels off a canvas, which works only because `/api/files` is same-origin. `Seg.tsx` is the
+segmented control the mode switch, the gain and `MaskList`'s two axes share.
+
 The card's **groups** toggle (`layout.ts`'s `groupView`, a saved preference) tints each tag's box
 by the drop group the Tag groups stage cuts by. `CaptionCard` slices the tags out of the text at
 the parse's own span offsets, asks `/api/tags/groups` once per distinct tag set — nothing while the

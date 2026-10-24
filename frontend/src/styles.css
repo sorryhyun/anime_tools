@@ -14,7 +14,13 @@
    stack, not a rule per language -- a single page mixes them (a Korean UI over
    a Japanese path). */
 :root { --font-ui:Pretendard,"Apple SD Gothic Neo","Malgun Gothic","Noto Sans CJK KR","Hiragino Sans","Yu Gothic UI","Meiryo","Noto Sans CJK JP","PingFang SC","Microsoft YaHei","Noto Sans CJK SC",system-ui,sans-serif,"Apple Color Emoji","Segoe UI Emoji","Noto Color Emoji"; --font-mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; --bg:#14161a; --panel:#1c1f25; --line:#2a2e36; --fg:#e6e6e6; --dim:#8b919c; --accent:#7aa2f7; --ok:#9ece6a; --warn:#e0af68; --err:#f7768e; --sel:#262b35; --input:#0f1115; }
-* { box-sizing:border-box }
+/* Every scroll box -- the tree, the stage form, the captions, the log -- takes
+   the theme's thumb instead of the platform's light one: thin, on a clear track,
+   brighter while the pointer is over that pane. The standard properties rather
+   than ::-webkit-scrollbar: Chrome ignores the pseudo-elements once
+   scrollbar-color is set, and Firefox has only these. */
+* { box-sizing:border-box; scrollbar-width:thin; scrollbar-color:var(--line) transparent }
+:hover { scrollbar-color:var(--dim) transparent }
 body { margin:0; font:14px/1.45 var(--font-ui); background:var(--bg); color:var(--fg); height:100vh; overflow:hidden }
 /* Sidebar tree | item view, with the stage runner docked below the item view
    only; the tree runs the full height beside both. The job bar is the last row,
@@ -173,6 +179,22 @@ button.excl.on { color:var(--warn); border-color:#5c4a2a }
 .cname { padding:6px 10px 2px; font-size:12px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis }
 .ccap { padding:2px 10px 10px; font-size:12px; line-height:1.4; max-height:7.2em; overflow:auto; word-break:break-word }
 .ccap .dot { display:inline-block; margin-right:6px; vertical-align:middle }
+/* A pair laid over itself: the stage is sized in script to the left image's
+   contain-fit, so both images, the split line and the diff canvas fill it. */
+.pairbar { flex:none; display:flex; align-items:center; gap:6px; padding:8px 14px 0 }
+.pairbar .pname { max-width:40%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:12px }
+.pairnote { flex:none; padding:4px 14px 0 }
+.pairframe { flex:1; min-height:0; display:flex; align-items:center; justify-content:center; overflow:hidden; padding:12px 14px }
+.pairframe.zoomed { cursor:grab }
+.pairframe.zoomed:active { cursor:grabbing }
+.pstage { position:relative; flex:none; transform-origin:50% 50%; background:#0006 }
+.pstage img, .pstage canvas { position:absolute; inset:0; width:100%; height:100%; object-fit:fill; display:block; user-select:none }
+.pstage canvas.diff { image-rendering:pixelated }
+.pstage.slider { cursor:ew-resize }
+.pairframe.zoomed .pstage.slider { cursor:inherit }
+.pstage .split { position:absolute; top:0; bottom:0; width:2px; margin-left:-1px; background:var(--accent); cursor:ew-resize; touch-action:none }
+.pstage .split::before { content:""; position:absolute; inset:0 -6px }
+.pstage .knob { position:absolute; top:50%; left:50%; width:14px; height:14px; border-radius:50%; background:var(--accent); border:2px solid var(--bg) }
 .dropzone { position:fixed; inset:0; z-index:50; display:flex; align-items:center; justify-content:center; background:rgba(20,22,26,.78); pointer-events:none }
 .dropzone div { padding:28px 40px; border:2px dashed var(--warn); border-radius:12px; color:var(--fg); font-size:16px; text-align:center; background:var(--panel) }
 .dropzone .dim { display:block; margin-top:6px; font-size:12px }

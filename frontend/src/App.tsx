@@ -159,6 +159,8 @@ export default function App() {
       >
         <CompareView
           rels={dataset.picked()}
+          mode={layout.compareMode()}
+          onMode={layout.setCompareMode}
           onOpen={(rel) => dataset.pick(rel, "image")}
           onClose={() => dataset.setPicked([])}
         />

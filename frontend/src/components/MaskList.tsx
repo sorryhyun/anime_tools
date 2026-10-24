@@ -2,6 +2,7 @@ import { createSignal, For, Show } from "solid-js";
 import { t } from "../i18n";
 import { MASK_KINDS, MASK_ROLES, type MaskKind, type MaskRole } from "../types";
 import { browsePath, PathPicker } from "./PathPicker";
+import { Seg } from "./Seg";
 
 /** One entry of the mask stage's `--masks`, split out of its `role:kind:value`
     spelling. That spelling is the field's wire format (the form value is the
@@ -23,32 +24,6 @@ const parse = (spec: string): Entry => {
   };
 };
 const spell = (e: Entry) => `${e.role}:${e.kind}:${e.value}`;
-
-/** A segmented control over one of the two closed axes: both choices are on
-    screen at once, so a card says what it is without opening a select. */
-function Seg<T extends string>(props: {
-  options: readonly T[];
-  value: T;
-  label: (v: T) => string;
-  title: string;
-  onPick: (v: T) => void;
-}) {
-  return (
-    <span class="seg" title={props.title}>
-      <For each={props.options}>
-        {(o) => (
-          <button
-            type="button"
-            classList={{ sel: o === props.value }}
-            onClick={() => props.onPick(o)}
-          >
-            {props.label(o)}
-          </button>
-        )}
-      </For>
-    </span>
-  );
-}
 
 /** The mask stage's list of regions: one card per SAM3 prompt, each saying what
     the loss does with it (keep / ignore) and how SAM3 is asked for it (a text
