@@ -11,7 +11,7 @@ import {
 } from "solid-js";
 import { api } from "../api";
 import { t } from "../i18n";
-import { DIFF_CHANGED, drawDiff, pixelDiff } from "../imageDiff";
+import { DIFF_CHANGED, drawDiff, loadPair, pixelDiff } from "../imageDiff";
 import { COMPARE_MODES, type CompareMode } from "../layout";
 import { trackPointer } from "../state";
 import type { CaptionEntry, ImageInfo, ItemDetail } from "../types";
@@ -80,14 +80,15 @@ type Gain = (typeof GAINS)[number];
 
 /** The picture a pair view lays over the other: the source, as the grid shows. */
 const source = (it: ItemDetail | undefined): ImageInfo | null => it?.image ?? it?.resized ?? null;
-const sizeOf = (i: ImageInfo) => (i.width && i.height ? `${i.width}×${i.height}` : "?");
+const sizeOf = (i: HTMLImageElement) => `${i.naturalWidth}×${i.naturalHeight}`;
 const pct = (f: number) => (f * 100).toFixed(f < 0.1 ? 2 : 1);
 
 /** Two picked images in one frame: `slider` stacks the right one over the left
  * and clips it at a line you drag, `diff` paints their per-pixel difference.
- * Both put the right image on the left one's frame — stretched if the shapes
- * differ, which the bar says — so a wipe and a diff line the pair up the same
- * way. Ctrl/⌘+scroll zooms either, as in the preview.
+ * Both draw from one decoded, aligned pair (`imageDiff.loadPair`): a pair of
+ * different shapes is center-cropped or stretched onto one frame, whichever
+ * matches better, and the bar says which — so a wipe and a diff line the pair
+ * up the same way. Ctrl/⌘+scroll zooms either, as in the preview.
  */
 function Pair(props: {
   a: string;
@@ -103,17 +104,29 @@ function Pair(props: {
     const b = source(ib());
     return a && b ? { a, b } : null;
   });
+  const [pair] = createResource(
+    () => {
+      const s = srcs();
+      return s ? `${api.fileUrl(s.a.path)}\n${api.fileUrl(s.b.path)}` : null;
+    },
+    (key) => {
+      const [a, b] = key.split("\n");
+      return loadPair(a, b);
+    },
+  );
   const mismatch = () => {
-    const s = srcs();
-    return s && (s.a.width !== s.b.width || s.a.height !== s.b.height) ? s : null;
+    const p = pair.error ? undefined : pair();
+    return p && (p.a.naturalWidth !== p.b.naturalWidth || p.a.naturalHeight !== p.b.naturalHeight)
+      ? p
+      : null;
   };
 
   const zp = createZoomPan();
   createEffect(on([() => props.a, () => props.b, () => props.mode], zp.reset, { defer: true }));
 
-  // The stage is sized in script, not CSS: it has to be the left image's shape
-  // contain-fitted into whatever the frame is, so the right image and the
-  // diff canvas can fill it exactly and the split line is a fraction of it.
+  // The stage is sized in script, not CSS: it has to be the alignment's shape
+  // contain-fitted into whatever the frame is, so both images and the diff
+  // canvas fill it exactly and the split line is a fraction of it.
   let frame!: HTMLDivElement;
   const [box, setBox] = createSignal({ w: 0, h: 0 });
   onMount(() => {
@@ -127,20 +140,6 @@ function Pair(props: {
     const w = Math.min(box().w, box().h * ar);
     return { width: `${w}px`, height: `${w / ar}px`, ...zp.style() };
   };
-
-  /** The header's width/height first, then the decoded image's own, since a
-      header that would not read leaves them out. */
-  const [natural, setNatural] = createSignal(0);
-  const aspect = () => {
-    const a = srcs()?.a;
-    return natural() || (a?.width && a.height ? a.width / a.height : 1);
-  };
-  createEffect(
-    on(
-      () => props.a,
-      () => setNatural(0),
-    ),
-  );
 
   const [split, setSplit] = createSignal(0.5);
   let stage: HTMLDivElement | undefined;
@@ -156,26 +155,18 @@ function Pair(props: {
   };
 
   const [gain, setGain] = createSignal<Gain>("4");
-  const [diff] = createResource(
-    () => {
-      const s = srcs();
-      return props.mode === "diff" && s
-        ? `${api.fileUrl(s.a.path)}\n${api.fileUrl(s.b.path)}`
-        : null;
-    },
-    (key) => {
-      const [a, b] = key.split("\n");
-      return pixelDiff(a, b);
-    },
-  );
+  const diff = createMemo(() => {
+    const p = pair.error ? undefined : pair();
+    return props.mode === "diff" && p ? pixelDiff(p) : undefined;
+  });
   const [canvas, setCanvas] = createSignal<HTMLCanvasElement>();
   createEffect(() => {
-    const d = diff.error ? undefined : diff();
+    const d = diff();
     const c = canvas();
     if (d && c) drawDiff(c, d, Number(gain()));
   });
 
-  const error = () => ia.error ?? ib.error ?? (props.mode === "diff" ? diff.error : undefined);
+  const error = () => ia.error ?? ib.error ?? pair.error;
   const name = (it: ItemDetail | undefined, rel: string) => it?.name ?? rel;
 
   return (
@@ -203,7 +194,7 @@ function Pair(props: {
       </div>
       <div class="pairnote dim">
         <Show
-          when={props.mode === "diff" && diff() && !diff.error ? diff() : null}
+          when={diff()}
           fallback={props.mode === "slider" ? t().compare.sliderHint : t().compare.diffHint}
         >
           {(d) =>
@@ -217,7 +208,12 @@ function Pair(props: {
         </Show>
         <Show when={mismatch()}>
           {(m) => (
-            <span class="warn"> · {t().compare.sizeMismatch(sizeOf(m().a), sizeOf(m().b))}</span>
+            <span classList={{ warn: m().align.fit === "fill" }}>
+              {" · "}
+              {m().align.fit === "fill"
+                ? t().compare.alignStretch(sizeOf(m().a), sizeOf(m().b))
+                : t().compare.alignCrop(sizeOf(m().a), sizeOf(m().b), m().align.cropped === "a")}
+            </span>
           )}
         </Show>
       </div>
@@ -229,45 +225,42 @@ function Pair(props: {
         onPointerDown={zp.drag}
       >
         <Show
-          when={!error() && srcs()}
+          when={!error() && pair()}
           fallback={
             <span class={error() ? "err" : "dim"}>
               {error() ? String(error()) : t().item.loading}
             </span>
           }
         >
-          {(s) => (
+          {(p) => (
             <Show
               when={props.mode === "slider"}
               fallback={
-                <Show when={diff()} fallback={<span class="dim">{t().compare.diffing}</span>}>
-                  {(d) => (
-                    <div class="pstage" style={fit(d().width / d().height)}>
-                      <canvas class="diff" ref={setCanvas} />
-                    </div>
-                  )}
-                </Show>
+                <div class="pstage" style={fit(p().align.aspect)}>
+                  <canvas class="diff" ref={setCanvas} />
+                </div>
               }
             >
               <div
                 class="pstage slider"
                 ref={stage}
-                style={fit(aspect())}
+                style={fit(p().align.aspect)}
                 onPointerDown={(e) => zp.zoom() === 1 && grab(e)}
               >
                 <img
-                  src={api.fileUrl(s().a.path)}
+                  src={p().a.src}
                   alt={props.a}
                   draggable={false}
-                  onLoad={(e) =>
-                    setNatural(e.currentTarget.naturalWidth / e.currentTarget.naturalHeight)
-                  }
+                  style={{ "object-fit": p().align.fit }}
                 />
                 <img
-                  src={api.fileUrl(s().b.path)}
+                  src={p().b.src}
                   alt={props.b}
                   draggable={false}
-                  style={{ "clip-path": `inset(0 0 0 ${split() * 100}%)` }}
+                  style={{
+                    "object-fit": p().align.fit,
+                    "clip-path": `inset(0 0 0 ${split() * 100}%)`,
+                  }}
                 />
                 <div class="split" style={{ left: `${split() * 100}%` }} onPointerDown={grab}>
                   <span

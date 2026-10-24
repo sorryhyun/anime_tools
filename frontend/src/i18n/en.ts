@@ -171,15 +171,17 @@ const en = {
     swap: "Swap left and right",
     sliderHint: "drag the line to wipe between the two · Ctrl/⌘+scroll zooms, drag pans",
     diffHint: "black is identical, brighter is further apart · Ctrl/⌘+scroll zooms",
-    diffing: "computing the difference…",
     gainHint: "Amplify the difference — a few levels out of 255 is black at ×1",
     /** {0} mean difference %, {1} changed-pixel %, {2} the threshold out of 255,
         {3} the W×H the difference was computed at. */
     diffStats: (mean: string, changed: string, threshold: number, size: string) =>
       `mean |Δ| ${mean}% · ${changed}% of pixels differ by more than ${threshold}/255 · at ${size}`,
-    /** {0} left image's W×H, {1} right image's. */
-    sizeMismatch: (a: string, b: string) =>
-      `sizes differ (${a} vs ${b}) — the right one is stretched onto the left one's frame`,
+    /** {0} left image's W×H, {1} right image's; {2} whether the left one is
+        the one cropped. */
+    alignCrop: (a: string, b: string, left: boolean) =>
+      `sizes differ (${a} vs ${b}) — the ${left ? "left" : "right"} one is center-cropped to the other's shape, the way a bucket resize crops`,
+    alignStretch: (a: string, b: string) =>
+      `sizes differ (${a} vs ${b}) — the right one is stretched onto the left one's frame, which lines them up better than cropping`,
   },
   drop: {
     title: "Drop to open in temp",

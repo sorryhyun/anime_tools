@@ -129,12 +129,13 @@ const ko: Dict = {
     swap: "왼쪽과 오른쪽 바꾸기",
     sliderHint: "선을 드래그해 두 이미지를 오가며 보기 · Ctrl/⌘+스크롤로 확대, 드래그로 이동",
     diffHint: "검은색은 동일, 밝을수록 차이가 큼 · Ctrl/⌘+스크롤로 확대",
-    diffing: "차이를 계산하는 중…",
     gainHint: "차이를 증폭 — 255 중 몇 단계 차이는 ×1에서 검게 보입니다",
     diffStats: (mean, changed, threshold, size) =>
       `평균 |Δ| ${mean}% · 픽셀의 ${changed}%가 ${threshold}/255 넘게 다름 · ${size} 기준`,
-    sizeMismatch: (a, b) =>
-      `크기가 다릅니다 (${a} / ${b}) — 오른쪽 이미지를 왼쪽 이미지의 틀에 맞춰 늘렸습니다`,
+    alignCrop: (a, b, left) =>
+      `크기가 다릅니다 (${a} / ${b}) — ${left ? "왼쪽" : "오른쪽"} 이미지를 다른 쪽 비율에 맞춰 가운데를 잘랐습니다 (버킷 리사이즈와 같은 방식)`,
+    alignStretch: (a, b) =>
+      `크기가 다릅니다 (${a} / ${b}) — 자르는 것보다 잘 맞아서 오른쪽 이미지를 왼쪽 이미지의 틀에 맞춰 늘렸습니다`,
   },
   drop: {
     title: "놓으면 임시에서 열립니다",

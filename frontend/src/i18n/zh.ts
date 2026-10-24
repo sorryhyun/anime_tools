@@ -127,11 +127,13 @@ const zh: Dict = {
     swap: "交换左右",
     sliderHint: "拖动分割线在两张之间切换 · Ctrl/⌘+滚轮缩放，拖动平移",
     diffHint: "黑色表示相同，越亮差异越大 · Ctrl/⌘+滚轮缩放",
-    diffing: "正在计算差异…",
     gainHint: "放大差异 — 255 级中仅差几级的像素在 ×1 下是黑色",
     diffStats: (mean, changed, threshold, size) =>
       `平均 |Δ| ${mean}% · ${changed}% 的像素差异超过 ${threshold}/255 · 按 ${size} 计算`,
-    sizeMismatch: (a, b) => `尺寸不同（${a} / ${b}）— 右侧图片已拉伸到左侧图片的画框`,
+    alignCrop: (a, b, left) =>
+      `尺寸不同（${a} / ${b}）— 已将${left ? "左侧" : "右侧"}图片按另一张的比例居中裁剪（与分桶缩放的裁剪方式相同）`,
+    alignStretch: (a, b) =>
+      `尺寸不同（${a} / ${b}）— 拉伸比裁剪对得更齐，因此右侧图片已拉伸到左侧图片的画框`,
   },
   drop: {
     title: "松开即在临时中打开",

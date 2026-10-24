@@ -163,10 +163,13 @@ back to the editor.
 `CompareView` is a grid of tiles for any pick, and for a pick of exactly two it can lay one over
 the other instead — `layout.ts`'s `compareMode` (a saved preference; any other pick size is the
 grid whatever it says). `slider` stacks the right image over the left and clips it at a line you
-drag; `diff` paints their per-pixel difference through `imageDiff.ts` (both images on the left
-one's grid, capped at `DIFF_MAX_SIDE`, with a gain for differences a few levels out of 255). Both
-put the right image on the left one's frame, stretched if the shapes differ and said so in the bar,
-so the wipe and the diff line the pair up the same way, and both zoom with `zoomPan.ts`. The diff
+drag; `diff` paints their per-pixel difference (capped at `DIFF_MAX_SIDE`, with a gain for
+differences a few levels out of 255). Both draw from one `imageDiff.loadPair`, which decodes the
+two and aligns a pair of different shapes onto one frame: stretched onto the left one's shape, or
+center-cropped to either one's (`object-fit: cover` — what `buckets.py`'s resize does, so a
+bucket-sized output lines up with its source), whichever scores closest on a 256 px thumbnail. The
+bar names the choice, the wipe and the diff line the pair up the same way, and both zoom with
+`zoomPan.ts`. The diff
 reads pixels off a canvas, which works only because `/api/files` is same-origin. `Seg.tsx` is the
 segmented control the mode switch, the gain and `MaskList`'s two axes share.
 
