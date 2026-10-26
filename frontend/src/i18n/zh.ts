@@ -50,7 +50,7 @@ const zh: Dict = {
     modeGroupsHint: "Groups 阶段找出的近似图片分组",
     modeTemp: "临时",
     modeTempHint:
-      "拖放到窗口上的图片 — 存放在 workspace/_temp，阶段也在其中运行，Export 不会导出它们",
+      "拖放到窗口上的图片 — 存放在 workspace/_temp，阶段也在其中运行，Export 不会导出它们。按 Delete 键删除当前打开的图片",
     tempEmpty: "把图片或文件夹拖放到窗口上即可在这里打开。",
     tempClear: "删除临时区的全部内容",
     tempClearArmed: "再点一次即删除拖入的图片及由其运行出的所有结果",

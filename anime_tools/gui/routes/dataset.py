@@ -178,23 +178,43 @@ def temp_summary() -> dict[str, Any]:
 
 
 @router.put("/api/temp/file")
-async def put_temp_file(request: Request, rel: str) -> dict[str, Any]:
+async def put_temp_file(
+    request: Request, rel: str, unique: bool = False
+) -> dict[str, Any]:
     """One dropped file, as the raw request body, at ``rel`` under the drop
-    area's source tree. One file per request rather than a multipart form: the
-    browser sends a drop file by file anyway, and a body needs no parser."""
+    area's source tree — or, with ``unique``, at the first ``{stem}_N`` the
+    folder does not hold yet. One file per request rather than a multipart form:
+    the browser sends a drop file by file anyway, and a body needs no parser."""
+    data = await request.body()
     try:
-        return D.save_temp_file(rel, await request.body())
+        return D.save_temp_file(rel, data, unique=unique)
     except OSError as e:
         raise HTTPException(500, f"write failed: {e}") from e
+
+
+@router.delete("/api/temp/file")
+def delete_temp_file(request: Request, rel: str) -> dict[str, Any]:
+    """Delete one dropped image and every file the drop area made of it — the
+    sidebar's Delete key. Refused while a run is over the drop area, like the
+    clear below."""
+    _refuse_during_temp_job(request)
+    try:
+        return D.delete_temp_image(rel, RunContext.load(space=D.TEMP_SPACE).report_root)
+    except OSError as e:
+        raise HTTPException(500, f"cannot delete {rel}: {e}") from e
+
+
+def _refuse_during_temp_job(request: Request) -> None:
+    running = request.app.state.jobs.running
+    if running is not None and running.space == D.TEMP_SPACE:
+        raise HTTPException(409, f"job {running.id} is running over the temp area")
 
 
 @router.delete("/api/temp")
 def clear_temp(request: Request) -> dict[str, Any]:
     """Empty the drop area. Refused while a run is over it, which would find
     its trees gone from under it."""
-    running = request.app.state.jobs.running
-    if running is not None and running.space == D.TEMP_SPACE:
-        raise HTTPException(409, f"job {running.id} is running over the temp area")
+    _refuse_during_temp_job(request)
     try:
         return D.clear_temp()
     except OSError as e:

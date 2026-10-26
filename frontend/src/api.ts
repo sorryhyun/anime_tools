@@ -135,12 +135,20 @@ export const api = {
 
   // ---- the drop area ----
   temp: () => req<TempSummary>("/api/temp"),
-  /** One dropped file, as the raw body, at `rel` under the drop area. */
-  putTempFile: (rel: string, file: Blob) =>
-    req<{ rel: string; image: boolean }>(`/api/temp/file?rel=${encodeURIComponent(rel)}`, {
-      method: "PUT",
-      body: file,
-    }),
+  /** One dropped file, as the raw body, at `rel` under the drop area — or with
+      `unique`, at the first `{stem}_N` the folder does not hold yet; the answer's
+      `rel` is where it landed. */
+  putTempFile: (rel: string, file: Blob, unique = false) =>
+    req<{ rel: string; image: boolean }>(
+      `/api/temp/file?rel=${encodeURIComponent(rel)}${unique ? "&unique=true" : ""}`,
+      { method: "PUT", body: file },
+    ),
+  /** Delete one dropped image and every file the drop area made of it. */
+  deleteTempFile: (rel: string) =>
+    req<{ rel: string; removed: number; count: number }>(
+      `/api/temp/file?rel=${encodeURIComponent(rel)}`,
+      { method: "DELETE" },
+    ),
   clearTemp: () => req<{ removed: number }>("/api/temp", { method: "DELETE" }),
 };
 

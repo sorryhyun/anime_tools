@@ -51,7 +51,7 @@ const ja: Dict = {
     modeGroupsHint: "Groups ステージが見つけた近似画像のまとまり",
     modeTemp: "一時",
     modeTempHint:
-      "ウィンドウにドロップした画像 — workspace/_temp に置かれ、ステージもその中で実行され、Export は書き出しません",
+      "ウィンドウにドロップした画像 — workspace/_temp に置かれ、ステージもその中で実行され、Export は書き出しません。Delete キーで開いている画像を削除します",
     tempEmpty: "画像やフォルダをウィンドウにドロップするとここで開きます。",
     tempClear: "一時領域をすべて削除",
     tempClearArmed: "もう一度押すと、ドロップした画像とそこから実行した結果がすべて削除されます",

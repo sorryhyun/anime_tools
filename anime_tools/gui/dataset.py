@@ -64,9 +64,11 @@ from anime_tools.exclude import (
     Entry,
     ExclusionError,
     Trees,
+    artifacts,
     exclude_one,
     read_entries,
     restore_one,
+    write_entries,
 )
 from anime_tools.grouping.groups import MANIFEST_VERSION
 from anime_tools.gui.settings import load_settings
@@ -541,21 +543,103 @@ def temp_summary() -> dict[str, Any]:
     return {"root": rel_to_home(src), "count": n}
 
 
-def save_temp_file(rel_str: str, data: bytes) -> dict[str, Any]:
+def _free_stem(directory: Path, stem: str) -> str:
+    """``stem``, or the first of ``stem_1``, ``stem_2``, … that no image or
+    caption in ``directory`` is named after.
+
+    Taken by stem and not by filename, since ``a.jpg`` dropped beside ``a.png`` is
+    a same-stem pair the stages refuse; and caselessly, since on a case-insensitive
+    filesystem ``A.png`` is ``a.png``.
+    """
+    taken = (
+        {
+            p.stem.lower()
+            for p in directory.iterdir()
+            if p.suffix.lower() in _TEMP_SUFFIXES and not is_caption_sidecar(p.name)
+        }
+        if directory.is_dir()
+        else set()
+    )
+    name, n = stem, 0
+    while name.lower() in taken:
+        n += 1
+        name = f"{stem}_{n}"
+    return name
+
+
+def save_temp_file(
+    rel_str: str, data: bytes, *, unique: bool = False
+) -> dict[str, Any]:
     """Write one dropped file into the drop area's source tree, at the path it
     had under whatever was dropped (a folder keeps its subfolders).
 
     An image or a caption only; a ``{stem}.*.txt`` sidecar is refused, since in
-    the source tree it would be read as nothing at all. A second drop of the same
-    name replaces the first.
+    the source tree it would be read as nothing at all. With ``unique`` a name
+    the folder already holds becomes ``{stem}_1``, ``{stem}_2``, … (a second drop
+    of ``a.png`` is a copy, not a replacement), and the answer's ``rel`` says
+    where it landed — which is how the browser sends the caption that came with
+    it to the same stem. Without it the file is written at ``rel`` as given.
+
+    The pick and the write have no ``await`` between them, so two uploads in
+    flight cannot both land on one free name.
     """
     rel = _rel_key(rel_str)
     if rel.suffix.lower() not in _TEMP_SUFFIXES or is_caption_sidecar(rel.name):
         raise DatasetError(f"not an image or a caption: {rel.as_posix()}")
-    dest = temp_roots().src / rel
+    src = temp_roots().src
+    if unique:
+        rel = rel.with_name(_free_stem(src / rel.parent, rel.stem) + rel.suffix)
+    dest = src / rel
     dest.parent.mkdir(parents=True, exist_ok=True)
     dest.write_bytes(data)
     return {"rel": rel.as_posix(), "image": rel.suffix.lower() != ".txt"}
+
+
+def delete_temp_image(rel_str: str, report_root: str) -> dict[str, Any]:
+    """Delete one dropped image and everything the drop area holds of it.
+
+    The source image, its caption in the source and master trees with their
+    history and variants sidecars, its resized copy, mask and OCR sidecar
+    (:func:`~anime_tools.exclude.artifacts`, the same list an exclusion moves),
+    its analysis records, and — for an image that was excluded — what went to
+    ``_excluded`` along with its ledger row. All of it, because the name is free
+    again afterwards: the next drop of ``a.png`` lands as ``a.png``, and must not
+    open on the deleted one's caption or mask.
+
+    Only the drop area: the dataset's images are a curation's input, and
+    taking one out of it is an exclusion, which can be put back.
+    """
+    rel = _rel_key(rel_str)
+    roots = temp_roots()
+    if not (roots.src / rel).is_file():
+        raise DatasetError(f"not in the temp area: {rel.as_posix()}")
+    trees = excluded_trees(roots)
+    key = rel.as_posix()
+    paths: list[Path] = [roots.src / rel]
+    for root in (roots.src, roots.master):
+        caption = root / rel.with_suffix(".txt")
+        paths += [
+            caption,
+            history_sidecar_path(caption),
+            variants_sidecar_path(caption),
+        ]
+    paths += [p for _, p in artifacts(trees, key)]
+    for sub in ANALYSIS_KINDS.values():
+        paths += analysis_paths(
+            reachable(f"{report_root}/{POSITION_SUBPATH}/{sub}"), key
+        )
+    entries = excluded_entries(roots)
+    entry = entries.pop(key, None)
+    if entry is not None:
+        paths += [trees.excluded / slot for slot in entry.moved]
+    removed = 0
+    for p in paths:
+        if p.is_file():
+            p.unlink()
+            removed += 1
+    if entry is not None:
+        write_entries(trees.excluded, entries)
+    return {"rel": key, "removed": removed, "count": temp_summary()["count"]}
 
 
 def clear_temp() -> dict[str, Any]:

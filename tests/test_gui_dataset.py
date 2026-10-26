@@ -862,3 +862,61 @@ def test_clearing_the_temp_area_removes_it_whole(client, tmp_path):
     assert c.get("/api/temp").json()["count"] == 0
     # The dataset is never under it.
     assert (home / "image_dataset" / "a.png").is_file()
+
+
+def test_a_unique_drop_of_a_taken_name_lands_as_a_numbered_copy(client, tmp_path):
+    c, home = client
+    src = home / "workspace" / "_temp" / "image_dataset"
+    data = _png_bytes(tmp_path)
+    assert (
+        c.put("/api/temp/file?rel=x.png&unique=true", content=data).json()["rel"]
+        == "x.png"
+    )
+    assert (
+        c.put("/api/temp/file?rel=x.png&unique=true", content=data).json()["rel"]
+        == "x_1.png"
+    )
+    # Taken by stem, not by filename: a.jpg beside a.png is a pair the stages refuse.
+    assert (
+        c.put("/api/temp/file?rel=x.jpg&unique=true", content=data).json()["rel"]
+        == "x_2.jpg"
+    )
+    # A caption written as named follows its image's stem.
+    c.put("/api/temp/file?rel=x_1.txt", content=b"solo")
+    assert (src / "x_1.txt").read_text() == "solo"
+    assert sorted(p.name for p in src.iterdir()) == [
+        "x.png",
+        "x_1.png",
+        "x_1.txt",
+        "x_2.jpg",
+    ]
+
+
+def test_deleting_a_temp_image_takes_every_file_it_has(client, tmp_path):
+    c, home = client
+    temp = home / "workspace" / "_temp"
+    data = _png_bytes(tmp_path)
+    c.put("/api/temp/file?rel=d/x.png", content=data)
+    c.put("/api/temp/file?rel=d/x.txt", content=b"1girl")
+    c.put("/api/temp/file?rel=d/y.png", content=data)
+    c.put(
+        "/api/dataset/item",
+        json={"rel": "d/x.png", "kind": "master", "text": "solo", "space": "temp"},
+    )
+    resized = temp / "workspace" / "resized" / "d"
+    resized.mkdir(parents=True)
+    (resized / "x.png").write_bytes(data)
+    (resized / "x.txt").write_text("1girl, solo")
+
+    got = c.delete("/api/temp/file?rel=d/x.png").json()
+    assert got["rel"] == "d/x.png" and got["count"] == 1
+    assert sorted(p.name for p in (temp / "image_dataset" / "d").iterdir()) == ["y.png"]
+    assert not any((temp / "workspace" / "master").rglob("x*"))
+    assert not any(resized.iterdir())
+    assert [i["rel"] for i in c.get("/api/dataset?space=temp").json()["items"]] == [
+        "d/y.png"
+    ]
+    # Only what is there can go, and only from the drop area.
+    assert c.delete("/api/temp/file?rel=d/x.png").status_code == 400
+    assert c.delete("/api/temp/file?rel=a.png").status_code == 400
+    assert (home / "image_dataset" / "a.png").is_file()

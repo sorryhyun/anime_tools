@@ -81,7 +81,7 @@ const en = {
     modeGroupsHint: "The near-twin components the Groups stage found",
     modeTemp: "temp",
     modeTempHint:
-      "Images dropped onto the window — kept in workspace/_temp, stages run over them there, and Export never ships them",
+      "Images dropped onto the window — kept in workspace/_temp, stages run over them there, and Export never ships them. Delete removes the open image",
     tempEmpty: "Drag images or folders onto the window to open them here.",
     tempClear: "Delete everything in the temp area",
     tempClearArmed: "Click again to delete the dropped images and everything runs made from them",

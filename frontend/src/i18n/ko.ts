@@ -50,7 +50,7 @@ const ko: Dict = {
     modeGroupsHint: "Groups 스테이지가 찾아낸 근접 쌍 묶음",
     modeTemp: "임시",
     modeTempHint:
-      "창에 끌어다 놓은 이미지 — workspace/_temp에 보관되고, 스테이지도 그 안에서 돌며, Export는 내보내지 않습니다",
+      "창에 끌어다 놓은 이미지 — workspace/_temp에 보관되고, 스테이지도 그 안에서 돌며, Export는 내보내지 않습니다. Delete 키로 열린 이미지를 지웁니다",
     tempEmpty: "이미지나 폴더를 창에 끌어다 놓으면 여기서 열립니다.",
     tempClear: "임시 영역 전부 지우기",
     tempClearArmed: "한 번 더 누르면 놓은 이미지와 그것으로 돌린 결과가 모두 지워집니다",

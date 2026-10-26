@@ -79,8 +79,10 @@ stay, because Settings' placeholders are those values computed against *empty* s
   weights pinned back to the real `models_dir`), so unbound home-relative defaults (OCR tree,
   exclusion ledger) land inside it; what is bound is spelled absolute, the Settings pattern is
   dropped, `Job.space` is what its report is read back against, and Export is refused.
-  `/api/temp` counts it, `PUT /api/temp/file` takes one dropped file as the raw body, and
-  `DELETE /api/temp` removes it whole (409 while a temp job runs). A missing groups manifest is not an error; an
+  `/api/temp` counts it, `PUT /api/temp/file` takes one dropped file as the raw body (with
+  `unique`, a taken stem lands as `{stem}_1`, `{stem}_2`, … and the answer says where),
+  `DELETE /api/temp/file` deletes one image and every file the drop area made of it, and
+  `DELETE /api/temp` removes it whole (both 409 while a temp job runs). A missing groups manifest is not an error; an
   unparseable one is a 400. `POST /api/dataset/exclude` is the ⊘ button:
   `anime_tools.exclude` seen from the server, an instant move rather than a job (there is
   nothing to run and no report to undo), answering with the ledger row and the sidebar row it

@@ -296,6 +296,7 @@ export function createDataset(config: Config) {
     groups,
     tree,
     grouped,
+    order,
     item,
     onSaved,
     setExcluded,

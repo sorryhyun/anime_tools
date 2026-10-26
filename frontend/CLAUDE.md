@@ -107,8 +107,9 @@ nothing fetched, no business rule lives there. The state is five composables at
 
 Plus `temp.ts` (the window-level file drop: a drag carrying files raises
 `DropZone`, a drop is uploaded file by file to `/api/temp/file` and opens the
-sidebar's temp mode on the first image it brought; the clear is two clicks on
-one button, never a dialog), `downloads.ts` (a weights fetch: the same job slot, but it reports into
+sidebar's temp mode on the first image it brought — grouped by stem, so an image
+that lands as `a_1.png` takes its caption with it; Delete removes the open or picked
+images, and the clear is two clicks on one button, never a dialog), `downloads.ts` (a weights fetch: the same job slot, but it reports into
 the Settings dialog rather than the dock), `updates.ts` (the same shape again
 for the self-update: `/api/update` once on load and again on Check now — the
 six-hour cache is the server's, so nothing here polls — and the upgrade as a job
