@@ -46,7 +46,7 @@ def test_flat_bag_splits_into_summary_fields(tmp_path):
 
 def test_visual_meta_reads_as_caption(tmp_path):
     summary = caption_to_layout(
-        "highres, cropped, 1girl, long hair, sincos", _kb(tmp_path)
+        "highres, 1girl, cropped, long hair, sincos", _kb(tmp_path)
     )["summary"]
     assert summary == {
         "meta": ["highres"],
@@ -72,6 +72,35 @@ def test_clauses_become_items_in_order(tmp_path):
         {"label": "text", "caption": "Japanese text", "text": "満足でしょうか"},
         {"label": "text", "caption": "Japanese text", "text": "「はい、」"},
     ]
+
+
+def test_tags_ahead_of_the_count_are_meta(tmp_path):
+    summary = caption_to_layout(
+        "masterpiece, newest, very aesthetic, cropped, sensitive, @sincos, "
+        "1girl, hatsune miku, long hair, unknown tag",
+        _kb(tmp_path),
+    )["summary"]
+    assert summary == {
+        "meta": ["masterpiece", "newest", "very aesthetic", "cropped", "sfw"],
+        "characters": ["hatsune miku"],
+        "artists": ["@sincos"],
+        "caption": "1girl, long hair, unknown tag",
+    }
+
+
+def test_no_humans_ends_the_front_matter(tmp_path):
+    summary = caption_to_layout(
+        "very aesthetic, safe, no humans, scenery", _kb(tmp_path)
+    )["summary"]
+    assert summary == {
+        "meta": ["very aesthetic", "sfw"],
+        "caption": "no humans, scenery",
+    }
+
+
+def test_no_count_classifies_tag_by_tag(tmp_path):
+    summary = caption_to_layout("highres, cropped, long hair", _kb(tmp_path))["summary"]
+    assert summary == {"meta": ["highres"], "caption": "cropped, long hair"}
 
 
 def test_no_artist_sentinel_and_legacy_rating(tmp_path):

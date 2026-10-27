@@ -27,7 +27,10 @@ only when some item has a box. Artists carry the Anima ``@`` (added to a bare KB
 ``@no-artist`` is an Anima sentinel and is left out. Danbooru meta tags that
 describe the pixels (``cropped``, ``scan``, ``jpeg artifacts``, … —
 ``_VISUAL_META``) go to ``summary.caption``; the rest of the meta category stays
-in ``summary.meta``. The rating collapses to ``sfw`` (safe / general, sensitive)
+in ``summary.meta``. When the bag has a count tag (or ``no humans``), every
+meta or general tag ahead of the first one is front matter and goes to
+``summary.meta`` (visual meta and KB-unknown tags included); a bag without one
+is classified tag by tag. The rating collapses to ``sfw`` (safe / general, sensitive)
 or ``nsfw`` (nsfw / questionable, explicit) — MOSS follows the binary better
 than the four booru classes. Empty fields are omitted, except
 ``summary.caption``.
@@ -95,9 +98,20 @@ def _summary(tags, kb: TagKnowledgeBase) -> dict:
     artists: list[str] = []
     counts: list[str] = []
     general: list[str] = []
-    for tag in tags:
-        kind = tag_kind(tag, kb)
-        if kind == "meta" and normalize_tag(tag) in _VISUAL_META:
+    kinds = [tag_kind(tag, kb) for tag in tags]
+    # Front matter runs up to the count slot: a count tag or ``no humans``.
+    lead = next(
+        (
+            i
+            for i, (tag, kind) in enumerate(zip(tags, kinds))
+            if kind == "count" or normalize_tag(tag) == "no humans"
+        ),
+        0,
+    )
+    for i, (tag, kind) in enumerate(zip(tags, kinds)):
+        if i < lead and kind in ("meta", "general"):
+            meta["meta"].append(tag)
+        elif kind == "meta" and normalize_tag(tag) in _VISUAL_META:
             general.append(tag)
         elif kind == "safety":
             meta[kind].append(_SFW[canonical_rating(tag)])
