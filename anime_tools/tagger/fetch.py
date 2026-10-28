@@ -110,6 +110,9 @@ def ensure_tagger_checkpoint(
             _fetch_flat(fname)
         except (EntryNotFoundError, FileNotFoundError):
             logger.debug("optional tagger file %s not present on %s", fname, repo)
+    if subfolder and (ckpt_dir / subfolder).is_dir():
+        # local_dir kept the repo's subfolder layout; the files were moved out.
+        shutil.rmtree(ckpt_dir / subfolder, ignore_errors=True)
     if backbone and is_backbone_dir(ckpt_dir):
         ensure_tagger_backbone(ckpt_dir)
     return ckpt_dir

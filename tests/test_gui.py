@@ -1137,7 +1137,8 @@ def test_model_catalog_and_download_job(client, monkeypatch):
     rows = {m["id"]: m for m in body["models"]}
     assert not rows["sam3"]["installed"]
     assert rows["sam3"]["location"] == str(home / "models" / "sam3")
-    assert rows["tagger_backbone"]["gated"].startswith("https://huggingface.co/")
+    assert rows["sam3"]["gated"].startswith("https://huggingface.co/")
+    assert rows["tagger_backbone"]["gated"] == ""  # pixai is public
     # The rows are grouped under packs: PACKS order, only packs that have rows,
     # and every model names one of them.
     assert [p["id"] for p in body["packs"]] == list(DL.by_pack())

@@ -1,6 +1,6 @@
 [project]
 name = "anime-tools"
-version = "0.8.3"
+version = "0.9.0"
 description = "Dataset curation for anime diffusion training: caption grammar + polishing, the Anima Tagger (pixai backbone), position clauses, multiview audit, PE-Spatial grouping, SAM3 masking."
 readme = "README.md"
 license = { file = "LICENSE" }
