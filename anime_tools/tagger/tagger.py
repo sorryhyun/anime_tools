@@ -7,7 +7,7 @@ optionally ``groups.yaml`` (group-aware prediction: one argmax winner per
 ``sidecar.safetensors``. See ``docs/anima_tagger.md``.
 
 Everything after the score vector — thresholds, softmax groups, count dedupe,
-character floor, top-1 copyright, slot order — is post-processing of
+character floor, top-1 artist, slot order — is post-processing of
 ``{tag: prob}``. Captions come out in ``SLOT_ORDER`` with underscores replaced
 by spaces (Anima's training-time T5 input).
 
@@ -473,10 +473,15 @@ class AnimaTagger:
             if not cats & {"character", "copyright"}:
                 kept["original"] = probs[self._original_idx]
 
-        # cap artist/copyright to top-1 by score (booru convention is one each)
-        for cat in ("artist", "copyright"):
-            for _, name in self._scored(kept, cat)[1:]:
-                kept.pop(name, None)
+        # cap artist to top-1 by score (booru convention is one per work).
+        # Copyright is not capped: a work under a parent franchise carries
+        # both (``fate (series)`` + ``fate/grand order``), and a top-1 cap cost
+        # copyright recall 0.95 → 0.81 on the val split. ``original`` gives way
+        # to any franchise copyright beside it.
+        for _, name in self._scored(kept, "artist")[1:]:
+            kept.pop(name, None)
+        if "original" in kept and len(self._scored(kept, "copyright")) > 1:
+            kept.pop("original")
 
         out["kept"] = kept
         return out

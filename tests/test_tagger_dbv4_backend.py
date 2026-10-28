@@ -266,6 +266,23 @@ def test_sidecar_character_survives_original_without_artist(tmp_path, monkeypatc
     assert "shiro (mignon)" in out["kept"]
 
 
+def test_copyrights_are_not_capped_and_original_yields(tmp_path, monkeypatch):
+    """Every copyright over threshold is kept; ``original`` drops beside a
+    franchise copyright."""
+    _write_ckpt(tmp_path)
+    head = db.SidecarHead(d_in=8, bce_indices=[IDX["original"], IDX["touhou"]])
+    with torch.no_grad():
+        head.fc.weight.zero_()
+        head.fc.bias[:] = torch.tensor([4.0, 3.0])
+    t = _tagger(tmp_path, {"1girl": 0.9}, monkeypatch, sidecar=head)
+    for n in ("original", "touhou"):
+        t.thresholds[IDX[n]] = 0.5
+    t.thresholds_dev = t.thresholds.to(t.device)
+    kept = t.predict(IMG)["kept"]
+    assert "touhou" in kept
+    assert "original" not in kept
+
+
 def test_predict_batch_is_one_forward_and_matches_per_image_predict(
     tmp_path, monkeypatch
 ):

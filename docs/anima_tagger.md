@@ -50,7 +50,7 @@ PIL image → backbone preprocessing (pixai: alpha onto white, longer side → 1
                                                   renamed generals / people-count
          → per-tag thresholds → kept tags
          → group argmax → girls-count cap → character floor + original
-           fallback → top-1 artist / top-1 copyright
+           fallback → top-1 artist; `original` yields to a franchise copyright
 ```
 
 The backbone is frozen and external; the only trained weights we ship are
@@ -110,7 +110,7 @@ manifest, so the band is a property of the checkpoint, not a loader constant.
 
 | File | Role |
 |---|---|
-| `tagger.py` | `AnimaTagger` — public inference class (`predict` / `predict_caption`, and the batched `predict_batch` / `predict_caption_batch`), plus `ensure_tagger_checkpoint` / `ensure_tagger_backbone`. Implements every post-prediction refinement (group argmax, character floor, original-fallback, girls-count cap, top-1 artist/copyright). |
+| `tagger.py` | `AnimaTagger` — public inference class (`predict` / `predict_caption`, and the batched `predict_batch` / `predict_caption_batch`), plus `ensure_tagger_checkpoint` / `ensure_tagger_backbone`. Implements every post-prediction refinement (group argmax, character floor, original-fallback, girls-count cap, top-1 artist, `original` yielding to a franchise copyright). |
 | `dbv4_meta.py` | Torch-free facts about the backbones and our checkpoint: `BACKBONES` specs, `backbone_for(ckpt_dir)`, `backend_of`, `fetch_hint`, `backbone_cached(backbone)`, repo ids, required/optional file sets, `DEFAULT_TAGGER_DIR`. Shared by the loader, the ComfyUI node and `downloads/`. |
 | `backends.py` | `build_backend(cfg)` — `config.json` → `PixaiBackend` or `Dbv4Backend`. |
 | `pixai_backend.py` | The default backbone: pixai card loader, `preprocess_pixai`, `PixaiBackend` (attention-pool feature for the sidecar). |
@@ -292,9 +292,12 @@ outs = tagger.predict_batch([Image.open(p) for p in paths])
    for noisy long-tail characters) is dropped. When that empties the character
    slot AND no copyright survives, add `original` (booru convention for non-IP
    work) so the caption still has a slot-filling copyright.
-6. Top-1 artist + top-1 copyright. Independent sigmoid heads can admit
-   several borderline tags; collapse to the highest-scoring one (booru
-   convention is one artist / one copyright per work).
+6. Top-1 artist. Independent sigmoid heads can admit several borderline
+   artists; collapse to the highest-scoring one (booru convention is one
+   artist per work). Copyright is not capped — a work under a parent franchise
+   carries both (`fate (series)` + `fate/grand order`); capping it cost
+   copyright recall 0.95 → 0.81 on the val split. `original` is dropped when a
+   franchise copyright fires beside it.
 
 `predict_caption` then slots tags by canonical category order (`rating, count,
 character, copyright, artist, general`), within-slot by median emit position
