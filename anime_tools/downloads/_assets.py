@@ -134,7 +134,8 @@ class Asset:
         if self.dest is None:
             from anime_tools._hf import hf_file_cached
 
-            return [f for f in self.files if not hf_file_cached(self.repo, f)]
+            rev = self.revision or None
+            return [f for f in self.files if not hf_file_cached(self.repo, f, rev)]
         if self.revision and self._stamped_revision() != self.revision:
             return list(self.files)
         return [f for f in self.files if not (self.dest / Path(f).name).exists()]

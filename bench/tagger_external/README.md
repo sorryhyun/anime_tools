@@ -10,7 +10,8 @@ archived 2026-08-30 to
 "ours" is dbv4-backed now, so the comparison it ran is moot. Results under `results/`
 predate that.
 
-Still live: `calibration_check.py` (CPU-only ECE check on the dbv4 sidecar
+Still live: `pixai_vs_dbv4.py` (PixAI raw plus an optional `--pixai_ckpt` shipped-checkpoint arm
+vs the dbv4 checkpoint on our val split), `calibration_check.py` (CPU-only ECE check on the sidecar
 probs) and `probe_position_rescore.py` (re-scores the trainer's
 `bench/position_captions/` probe crops with an external timm tagger — run it from
 the trainer checkout, or point `--autocaption_run` / `--binding_run` at those artifacts).

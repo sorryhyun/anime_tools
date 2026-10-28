@@ -1,7 +1,7 @@
 # anime_tools/tagger/
 
-`AnimaTagger` = vocab/thresholds/optional sidecar head over the external `animetimm/*.dbv4-full`
-caformer. Docs: `docs/anima_tagger.md` (architecture, training pipeline, calibration, the
+`AnimaTagger` = vocab/thresholds/optional sidecar head over an external backbone: `pixai-labs/pixai-tagger-v1.0`
+(default) or the older `animetimm/*.dbv4-full` caformer (`config.json["backend"]`). Docs: `docs/anima_tagger.md` (architecture, training pipeline, calibration, the
 `.env` knobs). The batch stage over a dataset is `stages/autotag.py`; `cli/autotag.py` here is
 single-image/stdout only.
 
@@ -12,9 +12,9 @@ from it, so the vocab build and the ComfyUI node do not load a backbone to read 
 
 | Module | What is in it |
 |---|---|
-| `dbv4_meta.py` | where a checkpoint's *files* live: repo ids, the required/optional file sets, `DEFAULT_TAGGER_DIR` |
+| `dbv4_meta.py` | where a checkpoint's *files* live: `BACKBONES` specs (`backbone_for`, `backend_of`, `fetch_hint`, `backbone_cached`), repo ids, the required/optional file sets, `DEFAULT_TAGGER_DIR` |
 | `schema.py` | what a tag *means* to a checkpoint: `SLOT_ORDER`, `TAG_TYPE_NAMES`, `RATINGS`, `PEOPLE_COUNT_LABELS`, `TagEntry`, `dedupe_count_tags` |
-| `fetch.py` | getting one onto disk: `ensure_tagger_checkpoint`, `ensure_tagger_backbone`, `is_dbv4_dir` |
+| `fetch.py` | getting one onto disk: `ensure_tagger_checkpoint`, `ensure_tagger_backbone`, `is_backbone_dir` |
 
 Every value in `schema.py` is baked into `vocab.json` at build time and read back at inference, so
 changing one invalidates existing checkpoints. `tests/test_boundary.py` pins all three importable
@@ -24,14 +24,14 @@ without torch.
 
 Checkpoint dir = `config.json`, `vocab.json`, `rules.yaml`, plus the optional
 `thresholds.safetensors`, `groups.yaml` and `sidecar.safetensors` (the file set is spelled once, in
-`contract.py`); GPL backbone weights are fetched at load via `_hf.py` under the user's HF token,
-never vendored. `data.py::TaggerCheckpoint.from_dir` is the one read of a checkpoint dir.
+`contract.py`); backbone weights are fetched at load via `_hf.py` (pixai: Apache-2.0, public; dbv4: GPL-3.0, gated, under the user's HF token),
+never vendored. `backends.py::build_backend(cfg)` turns `config.json` into the backend object. `data.py::TaggerCheckpoint.from_dir` is the one read of a checkpoint dir.
 `dbv4_meta.py` (the constants the ComfyUI node and the GUI import) must stay importable without
 torch.
 
 ## The backbone
 
-The backbone runs on timm (`dbv4_backend.py`) and nothing else. It could also run from an
+The default backbone is pixai (`pixai_backend.py`: transformers remote code at a pinned commit, 1008² input, 1024-d attention-pool feature for the sidecar). The dbv4 backbone (`dbv4_backend.py`) runs on timm and nothing else. It could also run from an
 exported ONNX graph until 2026-09-09: that existed because timm on an Apple CPU was 3.7x slower
 than onnxruntime (0.49 s/img against 1.80 fp32, 2.39 bf16), and it went when `_device.py` started
 answering `mps`, where torch is 5.7x *faster* than the graph ever was — 87 ms/img against 491, at
@@ -47,7 +47,7 @@ float32 everywhere else — including MPS, where bf16 measured *slower* (102 ms/
 
 ## Derived state
 
-`feature_cache.py` owns the dbv4 hidden-state cache (a cache built for another manifest is
+`feature_cache.py` owns the backbone hidden-state cache (`backbone_cache_path(kind, arch)`, `workspace/anima_tagger/<backend>/`) (a cache built for another manifest is
 misaligned row-for-row, so every reader checks the stem list in the safetensors metadata).
 `derive_groups.derive_from_args` + `write_merged_groups` are the one groups-derivation path,
 shared by `--mode derive_groups --apply` and `build_vocab --derive_groups`.

@@ -1,9 +1,9 @@
-"""The dbv4 hidden-state cache — where it lives and how it is read.
+"""The backbone hidden-state cache — where it lives and how it is read.
 
-One dbv4 forward per ``dataset.json`` image, kept as
-``workspace/anima_tagger/dbv4/<arch>_hidden.safetensors``: the frozen
-backbone's penultimate features plus its own probabilities, so the sidecar head
-can be retrained without a GPU. The stem list the cache was built for rides in
+One backbone forward per ``dataset.json`` image, kept as
+``workspace/anima_tagger/<backend>/<arch>_hidden.safetensors``: the frozen
+backbone's hidden feature plus its probabilities projected onto our vocab, so
+the sidecar head and the thresholds can be refit without a GPU. The stem list the cache was built for rides in
 the safetensors metadata under ``stems`` — a cache built for a different
 manifest is misaligned row-for-row, so every reader checks it.
 """
@@ -21,25 +21,29 @@ from safetensors.torch import load_file as st_load
 from anime_tools import workspace as WS
 
 __all__ = [
-    "DBV4_CACHE_DIR",
-    "dbv4_cache_path",
-    "dbv4_cache_stems",
-    "load_dbv4_cache",
+    "BACKBONE_CACHE_ROOT",
+    "backbone_cache_path",
+    "backbone_cache_stems",
+    "load_backbone_cache",
     "multi_hot_from_manifest",
 ]
 
 # Dataset-derived, not checkpoint-derived: shared across every checkpoint built
 # over the same corpus.
-DBV4_CACHE_DIR = Path(WS.WORKSPACE) / "anima_tagger" / "dbv4"
+BACKBONE_CACHE_ROOT = Path(WS.WORKSPACE) / "anima_tagger"
 
 
-def dbv4_cache_path(arch: str, explicit: str | Path | None = None) -> Path:
-    """Cache file for backbone ``arch``; ``explicit`` is the ``--feature_cache``
-    override, passed straight through."""
-    return Path(explicit) if explicit else DBV4_CACHE_DIR / f"{arch}_hidden.safetensors"
+def backbone_cache_path(
+    kind: str, arch: str, explicit: str | Path | None = None
+) -> Path:
+    """Cache file for backend ``kind`` / backbone ``arch``; ``explicit`` is the
+    ``--feature_cache`` override, passed straight through."""
+    if explicit:
+        return Path(explicit)
+    return BACKBONE_CACHE_ROOT / kind / f"{arch}_hidden.safetensors"
 
 
-def dbv4_cache_stems(path: str | Path) -> list[str]:
+def backbone_cache_stems(path: str | Path) -> list[str]:
     """The stem list ``path`` was built for, from its safetensors metadata.
 
     Metadata only — no tensor is read.
@@ -48,9 +52,9 @@ def dbv4_cache_stems(path: str | Path) -> list[str]:
         return json.loads(f.metadata()["stems"])
 
 
-def load_dbv4_cache(path: str | Path) -> tuple[dict[str, torch.Tensor], list[str]]:
+def load_backbone_cache(path: str | Path) -> tuple[dict[str, torch.Tensor], list[str]]:
     """``(tensors, stems)`` — ``hidden`` / ``probs`` / ``ok``, row-aligned to ``stems``."""
-    return st_load(str(path)), dbv4_cache_stems(path)
+    return st_load(str(path)), backbone_cache_stems(path)
 
 
 def multi_hot_from_manifest(

@@ -44,7 +44,7 @@ from anime_tools.captions.taxonomy import is_artist_tag, is_count_tag, is_rating
 from anime_tools.captions.vocab_io import load_vocab, names_by_category
 from anime_tools.contract import is_caption_sidecar
 
-DEFAULT_VOCAB = "models/captioners/anima-tagger-dbv4/vocab.json"
+DEFAULT_VOCAB = "models/captioners/anima-tagger-pixai/vocab.json"
 # A contract artifact, published under the export tree's ``captions/`` by Export.
 DEFAULT_OUT = f"{WS.REPORTS}/caption_index.json"
 # Artist is detected by the `@` prefix (superset of the vocab artist list);

@@ -554,7 +554,7 @@ back to the box rules, so `merge_part_detections` is unaffected.
 - Deprecated aliases can never bind. A handful of non-artist tags, several of
   them hair (`silver hair`, `light brown hair`, `light blue hair`, `dark blue
   hair`, `light purple hair`, `french braid`), carry a calibrated threshold above
-  1.0 ("never emit") on the dbv4 tagger, so that binding is silently lost.
+  1.0 ("never emit") on the tagger (neither backbone carries them), so that binding is silently lost.
 - `sole-value` on non-identity invariants. `body_shape` / `skin` /
   `face_features` are in the invariant set, so a `2girls` caption naming one
   `large breasts` keeps it flat even when only one girl has it — safe, and the

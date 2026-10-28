@@ -173,9 +173,10 @@ Subfolders are kept as-is through the whole pipeline (`<rel>` above).
 
 ## 5. Hugging Face sign-in and models
 
-Two of the models are gated on the Hugging Face Hub: the dbv4 tagger backbone (GPL-3.0,
-never vendored — it is fetched under your token at load) and SAM 3. Both need a token with
-read access, and the account behind it has to have accepted each repo's terms once.
+SAM 3 is gated on the Hugging Face Hub (the default pixai tagger backbone is Apache-2.0 and
+public; only the optional older dbv4 backbone, GPL-3.0 and never vendored, is gated too). A gated
+model needs a token with read access, and the account behind it has to have accepted the repo's
+terms once.
 
 In the GUI: ☰ → ⚙ Settings… → Hugging Face → paste a token. It is handed to
 `huggingface_hub`'s login and stored by it, never shown again. The header shows ⚠ no HF
@@ -364,7 +365,7 @@ the preflight is near-free. Always writes; there is no dry run.
 ### 7.2 Autotag captions
 
 Reads each resized image and its caption (revised, else master). Writes the revised
-caption. Model: the Anima Tagger (tagger checkpoint + gated dbv4 backbone).
+caption. Model: the Anima Tagger (tagger checkpoint + the public pixai backbone).
 
 Predicts an Anima-order tag string — `rating, count, characters, copyrights, @artists,
 generals` — per image. Three modes:

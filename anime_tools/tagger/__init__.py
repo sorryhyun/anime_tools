@@ -1,6 +1,6 @@
-"""Anima Tagger — a thin head over the external dbv4 caformer tagger.
+"""Anima Tagger — a thin head over an external backbone tagger (pixai; dbv4).
 
-``AnimaTagger`` is exposed lazily because it imports torch/timm; ``dbv4_meta``
+``AnimaTagger`` is exposed lazily because it imports torch; ``dbv4_meta``
 stays torch-free.
 """
 

@@ -5,18 +5,23 @@ Anima's caption format (`rating, count, characters, copyrights, @artists,
 generals`). It is what this package's own caption stages tag with: position
 captions, batch autotag, and the GUI's autotag server.
 
-The live checkpoint is `models/captioners/anima-tagger-dbv4/`: the external
-`animetimm/caformer_b36.dbv4-full` backbone (134 M params, 384², GPL-3.0,
-gated — fetched under your HF token, never vendored) projected onto a
-2,532-tag vocab / 4-class rating, plus a small sidecar head for copyright /
-characters dbv4 lacks / renamed generals. `config.json["backend"] == "dbv4"` is the only
-backend `AnimaTagger` loads. Requires `timm`.
+The default checkpoint is `models/captioners/anima-tagger-pixai/`: the external
+`pixai-labs/pixai-tagger-v1.0` backbone (Apache-2.0, public, ~2 GB; a
+SAM3-initialised ViTDet at 1008², its model code loaded through transformers'
+`trust_remote_code` at a pinned commit, never vendored) projected onto a
+2,532-tag vocab / 4-class rating, plus a small sidecar head for the tags pixai
+lacks (copyright / characters / renamed generals). `config.json["backend"]` is
+`pixai` or `dbv4` (`backends.build_backend(cfg)` is the factory), with a
+`config.json[<backend>]` block (`repo` / `revision` / `img_size` / `arch`).
+dbv4 checkpoints (`animetimm/caformer_b36.dbv4-full`, 134 M params, 384²,
+GPL-3.0, gated — fetched under your HF token) still load. dbv4 needs `timm`;
+pixai needs `transformers`.
 
 Our half of the checkpoint (vocab, rules, groups, thresholds, sidecar) is
-auto-fetched from the root of
+auto-fetched from the `pixai/` subfolder of
 [`sorryhyun/anima-tagger`](https://huggingface.co/sorryhyun/anima-tagger) when
-missing; the backbone repo follows the checkpoint's
-`config.json["dbv4"]["repo"]`. `DEFAULT_TAGGER_DIR` / `TAGGER_HF_SUBFOLDER` in
+missing (the repo root keeps the dbv4 checkpoint for anime_tools ≤ 0.8); the
+backbone repo follows the checkpoint's `config.json[<backend>]["repo"]`. `DEFAULT_TAGGER_DIR` / `TAGGER_HF_SUBFOLDER` in
 the torch-free `anime_tools/tagger/dbv4_meta.py` are the single source of truth
 for repo and file set (`tagger.py` re-exports them; the ComfyUI node and
 `anime_tools/downloads/` — the catalog behind the GUI's Models rows — track
@@ -27,18 +32,20 @@ Every runtime entry point (position captions, batch autotag, the GUI autotag
 server) goes through `ensure_tagger_checkpoint`, which also runs
 `ensure_tagger_backbone`: an offline hub-cache probe, then a token fetch on miss
 — before SAM3 / the tagger load, so a missing token or unaccepted terms
-fails fast with the `hf auth login` + accept-terms hint (a gated 401/403 is
-translated in `anime_tools/_hf.py`) instead of a traceback halfway through a
+fails fast (for a gated dbv4 backbone, with the `hf auth login` + accept-terms
+hint; a gated 401/403 is translated in `anime_tools/_hf.py`) instead of a traceback halfway through a
 job. `ANIMA_TAGGER_NO_AUTOFETCH=1` refuses the fetch (offline hosts / CI).
 
 ## Architecture
 
 ```
-PIL image → 384² resize
-         → caformer_b36.dbv4-full (frozen, external, gated)
-         ├→ dbv4 tag sigmoids ─── align_vocab ──→ our 2,532-tag vocab
-         ├→ dbv4 rating sigmoids ─ normalise ───→ 4-class rating distribution
-         └→ 3072-d MLP-head hidden feature
+PIL image → backbone preprocessing (pixai: alpha onto white, longer side → 1008,
+            centre black pad; dbv4: 384² resize)
+         → pixai-tagger-v1.0 / caformer_b36.dbv4-full (frozen, external)
+         ├→ backbone tag sigmoids ─ align_vocab ─→ our 2,532-tag vocab
+         ├→ backbone rating sigmoids ─ normalise → 4-class rating distribution
+         └→ hidden feature (pixai: 1024-d "attn_pool" output;
+            dbv4: 3072-d "mlp_hidden")
                     └→ sidecar Linear ──────────→ copyright / missing characters /
                                                   renamed generals / people-count
          → per-tag thresholds → kept tags
@@ -51,13 +58,16 @@ the sidecar linear head (`sidecar.safetensors` + `sidecar.json`). The vocab
 build, the rules/groups snapshots and the threshold calibration are ours.
 
 `align_vocab` (`dbv4_backend.py`) is the single vocab join point: it joins
-dbv4's snake_case names onto our space-separated vocab, recovering `rules.yaml`
-renames. Tags dbv4 does not support sit at logit −30, and a pure-`softmax`
-group only emits a winner that clears its own threshold ("at most one" — dbv4
-was never CE-trained on our groups). What dbv4 cannot express is exactly what
-the sidecar covers: copyright, characters dbv4 does not know, renamed generals,
-and an 8-way people-count softmax. Booru-`deprecated` names (`silver hair`,
-`light brown hair`, `black footwear` — dbv4's 2025 namespace dropped them) are
+the backbone's snake_case names onto our space-separated vocab, recovering
+`rules.yaml` renames. Tags the backbone does not support sit at logit −30, and a
+pure-`softmax` group only emits a winner that clears its own threshold ("at most
+one" — the backbone was never CE-trained on our groups). pixai matches 2,341 of
+the 2,532 vocab tags (unmatched: general 48, character 24, copyright 6, artist
+92, deprecated 21; our `@` artists never join pixai's style column, by design).
+What the backbone cannot express is exactly what the sidecar covers: copyright,
+characters it does not know, renamed generals, and an 8-way people-count
+softmax. Booru-`deprecated` names (`silver hair`,
+`light brown hair`, `black footwear` — the 2025 tag namespaces dropped them) are
 *not* head rows: trained, they reached F1 ≈ 0.2, since their positives look
 exactly like the live tag's. `tag_rules.yaml` `aliases:` folds each onto its
 live name (`silver hair → grey hair`) at vocab-build and emit time instead.
@@ -69,14 +79,18 @@ Such a name means nothing outside the dataset it came from, and a head trained
 on a few dozen positives fires it on any look-alike in a stranger's dataset;
 `train_sidecar.py::select_bce_rows` drops them (`--keep_artist_oc` restores,
 `sidecar.json["dropped_artist_oc"]` lists them, their thresholds are pinned
-to never-fire). Franchise characters dbv4 lacks (`cartethyia (wuthering
+to never-fire). Franchise characters the backbone lacks (`cartethyia (wuthering
 waves)`) stay — they are what the head is for. `people_count` is nonetheless always
 taken from the count-tag rule (`taxonomy.classify_people`,
 `people_count_source="count-tag-rule"`), which beats the sidecar's own head;
 the sidecar softmax is exposed as `people_count_scores` only. Thresholds come
-from three places: the dbv4 card's `best_threshold` for matched tags, an F1
-calibration on our val split for sidecar rows, and `1.01` (never fires) for
-everything else.
+from three places: the backbone card for matched tags (dbv4: per-tag
+`best_threshold`; pixai: per category — general .17, character .27, copyright
+.24, style .15, meta .17, rating .41), an F1 calibration on our val split for
+sidecar rows, and `1.01` (never fires) for everything else.
+`train_sidecar --backbone_thresholds train` (the default; `keep` leaves the
+card's) refits the matched rows per tag on the TRAIN split from the cached
+probs (`--backbone_min_support`, default 10), so val stays held out for them.
 
 ### Rating band
 
@@ -97,9 +111,11 @@ manifest, so the band is a property of the checkpoint, not a loader constant.
 | File | Role |
 |---|---|
 | `tagger.py` | `AnimaTagger` — public inference class (`predict` / `predict_caption`, and the batched `predict_batch` / `predict_caption_batch`), plus `ensure_tagger_checkpoint` / `ensure_tagger_backbone`. Implements every post-prediction refinement (group argmax, character floor, original-fallback, girls-count cap, top-1 artist/copyright). |
-| `dbv4_meta.py` | Torch-free facts about the backbone and our checkpoint: repo ids, required/optional file sets, `DEFAULT_TAGGER_DIR`. Shared by the loader, the ComfyUI node and `downloads/`. |
-| `dbv4_backend.py` | Backbone loader + `align_vocab` (the single vocab join point) + `SidecarHead` (our linear head over the backbone's hidden state) + `default_dtype` (bf16 on CUDA, fp32 elsewhere — MPS included). |
-| `feature_cache.py` | The dbv4 hidden-state cache: `dbv4_cache_path` / `dbv4_cache_stems` / `load_dbv4_cache` (the stem list rides in the safetensors metadata — a cache built for another manifest is misaligned row-for-row, so every reader checks it) + `multi_hot_from_manifest`. |
+| `dbv4_meta.py` | Torch-free facts about the backbones and our checkpoint: `BACKBONES` specs, `backbone_for(ckpt_dir)`, `backend_of`, `fetch_hint`, `backbone_cached(backbone)`, repo ids, required/optional file sets, `DEFAULT_TAGGER_DIR`. Shared by the loader, the ComfyUI node and `downloads/`. |
+| `backends.py` | `build_backend(cfg)` — `config.json` → `PixaiBackend` or `Dbv4Backend`. |
+| `pixai_backend.py` | The default backbone: pixai card loader, `preprocess_pixai`, `PixaiBackend` (attention-pool feature for the sidecar). |
+| `dbv4_backend.py` | dbv4 backbone loader + `align_vocab` (the single vocab join point, shared by both backends) + `SidecarHead` (our linear head over the backbone's hidden state) + `default_dtype` (bf16 on CUDA, fp32 elsewhere — MPS included). |
+| `feature_cache.py` | The backbone hidden-state cache: `backbone_cache_path(kind, arch)` / `backbone_cache_stems` / `load_backbone_cache` (the stem list rides in the safetensors metadata — a cache built for another manifest is misaligned row-for-row, so every reader checks it) + `multi_hot_from_manifest`. |
 | `data.py` | `TaggerCheckpoint.from_dir(path, require=…, backend=…)` — the one read of a checkpoint dir (`config.json` / `vocab.json` / `dataset.json`, the shared "run `--mode build_vocab` first" exit, `idx_to_name`) — and `TaggerManifest`. |
 | `readback.py` | Read-It-Back tag-adherence instrument. |
 
@@ -119,8 +135,8 @@ loader/applier: replacements, tag aliases, always-remove, clothing dedup,
 | `main.py` | Argparse + 4-mode dispatcher (`build_vocab`, `predict`, `scan_role_markers`, `derive_groups`). Loads `.env` so `CAPTION_CORPUS_DIR` resolves before defaults are computed. |
 | `vocab.py` | Caption discovery, tag categorization (rating literal → `@` artist → count regex → `category_overrides` → tag cache → `general` fallback), `min_freq` cut, train/val split, manifest build, group resolution against the kept vocab, coverage scan. |
 | `derive_groups.py` | Taxonomy-driven tag-group candidates (folded into `build_vocab` by default). |
-| `build_dbv4_ckpt.py` | Assemble the checkpoint dir: copies vocab / rules / groups / split next to the backend descriptor. |
-| `train_sidecar.py` | Sidecar linear-head trainer over cached dbv4 hidden states; calls `calibrate.calibrate_thresholds`. |
+| `build_ckpt.py` | Assemble the checkpoint dir (`--backend pixai\|dbv4`, `--src` defaults to the live dbv4 checkpoint): copies vocab / rules / groups / split next to the backend descriptor. |
+| `train_sidecar.py` | Sidecar linear-head trainer over cached backbone hidden states (both backends); calls `calibrate.calibrate_thresholds`. |
 | `calibrate.py` | `calibrate_thresholds` — per-tag F1-optimal threshold sweep on val (skips softmax-group tags). Library function only. |
 | `eval_metrics.py` | Shared eval + `predict_with_inference_rule` (group argmax / count-tag rule). |
 | `predict.py` / `autotag.py` / `autotag_server.py` | Single-image debug entry; CLI one-shot autotag; resident GUI worker. |
@@ -155,35 +171,36 @@ Every step is a `python -m` module in `anime_tools.tagger.cli`.
 # 1. Vocab + train/val split + per-stem manifest + resolved typed groups.
 python -m anime_tools.tagger.cli.main --mode build_vocab --min_freq 5
 # 2. Assemble the checkpoint dir (vocab / rules / groups / split + descriptor).
-python -m anime_tools.tagger.cli.build_dbv4_ckpt
-# 3. Cache dbv4 hidden states + train / calibrate the sidecar head.
-python -m anime_tools.tagger.cli.train_sidecar --ckpt_dir models/captioners/anima-tagger-dbv4
+python -m anime_tools.tagger.cli.build_ckpt            # --backend pixai (default) | dbv4
+# 3. Cache backbone hidden states + train / calibrate the sidecar head.
+python -m anime_tools.tagger.cli.train_sidecar --ckpt_dir models/captioners/anima-tagger-pixai
 # 4. Single-image sanity check.
 python -m anime_tools.tagger.cli.main --mode predict --image foo.png --show_scores
 # 5. Curator helper — character tags that behave like affiliation markers.
 python -m anime_tools.tagger.cli.main --mode scan_role_markers --out_yaml stub.yaml
 ```
 
-All artifacts go to `--out_dir` (default `models/captioners/anima-tagger-dbv4/`):
+All artifacts go to `--out_dir` (default `models/captioners/anima-tagger-pixai/`, or `-dbv4` with `--backend dbv4`):
 
 ```
-models/captioners/anima-tagger-dbv4/
+models/captioners/anima-tagger-pixai/
 ├── vocab.json              # tag list + category + median emit pos + groups
 ├── rules.yaml              # snapshot of tag_rules.yaml at vocab-build time
 ├── groups.yaml             # snapshot of tag_groups.yaml
 ├── dataset.json            # per-stem (image_path, multi_hot, rating) manifest
-├── config.json             # backend="dbv4" descriptor (repo / arch / vocab map)
+├── config.json             # backend="pixai"|"dbv4" descriptor (repo / revision / img_size / arch)
 ├── sidecar.safetensors     # our linear head (the only trained weights shipped)
 └── thresholds.safetensors  # per-tag F1-calibrated thresholds (sidecar tags)
 ```
 
 The checkpoint dir holds only our files, so it stays moveable across machines;
 the backbone weights land in the HF hub cache, not under `models/` — that is
-where `Dbv4Backend._load_model` looks. Their gate is auto-approve: `hf auth
+where the backend's `_load_model` looks. pixai is public and needs no token;
+dbv4's gate is auto-approve: `hf auth
 login` (or the GUI Settings dialog's token field) plus one click on
 [the repo page](https://huggingface.co/animetimm/caformer_b36.dbv4-full). The
 hidden-state cache lives at
-`<export root>/anima_tagger/dbv4/<arch>_hidden.safetensors`
+`<export root>/anima_tagger/<backend>/<arch>_hidden.safetensors`
 (`feature_cache.py`), read by `train_sidecar.py` and
 `bench/tagger_external/calibration_check.py`.
 
@@ -215,9 +232,9 @@ grouped loss (its tags are plain BCE), but the semantics stay pinned by
 per tag and picks the F1-maximizing one on val. Tags with fewer than
 `min_support` val positives, zero achievable F1, or membership in a softmax
 group keep `default=0.5` (softmax-group tags are routed by argmax at inference).
-Tag-block size of 256 caps memory. dbv4-native tags keep their card thresholds
-and are not recalibrated — our val split is far too small to improve on
-them; only sidecar tags are swept.
+Tag-block size of 256 caps memory. backbone-matched tags keep their card thresholds
+(or, with `train_sidecar --backbone_thresholds train`, are refit on the train
+split — val is too small to improve on them); only sidecar tags are swept on val.
 
 ### Role-marker scan
 
@@ -241,7 +258,7 @@ hints). No file in the checkpoint dir is mutated.
 from anime_tools.tagger import AnimaTagger
 from PIL import Image
 
-tagger = AnimaTagger("models/captioners/anima-tagger-dbv4")  # default
+tagger = AnimaTagger("models/captioners/anima-tagger-pixai")  # default
 caption = tagger.predict_caption(Image.open("foo.png"))
 # → "sensitive, 1girl, hatsune miku, vocaloid, @some_artist, blue eyes, ..."
 
@@ -258,9 +275,9 @@ outs = tagger.predict_batch([Image.open(p) for p in paths])
 
 `AnimaTagger.predict`:
 
-1. PIL → 384² resize → backbone → tag logits projected onto our vocab by
-   `align_vocab`, rating sigmoids normalised to a distribution, and the 3072-d
-   hidden feature run through the sidecar head.
+1. PIL → backbone preprocessing → backbone → tag logits projected onto our vocab
+   by `align_vocab`, rating sigmoids normalised to a distribution, and the hidden
+   feature (1024-d for pixai, 3072-d for dbv4) run through the sidecar head.
 2. `sigmoid(tag_logits) ≥ thresholds` → `kept`; `argmax(rating_logits)` → rating.
 3. Group-aware refinement. For each loaded `softmax`/`softmax_when_solo`
    group, when the gating predicate applies (single-subject for
@@ -288,11 +305,11 @@ spaces, and joins with `, `.
 
 ### The runtime: timm on the best device torch has
 
-The backbone runs on timm, on whatever `anime_tools/_device.py::resolve_device`
+The dbv4 backbone runs on timm (pixai on transformers remote code), on whatever `anime_tools/_device.py::resolve_device`
 answers — `cuda`, else `mps`, else `cpu` — in the dtype `default_dtype` picks for
 that device: bfloat16 on CUDA, float32 everywhere else.
 
-Measured on caformer_b36 at 384px — end to end through `predict`, not just the
+Measured (historical) on the dbv4 backbone, caformer_b36 at 384px — end to end through `predict`, not just the
 forward pass:
 
 | Runtime | s/img | max \|Δscore\| vs float32 CPU torch |

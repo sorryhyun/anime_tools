@@ -33,9 +33,9 @@ from anime_tools.captions import tag_groups as tg
 from anime_tools.captions import tag_rules as tr
 from anime_tools.captions.taxonomy import classify_people, is_solo_names
 from anime_tools.captions.vocab_io import load_vocab
+from anime_tools.tagger.backends import Backend, build_backend
 from anime_tools.tagger.dbv4_backend import (
     UNSUPPORTED_LOGIT,
-    Dbv4Backend,
     SidecarHead,
     align_vocab,
     default_dtype,
@@ -45,15 +45,13 @@ from anime_tools.tagger.dbv4_backend import (
 
 # Re-exported from the three torch-free leaves; callers import them from here.
 from anime_tools.tagger.dbv4_meta import (
-    DEFAULT_DBV4_ARCH,
-    DEFAULT_DBV4_IMG_SIZE,
-    DEFAULT_DBV4_REPO,
+    BACKBONES,
     DEFAULT_TAGGER_DIR,
 )
 from anime_tools.tagger.fetch import (
     ensure_tagger_backbone,
     ensure_tagger_checkpoint,
-    is_dbv4_dir,
+    is_backbone_dir,
 )
 from anime_tools.tagger.schema import (
     GIRLS_COUNT_RE,
@@ -76,7 +74,7 @@ __all__ = [
     "dedupe_count_tags",
     "ensure_tagger_backbone",
     "ensure_tagger_checkpoint",
-    "is_dbv4_dir",
+    "is_backbone_dir",
 ]
 
 logger = logging.getLogger(__name__)
@@ -121,16 +119,16 @@ class AnimaTagger:
         cfg_d = read_json(self.ckpt_dir / "config.json")
         self._cfg_d = cfg_d
         self.backend_kind: str = str(cfg_d.get("backend", "pe"))
-        if self.backend_kind != "dbv4":
+        if self.backend_kind not in BACKBONES:
             raise ValueError(
                 f"unsupported tagger backend {self.backend_kind!r} in "
                 f"{self.ckpt_dir / 'config.json'}: the legacy in-house 'pe' "
-                "dual-encoder head was removed 2026-08-30. Use a dbv4-backed "
-                f"checkpoint (default {DEFAULT_TAGGER_DIR}; "
-                "`python -m anime_tools.downloads tagger` or "
-                "`python -m anime_tools.tagger.cli.build_dbv4_ckpt`)."
+                "dual-encoder head was removed 2026-08-30. Use a backbone-backed "
+                f"checkpoint ({' / '.join(sorted(BACKBONES))}; default "
+                f"{DEFAULT_TAGGER_DIR}; `python -m anime_tools.downloads tagger` or "
+                "`python -m anime_tools.tagger.cli.build_ckpt`)."
             )
-        self._dbv4: Dbv4Backend | None = None
+        self._backend: Backend | None = None
         self._sidecar: SidecarHead | None = None
 
         vocab = load_vocab(self.ckpt_dir)
@@ -186,7 +184,7 @@ class AnimaTagger:
 
         self.n_tags = len(self.tag_entries)
         self.rules = tr.load_rules(self.ckpt_dir / "rules.yaml")
-        self._init_dbv4_backend(cfg_d)
+        self._init_backend(cfg_d)
         if int(self.cfg.n_tags) != self.n_tags:
             raise ValueError(
                 f"vocab.json has {self.n_tags} tags but the head expects {self.cfg.n_tags}"
@@ -233,30 +231,11 @@ class AnimaTagger:
                     "sentinel_local": sentinel_local,
                 }
 
-    def _build_dbv4(self, d: dict) -> Dbv4Backend:
-        """The backbone this checkpoint's ``config.json['dbv4']`` block describes.
-
-        There is one runtime. The exported ONNX graph this used to choose between
-        was retired 2026-09-09: it existed because timm on an Apple CPU was 3.7x
-        slower than onnxruntime, and on the GPU every such machine actually has
-        (MPS) torch is 5.7x *faster* than the graph was — 87 ms an image against
-        491, at 2.3e-06 on the scores.
-        """
-        return Dbv4Backend(
-            repo=d.get("repo", DEFAULT_DBV4_REPO),
-            arch=d.get("arch", DEFAULT_DBV4_ARCH),
-            img_size=int(d.get("img_size", DEFAULT_DBV4_IMG_SIZE)),
-            device=self.device,
-            dtype=self.dtype,
-            revision=d.get("revision"),
-        )
-
-    def _init_dbv4_backend(self, cfg_d: dict) -> None:
-        """External dbv4 tagger projected onto our vocab (+ optional sidecar)."""
+    def _init_backend(self, cfg_d: dict) -> None:
+        """External backbone tagger projected onto our vocab (+ optional sidecar)."""
         from types import SimpleNamespace
 
-        d = dict(cfg_d.get("dbv4") or {})
-        self._dbv4 = self._build_dbv4(d)
+        self._backend = build_backend(cfg_d, device=self.device, dtype=self.dtype)
         # readback / bench read ``cfg.n_tags``; the pool kinds are vestigial.
         self.cfg = SimpleNamespace(
             n_tags=self.n_tags, pool_kind=None, pool_kind_aux=None
@@ -266,12 +245,14 @@ class AnimaTagger:
             for e in self.tag_entries
         ]
         self._align = align_vocab(
-            vocab_tags, self._dbv4.card, rename_recovery_from_rules(self.rules)
+            vocab_tags, self._backend.card, rename_recovery_from_rules(self.rules)
         )
         self._align_ours = self._align.ours_idx
         self._align_ext = self._align.ext_idx
         self._supported = self._align.supported_mask(self.n_tags)
-        self._rating_cols = [self._dbv4.card.rating_cols.get(r) for r in self.ratings]
+        self._rating_cols = [
+            self._backend.card.rating_cols.get(r) for r in self.ratings
+        ]
         self._sidecar = SidecarHead.load(self.ckpt_dir)
         if self._sidecar is not None:
             self._sidecar.to(self.device)
@@ -285,9 +266,10 @@ class AnimaTagger:
             ):
                 raise ValueError("sidecar people_count_labels disagree with vocab.json")
         logger.info(
-            "AnimaTagger[dbv4]: %s → %d/%d vocab tags supported (unmatched by "
+            "AnimaTagger[%s]: %s → %d/%d vocab tags supported (unmatched by "
             "category: %s); sidecar=%s",
-            self._dbv4.repo,
+            self.backend_kind,
+            self._backend.repo,
             int(self._supported.sum()),
             self.n_tags,
             self._align.unmatched_by_category,
@@ -301,7 +283,7 @@ class AnimaTagger:
     def _heads_forward_batch(
         self, images: Sequence[Image.Image]
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor | None]:
-        """Head pass over many images: dbv4 backend + optional sidecar →
+        """Head pass over many images: backbone + optional sidecar →
         ``(tag_logits [B, n_tags], rating_probs [B, n_ratings], people_probs
         [B, n_people] | None)`` on ``self.device``.
 
@@ -312,7 +294,7 @@ class AnimaTagger:
         The backend has always taken a list — this is the one forward that
         covers a whole batch, and :meth:`_heads_forward` is its one-image case.
         """
-        out = self._dbv4.forward(list(images))
+        out = self._backend.forward(list(images))
         b = int(out.probs.shape[0])
         probs = torch.zeros(b, self.n_tags)
         probs[:, self._align_ours] = out.probs[:, self._align_ext]
@@ -324,7 +306,7 @@ class AnimaTagger:
                 people = people_logits.float().softmax(dim=-1)
         tag_logits = probs_to_logits(probs)
         tag_logits[:, ~self._supported] = UNSUPPORTED_LOGIT
-        # dbv4 ratings are 4 independent sigmoids; normalise to a distribution.
+        # Backbone ratings are 4 independent sigmoids; normalise to a distribution.
         rating = torch.zeros(b, len(self._rating_cols))
         for j, col in enumerate(self._rating_cols):
             if col is not None:
@@ -446,13 +428,10 @@ class AnimaTagger:
                     group_preds[name] = None
                     continue
                 winner_idx = int(idx_t[winner_local].item())
-                # dbv4 was never CE-trained on our groups, so the winner must
+                # No backbone was CE-trained on our groups, so the winner must
                 # also clear its own threshold ("at most one"): otherwise an
                 # all-unsupported group emits its first member off a -30 logit.
-                if (
-                    self.backend_kind == "dbv4"
-                    and probs[winner_idx] < self.thresholds[winner_idx]
-                ):
+                if probs[winner_idx] < self.thresholds[winner_idx]:
                     group_preds[name] = None
                     continue
                 winner_name = names[winner_idx]
@@ -467,7 +446,7 @@ class AnimaTagger:
         # vocab build labels by, so it agrees with the ``Ngirls`` tags the
         # position-clause pipeline reads. The sidecar distribution stays in
         # ``people_count_scores``.
-        if self.backend_kind == "dbv4" and self.people_count_labels:
+        if self.people_count_labels:
             people_idx = classify_people(n.replace(" ", "_") for n in kept)
             out["people_count"] = self.people_count_labels[people_idx]
             out["people_count_source"] = "count-tag-rule"

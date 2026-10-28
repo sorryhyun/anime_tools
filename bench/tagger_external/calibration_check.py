@@ -28,8 +28,8 @@ from anime_tools.tagger.cli.calibrate import DEFAULT_SWEEP, calibrate_thresholds
 from anime_tools.tagger.data import TaggerCheckpoint
 from anime_tools.tagger.dbv4_backend import SidecarHead
 from anime_tools.tagger.feature_cache import (
-    dbv4_cache_path,
-    load_dbv4_cache,
+    backbone_cache_path,
+    load_backbone_cache,
     multi_hot_from_manifest,
 )
 from bench._common import make_run_dir, write_result
@@ -80,14 +80,13 @@ def ece_curve(
 def main() -> None:
     args = parse_args()
     model_dir = Path(args.model_dir)
-    ckpt = TaggerCheckpoint.from_dir(
-        model_dir, require=("vocab", "dataset"), backend="dbv4"
-    )
+    ckpt = TaggerCheckpoint.from_dir(model_dir, require=("vocab", "dataset"))
     cfg, vocab, dataset = ckpt.config, ckpt.vocab, ckpt.dataset
     n_tags = ckpt.n_tags
-    arch = cfg["dbv4"]["arch"]
-    cache_path = dbv4_cache_path(arch, args.feature_cache)
-    cache, cached_stems = load_dbv4_cache(cache_path)
+    kind = cfg["backend"]
+    arch = cfg[kind].get("arch", kind)
+    cache_path = backbone_cache_path(kind, arch, args.feature_cache)
+    cache, cached_stems = load_backbone_cache(cache_path)
     pos = {s: i for i, s in enumerate(cached_stems)}
     stems = [
         s for s in dataset["split"][args.split] if s in pos and cache["ok"][pos[s]]

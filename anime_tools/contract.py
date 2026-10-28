@@ -75,8 +75,17 @@ TAGGER_OPTIONAL_FILES = ("thresholds.safetensors", "groups.yaml")
 # from the gated upstream repo); the sidecar pair is optional.
 DBV4_REQUIRED_FILES = ("config.json", "vocab.json", "rules.yaml")
 DBV4_OPTIONAL_FILES = TAGGER_OPTIONAL_FILES + ("sidecar.safetensors", "sidecar.json")
+# The ``DBV4_*`` checkpoint sets above also describe a pixai-backed checkpoint:
+# the layout is the backbone-backed one, whichever backbone it names.
 DBV4_BACKBONE_FILES = ("model.safetensors", "selected_tags.csv", "meta.json")
-"""What the backbone loader pulls from the upstream repo."""
+"""What the dbv4 backbone loader pulls from the upstream repo."""
+PIXAI_BACKBONE_FILES = (
+    "model.safetensors",
+    "config.json",
+    "preprocessor_config.json",
+    "tagger_pipeline.py",
+)
+"""What the pixai backbone loader pulls (``tagger_pipeline.py`` is the model code)."""
 
 # --- stage reports and their replay (``stages/replay.py``) --------------------
 REPLAY_REPORT_NAME = "apply_report.json"

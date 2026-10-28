@@ -48,13 +48,12 @@ from anime_tools.downloads._locations import (
     default_vl16_base_dir,
 )
 from anime_tools.tagger.dbv4_meta import (
-    DBV4_BACKBONE_FILES,
     DBV4_OPTIONAL_FILES,
     DBV4_REQUIRED_FILES,
     DEFAULT_TAGGER_DIR,
     TAGGER_HF_REPO,
     TAGGER_HF_SUBFOLDER,
-    backbone_repo_for,
+    backbone_for,
 )
 
 __all__ = ["by_id", "by_pack", "catalog", "expand"]
@@ -73,7 +72,7 @@ def catalog() -> tuple[Asset, ...]:
     ``ANIME_TOOLS_HOME`` and the backbone repo follows the installed
     checkpoint."""
     tagger_dir = resolve_path(DEFAULT_TAGGER_DIR)
-    backbone = backbone_repo_for(tagger_dir)
+    backbone = backbone_for(tagger_dir)
     return (
         Asset(
             id="tagger",
@@ -92,13 +91,19 @@ def catalog() -> tuple[Asset, ...]:
         Asset(
             id="tagger_backbone",
             pack="tagger",
-            title="dbv4 tagger backbone",
-            repo=backbone,
-            files=DBV4_BACKBONE_FILES,
+            title=f"{backbone.kind} tagger backbone",
+            repo=backbone.repo,
+            files=backbone.spec.files,
+            revision=backbone.revision or "",
             used_by="the Anima Tagger checkpoint above",
             stages=("autotag", "position", "audit"),
-            gated=f"https://huggingface.co/{backbone}",
-            notes="GPL-3.0 and never vendored; the terms auto-approve.",
+            gated=f"https://huggingface.co/{backbone.repo}"
+            if backbone.spec.gated
+            else "",
+            notes="GPL-3.0 and never vendored; the terms auto-approve."
+            if backbone.spec.gated
+            else "Apache-2.0, public; the model code (tagger_pipeline.py) runs "
+            "through transformers' remote code at the pinned commit.",
         ),
         Asset(
             id="sam3",

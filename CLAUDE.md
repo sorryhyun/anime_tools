@@ -8,7 +8,7 @@ module's architecture, and procedures live in `.claude/skills/`; the map is at t
 ## What this is
 
 `anime_tools` is the dataset-curation half split out of the `anima_lora` trainer: caption grammar +
-correction, the Anima Tagger (dbv4), position clauses, multiview audit, PE-Spatial grouping,
+correction, the Anima Tagger (pixai backbone, dbv4 still loads), position clauses, multiview audit, PE-Spatial grouping,
 SAM3 masking, OCR (AnimeText detector + manga VL reader), and a web GUI over all of it.
 It is consumed as a git
 dependency (no PyPI).

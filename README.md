@@ -78,7 +78,7 @@ The installers above pass the same override on the command line.
 | Sub-package | What it does | CLI |
 |---|---|---|
 | `captions` | The caption grammar, tag taxonomy, Danbooru-KB correction, shuffle/dropout variants. Torch-free. | `…captions.index` |
-| `tagger` | The Anima Tagger: a vocab/threshold/sidecar head over the dbv4 caformer, emitting Anima-format tags. | `…tagger.cli` |
+| `tagger` | The Anima Tagger: a vocab/threshold/sidecar head over the pixai backbone (dbv4 checkpoints still load), emitting Anima-format tags. | `…tagger.cli` |
 | `stages` | The pipeline itself — resize, autotag, position clauses, correction, multiview audit, OCR, export. | `…stages.cli.*` |
 | `grouping` | Near-twin and same-concept grouping on PE-Spatial features. | `…grouping.cli.*` |
 | `masking` | SAM3 subject masks, with balloons and lettering as ignore prompts, and their merge. | `…masking.cli.*` |
@@ -142,7 +142,7 @@ workspace/                                       everything the tools write
   captions/<stage>/report.json  groups/groups.json  ocr/  export/report.json
   _excluded/excluded.json  _excluded/{resized,masks,ocr}/  images taken out of the pipeline, and their files
 (export_target_dir)/resized/ masks/ _excluded/   the published dataset    ← written only by Export (originals from src; --resize_cap / --webp / --combine_ocr)
-models/captioners/anima-tagger-dbv4/            tagger checkpoint (auto-fetched from sorryhyun/anima-tagger)
+models/captioners/anima-tagger-pixai/           tagger checkpoint (auto-fetched from sorryhyun/anima-tagger)
 models/sam3/  models/pe/  models/animetext/       SAM3 / PE-Spatial / OCR text-block detector
 models/paddleocr_vl_1.6*/                             the manga VL reader (VL-1.6 base + v4 tower LoRA/LM)
 networks/calibration/sam3_girl_prompt.safetensors  SAM3 subject soft prompt (default `--prompt_embed`)
@@ -164,7 +164,7 @@ home: `ANIME_TOOLS_HOME` → `ANIMA_HOME` → current directory
 [guidebook](anime_tools/gui/guidebooks/guidebook.md) is the walkthrough, and the
 rest are per-piece references:
 
-- [`docs/anima_tagger.md`](docs/anima_tagger.md) — the tagger: vocab build, dbv4 backend,
+- [`docs/anima_tagger.md`](docs/anima_tagger.md) — the tagger: vocab build, pixai / dbv4 backends,
   sidecar head, calibration.
 - [`docs/position_captions.md`](docs/position_captions.md) — position-clause grammar, rewrite rules,
   gates and knobs.
@@ -207,5 +207,6 @@ training stack (`library.*`, `networks`, `train`).
 
 ## License
 
-MIT (see `LICENSE`). The dbv4 backbone weights are GPL-3.0 and gated upstream —
-they are fetched at load under the user's Hugging Face token, never vendored.
+MIT (see `LICENSE`). The default pixai backbone is Apache-2.0 and public; the optional dbv4 backbone's
+weights are GPL-3.0 and gated upstream. Both are fetched at load (dbv4 under the
+user's Hugging Face token), never vendored.

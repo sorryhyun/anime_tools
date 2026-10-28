@@ -1,6 +1,6 @@
 """The Anima Tagger on one image: raw scores, kept tags, and the caption form.
 
-    python examples/tagger.py path/to/image.png [--tagger_dir models/captioners/anima-tagger-dbv4]
+    python examples/tagger.py path/to/image.png [--tagger_dir models/captioners/anima-tagger-pixai]
 
 CLI equivalents (single image, stdout only)::
 
@@ -9,8 +9,8 @@ CLI equivalents (single image, stdout only)::
 
 Batch tagging over a dataset is the **autotag stage** (``examples/stages.py``),
 not this module. The checkpoint (vocab, thresholds, rules, groups, sidecar head)
-is fetched from the Hub on first use; the GPL dbv4 backbone underneath it is
-gated upstream and needs a Hugging Face token (``hf auth login``).
+is fetched from the Hub on first use, and so is the pixai backbone underneath
+it (Apache-2.0, ~2 GB, public).
 """
 
 from __future__ import annotations

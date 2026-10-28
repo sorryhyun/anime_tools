@@ -1,18 +1,19 @@
-"""Train the dbv4 sidecar head on cached backend features.
+"""Train the sidecar head on cached backbone features; refit backbone thresholds.
 
-dbv4 (``animetimm/*.dbv4-full``) has no copyright category, misses the newer
-and minor characters in our vocab, and has a 2025 danbooru namespace that
-renamed a few of our general tags (``black shoes`` → ``black footwear``). Those
-rows plus the 8-way people-count bucket are what this head emits; ``@artist``
-and artist OCs (``shiro (mignon)``, see :func:`select_bce_rows`) are excluded.
+A backbone misses some of our vocab: dbv4 (``animetimm/*.dbv4-full``) has no
+copyright category, lacks newer and minor characters and renamed a few of our
+general tags (``black shoes`` → ``black footwear``); pixai lacks fewer, but
+some. Those rows plus the 8-way people-count bucket are what this head emits;
+``@artist`` and artist OCs (``shiro (mignon)``, see :func:`select_bce_rows`)
+are excluded.
 
-Four resumable stages, each skipped when its output exists: **cache** (one dbv4
-forward per ``dataset.json`` image → the fp16 MLP-head hidden feature plus the
-projected our-vocab probs, used for the count-tag people-rule baseline),
-**train** (linear head, BCE + CE, best epoch by val mean-AP + people accuracy),
-**calibrate** (per-tag F1-optimal thresholds written into the checkpoint's
-``thresholds.safetensors`` at the sidecar indices) and **write**. See
-``docs/anima_tagger.md``.
+Stages: **cache** (one backbone forward per ``dataset.json`` image → the fp16
+hidden feature plus the projected our-vocab probs; skipped when the cache
+exists), **train** (linear head, BCE + CE, best epoch by val mean-AP + people
+accuracy), **calibrate** (per-tag F1-optimal thresholds for the sidecar rows on
+val; with ``--backbone_thresholds train``, the backbone-matched rows are refit
+on the *train* split from the cached probs, so val stays held out for them)
+and **write**. See ``docs/anima_tagger.md``.
 """
 
 from __future__ import annotations
@@ -40,7 +41,8 @@ from anime_tools.captions.taxonomy import (
     artist_oc_handle,
     classify_people,
 )
-from anime_tools.tagger.cli.build_dbv4_ckpt import NEVER_FIRE
+from anime_tools.tagger.backends import build_backend
+from anime_tools.tagger.cli.build_ckpt import NEVER_FIRE
 from anime_tools.tagger.cli.calibrate import DEFAULT_SWEEP, calibrate_thresholds
 from anime_tools.tagger.cli.eval_metrics import (
     per_tag_average_precision,
@@ -48,23 +50,24 @@ from anime_tools.tagger.cli.eval_metrics import (
 )
 from anime_tools.tagger.data import TaggerCheckpoint
 from anime_tools.tagger.dbv4_backend import (
-    Dbv4Backend,
     SidecarHead,
     align_vocab,
     preprocess_dbv4,
     rename_recovery_from_rules,
 )
+from anime_tools.tagger.dbv4_meta import BACKBONES
 from anime_tools.tagger.feature_cache import (
-    dbv4_cache_path,
-    dbv4_cache_stems,
-    load_dbv4_cache,
+    backbone_cache_path,
+    backbone_cache_stems,
+    load_backbone_cache,
     multi_hot_from_manifest,
 )
+from anime_tools.tagger.pixai_backend import preprocess_pixai
 
 logging.basicConfig(level=logging.INFO, format="%(message)s")
 log = logging.getLogger(__name__)
 
-# Sidecar candidates = vocab tags dbv4 cannot emit, restricted to these categories.
+# Sidecar candidates = vocab tags the backbone cannot emit, in these categories.
 # Not ``deprecated`` (booru's retired-tag type — ``silver hair``, ``black
 # footwear``): a head over them was measured at F1 ≈ 0.2 because their
 # positives look exactly like the live tag's (``grey hair``); tag_rules.yaml
@@ -74,12 +77,25 @@ DEFAULT_CATEGORIES = ("copyright", "character", "general")
 
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description=__doc__.split("\n", 1)[0])
-    p.add_argument("--ckpt_dir", default="models/captioners/anima-tagger-dbv4")
+    p.add_argument("--ckpt_dir", default="models/captioners/anima-tagger-pixai")
     p.add_argument(
         "--feature_cache",
         default=None,
         help="safetensors with cached hidden features; default "
-        "workspace/anima_tagger/dbv4/<arch>_hidden.safetensors",
+        "workspace/anima_tagger/<backend>/<arch>_hidden.safetensors",
+    )
+    p.add_argument(
+        "--backbone_thresholds",
+        choices=["keep", "train"],
+        default="train",
+        help="backbone-matched rows: keep the thresholds in the checkpoint "
+        "(the card's), or refit them per tag on the train split",
+    )
+    p.add_argument(
+        "--backbone_min_support",
+        type=int,
+        default=10,
+        help="train positives a matched row needs before it is refit",
     )
     p.add_argument("--categories", default=",".join(DEFAULT_CATEGORIES))
     p.add_argument(
@@ -113,13 +129,13 @@ def select_bce_rows(
     *,
     keep_artist_oc: bool = False,
 ) -> tuple[list[int], list[str]]:
-    """Sidecar BCE rows: the vocab tags dbv4 cannot emit, in ``cats``.
+    """Sidecar BCE rows: the vocab tags the backbone cannot emit, in ``cats``.
 
     Returns ``(bce_indices, dropped_artist_oc)``. An artist OC — a tag
     qualified by a vocab ``@artist`` handle, ``shiro (mignon)``, whatever
     category booru filed it under — is left out unless ``keep_artist_oc``: the head would learn it from a few dozen
     positives and then fire it on any look-alike in a stranger's dataset,
-    where the name means nothing. Franchise characters dbv4 lacks
+    where the name means nothing. Franchise characters the backbone lacks
     (``cartethyia (wuthering waves)``) are exactly what the head is for and
     stay. A dropped row keeps its vocab slot and simply never fires.
     """
@@ -138,9 +154,12 @@ def select_bce_rows(
 # Stage 1 — feature cache.
 
 
+PREPROCESS = {"dbv4": preprocess_dbv4, "pixai": preprocess_pixai}
+
+
 class _ImageDS(Dataset):
-    def __init__(self, paths: Sequence[str], size: int):
-        self.paths, self.size = list(paths), size
+    def __init__(self, paths: Sequence[str], kind: str, size: int):
+        self.paths, self.kind, self.size = list(paths), kind, size
 
     def __len__(self) -> int:
         return len(self.paths)
@@ -148,7 +167,7 @@ class _ImageDS(Dataset):
     def __getitem__(self, i: int):
         try:
             im = Image.open(self.paths[i])
-            return i, preprocess_dbv4(im, self.size), True
+            return i, PREPROCESS[self.kind](im, self.size), True
         except (OSError, ValueError):
             return i, torch.zeros(3, self.size, self.size), False
 
@@ -159,7 +178,7 @@ def _collate(b):
 
 
 def build_cache(
-    backend: Dbv4Backend,
+    backend,
     image_paths: Sequence[str],
     stems: Sequence[str],
     align_ours: torch.Tensor,
@@ -169,7 +188,7 @@ def build_cache(
     batch_size: int,
     workers: int,
 ) -> None:
-    ds = _ImageDS(image_paths, backend.img_size)
+    ds = _ImageDS(image_paths, backend.kind, backend.img_size)
     dl = DataLoader(ds, batch_size=batch_size, num_workers=workers, collate_fn=_collate)
     d_hidden = backend.d_hidden
     hidden = torch.zeros(len(ds), d_hidden, dtype=torch.float16)
@@ -197,13 +216,18 @@ def build_cache(
         str(out_path),
         metadata={
             "stems": json.dumps(list(stems)),
+            "backend": backend.kind,
             "repo": backend.repo,
+            "revision": str(backend.revision),
             "arch": backend.arch,
             "img_size": str(backend.img_size),
-            "feature": "mlp_hidden",
+            "feature": FEATURE[backend.kind],
         },
     )
     log.info("wrote %s (%d × %d)", out_path, len(ds), d_hidden)
+
+
+FEATURE = {"dbv4": "mlp_hidden", "pixai": "attn_pool"}
 
 
 # Stage 2 — train.
@@ -305,31 +329,24 @@ def main() -> None:
     args = parse_args()
     ckpt_dir = Path(args.ckpt_dir)
     device = torch.device(resolve_device(args.device))
-    ckpt = TaggerCheckpoint.from_dir(
-        ckpt_dir, require=("vocab", "dataset"), backend="dbv4"
-    )
+    ckpt = TaggerCheckpoint.from_dir(ckpt_dir, require=("vocab", "dataset", "config"))
     cfg, vocab, dataset = ckpt.config, ckpt.vocab, ckpt.dataset
+    if cfg.get("backend") not in BACKBONES:
+        raise SystemExit(f"{ckpt_dir} names no known backbone ({sorted(BACKBONES)})")
     rules = tr.load_rules(ckpt_dir / "rules.yaml")
     n_tags = ckpt.n_tags
-    d = cfg["dbv4"]
-    backend = Dbv4Backend(
-        repo=d["repo"],
-        arch=d["arch"],
-        img_size=int(d["img_size"]),
-        device=device,
-        revision=d.get("revision"),
-    )
+    backend = build_backend(cfg, device=device)
     align = align_vocab(vocab["tags"], backend.card, rename_recovery_from_rules(rules))
 
     stems: list[str] = list(dataset["stems"])
     image_paths: list[str] = list(dataset["image_paths"])
     if args.limit:
         stems, image_paths = stems[: args.limit], image_paths[: args.limit]
-    cache_path = dbv4_cache_path(d["arch"], args.feature_cache)
+    cache_path = backbone_cache_path(backend.kind, backend.arch, args.feature_cache)
 
     # ---- stage 1: cache ----
     if cache_path.exists():
-        if dbv4_cache_stems(cache_path) != stems:
+        if backbone_cache_stems(cache_path) != stems:
             raise SystemExit(
                 f"{cache_path} was built for a different stem list — delete it or "
                 f"pass --feature_cache"
@@ -349,7 +366,7 @@ def main() -> None:
         )
     if args.cache_only:
         return
-    cache, _ = load_dbv4_cache(cache_path)
+    cache, _ = load_backbone_cache(cache_path)
     hidden, probs, ok = cache["hidden"], cache["probs"], cache["ok"]
 
     # ---- labels ----
@@ -429,7 +446,7 @@ def main() -> None:
     if p_va is not None:
         yp_va = y_people[val_idx]
         metrics["people_acc_sidecar"] = float((p_va.argmax(1) == yp_va).float().mean())
-        # count-tag rule baseline: dbv4 count tags above card thresholds → bucket
+        # count-tag rule baseline: backbone count tags above their thresholds → bucket
         thr_all = st_load(str(ckpt_dir / "thresholds.safetensors"))[
             "thresholds"
         ].float()
@@ -450,20 +467,49 @@ def main() -> None:
     metrics["train"] = train_info
     metrics["v5_reference"] = {"copyright_macro_f1": 0.638, "people_acc": 0.885}
 
-    # ---- stage 4: write ----
     thr_path = ckpt_dir / "thresholds.safetensors"
     thr_all = st_load(str(thr_path))["thresholds"].float()
+
+    # ---- stage 3b: backbone-matched rows, refit on train ----
+    if args.backbone_thresholds == "train":
+        matched = align.ours_idx
+        y_tr = multi_hot_from_manifest(
+            [dataset["tag_indices"][i] for i in train_idx.tolist()], n_tags
+        )[:, matched]
+        p_tr = probs[train_idx][:, matched].float()
+        thr_fit, f1_fit = calibrate_thresholds(
+            p_tr,
+            y_tr,
+            DEFAULT_SWEEP,
+            default=-1.0,
+            min_support=args.backbone_min_support,
+        )
+        refit = thr_fit >= 0
+        thr_all[matched[refit]] = thr_fit[refit]
+        metrics["backbone_thresholds"] = {
+            "source": "train-split per-tag F1 sweep",
+            "n_matched": int(matched.numel()),
+            "n_refit": int(refit.sum()),
+            "min_support": args.backbone_min_support,
+            "n_train": len(train_idx),
+            "mean_train_f1_refit": float(f1_fit[refit].mean()) if refit.any() else 0.0,
+        }
+        log.info("backbone thresholds: %s", metrics["backbone_thresholds"])
+
+    # ---- stage 4: write ----
     # Every row the backbone cannot emit and this head does not carry must
     # never fire — including a row a previous head carried (a dropped OC).
     unmatched_idx = [int(i) for i, _n, _c in align.unmatched]
     thr_all[torch.tensor(unmatched_idx)] = NEVER_FIRE
     thr_all[torch.tensor(bce_indices)] = thr_rows
     st_save({"thresholds": thr_all.contiguous()}, str(thr_path))
+    head.feature = FEATURE[backend.kind]
     head.cpu().save(
         ckpt_dir,
         extra_meta={
-            "repo": d["repo"],
-            "arch": d["arch"],
+            "backend": backend.kind,
+            "repo": backend.repo,
+            "arch": backend.arch,
             "categories": sorted(cats),
             "dropped_artist_oc": dropped_oc,
             "feature_cache": str(cache_path),

@@ -1,6 +1,6 @@
 """Typed tag-group routing for the Anima Tagger — ``GroupRouter`` + grouped loss.
 
-The dbv4 backend's inference rule and the threshold calibrator resolve softmax
+The tagger's inference rule and the threshold calibrator resolve softmax
 groups through the router. A vocab built without ``--groups`` produces an empty
 router: BCE applies everywhere.
 """

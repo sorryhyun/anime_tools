@@ -51,7 +51,7 @@ def test_every_row_is_addressable_and_serializable(home):
 
 def test_destinations_follow_the_curation_home(home):
     by = DL.by_id()
-    assert by["tagger"].dest == home / "models" / "captioners" / "anima-tagger-dbv4"
+    assert by["tagger"].dest == home / "models" / "captioners" / "anima-tagger-pixai"
     assert by["sam3"].dest == home / "models" / "sam3"
     assert by["pe_spatial"].dest == home / "models" / "pe"
     # Not under models/: the soft prompt lands on the path --prompt_embed resolves.
@@ -79,7 +79,9 @@ def test_rows_land_where_the_loaders_look():
     assert by["tagger"].repo == dbv4_meta.TAGGER_HF_REPO
     assert by["tagger"].subfolder == dbv4_meta.TAGGER_HF_SUBFOLDER
     assert by["tagger"].dest == resolve_path(dbv4_meta.DEFAULT_TAGGER_DIR)
-    assert by["tagger_backbone"].files == dbv4_meta.DBV4_BACKBONE_FILES
+    backbone = dbv4_meta.backbone_for(by["tagger"].dest)
+    assert by["tagger_backbone"].files == backbone.spec.files
+    assert by["tagger_backbone"].revision == (backbone.revision or "")
     assert by["pe_spatial"].repo == pe.PE_SPATIAL_REPO
     assert (
         by["pe_spatial"].dest / pe.PE_SPATIAL_FILENAME == pe.default_pe_spatial_path()
@@ -193,7 +195,8 @@ def test_a_built_row_runs_its_build_after_fetching(home, monkeypatch):
 
 def test_gated_rows_carry_their_accept_terms_url(home):
     gated = {a.id for a in DL.catalog() if a.gated}
-    assert gated == {"tagger_backbone", "sam3"}
+    # The default (pixai) tagger backbone is public; a dbv4 checkpoint's is gated.
+    assert gated == {"sam3"}
     for a in DL.catalog():
         if a.gated:
             assert a.gated == f"https://huggingface.co/{a.repo}"

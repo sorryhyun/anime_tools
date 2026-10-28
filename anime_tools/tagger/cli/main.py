@@ -244,7 +244,7 @@ def parse_args() -> argparse.Namespace:
     )
     p.add_argument(
         "--preserve_groups",
-        default="models/captioners/anima-tagger-dbv4/groups.yaml",
+        default="models/captioners/anima-tagger-pixai/groups.yaml",
         help="derive_groups --apply: existing groups.yaml whose groups are "
         "preserved verbatim and claim their tags first (no regression).",
     )
@@ -252,7 +252,7 @@ def parse_args() -> argparse.Namespace:
     # build_vocab writes the checkpoint here; the other modes read from it.
     p.add_argument(
         "--out_dir",
-        default="models/captioners/anima-tagger-dbv4",
+        default="models/captioners/anima-tagger-pixai",
     )
 
     args = p.parse_args()

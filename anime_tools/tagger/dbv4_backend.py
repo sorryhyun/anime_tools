@@ -39,6 +39,7 @@ from anime_tools.tagger.dbv4_meta import (
     DEFAULT_DBV4_ARCH,
     DEFAULT_DBV4_IMG_SIZE,
     DEFAULT_DBV4_REPO,
+    Backbone,
     gated_hint,
 )
 
@@ -231,6 +232,8 @@ class Dbv4Backend:
     trains on comes out of the same pass as the tag probabilities.
     """
 
+    kind = "dbv4"
+
     def __init__(
         self,
         repo: str = DEFAULT_DBV4_REPO,
@@ -259,8 +262,15 @@ class Dbv4Backend:
         return self._card
 
     @property
+    def backbone(self) -> Backbone:
+        return Backbone("dbv4", self.repo, self.revision)
+
+    @property
     def d_hidden(self) -> int:
         return int(self.model.head.fc.fc1.out_features)
+
+    def preprocess(self, im: Image.Image) -> torch.Tensor:
+        return preprocess_dbv4(im, self.img_size)
 
     @property
     def model(self) -> nn.Module:
@@ -348,7 +358,7 @@ class Dbv4Backend:
 
     @torch.no_grad()
     def forward(self, images: Sequence[Image.Image]) -> Dbv4Output:
-        x = torch.stack([preprocess_dbv4(im, self.img_size) for im in images])
+        x = torch.stack([self.preprocess(im) for im in images])
         return self.forward_tensor(x)
 
 

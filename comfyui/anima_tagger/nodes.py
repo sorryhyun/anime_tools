@@ -16,7 +16,6 @@ IMAGE→PIL conversion, and ``HOME``.
 
 from __future__ import annotations
 
-import json
 import logging
 import os
 from pathlib import Path
@@ -28,12 +27,16 @@ from PIL import Image
 
 try:
     from anime_tools.tagger import AnimaTagger
-    from anime_tools.tagger.dbv4_meta import DEFAULT_TAGGER_DIR, TAGGER_HF_REPO
+    from anime_tools.tagger.dbv4_meta import (
+        DEFAULT_TAGGER_DIR,
+        TAGGER_HF_REPO,
+        backend_of,
+    )
 
-    # ``fetch`` is torch-free, and ``is_dbv4_dir`` is the package's one answer
-    # to "is this checkpoint dbv4-backed?"; re-spelling it here would let the
-    # dropdown and the loader disagree.
-    from anime_tools.tagger.fetch import ensure_tagger_checkpoint, is_dbv4_dir
+    # ``fetch`` is torch-free, and ``is_backbone_dir`` is the package's one
+    # answer to "does this checkpoint name a backbone?"; re-spelling it here
+    # would let the dropdown and the loader disagree.
+    from anime_tools.tagger.fetch import ensure_tagger_checkpoint, is_backbone_dir
 except ImportError as e:  # pragma: no cover — install-time guidance
     raise ImportError(
         "comfyui-anima-tagger needs the `anime-tools` package: "
@@ -64,17 +67,16 @@ def _home() -> Path:
 
 HOME = _home()
 
-# The shipped default (``DEFAULT_TAGGER_DIR``) is the dbv4-backed checkpoint,
-# which uses no PE encoder — hence no PE inputs on this node. A legacy PE-head
-# checkpoint still loads and resolves its encoders through the registry default.
+# The shipped default (``DEFAULT_TAGGER_DIR``) is the pixai-backed checkpoint;
+# no backbone checkpoint uses a PE encoder — hence no PE inputs on this node.
 
 
 def _list_tagger_dirs() -> list[str]:
     """Loadable tagger-checkpoint directories under ``models/captioners/``.
 
-    A directory qualifies when its ``config.json`` declares the ``dbv4`` backend
-    or carries an ``aux_encoder`` field (legacy dual-encoder) — the only two
-    architectures that still load. Paths are relative to ``HOME``, which
+    A directory qualifies when its ``config.json`` names a backbone backend
+    (``pixai`` / ``dbv4``) — the only checkpoints that still load. Paths are
+    relative to ``HOME``, which
     ``load()`` prepends. Empty when nothing is installed; the caller seeds the
     default dir so auto-fetch still works.
     """
@@ -85,15 +87,7 @@ def _list_tagger_dirs() -> list[str]:
         return []
     out: list[str] = []
     for p in sorted(base.iterdir()):
-        cfg = p / "config.json"
-        if not cfg.exists():
-            continue
-        try:
-            with open(cfg, encoding="utf-8") as f:
-                cfg_d = json.load(f)
-        except (OSError, ValueError):
-            continue
-        if not is_dbv4_dir(p) and not cfg_d.get("aux_encoder"):
+        if not is_backbone_dir(p):
             continue
         out.append(str(p.relative_to(HOME)))
     return out
@@ -130,7 +124,7 @@ class AnimaTaggerLoader:
                             "AnimaTagger checkpoint directory, picked from "
                             "the checkpoints discovered under "
                             "models/captioners/ (any dir with a config.json). "
-                            "The first row is the default dbv4-backed "
+                            "The first row is the default pixai-backed "
                             "checkpoint; if it's missing required files it's "
                             f"auto-fetched from {TAGGER_HF_REPO} on first use."
                         ),
@@ -148,7 +142,7 @@ class AnimaTaggerLoader:
         "AnimaTaggerCaption (image -> caption) and AnimaDirectEdit. ComfyUI "
         "memoizes the output, so re-running the graph reuses the same "
         f"instance without reloading. The tagger checkpoint ({TAGGER_HF_REPO}) "
-        "is auto-downloaded if its path doesn't exist yet; the dbv4 backend "
+        "is auto-downloaded if its path doesn't exist yet; its backbone "
         "needs no PE vision encoder, so there is nothing else to pick."
     )
 
@@ -158,19 +152,17 @@ class AnimaTaggerLoader:
         tdir = Path(tagger_dir.strip())
         if not tdir.is_absolute():
             tdir = HOME / tdir
-        # For a dbv4 checkpoint this fetches the gated GPL-3.0 caformer
-        # backbone, so the multi-GB download and any accept-the-terms failure
-        # land in the loader node rather than mid-predict.
+        # This fetches the backbone (pixai ~2 GB; dbv4 gated), so the download
+        # and any accept-the-terms failure land in the loader node rather than
+        # mid-predict.
         ensure_tagger_checkpoint(tdir)
         device = comfy.model_management.get_torch_device()
         logger.info(
             "AnimaTaggerLoader: loading %s on %s (backend=%s)",
             tdir,
             device,
-            "dbv4" if is_dbv4_dir(tdir) else "pe",
+            backend_of(tdir),
         )
-        # PE checkpoints stay unset: inert on dbv4, encoder-registry default
-        # (-> HF fallback) on a legacy PE-head checkpoint.
         tagger = AnimaTagger(ckpt_dir=tdir, device=device)
         return (tagger,)
 

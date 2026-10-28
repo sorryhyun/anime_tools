@@ -130,7 +130,7 @@ def _write_ckpt(tmp_path, groups: bool = True):
 
 
 def _tagger(tmp_path, probs, monkeypatch, sidecar=None):
-    monkeypatch.setattr(at, "Dbv4Backend", lambda **kw: FakeBackend(probs))
+    monkeypatch.setattr(at, "build_backend", lambda cfg, **kw: FakeBackend(probs))
     if sidecar is not None:
         sidecar.save(tmp_path)
     return at.AnimaTagger(tmp_path, device="cpu")
@@ -273,7 +273,7 @@ def test_predict_batch_is_one_forward_and_matches_per_image_predict(
     at a time; what it answers has to be what the per-image call answers."""
     _write_ckpt(tmp_path)
     t = _tagger(tmp_path, {"1girl": 0.95, "solo": 0.9, "explicit": 0.9}, monkeypatch)
-    backend = t._dbv4
+    backend = t._backend
     images = [IMG, IMG, IMG]
 
     backend.calls.clear()
@@ -395,3 +395,100 @@ def test_hf_download_translates_gated_repo_error(monkeypatch):
             repo_id="r",
             filename="model.safetensors",
         )
+
+
+# --------------------------------------------------------------------------- #
+# pixai backbone
+# --------------------------------------------------------------------------- #
+
+PIXAI_CFG = {
+    "tags": [
+        "1girl",
+        "black_hair",
+        "hakurei_reimu",
+        "touhou",
+        "sincos",
+        "rating:s",
+        "rating:g",
+        "rating:q",
+        "rating:e",
+    ],
+    "tags_split": [
+        ["general", 2],
+        ["character", 1],
+        ["copyright", 1],
+        ["style", 1],
+        ["rating", 4],
+    ],
+    "category_best_threshold": {
+        "general": 0.17,
+        "character": 0.27,
+        "copyright": 0.24,
+        "style": 0.15,
+        "rating": 0.41,
+    },
+}
+
+
+def test_pixai_card_from_config():
+    from anime_tools.tagger.pixai_backend import card_from_config
+
+    card = card_from_config("fake/pixai", PIXAI_CFG)
+    assert card.n_classes == 9
+    assert card.name_to_col["black hair"] == 1
+    assert "rating:s" not in card.name_to_col
+    assert card.rating_cols == {"sensitive": 5, "safe": 6, "nsfw": 7, "explicit": 8}
+    assert torch.allclose(
+        card.best_thresholds()[:5], torch.tensor([0.17, 0.17, 0.27, 0.24, 0.15])
+    )
+    a = db.align_vocab(
+        [{"name": n, "index": i, "category": c} for i, (n, c) in enumerate(VOCAB_TAGS)],
+        card,
+    )
+    supported = {VOCAB_TAGS[i][0] for i in a.ours_idx.tolist()}
+    # ``@someone`` never joins a style column; copyright joins natively.
+    assert supported == {"1girl", "black hair", "hakurei reimu", "touhou"}
+
+
+def test_preprocess_pixai_letterboxes_black_and_whitens_alpha():
+    from anime_tools.tagger.pixai_backend import preprocess_pixai
+
+    x = preprocess_pixai(Image.new("RGBA", (40, 20), (0, 0, 0, 0)), 32)
+    assert x.shape == (3, 32, 32)
+    assert float(x[:, 0, :].max()) == 0.0  # pad rows are black (−1 after normalise)
+    assert float(x[:, 16, 16].min()) == pytest.approx(1.0)  # transparent → white
+
+
+def test_pixai_dir_loads_and_preflights_pinned_files(tmp_path, monkeypatch):
+    from anime_tools.tagger.dbv4_meta import PIXAI_BACKBONE_FILES, backbone_for
+
+    _write_ckpt(tmp_path)
+    (tmp_path / "config.json").write_text(
+        json.dumps(
+            {"backend": "pixai", "pixai": {"repo": "fake/pixai", "revision": "abc"}}
+        ),
+        encoding="utf-8",
+    )
+    t = _tagger(tmp_path, {"1girl": 0.95, "solo": 0.9, "explicit": 0.9}, monkeypatch)
+    assert t.backend_kind == "pixai"
+    assert set(t.predict(IMG)["kept"]) == {"1girl", "solo"}
+
+    assert backbone_for(tmp_path).revision == "abc"
+    monkeypatch.delenv("ANIMA_TAGGER_NO_AUTOFETCH", raising=False)
+    monkeypatch.setattr(
+        "anime_tools.tagger.dbv4_meta.backbone_cached", lambda _b: False
+    )
+    calls = []
+    monkeypatch.setattr(
+        "anime_tools._hf.hf_download",
+        lambda **kw: calls.append((kw["filename"], kw["revision"])) or "/x",
+    )
+    assert at.ensure_tagger_backbone(tmp_path) == "fake/pixai"
+    assert calls == [(f, "abc") for f in PIXAI_BACKBONE_FILES]
+
+
+def test_backbone_for_defaults_to_pixai(tmp_path):
+    from anime_tools.tagger.dbv4_meta import DEFAULT_PIXAI_REVISION, backbone_for
+
+    b = backbone_for(tmp_path / "absent")
+    assert (b.kind, b.revision) == ("pixai", DEFAULT_PIXAI_REVISION)

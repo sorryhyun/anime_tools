@@ -1,7 +1,7 @@
 [project]
 name = "anime-tools"
 version = "0.8.3"
-description = "Dataset curation for anime diffusion training: caption grammar + polishing, the Anima Tagger (dbv4), position clauses, multiview audit, PE-Spatial grouping, SAM3 masking."
+description = "Dataset curation for anime diffusion training: caption grammar + polishing, the Anima Tagger (pixai backbone), position clauses, multiview audit, PE-Spatial grouping, SAM3 masking."
 readme = "README.md"
 license = { file = "LICENSE" }
 requires-python = ">=3.13"
@@ -13,7 +13,8 @@ dependencies = [
     "huggingface-hub>=0.30",
     "tqdm",
     "rich>=13",
-    # Anima Tagger (dbv4 caformer backbone via timm; GPL weights fetched from the gated upstream repo at load)
+    # Anima Tagger (pixai backbone via transformers remote code at a pinned commit; the dbv4
+    # caformer via timm, GPL weights fetched from the gated upstream repo at load)
     # + PE-Spatial grouping (vendored tower, weights fetched from the Hub at load).
     "torch>=2.12",
     "torchvision",

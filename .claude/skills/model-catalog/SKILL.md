@@ -14,8 +14,7 @@ destination constants the loaders import), `_assets.py` (`Asset` / `Pack` and th
 (`python -m anime_tools.downloads`). `__init__.py` re-exports the public surface, so every existing
 `from anime_tools.downloads import …` is unchanged.
 
-`anime_tools/downloads/` (torch-free) is one `Asset` per checkpoint: the tagger + gated dbv4
-backbone, SAM3, PE-Spatial,
+`anime_tools/downloads/` (torch-free) is one `Asset` per checkpoint: the tagger + its backbone (public pixai by default; dbv4 is gated), SAM3, PE-Spatial,
 the SAM3 subject soft prompt, the OCR trio (AnimeText detector, PaddleOCR-VL-1.6 base, the manga
 SFX reader), the Danbooru tag KB and its English build. Each row carries repo, files, destination,
 `used_by` / `stages`, a `pack`, and an offline `installed` probe.
