@@ -45,6 +45,35 @@ def test_a_glyph_run_or_a_repeated_trigram_is_a_runaway(text):
     assert sfx.is_runaway(text)
 
 
+@pytest.mark.parametrize(
+    "text",
+    [
+        "NO, NO, NO, NO!",
+        "WAIT, WAIT, WAIT.",
+        "WHAAAAAAAAT?!",
+        "Cock♡ Cock♡ Cock♡ Cock♡",
+        "BUT… YOU CAN COME TO MY ROOM, OKAY? YOU KNOW WHERE IT IS, RIGHT? "
+        "ANYTIME, EVEN IN THE MIDDLE OF THE NIGHT! OH, BUT I REALLY WANT YOU TO",
+    ],
+)
+def test_latin_lettering_is_not_a_runaway(text):
+    assert not sfx.is_runaway(text)
+
+
+@pytest.mark.parametrize(
+    "text", ["AHAAH " + "♡ " * 38, "o" * 16, "ahahahahahahahah", "LapLap" * 8]
+)
+def test_a_latin_loop_is_a_runaway(text):
+    assert sfx.is_runaway(text)
+
+
+def test_is_latin_reads_the_letters_only():
+    assert sfx.is_latin("Mh! Mh!♡ 100")
+    assert not sfx.is_latin("100♡…")
+    assert not sfx.is_latin("Kiss たらっ")
+    assert not sfx.is_latin("괜찮아")
+
+
 def test_the_length_cap_follows_the_crop_area():
     # A two-glyph crop sits at the floor; a five-glyph column and a balloon
     # block cap well above what they hold (the repetition test owns those).
@@ -52,6 +81,8 @@ def test_the_length_cap_follows_the_crop_area():
     assert sfx.length_cap(40, 200) == 31
     assert sfx.length_cap(300, 300) == 352
     assert sfx.length_cap(0, 0) == sfx.MIN_LENGTH_CAP
+    # A Latin letter takes half a CJK square.
+    assert sfx.length_cap(40, 200, latin=True) == 62
 
 
 def test_the_guard_rejects_empty_runaway_and_overlong_reads():
@@ -62,6 +93,8 @@ def test_the_guard_rejects_empty_runaway_and_overlong_reads():
     assert sfx.guard("あいうえおかきくけこさしすせそたちつてと", 40, 80) is None
     # The same read on a column that could hold it passes.
     assert sfx.guard("あいうえおかきくけこさしすせそたちつてと", 40, 400) is not None
+    # A scanlation balloon over the CJK cap of its crop fits the Latin one.
+    assert sfx.guard("Yesterday's video was amazing.", 60, 64) is not None
 
 
 def test_the_guard_normalises_what_it_keeps():

@@ -73,6 +73,20 @@ MIN_LENGTH_CAP = 12
 MIN_GLYPH_PX = 16
 """The smallest glyph a crop is assumed to hold (the crop builders' 16 px
 floor): the length cap is how many of them fit in the crop's area."""
+LATIN_GLYPH_AREA = MIN_GLYPH_PX * MIN_GLYPH_PX // 2
+"""A Latin letter's share of a line: half a CJK square. Scanlation lettering
+at the CJK area overran the cap on plain balloons (``Yesterday's video was
+amazing.``, 27 letters on a 15-glyph crop — 37 of the 84 English reads the
+guard dropped on 150 hitocrawl ``en`` pages, 2026-10-29)."""
+
+LATIN_RUN = 16
+LATIN_UNIT_REPEATS = 8
+"""The Latin runaway test: a glyph run of :data:`LATIN_RUN`, or a unit of two
+to eight glyphs repeated :data:`LATIN_UNIT_REPEATS` times back to back. The
+CJK trigram test reads English prose as a loop — ``THE`` / ``ING`` / ``YOU``
+recur in any balloon past a sentence — and a held vowel (``WHAAAAAAAAT``) or a
+chant (``NO, NO, NO, NO!``) is lettering, not a decode loop; 47 of the 84
+dropped English reads on the same pages."""
 
 _LATEX_RE = re.compile(r"\\[(),]|\\\s")
 _ELLIPSIS_RE = re.compile(r"[.．・…‥]{2,}")
@@ -93,9 +107,16 @@ def is_runaway(text: str, *, ngram_repeats: int = 3, run: int = 8) -> bool:
     ``おおおん`` pass — a doubled unit *is* an onomatopoeia. Every dot run is
     one ``…`` first, so ``え...な...ない......`` is a pause and not a repeat; a
     hundred dots alone collapse to one and are then no letter at all
-    (:func:`~anime_tools.ocr.reread.has_script`).
+    (:func:`~anime_tools.ocr.reread.has_script`). A Latin read
+    (:func:`is_latin`) is held to :data:`LATIN_RUN` /
+    :data:`LATIN_UNIT_REPEATS` instead.
     """
     t = _ELLIPSIS_RE.sub(ELLIPSIS, "".join(text.split()))
+    if is_latin(t):
+        return bool(
+            re.search(rf"(.)\1{{{LATIN_RUN - 1},}}", t)
+            or re.search(rf"(.{{2,8}}?)\1{{{LATIN_UNIT_REPEATS - 1},}}", t)
+        )
     if re.search(rf"(.)\1{{{run - 1},}}", t):
         return True
     if len(t) >= 9:
@@ -107,10 +128,18 @@ def is_runaway(text: str, *, ngram_repeats: int = 3, run: int = 8) -> bool:
     return False
 
 
-def length_cap(width: int, height: int) -> int:
+def is_latin(text: str) -> bool:
+    """Whether a read is Latin lettering: an ASCII letter, and no letter
+    outside ASCII. Hearts, digits and punctuation do not decide it."""
+    letters = [ch for ch in text if ch.isalpha()]
+    return bool(letters) and all(ch.isascii() for ch in letters)
+
+
+def length_cap(width: int, height: int, *, latin: bool = False) -> int:
     """How many characters a crop of this size can plausibly hold.
 
-    Area over the smallest glyph (:data:`MIN_GLYPH_PX` squared), never under
+    Area over the smallest glyph (:data:`MIN_GLYPH_PX` squared, or
+    :data:`LATIN_GLYPH_AREA` for ``latin``), never under
     :data:`MIN_LENGTH_CAP`. A two-glyph crop caps near the floor, so a
     48-token runaway on it is rejected; a multi-column balloon block caps in
     the hundreds and is left to the repetition test — a block's character
@@ -118,7 +147,8 @@ def length_cap(width: int, height: int) -> int:
     threw away 60 % of the speech reads).
     """
     area = max(width, 0) * max(height, 0)
-    return max(MIN_LENGTH_CAP, round(area / (MIN_GLYPH_PX * MIN_GLYPH_PX)))
+    glyph = LATIN_GLYPH_AREA if latin else MIN_GLYPH_PX * MIN_GLYPH_PX
+    return max(MIN_LENGTH_CAP, round(area / glyph))
 
 
 def normalize_read(text: str) -> str:
@@ -148,7 +178,8 @@ def guard(text: str, width: int, height: int) -> str | None:
     read = normalize_read(text)
     if not read or is_runaway(read):
         return None
-    if sum(1 for ch in read if not ch.isspace()) > length_cap(width, height):
+    n = sum(1 for ch in read if not ch.isspace())
+    if n > length_cap(width, height, latin=is_latin(read)):
         return None
     return read
 
@@ -425,12 +456,16 @@ __all__ = [
     "CROP_PAD",
     "ELLIPSIS",
     "HEART_FOLD",
+    "LATIN_GLYPH_AREA",
+    "LATIN_RUN",
+    "LATIN_UNIT_REPEATS",
     "MAX_NEW_TOKENS",
     "PROMPT",
     "SfxReader",
     "SfxWeightsMissing",
     "crop_box",
     "guard",
+    "is_latin",
     "is_runaway",
     "length_cap",
     "normalize_read",
