@@ -31,6 +31,19 @@ def test_the_guard_is_torch_free():
 
 
 @pytest.mark.parametrize(
+    "text",
+    [
+        "るにいい~っ" + "♥" * 12,
+        "ずぷっぐゅぐゅぐゅぐゅ",
+        "ぱこんぱこんっぱこんっ",
+        "ドボドボドボドボ",
+    ],
+)
+def test_a_repeated_sound_effect_is_not_a_runaway(text):
+    assert not sfx.is_runaway(text)
+
+
+@pytest.mark.parametrize(
     "text", ["ぱんぱん", "おおおん", "ばるん", "びく♡", "ぱんッ ぱんッ"]
 )
 def test_a_doubled_onomatopoeia_is_not_a_runaway(text):
@@ -39,9 +52,9 @@ def test_a_doubled_onomatopoeia_is_not_a_runaway(text):
 
 @pytest.mark.parametrize(
     "text",
-    ["ぐく" + "ー" * 30, "ふくっ" * 10, "ぉ" * 8, "ふくっふくっふくっ"],
+    ["ぐく" + "ー" * 30, "ふくっ" * 10, "ぉ" * 16],
 )
-def test_a_glyph_run_or_a_repeated_trigram_is_a_runaway(text):
+def test_a_glyph_run_or_a_back_to_back_loop_is_a_runaway(text):
     assert sfx.is_runaway(text)
 
 

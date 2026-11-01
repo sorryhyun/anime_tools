@@ -45,7 +45,6 @@ from __future__ import annotations
 import logging
 import re
 import unicodedata
-from collections import defaultdict
 from collections.abc import Iterable, Iterator, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass
@@ -82,21 +81,15 @@ at the CJK area overran the cap on plain balloons (``Yesterday's video was
 amazing.``, 27 letters on a 15-glyph crop — 37 of the 84 English reads the
 guard dropped on 150 hitocrawl ``en`` pages, 2026-10-29)."""
 
-LONG_READ = 40
-"""From this many characters a read holds a list, and recurring trigrams are
-its labels (``「안녕하세요week」``, ``:30``): the runaway test wants a back-to-back
-loop or :data:`LOOP_SHARE` of the read in one trigram."""
-LOOP_SHARE = 0.25
+RUNAWAY_RUN = 16
+RUNAWAY_UNIT_REPEATS = 8
 LOOP_UNIT = 40
-
-LATIN_RUN = 16
-LATIN_UNIT_REPEATS = 8
-"""The Latin runaway test: a glyph run of :data:`LATIN_RUN`, or a unit of two
-to eight glyphs repeated :data:`LATIN_UNIT_REPEATS` times back to back. The
-CJK trigram test reads English prose as a loop — ``THE`` / ``ING`` / ``YOU``
-recur in any balloon past a sentence — and a held vowel (``WHAAAAAAAAT``) or a
-chant (``NO, NO, NO, NO!``) is lettering, not a decode loop; 47 of the 84
-dropped English reads on the same pages."""
+"""The runaway test: a glyph run of :data:`RUNAWAY_RUN`, a unit of two to eight
+glyphs repeated :data:`RUNAWAY_UNIT_REPEATS` times back to back, or a unit up to
+:data:`LOOP_UNIT` long three times back to back. A held vowel, a chant
+(``NO, NO, NO, NO!``), a repeated sound effect (``ぐゅぐゅぐゅぐゅ``) and a list's
+recurring labels (``:30``, ``「안녕하세요week」``) are lettering, not a decode
+loop."""
 
 _LATEX_RE = re.compile(r"\\[(),]|\\\s")
 _ELLIPSIS_RE = re.compile(r"[.．・…‥]{2,}")
@@ -109,38 +102,20 @@ HEART_FOLD = str.maketrans({"♥": "♡", "❤": "♡"})
 332 vs 889); a caption says one glyph, and it is the one the artists draw."""
 
 
-def is_runaway(text: str, *, ngram_repeats: int = 3, run: int = 8) -> bool:
+def is_runaway(text: str) -> bool:
     """The autoregressive failure class: ``ぉぉぉ…`` × 100, ``ふくっ`` × 100.
 
-    A glyph run of ``run`` or more, or (from nine characters on) any 3-gram
-    occurring ``ngram_repeats`` or more times. ``ぱんぱん`` (one repeat) and
-    ``おおおん`` pass — a doubled unit *is* an onomatopoeia. From :data:`LONG_READ`
-    characters the 3-gram must also fill :data:`LOOP_SHARE` of the read, or the
-    read hold a unit up to :data:`LOOP_UNIT` long three times back to back. Every dot run is
-    one ``…`` first, so ``え...な...ない......`` is a pause and not a repeat; a
-    hundred dots alone collapse to one and are then no letter at all
-    (:func:`~anime_tools.ocr.reread.has_script`). A Latin read
-    (:func:`is_latin`) is held to :data:`LATIN_RUN` /
-    :data:`LATIN_UNIT_REPEATS` instead.
+    The tests of :data:`RUNAWAY_RUN`. Every dot run is one ``…`` first, so
+    ``え...な...ない......`` is a pause and not a repeat; a hundred dots alone
+    collapse to one and are then no letter at all
+    (:func:`~anime_tools.ocr.reread.has_script`).
     """
     t = _ELLIPSIS_RE.sub(ELLIPSIS, "".join(text.split()))
-    if is_latin(t):
-        return bool(
-            re.search(rf"(.)\1{{{LATIN_RUN - 1},}}", t)
-            or re.search(rf"(.{{2,8}}?)\1{{{LATIN_UNIT_REPEATS - 1},}}", t)
-        )
-    if re.search(rf"(.)\1{{{run - 1},}}", t):
-        return True
-    if len(t) >= 9:
-        grams: dict[str, int] = defaultdict(int)
-        for i in range(len(t) - 2):
-            grams[t[i : i + 3]] += 1
-        top = max(grams.values())
-        if top >= ngram_repeats:
-            if len(t) < LONG_READ or 3 * top / len(t) >= LOOP_SHARE:
-                return True
-            return bool(re.search(rf"(.{{3,{LOOP_UNIT}}}?)\1\1", t))
-    return False
+    return bool(
+        re.search(rf"(.)\1{{{RUNAWAY_RUN - 1},}}", t)
+        or re.search(rf"(.{{2,8}}?)\1{{{RUNAWAY_UNIT_REPEATS - 1},}}", t)
+        or re.search(rf"(.{{9,{LOOP_UNIT}}}?)\1\1", t)
+    )
 
 
 def is_latin(text: str) -> bool:
@@ -502,10 +477,10 @@ __all__ = [
     "ELLIPSIS",
     "HEART_FOLD",
     "LATIN_GLYPH_AREA",
-    "LATIN_RUN",
-    "LATIN_UNIT_REPEATS",
     "MAX_NEW_TOKENS",
     "PROMPT",
+    "RUNAWAY_RUN",
+    "RUNAWAY_UNIT_REPEATS",
     "SfxReader",
     "SfxWeightsMissing",
     "crop_box",
