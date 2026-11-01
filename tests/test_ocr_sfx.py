@@ -199,3 +199,20 @@ def test_token_confidence_averages_the_kept_tokens_and_stops_at_eos():
     assert sfx.token_confidence([2, 0], [0.99, 1.0], {2, 0}) == ([], 0.0)
     # a decode the step recorder never saw (no steps) is 0.0, not an error
     assert sfx.token_confidence([5, 6], [], {2, 0}) == ([5, 6], 0.0)
+
+
+def test_vl_notices_drop_and_other_warnings_print(capfd) -> None:
+    pytest.importorskip("transformers")
+    from transformers.utils import logging as hf_logging
+
+    from anime_tools.ocr.sfx import _without_vl_notices
+
+    log = hf_logging.get_logger("transformers.modeling_rope_utils")
+    with _without_vl_notices():
+        log.warning("Unrecognized keys in `rope_parameters` for this load")
+        log.warning("Some weights were not initialized")
+    log.warning("Unrecognized keys in `rope_parameters` after the load")
+    err = capfd.readouterr().err
+    assert "for this load" not in err
+    assert "Some weights were not initialized" in err
+    assert "after the load" in err

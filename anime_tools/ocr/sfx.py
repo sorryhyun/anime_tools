@@ -42,10 +42,12 @@ layers 510 MB). :meth:`SfxReader.load` fetches what is missing.
 
 from __future__ import annotations
 
+import logging
 import re
 import unicodedata
 from collections import defaultdict
-from collections.abc import Iterable, Sequence
+from collections.abc import Iterable, Iterator, Sequence
+from contextlib import contextmanager
 from dataclasses import dataclass
 from functools import cache, cached_property
 from pathlib import Path
@@ -257,6 +259,12 @@ def _greedy_recorder() -> type:
     return _Greedy
 
 
+VL_NOTICES = (
+    "Unrecognized keys in `rope_parameters`",
+    "`PaddleOCRVLProcessor` defines",
+)
+
+
 class SfxWeightsMissing(RuntimeError):
     """A reader directory the catalog has not filled yet."""
 
@@ -266,6 +274,25 @@ class SfxWeightsMissing(RuntimeError):
             f"`python -m anime_tools.downloads {row}` "
             "(or ⚙ Settings › Models in the GUI)"
         )
+
+
+@contextmanager
+def _without_vl_notices() -> Iterator[None]:
+    """Drops what transformers says about the PaddleOCR-VL base itself: a key its
+    config carries and the processor class it declares. Other warnings print."""
+    import transformers  # noqa: F401  (configures the handlers filtered here)
+
+    def keep(record: logging.LogRecord) -> bool:
+        return not record.getMessage().startswith(VL_NOTICES)
+
+    handlers = logging.getLogger("transformers").handlers
+    for handler in handlers:
+        handler.addFilter(keep)
+    try:
+        yield
+    finally:
+        for handler in handlers:
+            handler.removeFilter(keep)
 
 
 def _ensure(row_id: str, fetch: bool) -> Path:
@@ -324,9 +351,15 @@ class SfxReader:
         from safetensors.torch import load_file
         from transformers import AutoModelForImageTextToText, AutoProcessor
 
-        model = AutoModelForImageTextToText.from_pretrained(
-            str(base), dtype=torch.bfloat16, attn_implementation="sdpa"
-        )
+        with _without_vl_notices():
+            model = AutoModelForImageTextToText.from_pretrained(
+                str(base),
+                dtype=torch.bfloat16,
+                attn_implementation="sdpa",
+                # the base checkpoint stores a separate lm_head
+                tie_word_embeddings=False,
+            )
+            processor = AutoProcessor.from_pretrained(str(base))
         model = PeftModel.from_pretrained(model, str(adapter)).merge_and_unload()
         # The decoder layers are a plain state dict under the base model's key
         # names; the adapter only ever touched the tower and projector.
@@ -337,7 +370,6 @@ class SfxReader:
                 f"{SFX_READER_LM_FILE} carries keys the base has no home for: {unexpected[:5]}"
             )
         model = model.to(device).eval()
-        processor = AutoProcessor.from_pretrained(str(base))
         return cls(
             model=model,
             processor=processor,
