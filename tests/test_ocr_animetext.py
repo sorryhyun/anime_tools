@@ -136,6 +136,15 @@ def test_denest_keeps_a_trailing_score_and_the_order():
         animetext.denest(scored, "middle")
 
 
+def test_inner_keeps_a_block_its_lines_leave_unexplained():
+    block = (100, 100, 420, 290, 0.7)
+    name = (130, 110, 380, 160, 0.55)
+    label = (140, 170, 210, 200, 0.36)
+    assert animetext.explained(block, [name, label]) < animetext.NEST_EXPLAINED
+    assert animetext.denest([block, name, label], "inner") == [block, name, label]
+    assert animetext.denest([BLOCK, COL_A, COL_B], "inner") == [COL_A, COL_B]
+
+
 def test_containment_is_the_share_of_the_inner_box():
     assert animetext.containment(COL_A, BLOCK) == 1.0
     assert animetext.containment(BLOCK, COL_A) == pytest.approx(

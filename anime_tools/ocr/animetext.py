@@ -59,6 +59,12 @@ wall flat to slightly faster as it drops."""
 NEST_TH = 0.85
 """A box ≥ this share inside another is *nested* in it (:func:`denest`)."""
 
+NEST_EXPLAINED = 0.2
+"""Under this :func:`explained`, ``inner`` keeps a block: its lines leave text
+out. Chosen by eye on 2,493 hitocrawl pages (2026-11-01): below it the block
+holds lines the detector boxed no column for, above it the block mostly joins
+separate balloons."""
+
 NEST_POLICIES = ("inner", "outer", "raw")
 PAD_VALUE = 114
 """Ultralytics' letterbox grey."""
@@ -138,12 +144,25 @@ def containment(inner: Sequence[int], outer: Sequence[int]) -> float:
     return ix * iy / max(1, (inner[2] - inner[0]) * (inner[3] - inner[1]))
 
 
+def explained(block: Sequence, lines: Sequence) -> float:
+    """How much of ``block`` its nested ``lines`` account for: their area ×
+    score over the block's. A low-scored block counts for less, low-scored lines
+    explain less. Each box ends in its score."""
+
+    def weight(b: Sequence) -> float:
+        return (b[2] - b[0]) * (b[3] - b[1]) * b[4]
+
+    return sum(weight(o) for o in lines) / max(weight(block), 1e-9)
+
+
 def denest(boxes: Sequence, policy: str = "inner", th: float = NEST_TH) -> list:
     """Settle the block-and-its-columns nesting YOLO emits for a balloon.
 
     ``inner`` drops a box holding ≥ 2 smaller boxes at ≥ ``th`` (keeps the
-    columns); ``outer`` drops a box ≥ ``th`` inside a larger one (keeps the
-    block); ``raw`` keeps both. Boxes may carry a trailing score; order is kept.
+    columns), unless the boxes carry scores and those columns are
+    :func:`explained` under :data:`NEST_EXPLAINED`; ``outer`` drops a box ≥
+    ``th`` inside a larger one (keeps the block); ``raw`` keeps both. Boxes may
+    carry a trailing score; order is kept.
 
     ``outer`` looks tidier and is wrong for balloon lines: a block read matches
     no line (manga-ocr best-match 0.844 → 0.694 on the sincos probe), while
@@ -163,8 +182,13 @@ def denest(boxes: Sequence, policy: str = "inner", th: float = NEST_TH) -> list:
         if policy == "outer":
             if any(area(o) > area(b) and containment(b, o) >= th for o in others):
                 continue
-        elif sum(area(o) < area(b) and containment(o, b) >= th for o in others) >= 2:
-            continue
+        else:
+            lines = [o for o in others if area(o) < area(b) and containment(o, b) >= th]
+            scored = len(b) > 4
+            if len(lines) >= 2 and not (
+                scored and explained(b, lines) < NEST_EXPLAINED
+            ):
+                continue
         keep.append(b)
     return keep
 

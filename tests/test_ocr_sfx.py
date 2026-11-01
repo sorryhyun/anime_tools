@@ -45,6 +45,22 @@ def test_a_glyph_run_or_a_repeated_trigram_is_a_runaway(text):
     assert sfx.is_runaway(text)
 
 
+def test_a_timetable_is_not_a_runaway():
+    text = (
+        "05:30 기상 06:30 출근 06:50 메이크업 07:30 아침 회의 "
+        "08:00 「안녕하세요week」 방송 09:55 「안녕하세요week」 종료 "
+        "10:15 「안녕하세요week」 반성회 10:45 사무활동 12:00 중식"
+    )
+    assert not sfx.is_runaway(text)
+    assert sfx.guard(text, 233, 236) is not None
+
+
+def test_a_long_loop_is_still_a_runaway():
+    assert sfx.is_runaway(
+        "처음 한 줄은 멀쩡한 대사였습니다 그리고" + "저기 말이야 있잖아 " * 6
+    )
+
+
 @pytest.mark.parametrize(
     "text",
     [

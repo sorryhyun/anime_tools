@@ -63,10 +63,11 @@ CROP_PAD = 0.12
 glyphs and the model was trained on crops with this margin; a zero-pad crop
 clips the strokes of the outer characters."""
 
-MAX_NEW_TOKENS = 80
+MAX_NEW_TOKENS = 200
 """The tokenizer spends about one token per CJK character; COO's longest
-onomatopoeia is 28 characters and a doujin speech balloon runs to ~60. Past
-this a decode is a runaway, and the guard drops it anyway."""
+onomatopoeia is 28 characters and a doujin speech balloon runs to ~60, a
+page's timetable or profile block to ~160. Past this a decode is a runaway,
+and the guard drops it anyway."""
 
 MAX_PIXELS = 1280 * 28 * 28
 """The vision tower's pixel budget per crop (the training and eval setting)."""
@@ -80,6 +81,13 @@ LATIN_GLYPH_AREA = MIN_GLYPH_PX * MIN_GLYPH_PX // 2
 at the CJK area overran the cap on plain balloons (``Yesterday's video was
 amazing.``, 27 letters on a 15-glyph crop — 37 of the 84 English reads the
 guard dropped on 150 hitocrawl ``en`` pages, 2026-10-29)."""
+
+LONG_READ = 40
+"""From this many characters a read holds a list, and recurring trigrams are
+its labels (``「안녕하세요week」``, ``:30``): the runaway test wants a back-to-back
+loop or :data:`LOOP_SHARE` of the read in one trigram."""
+LOOP_SHARE = 0.25
+LOOP_UNIT = 40
 
 LATIN_RUN = 16
 LATIN_UNIT_REPEATS = 8
@@ -106,7 +114,9 @@ def is_runaway(text: str, *, ngram_repeats: int = 3, run: int = 8) -> bool:
 
     A glyph run of ``run`` or more, or (from nine characters on) any 3-gram
     occurring ``ngram_repeats`` or more times. ``ぱんぱん`` (one repeat) and
-    ``おおおん`` pass — a doubled unit *is* an onomatopoeia. Every dot run is
+    ``おおおん`` pass — a doubled unit *is* an onomatopoeia. From :data:`LONG_READ`
+    characters the 3-gram must also fill :data:`LOOP_SHARE` of the read, or the
+    read hold a unit up to :data:`LOOP_UNIT` long three times back to back. Every dot run is
     one ``…`` first, so ``え...な...ない......`` is a pause and not a repeat; a
     hundred dots alone collapse to one and are then no letter at all
     (:func:`~anime_tools.ocr.reread.has_script`). A Latin read
@@ -125,8 +135,11 @@ def is_runaway(text: str, *, ngram_repeats: int = 3, run: int = 8) -> bool:
         grams: dict[str, int] = defaultdict(int)
         for i in range(len(t) - 2):
             grams[t[i : i + 3]] += 1
-        if max(grams.values()) >= ngram_repeats:
-            return True
+        top = max(grams.values())
+        if top >= ngram_repeats:
+            if len(t) < LONG_READ or 3 * top / len(t) >= LOOP_SHARE:
+                return True
+            return bool(re.search(rf"(.{{3,{LOOP_UNIT}}}?)\1\1", t))
     return False
 
 
