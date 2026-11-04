@@ -17,6 +17,8 @@ the reader, and what the OCR stage writes is what came back.
 A run answers only *what does the picture say*, never what language: the reader
 returns a bare string, and the content floors — ``min_chars`` / ``skip_en`` —
 are read off the string itself in :mod:`anime_tools.ocr._text`.
+The looser floors the MOSS i2i captions box lines with (glyph, det and reader
+score together) are :mod:`anime_tools.ocr.floors`.
 """
 
 from anime_tools.ocr.animetext import AnimeTextDetector, AnimeTextWeightsMissing

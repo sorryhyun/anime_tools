@@ -42,6 +42,11 @@ or touching this package**. This file is the module map. Docs: `docs/position_ca
   it at cache and generate time; the caption on disk stays Anima-format. Export's
   `--caption_format layout_json` publishes it beside the caption as `{stem}.layout.txt`
   (`contract.LAYOUT_JSON_SUFFIX`), which the trainer reads instead of converting.
+- `color_tags.py` is the colour-tag vocabulary a colorize caption keeps (`is_color_tag`,
+  `filter_to_colors_and_protected` with a series vocabulary from `load_copyright_tags(index)`,
+  `is_character_colour` for one character's box). The trainer's MOSS colorize cache and
+  ComfyUI-MOSS-Toolkit's caption helper both build from it. The OCR floors those captions box
+  lines with are `anime_tools.ocr.floors` (`readable`, `keep_line`, `load_reread_engine`).
 - `clause_rewrite.py` / `clause_vocabulary.py` / `group_router.py` / `caption_layout.py` are the
   position-clause rewrite: which tag may enter which clause, and what moves out of the bag. Gate
   and group sets are data in `data/clause_vocabulary.yaml` (the trainer's
