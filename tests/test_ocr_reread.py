@@ -120,6 +120,10 @@ def test_the_confidence_floors_and_the_symbol_strip():
     assert [ln.text for ln in out] == ["どき"]
     # punctuation is how a line is said; pictographs are decoration on it
     assert drop_symbols("え…っ!?♡ ★ ~ー") == "え…っ!? ~ー"
+    # the reader's line breaks survive; a line of hearts alone drops
+    assert drop_symbols("그 대신\n잔뜩 ♡\n♡♡\n테니까♡") == "그 대신\n잔뜩\n테니까"
+    out = reread.reread_lines(page(), unscored, lambda b, x: ["그 대신\n잔뜩♡"])
+    assert [ln.text for ln in out] == ["그 대신\n잔뜩"]
 
 
 def test_an_empty_page_calls_no_reader():

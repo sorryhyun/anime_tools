@@ -74,13 +74,15 @@ def is_tally(text: str) -> bool:
 
 def drop_symbols(text: str) -> str:
     """``text`` without its pictographs — ``♡`` ``★`` ``♪``, emoji, the rest of
-    Unicode's *other symbol* class (``So``) — whitespace re-collapsed.
+    Unicode's *other symbol* class (``So``) — whitespace re-collapsed inside
+    each line, the reader's line breaks kept (a line left empty drops).
 
     Punctuation stays: ``…``, ``!?``, ``~`` and ``ー`` are how a line is said;
     a heart is decoration on it. A read of hearts alone comes back empty.
     """
     kept = "".join(ch for ch in text if unicodedata.category(ch) != "So")
-    return " ".join(kept.split())
+    lines = (" ".join(line.split()) for line in kept.split("\n"))
+    return "\n".join(line for line in lines if line)
 
 
 def keep_line(text: str, *, min_chars: int = 0, skip_en: bool = False) -> bool:
