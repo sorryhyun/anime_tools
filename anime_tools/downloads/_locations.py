@@ -65,25 +65,26 @@ VL16_BASE_FILES = (
 )
 VL16_BASE_DIR = "models/paddleocr_vl_1.6"
 
-# The manga SFX reader, **v4** under the repo's ``v4/`` subfolder: a peft LoRA
+# The manga SFX reader, **v5** under the repo's ``v5/`` subfolder: a peft LoRA
 # on the base's vision tower + projector plus its fully fine-tuned ERNIE
 # decoder layers, trained on Manga109-s / COO and KO / ZH pseudo-labelled SFX
 # (attribution and citations on the model card). Weights only — no Manga109-s
-# image ships. The repo root still holds v3 (LM LoRA + ``tower.safetensors``).
+# image ships. ``v4/`` holds v4; the repo root still holds v3 (LM LoRA +
+# ``tower.safetensors``).
 SFX_READER_REPO = "sorryhyun/paddleocr-vl-1.6-manga-lora"
-SFX_READER_SUBFOLDER = "v4"
+SFX_READER_SUBFOLDER = "v5"
 SFX_READER_ADAPTER_FILES = ("adapter_config.json", "adapter_model.safetensors")
 SFX_READER_LM_FILE = "lm.safetensors"
 SFX_READER_FILES = (*SFX_READER_ADAPTER_FILES, SFX_READER_LM_FILE)
 SFX_READER_DIR = "models/paddleocr_vl_1.6_manga_lora"
-SFX_READER_REVISION = "926eafb13514baf26c8b3fea9eb4ed8c365013bf"
-"""Hub commit of the reader the package ships — **v4** (``vl16_p2b_kozh``:
-tower LoRA + LM fine-tune, 2 epochs, KO / ZH restored to the stock level;
-the 1-epoch v4 was ``9fe3d41e``; v3 ``26292839``, v2 ``4caffe65``, v1
-``3b5fe022``, all at the repo root). The
-adapter file names are shared with v3, so the catalog row pins this and stamps
-it under the dest — an install that predates the pin re-fetches instead of
-reading a v3 adapter under a v4 name."""
+SFX_READER_REVISION = "fb08a10b22f340a02febc7afc36185a6f12c9d39"
+"""Hub commit of the reader the package ships — **v5** (``vl16_p2b_kozh_nl``:
+v4's recipe with the labels' line breaks kept as ``\\n`` and the crops cut at
+the page edge; v4 ``926eafb1`` in ``v4/``, its 1-epoch run ``9fe3d41e``; v3
+``26292839``, v2 ``4caffe65``, v1 ``3b5fe022``, all at the repo root). The
+adapter file names are shared across versions, so the catalog row pins this and
+stamps it under the dest — an install that predates the pin re-fetches instead
+of reading an older adapter under the new name."""
 
 # The AnimeText text-block detector: a YOLO12-l trained on deepghs/AnimeText
 # (735k anime / manga pages, one class), the OCR stage's one detector.

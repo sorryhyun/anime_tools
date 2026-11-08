@@ -150,7 +150,7 @@ def test_a_pinned_row_is_installed_only_at_its_revision(home, monkeypatch):
 
     def fake_download(**kwargs):
         seen.append(kwargs)
-        # local_dir keeps the repo's v4/ layout; fetch flattens it
+        # local_dir keeps the repo's version-folder layout; fetch flattens it
         path = Path(kwargs["local_dir"]) / kwargs["filename"]
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_bytes(b"y")
@@ -160,7 +160,9 @@ def test_a_pinned_row_is_installed_only_at_its_revision(home, monkeypatch):
     (dest / REVISION_STAMP).unlink()
     row.fetch(log=lambda _msg: None)
     assert {k["revision"] for k in seen} == {row.revision}
-    assert {k["filename"] for k in seen} == {f"v4/{n}" for n in DL.SFX_READER_FILES}
+    assert {k["filename"] for k in seen} == {
+        f"{DL.SFX_READER_SUBFOLDER}/{n}" for n in DL.SFX_READER_FILES
+    }
     assert (dest / REVISION_STAMP).read_text().strip() == row.revision
     assert row.installed
     assert not (dest / DL.SFX_READER_SUBFOLDER).exists()

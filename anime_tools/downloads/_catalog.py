@@ -185,7 +185,7 @@ def catalog() -> tuple[Asset, ...]:
         Asset(
             id="sfx_reader",
             pack="ocr",
-            title="Manga SFX reader v4 (VL-1.6 tower LoRA + LM)",
+            title="Manga SFX reader v5 (VL-1.6 tower LoRA + LM)",
             repo=SFX_READER_REPO,
             subfolder=SFX_READER_SUBFOLDER,
             files=SFX_READER_FILES,
@@ -197,7 +197,8 @@ def catalog() -> tuple[Asset, ...]:
             "box the detector finds — balloon speech, hearts, small kana and the "
             "hand-lettered onomatopoeia a print recognizer garbles; a crop reader, "
             "not a detector. Needs the base above; both fetched on first use. "
-            "Trained on Manga109-s (COO) plus KO / ZH SFX; reads JA, KO and ZH.",
+            "Trained on Manga109-s (COO) plus KO / ZH SFX; reads JA, KO and ZH, "
+            "with a block's line breaks as \\n.",
         ),
         Asset(
             id="animetext_det",

@@ -47,6 +47,17 @@ def test_the_sidecar_round_trips_through_a_tab_and_a_multi_dot_stem(tmp_path: Pa
     ]
 
 
+def test_a_line_break_stays_inside_its_record(tmp_path: Path):
+    # The reader returns a block's breaks; a record is one line of the file.
+    lines = [line("최근 제게\n보내는 관심이"), line("C:\\n 경로\\", seq=2)]
+    p = write_ocr_for(tmp_path, Path("a.txt"), lines)
+    assert p.read_text(encoding="utf-8").splitlines()[1:] == [
+        "1\t0,0,400,40\t0.000\t0.950\t최근 제게\\n보내는 관심이",
+        "2\t0,0,400,40\t0.000\t0.950\tC:\\\\n 경로\\\\",
+    ]
+    assert read_ocr(p) == lines
+
+
 def test_a_legacy_four_field_record_reads_with_no_detector_score(tmp_path: Path):
     p = tmp_path / "a.ocr.txt"
     p.write_text(
@@ -429,6 +440,15 @@ def test_the_clause_is_attached_after_the_position_clauses():
         got
         == '1girl, solo. On the left, cat. Japanese text reads as "大丈夫", "本当に".'
     )
+
+
+def test_the_clause_carries_a_multi_line_read_on_one_line():
+    from anime_tools.captions.ocr_sidecar import text_boxes, with_ocr_clause
+
+    lines = [line("最近 제게\n보내는 관심이", det=0.9)]
+    got = with_ocr_clause("1girl", lines)
+    assert got == '1girl. Japanese text reads as "最近 제게 보내는 관심이".'
+    assert list(text_boxes(lines)) == ["最近 제게 보내는 관심이"]
 
 
 def test_combining_again_replaces_the_clause_and_no_lines_removes_it():

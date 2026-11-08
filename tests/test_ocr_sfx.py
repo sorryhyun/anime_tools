@@ -128,11 +128,17 @@ def test_the_guard_rejects_empty_runaway_and_overlong_reads():
 
 def test_the_guard_normalises_what_it_keeps():
     # Every heart → ♡ (the emoji + variation selector, the solid ♥ the reader
-    # also emits); whitespace runs → one space (the JOIN_SEP boundary); VL's
+    # also emits); whitespace runs inside a line → one space; VL's
     # LaTeX measurement wrapping stripped.
     assert sfx.guard("びく❤️", 40, 120) == "びく♡"
     assert sfx.guard("あ・・・っ♥", 40, 160) == "あ…っ♡"
-    assert sfx.guard("ぱんッ\n\nぱんッ", 80, 120) == "ぱんッ ぱんッ"
+    # A line break is kept as one \n, a blank line dropped, a run of spaces
+    # inside a line one space.
+    assert sfx.guard("ぱんッ\n\nぱんッ", 80, 120) == "ぱんッ\nぱんッ"
+    assert (
+        sfx.guard(" 최근  제게 \r\n 보내는 관심이\n", 300, 120)
+        == "최근 제게\n보내는 관심이"
+    )
     assert sfx.guard("身長: \\( 156 \\, cm \\)", 300, 40) == "身長: 156 cm"
     # A native ♡ is kept as read — the reader emits it itself.
     assert sfx.guard("ぱん♡", 40, 120) == "ぱん♡"

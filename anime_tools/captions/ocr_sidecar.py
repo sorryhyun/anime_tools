@@ -6,10 +6,12 @@ A record names words that are in the picture, not a caption, so it lives in
 read or rewritten, so it needs no Apply gate and invalidates no TE cache.
 
 A record is ``seq ⇥ box ⇥ det ⇥ score ⇥ text``, in reading order; the text is
-last so it may contain tabs. ``det`` is the detector's confidence in the box,
-``score`` the reader's confidence in the text (both ``0.000`` when nothing
-stood behind them). There is no language column — the reader returns a string,
-never a language. A pre-``det`` record (``seq ⇥ box ⇥ score ⇥ text``, four
+last so it may contain tabs. The reader returns a block's line breaks and a
+record is one line of the file, so the text is written with each break as the
+two characters ``\\n`` and a backslash as ``\\\\`` (:func:`escape_text`).
+``det`` is the detector's confidence in the box, ``score`` the reader's
+confidence in the text (both ``0.000`` when nothing stood behind them). There
+is no language column — the reader returns a string, never a language. A pre-``det`` record (``seq ⇥ box ⇥ score ⇥ text``, four
 fields) still reads, with ``det`` as ``0.0``.
 
 The one place the record meets a caption is :func:`with_ocr_clause`, which
@@ -31,6 +33,7 @@ Torch-free, stdlib-only and import-light.
 
 from __future__ import annotations
 
+import re
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -66,6 +69,28 @@ strip that no model trained at this resolution can render. Unlike the det
 floor this holds every line, scored or not: the box is always real. It costs
 4.7% of the det-passing lines on the sincos corpus, and the 13–16 px band it
 takes is where the reads visibly stop being text."""
+_UNESCAPE_RE = re.compile(r"\\([\\n])")
+
+
+def escape_text(text: str) -> str:
+    """``text`` as one sidecar field: a backslash doubled, a line break as
+    ``\\n``."""
+    return text.replace("\\", "\\\\").replace("\n", "\\n")
+
+
+def unescape_text(field: str) -> str:
+    """:func:`escape_text` undone. Records written before line breaks were kept
+    were never escaped; their reads hold no backslash, so they read back as
+    they were."""
+    return _UNESCAPE_RE.sub(lambda m: "\n" if m.group(1) == "n" else "\\", field)
+
+
+def clause_text(text: str) -> str:
+    """A line as a caption clause carries it: every whitespace run, line breaks
+    included, as one space — a tag caption is one line of text."""
+    return " ".join(text.split())
+
+
 LEGACY_OCR_FIELDS = 4
 """``seq ⇥ box ⇥ score ⇥ text``: the record before the detector's ``det`` column
 (2026-09-07). Read, never written."""
@@ -121,7 +146,7 @@ class OcrLine:
             ",".join(str(int(v)) for v in self.box),
             f"{self.det:.3f}",
             f"{self.score:.3f}",
-            self.text,
+            escape_text(self.text),
         )
 
     def to_dict(self) -> dict[str, object]:
@@ -179,7 +204,7 @@ def _parse_record(line: str) -> OcrLine | None:
                 seq=int(seq),
                 box=_parse_box(box),
                 score=float(score),
-                text=text,
+                text=unescape_text(text),
                 det=float(det),
             )
         except ValueError:
@@ -189,7 +214,12 @@ def _parse_record(line: str) -> OcrLine | None:
         return None
     seq, box, score, text = parts
     try:
-        return OcrLine(seq=int(seq), box=_parse_box(box), score=float(score), text=text)
+        return OcrLine(
+            seq=int(seq),
+            box=_parse_box(box),
+            score=float(score),
+            text=unescape_text(text),
+        )
     except ValueError:
         return None
 
@@ -252,13 +282,14 @@ def text_boxes(
     min_glyph: float = DEFAULT_MIN_GLYPH,
 ) -> dict[str, tuple[int, int, int, int]]:
     """Each line :func:`with_ocr_clause` would publish → its box, keyed by the
-    text as the clause spells it (an ASCII ``"`` rewritten to ``”``, stripped).
+    text as the clause spells it (:func:`clause_text`, an ASCII ``"`` rewritten
+    to ``”``, stripped).
     A line said more than once keeps the first box, as the clause keeps the
     first line. :func:`~anime_tools.captions.layout_json.layout_json`'s
     ``text_boxes``."""
     out: dict[str, tuple[int, int, int, int]] = {}
     for ln in usable_lines(lines, min_det=min_det, min_glyph=min_glyph):
-        out.setdefault(ln.text.replace('"', "”").strip(), ln.box)
+        out.setdefault(clause_text(ln.text).replace('"', "”").strip(), ln.box)
     return out
 
 
@@ -288,7 +319,8 @@ def with_ocr_clause(
     parsed = parse_caption(caption)
     clauses = list(parsed.position_clauses)
     texts = [
-        ln.text for ln in usable_lines(lines, min_det=min_det, min_glyph=min_glyph)
+        clause_text(ln.text)
+        for ln in usable_lines(lines, min_det=min_det, min_glyph=min_glyph)
     ]
     speech, sfx = split_lines(texts)
     if speech:

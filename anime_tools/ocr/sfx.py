@@ -6,13 +6,15 @@ as ``はんぱん`` / ``でくv`` / nothing from the CTC stack this package reti
 :class:`SfxReader` is the reader for those lines and the speech alike: a crop
 in, a string out, no detection. It is the
 PaddleOCR-VL-1.6 base with a LoRA on the vision tower + projector **and fully
-fine-tuned ERNIE decoder layers** (v4), trained on the Manga109-s COO
+fine-tuned ERNIE decoder layers** (v5), trained on the Manga109-s COO
 onomatopoeia polygons plus a 1 : 1 replay of the ``<text>`` speech boxes
 (official COO book split) and 3,838 KO / ZH SFX crops pseudo-labelled by the
-stock model (COO test SFX exact 86.9 %, KO 26 / 48 and ZH 30 / 48 against
-stock's 21 / 31 — ``sorryhyun/paddleocr-vl-1.6-manga-lora`` ``v4/``,
-Manga109-s attribution on the card). It reads ``♡`` / ``ー`` / small kana
-natively, vertical or horizontal, so it needs no symbol patching.
+stock model (COO test SFX exact 84.9 % on page-edge crops, doujin SFX 414 / 597
+♡-blind, KO 22 / 48 and ZH 30 / 48 against stock's 21 / 31 —
+``sorryhyun/paddleocr-vl-1.6-manga-lora`` ``v5/``, Manga109-s attribution on the
+card). It reads ``♡`` / ``ー`` / small kana natively, vertical or horizontal, so
+it needs no symbol patching, and returns a block's line breaks as ``\\n``
+(v4 and earlier joined the lines with a space).
 
 What it is not: a page reader. Feed it the crops a detector has already
 boxed — the AnimeText text-block detector (:mod:`anime_tools.ocr.animetext`,
@@ -145,8 +147,10 @@ def normalize_read(text: str) -> str:
     """The raw decode as a record: NFC-stable glyphs, every heart (``♥``, the
     emoji ``❤`` + variation selector) folded to ``♡``, every dot run
     (``......``, ``・・・・・・``, ``‥``) to one ``…``, VL's LaTeX wrapping of a
-    measurement (``\\( 156 \\, cm \\)``) stripped, whitespace runs collapsed to
-    one space (a column boundary stays a space, so a list stays a list).
+    measurement (``\\( 156 \\, cm \\)``) stripped, whitespace runs inside a line
+    collapsed to one space, and the line breaks the reader wrote kept as one
+    ``\\n`` each (blank lines dropped). A caption that needs one line folds the
+    breaks itself (:func:`~anime_tools.captions.ocr_sidecar.clause_text`).
 
     The folds are what make a line comparable: the speech clause dedupes on
     exact text (:func:`~anime_tools.captions.ocr_sfx.dedupe_speech`), and
@@ -155,7 +159,8 @@ def normalize_read(text: str) -> str:
     text = _LATEX_RE.sub("", text)
     text = unicodedata.normalize("NFC", text)
     text = _ELLIPSIS_RE.sub(ELLIPSIS, text)
-    return " ".join(text.split())
+    lines = (" ".join(line.split()) for line in text.replace("\r", "\n").split("\n"))
+    return "\n".join(line for line in lines if line)
 
 
 def guard(text: str, width: int, height: int) -> str | None:
