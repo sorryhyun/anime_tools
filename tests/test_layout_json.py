@@ -183,3 +183,23 @@ def test_text_boxes_key_lines_as_the_clause_spells_them():
         OcrLine(seq=3, box=(0, 0, 2, 2), score=0.9, text="tiny"),
     ]
     assert text_boxes(lines) == {"say ”hi”": (0, 0, 60, 60)}
+
+
+def test_a_line_break_reaches_the_text_item_from_the_ocr_sidecar(tmp_path):
+    """A multi-line read: ``\\n`` in the one-line caption, a newline in the item,
+    the box found by the clause's spelling."""
+    from anime_tools.captions.ocr_sidecar import OcrLine, text_boxes, with_ocr_clause
+
+    lines = [
+        OcrLine(seq=1, box=(0, 0, 200, 120), score=0.9, text="최근 제게\n보내는 관심이")
+    ]
+    caption = with_ocr_clause("1girl", lines)
+    assert caption == '1girl. Japanese text reads as "최근 제게\\n보내는 관심이".'
+    assert "\n" not in caption
+    text = layout_json(
+        caption, _kb(tmp_path), text_boxes=text_boxes(lines), size=(400, 300)
+    )
+    (item,) = json.loads(text)["items"]
+    assert item["text"] == "최근 제게\n보내는 관심이"
+    assert "bbox" in item
+    assert '"text":"최근 제게\\n보내는 관심이"' in text

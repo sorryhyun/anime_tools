@@ -47,6 +47,7 @@ from anime_tools.captions.ocr_sfx import dedupe_sfx, dedupe_speech, split_lines
 from anime_tools.captions.position_clauses import (
     compose_caption,
     parse_caption,
+    quote_text,
     text_clause,
 )
 
@@ -83,12 +84,6 @@ def unescape_text(field: str) -> str:
     were never escaped; their reads hold no backslash, so they read back as
     they were."""
     return _UNESCAPE_RE.sub(lambda m: "\n" if m.group(1) == "n" else "\\", field)
-
-
-def clause_text(text: str) -> str:
-    """A line as a caption clause carries it: every whitespace run, line breaks
-    included, as one space — a tag caption is one line of text."""
-    return " ".join(text.split())
 
 
 LEGACY_OCR_FIELDS = 4
@@ -282,14 +277,14 @@ def text_boxes(
     min_glyph: float = DEFAULT_MIN_GLYPH,
 ) -> dict[str, tuple[int, int, int, int]]:
     """Each line :func:`with_ocr_clause` would publish → its box, keyed by the
-    text as the clause spells it (:func:`clause_text`, an ASCII ``"`` rewritten
-    to ``”``, stripped).
+    text as the clause spells it (:func:`~anime_tools.captions.position_clauses.quote_text`,
+    stripped).
     A line said more than once keeps the first box, as the clause keeps the
     first line. :func:`~anime_tools.captions.layout_json.layout_json`'s
     ``text_boxes``."""
     out: dict[str, tuple[int, int, int, int]] = {}
     for ln in usable_lines(lines, min_det=min_det, min_glyph=min_glyph):
-        out.setdefault(clause_text(ln.text).replace('"', "”").strip(), ln.box)
+        out.setdefault(quote_text(ln.text).strip(), ln.box)
     return out
 
 
@@ -319,8 +314,7 @@ def with_ocr_clause(
     parsed = parse_caption(caption)
     clauses = list(parsed.position_clauses)
     texts = [
-        clause_text(ln.text)
-        for ln in usable_lines(lines, min_det=min_det, min_glyph=min_glyph)
+        ln.text for ln in usable_lines(lines, min_det=min_det, min_glyph=min_glyph)
     ]
     speech, sfx = split_lines(texts)
     if speech:

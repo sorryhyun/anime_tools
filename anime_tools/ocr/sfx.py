@@ -149,8 +149,8 @@ def normalize_read(text: str) -> str:
     (``......``, ``・・・・・・``, ``‥``) to one ``…``, VL's LaTeX wrapping of a
     measurement (``\\( 156 \\, cm \\)``) stripped, whitespace runs inside a line
     collapsed to one space, and the line breaks the reader wrote kept as one
-    ``\\n`` each (blank lines dropped). A caption that needs one line folds the
-    breaks itself (:func:`~anime_tools.captions.ocr_sidecar.clause_text`).
+    ``\\n`` each (blank lines dropped). A caption clause spells a break as
+    :data:`~anime_tools.captions.position_clauses.LINE_BREAK`.
 
     The folds are what make a line comparable: the speech clause dedupes on
     exact text (:func:`~anime_tools.captions.ocr_sfx.dedupe_speech`), and

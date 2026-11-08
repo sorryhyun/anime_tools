@@ -31,6 +31,9 @@ with `text_clause(lines)`), `compose_caption` always renders it last, after ever
 clause, and variants / `correct_caption` / `flatten_caption` pass it through verbatim (reading
 order is content). `has_clauses` stays position-only (a text sentence binds no subject, so it
 must not read as "already rewritten"); `has_text_clauses` is the other question.
+A line break inside a quoted text line is the two characters `\n` (`LINE_BREAK`, written by
+`quote_text`, so a caption stays one line; a raw newline is a tag separator); `layout_json`
+turns it back into a newline in the text item.
 The producer of a text clause is Export's `--combine_ocr` (`ocr_sidecar.with_ocr_clause`):
 the OCR
 stage writes only `workspace/ocr/**/{stem}.ocr.txt`, and the combine attaches those lines to the

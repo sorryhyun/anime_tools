@@ -442,13 +442,13 @@ def test_the_clause_is_attached_after_the_position_clauses():
     )
 
 
-def test_the_clause_carries_a_multi_line_read_on_one_line():
+def test_the_clause_spells_a_line_break_so_the_caption_stays_one_line():
     from anime_tools.captions.ocr_sidecar import text_boxes, with_ocr_clause
 
-    lines = [line("最近 제게\n보내는 관심이", det=0.9)]
+    lines = [line('最近 "제게"\n보내는 관심이', det=0.9)]
     got = with_ocr_clause("1girl", lines)
-    assert got == '1girl. Japanese text reads as "最近 제게 보내는 관심이".'
-    assert list(text_boxes(lines)) == ["最近 제게 보내는 관심이"]
+    assert got == '1girl. Japanese text reads as "最近 ”제게”\\n보내는 관심이".'
+    assert list(text_boxes(lines)) == ["最近 ”제게”\\n보내는 관심이"]
 
 
 def test_combining_again_replaces_the_clause_and_no_lines_removes_it():

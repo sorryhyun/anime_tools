@@ -18,7 +18,8 @@ shape without inventing anything — every tag lands in exactly one field::
 Position clauses become ``character`` items that keep their relative position
 word and never take a box; a clause's character names move to the item's
 ``characters``. Each quoted line of a text clause is its own ``text`` item, in
-reading order. A text item takes a ``bbox`` when ``text_boxes`` (the OCR
+reading order, a ``\\n`` inside the quotes (:data:`~anime_tools.captions.position_clauses.LINE_BREAK`)
+a newline in the item's text. A text item takes a ``bbox`` when ``text_boxes`` (the OCR
 sidecar's boxes, :func:`~anime_tools.captions.ocr_sidecar.text_boxes`) holds
 its line, in MOSS's ``abs_centralized`` / ``yxyx`` form: pixels of the image
 the boxes were read on, origin at its centre, ``[y0, x0, y1, x1]``, clamped to
@@ -47,6 +48,7 @@ from collections.abc import Mapping, Sequence
 
 from anime_tools.captions.correction import TagKnowledgeBase, tag_kind
 from anime_tools.captions.position_clauses import (
+    LINE_BREAK,
     TEXT_PREFIXES,
     PositionClause,
     as_parsed,
@@ -181,7 +183,11 @@ def _text_items(
     items = []
     for line in clause.tags:
         text = _unquote(line)
-        item: dict = {"label": "text", "caption": caption, "text": text}
+        item: dict = {
+            "label": "text",
+            "caption": caption,
+            "text": text.replace(LINE_BREAK, "\n"),
+        }
         box = boxes.get(text.strip())
         if box is not None and size is not None:
             item["bbox"] = centered_box(box, size)

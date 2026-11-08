@@ -155,14 +155,26 @@ class PositionClause:
         return f"{self.header}, {body}" if body else self.header
 
 
-def text_clause(lines: Iterable[str], *, sfx: bool = False) -> PositionClause:
-    """A text clause carrying ``lines`` in order, each as a ``"…"`` tag.
+LINE_BREAK = "\\n"
+"""A line break inside a quoted text line: the two characters ``\\`` ``n``, so
+the caption stays one line (a raw newline in a caption is a tag separator).
+:mod:`~anime_tools.captions.layout_json` turns it back into a newline in the
+text item."""
 
-    An inner ASCII double quote would close the pair early, so it is
-    rewritten to ``”``; commas and periods inside the pair are content.
+
+def quote_text(line: str) -> str:
+    """One text line as its ``"…"`` tag's content: an ASCII double quote, which
+    would close the pair early, rewritten to ``”``, and each line break spelled
+    :data:`LINE_BREAK`."""
+    return line.replace('"', "”").replace("\r\n", "\n").replace("\n", LINE_BREAK)
+
+
+def text_clause(lines: Iterable[str], *, sfx: bool = False) -> PositionClause:
+    """A text clause carrying ``lines`` in order, each as a ``"…"`` tag in
+    :func:`quote_text` form; commas and periods inside the pair are content.
     """
     prefix = TEXT_PREFIXES[1] if sfx else TEXT_PREFIXES[0]
-    tags = tuple(f'"{ln.replace(chr(34), "”")}"' for ln in lines if ln)
+    tags = tuple(f'"{quote_text(ln)}"' for ln in lines if ln)
     return PositionClause(position="", tags=tags, prefix=prefix)
 
 
