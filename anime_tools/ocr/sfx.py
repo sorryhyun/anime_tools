@@ -6,12 +6,12 @@ as ``はんぱん`` / ``でくv`` / nothing from the CTC stack this package reti
 :class:`SfxReader` is the reader for those lines and the speech alike: a crop
 in, a string out, no detection. It is the
 PaddleOCR-VL-1.6 base with a LoRA on the vision tower + projector **and fully
-fine-tuned ERNIE decoder layers** (v5), trained on the Manga109-s COO
+fine-tuned ERNIE decoder layers** (v6), trained on the Manga109-s COO
 onomatopoeia polygons plus a 1 : 1 replay of the ``<text>`` speech boxes
-(official COO book split) and 3,838 KO / ZH SFX crops pseudo-labelled by the
-stock model (COO test SFX exact 84.9 % on page-edge crops, doujin SFX 414 / 597
-♡-blind, KO 22 / 48 and ZH 30 / 48 against stock's 21 / 31 —
-``sorryhyun/paddleocr-vl-1.6-manga-lora`` ``v5/``, Manga109-s attribution on the
+(official COO book split), 3,838 KO / ZH SFX crops pseudo-labelled by the
+stock model and 20,745 proofread KO speech lines (COO test SFX exact 85.3 % on
+page-edge crops, doujin SFX 413 / 597 ♡-blind, KO 28 / 48 and ZH 30 / 48
+against stock's 21 / 31 — ``sorryhyun/paddleocr-vl-1.6-manga-lora`` ``v6/``, Manga109-s attribution on the
 card). It reads ``♡`` / ``ー`` / small kana natively, vertical or horizontal, so
 it needs no symbol patching, and returns a block's line breaks as ``\\n``
 (v4 and earlier joined the lines with a space).

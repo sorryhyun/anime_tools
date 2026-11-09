@@ -144,7 +144,7 @@ workspace/                                       everything the tools write
 (export_target_dir)/resized/ masks/ _excluded/   the published dataset    ← written only by Export (originals from src; --resize_cap / --webp / --combine_ocr)
 models/captioners/anima-tagger-pixai/           tagger checkpoint (auto-fetched from sorryhyun/anima-tagger)
 models/sam3/  models/pe/  models/animetext/       SAM3 / PE-Spatial / OCR text-block detector
-models/paddleocr_vl_1.6*/                             the manga VL reader (VL-1.6 base + v5 tower LoRA/LM)
+models/paddleocr_vl_1.6*/                             the manga VL reader (VL-1.6 base + v6 tower LoRA/LM)
 networks/calibration/sam3_girl_prompt.safetensors  SAM3 subject soft prompt (default `--prompt_embed`)
 ```
 

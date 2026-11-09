@@ -65,22 +65,23 @@ VL16_BASE_FILES = (
 )
 VL16_BASE_DIR = "models/paddleocr_vl_1.6"
 
-# The manga SFX reader, **v5** under the repo's ``v5/`` subfolder: a peft LoRA
+# The manga SFX reader, **v6** under the repo's ``v6/`` subfolder: a peft LoRA
 # on the base's vision tower + projector plus its fully fine-tuned ERNIE
-# decoder layers, trained on Manga109-s / COO and KO / ZH pseudo-labelled SFX
+# decoder layers, trained on Manga109-s / COO, KO / ZH pseudo-labelled SFX and KO speech
 # (attribution and citations on the model card). Weights only — no Manga109-s
-# image ships. ``v4/`` holds v4; the repo root still holds v3 (LM LoRA +
+# image ships. ``v4/`` / ``v5/`` hold v4 / v5; the repo root still holds v3 (LM LoRA +
 # ``tower.safetensors``).
 SFX_READER_REPO = "sorryhyun/paddleocr-vl-1.6-manga-lora"
-SFX_READER_SUBFOLDER = "v5"
+SFX_READER_SUBFOLDER = "v6"
 SFX_READER_ADAPTER_FILES = ("adapter_config.json", "adapter_model.safetensors")
 SFX_READER_LM_FILE = "lm.safetensors"
 SFX_READER_FILES = (*SFX_READER_ADAPTER_FILES, SFX_READER_LM_FILE)
 SFX_READER_DIR = "models/paddleocr_vl_1.6_manga_lora"
-SFX_READER_REVISION = "fb08a10b22f340a02febc7afc36185a6f12c9d39"
-"""Hub commit of the reader the package ships — **v5** (``vl16_p2b_kozh_nl``:
-v4's recipe with the labels' line breaks kept as ``\\n`` and the crops cut at
-the page edge; v4 ``926eafb1`` in ``v4/``, its 1-epoch run ``9fe3d41e``; v3
+SFX_READER_REVISION = "57e7c65024d753022299340b3b9b6aafc158a79b"
+"""Hub commit of the reader the package ships — **v6** (``vl16_p2b_kozh_nl_swaprelax``:
+v5 plus 20,745 proofread Korean speech lines; v5 ``fb08a10b`` in ``v5/`` — v4's
+recipe with the labels' line breaks kept as ``\\n`` and the crops cut at the
+page edge; v4 ``926eafb1`` in ``v4/``, its 1-epoch run ``9fe3d41e``; v3
 ``26292839``, v2 ``4caffe65``, v1 ``3b5fe022``, all at the repo root). The
 adapter file names are shared across versions, so the catalog row pins this and
 stamps it under the dest — an install that predates the pin re-fetches instead

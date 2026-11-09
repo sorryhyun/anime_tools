@@ -185,7 +185,7 @@ def catalog() -> tuple[Asset, ...]:
         Asset(
             id="sfx_reader",
             pack="ocr",
-            title="Manga SFX reader v5 (VL-1.6 tower LoRA + LM)",
+            title="Manga SFX reader v6 (VL-1.6 tower LoRA + LM)",
             repo=SFX_READER_REPO,
             subfolder=SFX_READER_SUBFOLDER,
             files=SFX_READER_FILES,
