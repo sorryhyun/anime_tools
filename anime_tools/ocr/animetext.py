@@ -22,7 +22,7 @@ boxes — and :func:`denest` settles that: ``inner`` (the default) drops a box
 that holds two or more others, keeping the columns, since a block read matches
 no balloon line; ``outer`` keeps the block; ``raw`` keeps both. A block box is
 multi-column, which only a reader that sees the whole crop reads right, so the
-detector pairs with the manga VL reader (:mod:`anime_tools.ocr.sfx`) through
+detector pairs with the manga VL reader (:mod:`anime_tools.ocr.reader`) through
 :mod:`anime_tools.ocr.reread` — the OCR stage's only path.
 
 Weights are a catalog row (``animetext_det``, :mod:`anime_tools.downloads`),

@@ -2,13 +2,13 @@
 what the text mask boxed that no detector did.
 
 :mod:`anime_tools.ocr.engine` finds the boxes and reads nothing;
-:mod:`anime_tools.ocr.sfx` reads a crop — hearts, small kana, hand-lettered
+:mod:`anime_tools.ocr.reader` reads a crop — hearts, small kana, hand-lettered
 onomatopoeia — but detects nothing. This module is the seam between them, and
 what the OCR stage runs:
 
 * :func:`reread_lines` — one page in, one page out. Each box is cut with the
   reader's padding and read; the read *is* the line, so a read the decode guard
-  rejects (``None``, the guard is inside :meth:`~anime_tools.ocr.sfx.SfxReader.read`)
+  rejects (``None``, the guard is inside :meth:`~anime_tools.ocr.reader.OcrReader.read`)
   drops its box, and a read that passes must still clear the confidence floors
   (``min_det`` / ``min_score``), lose its pictographs (``strip_symbols``), clear
   the line floors (``min_chars`` / ``skip_en``) and carry a letter
@@ -38,7 +38,7 @@ Measured on the sincos shard (the trainer's ``project/cjk_aware_anima_dit``,
 2026-09-06): the masked-but-no-line floor 23 → 8 pages, manga-ocr best-match
 0.786 → 0.810, hearts back on the speech lines; the regressions are digits
 (``91`` → ``9``) and two-glyph crops. A VL line's ``score`` is the reader's
-mean greedy token probability (:meth:`~anime_tools.ocr.sfx.SfxReader.read_boxes_scored`);
+mean greedy token probability (:meth:`~anime_tools.ocr.reader.OcrReader.read_boxes_scored`);
 a reader answering bare strings leaves :data:`NO_SCORE`. The detector's box
 confidence rides through as ``det`` (a mask component has none).
 
@@ -60,7 +60,7 @@ Read = str | tuple[str, float] | None
 """One crop's read: the text with the reader's confidence, a bare text (no
 confidence — :data:`NO_SCORE`), or ``None`` for a read the guard rejected."""
 ReadBoxes = Callable[[object, Sequence[Box]], list[Read]]
-"""``(bgr, boxes) → reads``: :meth:`~anime_tools.ocr.sfx.SfxReader.read_boxes_scored`."""
+"""``(bgr, boxes) → reads``: :meth:`~anime_tools.ocr.reader.OcrReader.read_boxes_scored`."""
 
 NO_SCORE = 0.0
 """The ``score`` (or ``det``) of a line nothing stood behind — a read with no

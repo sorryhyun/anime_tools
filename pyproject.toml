@@ -27,7 +27,7 @@ dependencies = [
     # Tokenizer-length checks in the correction / position stages.
     "transformers>=5.16",
     "sentencepiece",
-    # The manga SFX reader (anime_tools.ocr.sfx) merges a LoRA onto PaddleOCR-VL-1.6.
+    # The manga OCR reader (anime_tools.ocr.reader) merges a LoRA onto PaddleOCR-VL-1.6.
     "peft>=0.20",
     # Position clauses, multiview audit, masking: SAM3 subject detection, contact sheets.
     "sam3 @ git+https://github.com/facebookresearch/sam3.git",

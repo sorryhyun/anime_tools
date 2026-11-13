@@ -354,7 +354,7 @@ def test_the_row_lands_where_the_loader_looks_and_names_the_stage(home):
     assert {a.id for a in DL.by_pack()["ocr"]} == {
         "animetext_det",
         "vl16_base",
-        "sfx_reader",
+        "ocr_reader",
     }
     assert all(a.stages == ("ocr",) for a in DL.by_pack()["ocr"])
     assert "GPL" in row.notes

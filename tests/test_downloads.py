@@ -126,25 +126,25 @@ def test_the_tag_kb_lands_where_correction_looks_for_it(home):
 
 
 def test_a_pinned_row_is_installed_only_at_its_revision(home, monkeypatch):
-    """The SFX reader's adapter file names are shared across Hub revisions, so
+    """The OCR reader's adapter file names are shared across Hub revisions, so
     existence is not enough: the row is installed only when the ``REVISION``
     stamp under its dest names the pinned commit, and ``fetch`` writes it."""
     from anime_tools.downloads._assets import REVISION_STAMP
 
-    row = DL.by_id()["sfx_reader"]
-    assert row.revision == DL.SFX_READER_REVISION
+    row = DL.by_id()["ocr_reader"]
+    assert row.revision == DL.OCR_READER_REVISION
     dest = home / "models" / "paddleocr_vl_1.6_manga_lora"
     dest.mkdir(parents=True)
-    for name in DL.SFX_READER_FILES:
+    for name in DL.OCR_READER_FILES:
         (dest / name).write_bytes(b"x")
     # files present, no stamp: a pre-pin install — every file is owed again
-    assert row.missing() == list(DL.SFX_READER_FILES)
+    assert row.missing() == list(DL.OCR_READER_FILES)
     (dest / REVISION_STAMP).write_text("4caffe65\n")
-    assert row.missing() == list(DL.SFX_READER_FILES)  # stale stamp: same
+    assert row.missing() == list(DL.OCR_READER_FILES)  # stale stamp: same
     (dest / REVISION_STAMP).write_text(row.revision + "\n")
     assert row.installed
-    (dest / DL.SFX_READER_LM_FILE).unlink()
-    assert row.missing() == [DL.SFX_READER_LM_FILE]  # right stamp, file gone
+    (dest / DL.OCR_READER_LM_FILE).unlink()
+    assert row.missing() == [DL.OCR_READER_LM_FILE]  # right stamp, file gone
 
     seen: list[dict[str, object]] = []
 
@@ -161,11 +161,11 @@ def test_a_pinned_row_is_installed_only_at_its_revision(home, monkeypatch):
     row.fetch(log=lambda _msg: None)
     assert {k["revision"] for k in seen} == {row.revision}
     assert {k["filename"] for k in seen} == {
-        f"{DL.SFX_READER_SUBFOLDER}/{n}" for n in DL.SFX_READER_FILES
+        f"{DL.OCR_READER_SUBFOLDER}/{n}" for n in DL.OCR_READER_FILES
     }
     assert (dest / REVISION_STAMP).read_text().strip() == row.revision
     assert row.installed
-    assert not (dest / DL.SFX_READER_SUBFOLDER).exists()
+    assert not (dest / DL.OCR_READER_SUBFOLDER).exists()
 
 
 def test_a_built_row_runs_its_build_after_fetching(home, monkeypatch):
@@ -227,7 +227,7 @@ def test_cli_list_reports_every_row_under_its_pack_header(home, capsys):
     ocr = lines.index(next(h for h in headers if h.startswith("[ocr]")))
     assert [ln.split()[1] for ln in lines[ocr + 1 : ocr + 4]] == [
         "vl16_base",
-        "sfx_reader",
+        "ocr_reader",
         "animetext_det",
     ]
 
@@ -266,7 +266,7 @@ def test_by_pack_keeps_pack_order_and_catalog_order_and_covers_every_row():
 
 
 def test_expand_accepts_rows_and_packs_and_raises_on_unknown():
-    assert DL.expand(["ocr"]) == ["vl16_base", "sfx_reader", "animetext_det"]
+    assert DL.expand(["ocr"]) == ["vl16_base", "ocr_reader", "animetext_det"]
     # deduped and re-sorted into catalog order whatever the argument order
     assert DL.expand(["soft_prompt", "pe_spatial", "sam3", "masking"]) == [
         "sam3",

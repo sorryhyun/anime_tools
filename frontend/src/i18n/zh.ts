@@ -333,7 +333,7 @@ const zh: Dict = {
         "默认试运行；--apply 会把缺的标签写进 --dst 下的 revised 标注，不写 master，之后请重新跑一次 TE 编码。",
       ocr:
         "读出每张图里的文字，并记下它写了什么。\n\n" +
-        "遍历缩放树，用 AnimeText 检测器（anime_tools.ocr.animetext，torch 上的 YOLO12；首次使用下载 54 MB，权重是 GPL-3.0，从不随包分发）框出每一块文字，再用漫画 VL 阅读器（anime_tools.ocr.sfx，在手写拟声词上微调过的 PaddleOCR-VL-1.6；torch，首次使用约 2.8 GB）读出每个框，把 {stem}.ocr.txt 写进 OCR 树，布局与缩放树一致。不读也不写任何标注，之后也不需要重新编码 TE。\n\n" +
+        "遍历缩放树，用 AnimeText 检测器（anime_tools.ocr.animetext，torch 上的 YOLO12；首次使用下载 54 MB，权重是 GPL-3.0，从不随包分发）框出每一块文字，再用漫画 VL 阅读器（anime_tools.ocr.reader，在手写拟声词上微调过的 PaddleOCR-VL-1.6；torch，首次使用约 2.8 GB）读出每个框，把 {stem}.ocr.txt 写进 OCR 树，布局与缩放树一致。不读也不写任何标注，之后也不需要重新编码 TE。\n\n" +
         "对白框里的台词和画在画面上的拟声词由同一个检测器一起框。一个框的读取就是一行，所以被解码守卫挡下的读取会连框一起丢掉。给了 --mask_dir，文字掩码里没有被任何框覆盖的连通块也会当作独立的行读出来（det 0.000）。每一行都带着检测器的框置信度（det）和阅读器的平均 token 置信度（score）。\n\n" +
         "默认试运行：试运行会留下一份 report.json，装着它本来要写的每一行；--apply 只写附文件，别的什么都不做。",
       groups:

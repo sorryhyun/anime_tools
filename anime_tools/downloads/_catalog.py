@@ -32,10 +32,10 @@ from anime_tools.downloads._locations import (
     SAM3_DIR,
     SAM3_FILENAME,
     SAM3_REPO,
-    SFX_READER_FILES,
-    SFX_READER_REPO,
-    SFX_READER_REVISION,
-    SFX_READER_SUBFOLDER,
+    OCR_READER_FILES,
+    OCR_READER_REPO,
+    OCR_READER_REVISION,
+    OCR_READER_SUBFOLDER,
     SOFT_PROMPT_DIR,
     SOFT_PROMPT_FILENAME,
     SOFT_PROMPT_GH_REPO,
@@ -44,7 +44,7 @@ from anime_tools.downloads._locations import (
     VL16_BASE_REPO,
     default_animetext_dir,
     default_pe_spatial_path,
-    default_sfx_reader_dir,
+    default_ocr_reader_dir,
     default_vl16_base_dir,
 )
 from anime_tools.tagger.dbv4_meta import (
@@ -176,22 +176,22 @@ def catalog() -> tuple[Asset, ...]:
             repo=VL16_BASE_REPO,
             files=VL16_BASE_FILES,
             dest=default_vl16_base_dir(),
-            used_by="OCR text (the manga VL reader's base; anime_tools.ocr.sfx)",
+            used_by="OCR text (the manga VL reader's base; anime_tools.ocr.reader)",
             stages=("ocr",),
-            notes="1.9 GB, Apache-2.0. The VLM the SFX reader below is a "
+            notes="1.9 GB, Apache-2.0. The VLM the OCR reader below is a "
             "fine-tune of; the reader loads this and merges the row below "
             "onto it.",
         ),
         Asset(
-            id="sfx_reader",
+            id="ocr_reader",
             pack="ocr",
-            title="Manga SFX reader v6 (VL-1.6 tower LoRA + LM)",
-            repo=SFX_READER_REPO,
-            subfolder=SFX_READER_SUBFOLDER,
-            files=SFX_READER_FILES,
-            revision=SFX_READER_REVISION,
-            dest=default_sfx_reader_dir(),
-            used_by="OCR text (the manga VL reader; anime_tools.ocr.sfx)",
+            title="Manga OCR reader v6 (VL-1.6 tower LoRA + LM)",
+            repo=OCR_READER_REPO,
+            subfolder=OCR_READER_SUBFOLDER,
+            files=OCR_READER_FILES,
+            revision=OCR_READER_REVISION,
+            dest=default_ocr_reader_dir(),
+            used_by="OCR text (the manga VL reader; anime_tools.ocr.reader)",
             stages=("ocr",),
             notes="0.65 GB (tower LoRA 143 MB + fine-tuned LM layers 510 MB). Reads every "
             "box the detector finds — balloon speech, hearts, small kana and the "

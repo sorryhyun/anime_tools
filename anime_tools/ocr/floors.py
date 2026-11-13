@@ -23,7 +23,7 @@ from typing import Any
 
 from anime_tools.captions.ocr_sidecar import DEFAULT_MIN_GLYPH
 from anime_tools.ocr.reread import LINE_MIN_DET
-from anime_tools.ocr.sfx import is_latin
+from anime_tools.ocr.reader import is_latin
 
 LOW_DET_SCORE = 0.9
 """Reader score a box under ``LINE_MIN_DET`` needs."""
@@ -65,16 +65,16 @@ def keep_line(ln: Any) -> bool:
 
 
 def load_reread_engine(device: str):
-    """The AnimeText detector with the SFX reader re-reading its boxes, kept
+    """The AnimeText detector with the OCR reader re-reading its boxes, kept
     down to the detector's own floor (the floors above decide afterwards)."""
     from pathlib import Path
 
     from anime_tools.ocr import load_ocr
     from anime_tools.ocr.animetext import DEFAULT_CONF
     from anime_tools.ocr.reread import RereadEngine
-    from anime_tools.ocr.sfx import SfxReader
+    from anime_tools.ocr.reader import OcrReader
 
-    reader = SfxReader.load(device=device)
+    reader = OcrReader.load(device=device)
     return RereadEngine(
         engine=load_ocr(device=device),
         read_boxes=reader.read_boxes_scored,

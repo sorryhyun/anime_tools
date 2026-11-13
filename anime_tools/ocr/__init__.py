@@ -8,7 +8,7 @@ under a licence this package does not carry): one detector for balloon lines and
 answering every box as an empty :class:`~anime_tools.captions.ocr_sidecar.OcrLine`
 in reading order. The manga VL reader — a fine-tuned PaddleOCR-VL-1.6 that reads
 hand-lettered onomatopoeia, hearts and small kana natively — is
-:mod:`anime_tools.ocr.sfx` (``SfxReader``), imported explicitly because it pulls
+:mod:`anime_tools.ocr.reader` (``OcrReader``), imported explicitly because it pulls
 torch; it reads crops another detector boxed, never pages.
 :mod:`anime_tools.ocr.reread` is the seam: :class:`~anime_tools.ocr.reread.RereadEngine`
 runs every box (and, with a text mask, the mask's uncovered components) through

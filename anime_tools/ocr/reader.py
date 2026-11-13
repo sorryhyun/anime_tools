@@ -1,9 +1,9 @@
-"""A manga SFX reader: PaddleOCR-VL-1.6 fine-tuned on hand-lettered onomatopoeia.
+"""The manga OCR reader: PaddleOCR-VL-1.6 fine-tuned on manga lettering, SFX and speech.
 
 A line recognizer trained on print reads balloon speech and misses the sound
 effects drawn onto the artwork — ``ぱんぱん``, ``びくっ``, ``ばるん`` came back
 as ``はんぱん`` / ``でくv`` / nothing from the CTC stack this package retired.
-:class:`SfxReader` is the reader for those lines and the speech alike: a crop
+:class:`OcrReader` is the reader for those lines and the speech alike: a crop
 in, a string out, no detection. It is the
 PaddleOCR-VL-1.6 base with a LoRA on the vision tower + projector **and fully
 fine-tuned ERNIE decoder layers** (v6), trained on the Manga109-s COO
@@ -19,7 +19,7 @@ it needs no symbol patching, and returns a block's line breaks as ``\\n``
 What it is not: a page reader. Feed it the crops a detector has already
 boxed — the AnimeText text-block detector (:mod:`anime_tools.ocr.animetext`,
 the OCR stage's detector: balloon lines and the SFX on the artwork alike);
-:meth:`SfxReader.read_boxes_scored` cuts the padded crops for you. Batch by area: a
+:meth:`OcrReader.read_boxes_scored` cuts the padded crops for you. Batch by area: a
 1.9 B-parameter model at ~0.25 s per crop is the run's whole wall.
 
 **The decode guard is part of the reader**, not an option. An autoregressive
@@ -38,8 +38,8 @@ the longest speech on each page. A dot run is now one ``…`` before anything
 counts it.
 
 Weights are two catalog rows (:mod:`anime_tools.downloads`): ``vl16_base``
-(the Apache-2.0 base, 1.9 GB) and ``sfx_reader`` (tower LoRA 143 MB + LM
-layers 510 MB). :meth:`SfxReader.load` fetches what is missing.
+(the Apache-2.0 base, 1.9 GB) and ``ocr_reader`` (tower LoRA 143 MB + LM
+layers 510 MB). :meth:`OcrReader.load` fetches what is missing.
 """
 
 from __future__ import annotations
@@ -54,7 +54,7 @@ from functools import cache, cached_property
 from pathlib import Path
 from typing import Any
 
-from anime_tools.downloads import SFX_READER_ADAPTER_FILES, SFX_READER_LM_FILE
+from anime_tools.downloads import OCR_READER_ADAPTER_FILES, OCR_READER_LM_FILE
 
 PROMPT = "OCR:"
 """The crop task of the base model's chat template; the fine-tune kept it."""
@@ -258,12 +258,12 @@ VL_NOTICES = (
 )
 
 
-class SfxWeightsMissing(RuntimeError):
+class OcrReaderWeightsMissing(RuntimeError):
     """A reader directory the catalog has not filled yet."""
 
     def __init__(self, model_dir: Path, row: str) -> None:
         super().__init__(
-            f"SFX reader weights not found in {model_dir} — run "
+            f"OCR reader weights not found in {model_dir} — run "
             f"`python -m anime_tools.downloads {row}` "
             "(or ⚙ Settings › Models in the GUI)"
         )
@@ -294,14 +294,14 @@ def _ensure(row_id: str, fetch: bool) -> Path:
     row = by_id()[row_id]
     if row.missing():
         if not fetch:
-            raise SfxWeightsMissing(row.dest, row_id)  # type: ignore[arg-type]
+            raise OcrReaderWeightsMissing(row.dest, row_id)  # type: ignore[arg-type]
         row.fetch()
     assert row.dest is not None
     return row.dest
 
 
 @dataclass
-class SfxReader:
+class OcrReader:
     """The fine-tuned VL crop reader, loaded once, read many."""
 
     model: Any
@@ -319,12 +319,12 @@ class SfxReader:
         adapter_dir: Path | None = None,
         batch_size: int = 16,
         fetch: bool = True,
-    ) -> SfxReader:
+    ) -> OcrReader:
         """Base + tower adapter merged + fine-tuned LM layers, in bf16 on ``device``
         (auto when ``None``).
 
         ``base_dir`` / ``adapter_dir`` default to the catalog rows and are
-        fetched when missing (``fetch=False`` raises :class:`SfxWeightsMissing`
+        fetched when missing (``fetch=False`` raises :class:`OcrReaderWeightsMissing`
         instead). A dir passed explicitly is used as is.
 
         bf16 holds on every device, MPS included — measured 2026-09-09 at 860 ms
@@ -334,10 +334,10 @@ class SfxReader:
 
         device = resolve_device(device)
         base = Path(base_dir) if base_dir else _ensure("vl16_base", fetch)
-        adapter = Path(adapter_dir) if adapter_dir else _ensure("sfx_reader", fetch)
-        for name in (*SFX_READER_ADAPTER_FILES, SFX_READER_LM_FILE):
+        adapter = Path(adapter_dir) if adapter_dir else _ensure("ocr_reader", fetch)
+        for name in (*OCR_READER_ADAPTER_FILES, OCR_READER_LM_FILE):
             if not (adapter / name).is_file():
-                raise SfxWeightsMissing(adapter, "sfx_reader")
+                raise OcrReaderWeightsMissing(adapter, "ocr_reader")
 
         import torch
         from peft import PeftModel
@@ -356,11 +356,11 @@ class SfxReader:
         model = PeftModel.from_pretrained(model, str(adapter)).merge_and_unload()
         # The decoder layers are a plain state dict under the base model's key
         # names; the adapter only ever touched the tower and projector.
-        lm = load_file(str(adapter / SFX_READER_LM_FILE))
+        lm = load_file(str(adapter / OCR_READER_LM_FILE))
         unexpected = model.load_state_dict(lm, strict=False).unexpected_keys
         if unexpected:
             raise RuntimeError(
-                f"{SFX_READER_LM_FILE} carries keys the base has no home for: {unexpected[:5]}"
+                f"{OCR_READER_LM_FILE} carries keys the base has no home for: {unexpected[:5]}"
             )
         model = model.to(device).eval()
         return cls(
@@ -486,8 +486,8 @@ __all__ = [
     "PROMPT",
     "RUNAWAY_RUN",
     "RUNAWAY_UNIT_REPEATS",
-    "SfxReader",
-    "SfxWeightsMissing",
+    "OcrReader",
+    "OcrReaderWeightsMissing",
     "crop_box",
     "guard",
     "is_latin",

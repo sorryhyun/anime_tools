@@ -160,11 +160,11 @@ def _vl_engine(
     models cannot land on different ones.
     """
     from anime_tools.ocr.reread import RereadEngine
-    from anime_tools.ocr.sfx import SfxReader
+    from anime_tools.ocr.reader import OcrReader
 
     print(f"Loading the manga VL reader ({device})...", flush=True)
     with phase("load vl reader"):
-        reader = SfxReader.load(device=device, batch_size=req.vl_batch_size)
+        reader = OcrReader.load(device=device, batch_size=req.vl_batch_size)
     mask_dir = resolve_path(req.mask_dir) if req.mask_dir else None
     if mask_dir is not None and not mask_dir.is_dir():
         raise FileNotFoundError(f"--mask_dir {mask_dir} is not a directory")

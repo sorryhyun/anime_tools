@@ -42,9 +42,9 @@ SOFT_PROMPT_URL = (
     f"https://raw.githubusercontent.com/{SOFT_PROMPT_GH_REPO}/main/{SOFT_PROMPT_DIR}"
 )
 
-# PaddleOCR-VL-1.6 — the 0.9 B VLM base the SFX reader is fine-tuned from
+# PaddleOCR-VL-1.6 — the 0.9 B VLM base the OCR reader is fine-tuned from
 # (Apache-2.0; ERNIE LM + NaViT tower). A flat checkpoint dir, so the remote
-# modeling files ride along with the weights. `anime_tools.ocr.sfx` reads it.
+# modeling files ride along with the weights. `anime_tools.ocr.reader` reads it.
 VL16_BASE_REPO = "PaddlePaddle/PaddleOCR-VL-1.6"
 VL16_BASE_FILES = (
     "config.json",
@@ -65,19 +65,19 @@ VL16_BASE_FILES = (
 )
 VL16_BASE_DIR = "models/paddleocr_vl_1.6"
 
-# The manga SFX reader, **v6** under the repo's ``v6/`` subfolder: a peft LoRA
+# The manga OCR reader, **v6** under the repo's ``v6/`` subfolder: a peft LoRA
 # on the base's vision tower + projector plus its fully fine-tuned ERNIE
 # decoder layers, trained on Manga109-s / COO, KO / ZH pseudo-labelled SFX and KO speech
 # (attribution and citations on the model card). Weights only — no Manga109-s
 # image ships. ``v4/`` / ``v5/`` hold v4 / v5; the repo root still holds v3 (LM LoRA +
 # ``tower.safetensors``).
-SFX_READER_REPO = "sorryhyun/paddleocr-vl-1.6-manga-lora"
-SFX_READER_SUBFOLDER = "v6"
-SFX_READER_ADAPTER_FILES = ("adapter_config.json", "adapter_model.safetensors")
-SFX_READER_LM_FILE = "lm.safetensors"
-SFX_READER_FILES = (*SFX_READER_ADAPTER_FILES, SFX_READER_LM_FILE)
-SFX_READER_DIR = "models/paddleocr_vl_1.6_manga_lora"
-SFX_READER_REVISION = "57e7c65024d753022299340b3b9b6aafc158a79b"
+OCR_READER_REPO = "sorryhyun/paddleocr-vl-1.6-manga-lora"
+OCR_READER_SUBFOLDER = "v6"
+OCR_READER_ADAPTER_FILES = ("adapter_config.json", "adapter_model.safetensors")
+OCR_READER_LM_FILE = "lm.safetensors"
+OCR_READER_FILES = (*OCR_READER_ADAPTER_FILES, OCR_READER_LM_FILE)
+OCR_READER_DIR = "models/paddleocr_vl_1.6_manga_lora"
+OCR_READER_REVISION = "57e7c65024d753022299340b3b9b6aafc158a79b"
 """Hub commit of the reader the package ships — **v6** (``vl16_p2b_kozh_nl_swaprelax``:
 v5 plus 20,745 proofread Korean speech lines; v5 ``fb08a10b`` in ``v5/`` — v4's
 recipe with the labels' line breaks kept as ``\\n`` and the crops cut at the
@@ -118,14 +118,14 @@ def default_pe_spatial_path() -> Path:
 
 
 def default_vl16_base_dir() -> Path:
-    """``<home>/models/paddleocr_vl_1.6`` — the SFX reader's base checkpoint."""
+    """``<home>/models/paddleocr_vl_1.6`` — the OCR reader's base checkpoint."""
     return resolve_path(VL16_BASE_DIR)
 
 
-def default_sfx_reader_dir() -> Path:
+def default_ocr_reader_dir() -> Path:
     """``<home>/models/paddleocr_vl_1.6_manga_lora`` — adapter + fine-tuned
-    tower, what :class:`anime_tools.ocr.sfx.SfxReader` loads."""
-    return resolve_path(SFX_READER_DIR)
+    tower, what :class:`anime_tools.ocr.reader.OcrReader` loads."""
+    return resolve_path(OCR_READER_DIR)
 
 
 def default_animetext_dir() -> Path:

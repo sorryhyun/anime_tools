@@ -282,7 +282,7 @@ def test_the_ocr_stage_resolves_one_device_and_gives_it_to_both_models(
     """
     import anime_tools._device as device_mod
     import anime_tools.ocr as ocr_pkg
-    import anime_tools.ocr.sfx as sfx_mod
+    import anime_tools.ocr.reader as sfx_mod
     from anime_tools.stages.ocr import run_ocr
     from anime_tools.stages.requests import OcrRequest
 
@@ -315,7 +315,7 @@ def test_the_ocr_stage_resolves_one_device_and_gives_it_to_both_models(
 
     monkeypatch.setattr(device_mod, "resolve_device", fake_resolve)
     monkeypatch.setattr(ocr_pkg, "load_ocr", fake_load_ocr)
-    monkeypatch.setattr(sfx_mod.SfxReader, "load", fake_reader_load)
+    monkeypatch.setattr(sfx_mod.OcrReader, "load", fake_reader_load)
 
     run_ocr(
         OcrRequest(dst=str(dst), ocr_dir=str(ocr_dir), report_dir=str(tmp_path / "r"))

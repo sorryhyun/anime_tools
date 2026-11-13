@@ -193,7 +193,7 @@ Each of these is implemented in one package but bites from any of them.
 | `anime_tools/vision/` — the vendored towers: PE-Spatial (`pe.py`), YOLO12 (`yolo12.py`) | each module's own doc |
 | `anime_tools/gui/` — schema/argv binding, dataset ladder, jobs, settings | `anime_tools/gui/CLAUDE.md` |
 | `frontend/` — the Solid browser half | `frontend/CLAUDE.md` |
-| `anime_tools/ocr/` + `stages/ocr.py` — the AnimeText text-block detector over the resized tree, every box read by `ocr/sfx.py`, the manga VL crop reader (fine-tuned PaddleOCR-VL-1.6, decode guard built in) | `anime_tools/stages/CLAUDE.md`; the sidecar rule in the `captions` skill; `ocr/sfx.py`'s module doc |
+| `anime_tools/ocr/` + `stages/ocr.py` — the AnimeText text-block detector over the resized tree, every box read by `ocr/reader.py`, the manga VL crop reader (fine-tuned PaddleOCR-VL-1.6, decode guard built in) | `anime_tools/stages/CLAUDE.md`; the sidecar rule in the `captions` skill; `ocr/reader.py`'s module doc |
 | `anime_tools/exclude/` — taking an image out of the pipeline, and its ⊘ button | this file's "Where things get written"; `anime_tools/gui/CLAUDE.md` |
 | `anime_tools/downloads/` — adding or moving a weight | the `model-catalog` skill |
 | `anime_tools/update.py` — the self-update and its GUI pane | the `release` skill; `anime_tools/gui/CLAUDE.md` |

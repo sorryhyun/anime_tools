@@ -16,7 +16,7 @@ destination constants the loaders import), `_assets.py` (`Asset` / `Pack` and th
 
 `anime_tools/downloads/` (torch-free) is one `Asset` per checkpoint: the tagger + its backbone (public pixai by default; dbv4 is gated), SAM3, PE-Spatial,
 the SAM3 subject soft prompt, the OCR trio (AnimeText detector, PaddleOCR-VL-1.6 base, the manga
-SFX reader), the Danbooru tag KB and its English build. Each row carries repo, files, destination,
+OCR reader), the Danbooru tag KB and its English build. Each row carries repo, files, destination,
 `used_by` / `stages`, a `pack`, and an offline `installed` probe.
 `python -m anime_tools.downloads [ID…]` fetches in catalog order (an ID is a row or a pack); the
 GUI's Models pane runs exactly that. `tests/test_downloads.py` pins the behaviour below.
@@ -24,8 +24,8 @@ GUI's Models pane runs exactly that. `tests/test_downloads.py` pins the behaviou
 ## The one rule
 
 It is the single source of truth for weight locations. `vision/pe.py`,
-`masking/_sam3.py`'s flag defaults, `ocr/animetext.py` and `ocr/sfx.py` import theirs from here
-(`default_pe_spatial_path`, `default_animetext_dir`, `default_sfx_reader_dir`, …). A path you
+`masking/_sam3.py`'s flag defaults, `ocr/animetext.py` and `ocr/reader.py` import theirs from here
+(`default_pe_spatial_path`, `default_animetext_dir`, `default_ocr_reader_dir`, …). A path you
 could point elsewhere is a Download button that writes where the loader doesn't look;
 `test_rows_land_where_the_loaders_look` is the guard. Destinations hang off `models_dir()`
 (`_env.py`), which follows the curation home.
