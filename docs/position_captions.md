@@ -503,6 +503,7 @@ back to the box rules, so `merge_part_detections` is unaffected.
 | `--no_blank_crops` | — | Skip mask-blanking (diagnostic only — it is what causes cross-subject hair bleed) |
 | `--mask_dilate` | 0 (off) | Grow each subject mask by this many pixels before blanking, never into another subject's mask; the crop box follows. Keeps an object in hand (a phone, a straw) that the person mask leaves out. 16 moved every held tag on caststation into its holder's clause |
 | `--row_tol` | 0.25 | Minimum fractional overlap (of the narrower extent) for two subjects to share a row — and a column, on magazine layouts |
+| `--bind_males` / `--male_prompt` | off / `man` | Count the caption's men (`1boy`, `2boys`) as subjects: `1boy, 1girl` becomes a candidate, a second SAM3 prompt (`--male_prompt`) finds him, his boxes dedupe with the `girl` prompt's, and detection must match girls + boys exactly. Not under a POV tag (`pov`, `pov hands`, …), where the man is the viewer, nor for `multiple boys` |
 | `--part_prompts` | off | Comma-separated body-part prompts, tried only when the subject prompt undershoots — recovers headless close-up panels. Try `buttocks,hips,thighs` |
 | `--part_score_threshold` / `--part_containment_threshold` | 0.5 / 0.7 | Part-box confidence floor; drop a part box this nested inside an already-kept box |
 | `--min_instances` / `--max_instances` | 2 / 8 | Instance-count window |

@@ -2075,6 +2075,71 @@ def test_is_candidate(caption, expected):
     assert is_candidate(caption)[0] is expected
 
 
+@pytest.mark.parametrize(
+    "caption,males,expected",
+    [
+        ("nsfw, 1boy, 1girl, hetero", 1, (True, "multi-subject")),
+        ("nsfw, 1boy, 1girl, hetero, pov", 0, (False, "single-subject")),
+        ("nsfw, 1boy, 1girl, pov hands", 0, (False, "single-subject")),
+        ("nsfw, 1girl, multiple boys", 0, (False, "single-subject")),
+        ("safe, 2boys, 1girl", 2, (True, "multi-subject")),
+        ("safe, 2girls, pov", 0, (True, "multi-girl")),
+    ],
+)
+def test_bind_males_counts_men_unless_pov(caption, males, expected):
+    from anime_tools.captions.caption_layout import (
+        bound_male_count,
+        caption_subject_count,
+        is_candidate,
+    )
+
+    assert bound_male_count(caption) == males
+    assert is_candidate(caption, males=True) == expected
+    assert is_candidate(caption)[1] in ("single-subject", "multi-girl")
+    girls = caption_subject_count(caption)
+    assert caption_subject_count(caption, males=True) == girls + males
+
+
+def test_bind_males_detects_the_man_with_its_own_prompt(pipeline_bits):
+    from anime_tools.stages.position_captions import propose_for_image
+
+    image, vocabulary, Detection, Options = pipeline_bits
+    prompts = []
+
+    def part_detect(image, prompt, threshold):
+        prompts.append(prompt)
+        return [Detection(box=(600, 0, 1000, 500), score=0.8, source=prompt)]
+
+    def propose(caption, **kw):
+        return propose_for_image(
+            image,
+            caption,
+            detect_fn=_detector({0.5: [((0, 0, 400, 500), 0.9)]}),
+            tag_fn=_tagger(
+                [
+                    {"kept": {"blonde hair": 0.8}, "groups": {}},
+                    {"kept": {"dark-skinned male": 0.8}, "groups": {}},
+                ]
+            ),
+            vocabulary=vocabulary,
+            options=Options(bind_males=True, max_novel_tags=0, **kw),
+            part_detect_fn=part_detect,
+        )
+
+    caption = "nsfw, 1boy, 1girl, @artist, blonde hair, dark-skinned male, hetero"
+    proposal = propose(caption)
+    assert proposal.ok, proposal.status
+    assert prompts and set(prompts) == {"man"}
+    assert [i.source for i in proposal.instances] == ["subject", "subject"]
+    assert "On the right, dark-skinned male" in proposal.proposed
+    assert "On the left, blonde hair" in proposal.proposed
+
+    prompts.clear()
+    pov = propose(caption + ", pov")
+    assert pov.status == "skip:too-few-instances"
+    assert not prompts
+
+
 def test_multiple_views_defers_the_count_to_detection():
     # `1girl, multiple views` is routinely four bindable views, so the girls-count
     # must not gate it.

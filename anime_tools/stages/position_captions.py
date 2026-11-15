@@ -20,7 +20,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Callable, Mapping
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, replace
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -29,6 +29,7 @@ from PIL import Image
 from anime_tools._env import resolve_path
 from anime_tools._json import write_json
 from anime_tools.captions.caption_layout import (
+    bound_male_count,
     caption_boy_count,
     caption_panel_ceiling,
     caption_subject_count,
@@ -99,6 +100,7 @@ __all__ = [
     "PositionCaptionOptions",
     "PositionCaptionStats",
     "RemovalPlan",
+    "bound_male_count",
     "box_area",
     "box_containment",
     "box_iou",
@@ -205,8 +207,13 @@ def detect_subjects(
     options: PositionCaptionOptions,
     expected: int | None,
     part_detect_fn: Callable[[Image.Image, str, float], list[Detection]] | None = None,
+    males: int = 0,
 ) -> list[Detection]:
     """Detect + dedupe, with two escalations when the count falls short.
+
+    ``males`` > 0 also runs ``options.male_prompt`` (through ``part_detect_fn``)
+    and dedupes its boxes together with the subject prompt's, as subjects: the
+    ``girl`` prompt catches a man only now and then.
 
     Both fire only when detection undershoots the expected count: a lower score
     threshold, which recovers an extreme close-up, then body-part prompts
@@ -220,8 +227,17 @@ def detect_subjects(
     """
 
     def run(threshold: float) -> list[Detection]:
+        raw = detect_fn(image, threshold)
+        if males and part_detect_fn is not None:
+            raw = [
+                *raw,
+                *(
+                    replace(d, source="subject")
+                    for d in part_detect_fn(image, options.male_prompt, threshold)
+                ),
+            ]
         dets = dedupe_detections(
-            detect_fn(image, threshold),
+            raw,
             options.iou_threshold,
             options.containment_threshold,
             options.dedupe_fill_ratio,
@@ -286,8 +302,12 @@ def _count_skip(
     parsed: ParsedCaption,
     expected: int | None,
     options: PositionCaptionOptions,
+    males: int = 0,
 ) -> str | None:
-    """The skip status when the detection count can't be grounded, else None."""
+    """The skip status when the detection count can't be grounded, else None.
+
+    With ``males`` bound the men are in ``expected`` already, so the count must
+    match it exactly."""
     if detected < options.min_instances:
         return "skip:too-few-instances"
     if detected > options.max_instances:
@@ -297,6 +317,8 @@ def _count_skip(
     # Detection and the caption's count must agree, else we'd write clauses we
     # can't ground. "Agree" is the range girls..girls+boys, because the ``girl``
     # prompt picks up males inconsistently.
+    if expected and males:
+        return None if detected == expected else "skip:count-mismatch"
     if expected:
         boys = caption_boy_count(parsed)
         upper = None if boys is None else expected + boys
@@ -334,7 +356,8 @@ def propose_for_image(
     # parse (``caption_layout``), so the caption string is never re-split.
     parsed = parse_caption(caption)
     flat_bag = parsed.tag_keys
-    expected = caption_subject_count(parsed)
+    males = bound_male_count(parsed) if options.bind_males else 0
+    expected = caption_subject_count(parsed, males=options.bind_males)
 
     proposal = ImageProposal(
         image="",
@@ -344,7 +367,9 @@ def propose_for_image(
         original=caption,
     )
 
-    dets = detect_subjects(image, detect_fn, options, expected, part_detect_fn)
+    dets = detect_subjects(
+        image, detect_fn, options, expected, part_detect_fn, males=males
+    )
     if mask_sink is not None:
         mask_sink(dets)
     proposal.detected = len(dets)
@@ -356,7 +381,7 @@ def propose_for_image(
         }
         for d in dets
     ]
-    skip = _count_skip(len(dets), parsed, expected, options)
+    skip = _count_skip(len(dets), parsed, expected, options, males=males)
     if skip is not None:
         proposal.status = skip
         return proposal
@@ -568,7 +593,7 @@ def run_position_captions(
             caption = promotion
             stats.promoted += 1
         image_rel = image_path.relative_to(resized_dir).as_posix()
-        ok, reason = is_candidate(caption)
+        ok, reason = is_candidate(caption, males=options.bind_males)
         if not ok:
             clear_analysis(analysis_dir, image_rel)
             stats.skip(reason)

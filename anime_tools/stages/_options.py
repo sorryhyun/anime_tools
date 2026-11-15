@@ -113,6 +113,11 @@ class PositionCaptionOptions:
     # Grow each subject mask by this many pixels before blanking (never into
     # another subject's mask), so a held object survives the crop. 0 = off.
     mask_dilate: int = 0
+    # Give each man the caption counts a clause too (``bound_male_count``: its
+    # ``Nboys``, none under ``pov``), found by a second SAM3 prompt. Off: the
+    # ``girl`` prompt alone, men stay in the bag.
+    bind_males: bool = False
+    male_prompt: str = "man"
     row_tol: float = 0.25
     max_clause_tags: int = 8
     # How many tags a clause may introduce that the caption never contained;

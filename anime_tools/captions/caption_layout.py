@@ -49,7 +49,23 @@ PANEL_LAYOUT_TAGS = frozenset(
 LAYOUT_TAGS = MULTI_VIEW_TAGS | PANEL_LAYOUT_TAGS
 
 
-def caption_subject_count(caption: str | ParsedCaption) -> int | None:
+def bound_male_count(caption: str | ParsedCaption) -> int:
+    """How many male subjects get a clause of their own under ``bind_males``.
+
+    The caption's exact ``Nboys`` count, or 0: under a POV tag (``pov``,
+    ``pov hands``, …) the man is the viewer, not a figure in the picture, and an
+    open-ended count (``multiple boys``) gives no number to check detection
+    against.
+    """
+    tags = flat_tag_set(caption)
+    if any(t == "pov" or t.startswith("pov ") for t in tags):
+        return 0
+    return count_of(tags, "boy") or 0
+
+
+def caption_subject_count(
+    caption: str | ParsedCaption, *, males: bool = False
+) -> int | None:
     """How many bindable subjects the caption itself claims, if it says.
 
     ``Ngirls`` gives a number; ``None`` means "more than one, count unknown",
@@ -59,11 +75,16 @@ def caption_subject_count(caption: str | ParsedCaption) -> int | None:
     girls-count, because that count tags *characters* while each view/panel is
     its own bindable subject (``1girl, multiple views`` is routinely four).
     ``multiple girls`` / open-ended ``N+girls`` are ``None`` too.
+
+    ``males`` adds :func:`bound_male_count`, so ``1boy, 1girl`` is two subjects.
     """
     tags = flat_tag_set(caption)
     if tags & LAYOUT_TAGS:
         return None
-    return count_of(tags, "girl")
+    girls = count_of(tags, "girl")
+    if girls is None or not males:
+        return girls
+    return girls + bound_male_count(caption)
 
 
 def caption_panel_ceiling(caption: str | ParsedCaption) -> int | None:
@@ -109,11 +130,14 @@ def is_repeated_subject_layout(caption: str | ParsedCaption) -> bool:
     return bool(flat_tag_set(caption) & LAYOUT_TAGS)
 
 
-def is_candidate(caption: str | ParsedCaption) -> tuple[bool, str]:
+def is_candidate(
+    caption: str | ParsedCaption, *, males: bool = False
+) -> tuple[bool, str]:
     """Should this caption go through detection? Returns ``(ok, reason)``.
 
     "Already has clauses" is *position* clauses (a text clause binds no
-    subject), which is what ``parsed.position_clauses`` is.
+    subject), which is what ``parsed.position_clauses`` is. ``males`` counts the
+    men :func:`bound_male_count` binds as subjects.
     """
     parsed = as_parsed(caption)
     if parsed.position_clauses:
@@ -123,7 +147,8 @@ def is_candidate(caption: str | ParsedCaption) -> tuple[bool, str]:
         return True, "multiple-views"
     if tags & PANEL_LAYOUT_TAGS:
         return True, "panel-layout"
-    expected = caption_subject_count(parsed)
+    expected = caption_subject_count(parsed, males=males)
     if expected is None or expected > 1:
-        return True, "multi-girl"
+        with_men = males and bound_male_count(parsed)
+        return True, "multi-subject" if with_men else "multi-girl"
     return False, "single-subject"

@@ -81,7 +81,13 @@ DEFAULT_EXPORT_INDEX = f"{WS.REPORTS}/caption_index.json"
 
 PATTERN_HELP = "fnmatch glob (| to OR-combine) on the path relative to {root}"
 
-POSITION_ONLY_FLAGS = ("blank_crops", "mask_dilate", "min_instances", "strict_count")
+POSITION_ONLY_FLAGS = (
+    "blank_crops",
+    "mask_dilate",
+    "male_prompt",
+    "min_instances",
+    "strict_count",
+)
 """Detection-group knobs only the position stage declares: the audit pins
 ``min_instances`` and takes the ``PositionCaptionOptions`` default for the other
 two."""
@@ -490,6 +496,11 @@ class PositionRequest(TaggerRequest, ReplayRequest):
         "another subject's mask, so an object in hand stays in the crop (0 = off)",
         group=DETECTION,
     )
+    male_prompt: str = arg(
+        "man",
+        help="SAM3 text prompt that finds the men --bind_males binds",
+        group=DETECTION,
+    )
     min_instances: int = arg(
         2, help="Fewest subjects an image needs before it gets clauses", group=DETECTION
     )
@@ -498,6 +509,13 @@ class PositionRequest(TaggerRequest, ReplayRequest):
         "--no_strict_count",
         help="Propose clauses even when detection disagrees with the girls-count",
         group=DETECTION,
+    )
+    bind_males: bool = arg(
+        False,
+        help="Count the caption's men (`1boy`, `2boys`) as subjects and give each a "
+        "clause, found with --male_prompt. Not under a POV tag, where the man is the "
+        "viewer, nor for an open-ended `multiple boys`. Off: men stay in the bag",
+        group=CLAUSES,
     )
     max_clause_tags: int = arg(8, help="Most tags one clause may carry", group=CLAUSES)
     max_novel_tags: int = arg(
