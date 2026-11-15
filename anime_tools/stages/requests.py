@@ -555,6 +555,21 @@ class PositionRequest(TaggerRequest, ReplayRequest):
         "floored. 0.0 = off",
         group=CLAUSES,
     )
+    free_groups: bool = arg(
+        False,
+        help="Loosen the tag-group rules: one value per subject only for hair and eye "
+        "color (gesture, body shape, framing … may stack), and an ungrouped bag tag "
+        "enters every clause whose crop kept it, not only when one crop alone did",
+        group=CLAUSES,
+    )
+    thin_bag: bool = arg(
+        False,
+        help="Keep the flat bag as small as the clauses allow: a bag tag leaves it "
+        "once any clause carries it, and stays in every clause that does. Only "
+        "character names stay flat: the one-clause, corroboration, exclusive-keep and "
+        "margin rules are all lifted",
+        group=CLAUSES,
+    )
     attribution_margin: float = arg(
         0.25,
         help="How far the winning crop's probability must clear every other crop's, "
@@ -764,6 +779,13 @@ class DropGroupRequest(ApplyRequest):
         help="Comma-separated taxonomy-path prefixes, for a subgroup no slug names: "
         "the [대분류 > 소분류] a tag's description in danbooru_tags_classified.csv "
         "starts with",
+    )
+    implied: bool = arg(
+        False,
+        help="Also cut every tag a more specific one already says: `long hair` beside "
+        "`very long hair`, `neckerchief` beside `diagonal-striped neckerchief`, `bow` "
+        "beside `bowtie`. A clause tag goes only for a tag in its own clause. Runs "
+        "without any --groups",
     )
     tag_csv: str | None = arg(
         None, help="danbooru_tags_classified.csv path (default: models/ lookup)"

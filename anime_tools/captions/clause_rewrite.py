@@ -57,6 +57,15 @@ def _score_of(
     return float(kept.get(tag, 0.0))
 
 
+def _bound_everywhere(
+    tag: str, claimed: Sequence[int], positions: Sequence[str]
+) -> MovedTag:
+    """A thin-bag move: ``position`` names every clause that carries ``tag``."""
+    return MovedTag(
+        tag=tag, position="+".join(positions[i] for i in claimed), margin=1.0
+    )
+
+
 def plan_bag_removals(
     flat_tags: Sequence[str],
     clause_tags: Sequence[Sequence[str]],
@@ -66,6 +75,7 @@ def plan_bag_removals(
     *,
     vocabulary: ClauseVocabulary,
     margin: float,
+    thin: bool = False,
 ) -> RemovalPlan:
     """Decide which flat-bag tags the clauses have earned the right to take.
 
@@ -80,6 +90,11 @@ def plan_bag_removals(
 
     Failing any rule is not an error — the tag stays in the bag *and* in its
     clause.
+
+    ``thin`` keeps the bag as small as the clauses allow: a tag leaves it once
+    any clause carries it, and stays bound in every clause that does. Only rule
+    1 holds, so a tag a crop kept but its clause did not take is lost for that
+    subject, and a hair color one headless crop lacks leaves the bag too.
     """
     cfg = vocabulary.clause_groups
     bag: dict[str, str] = {}
@@ -111,7 +126,7 @@ def plan_bag_removals(
     for key, indices in sorted(where.items()):
         if key not in bag:
             continue  # the clause tag was never in the bag — nothing to move
-        if len(indices) != 1:
+        if len(indices) != 1 and not thin:
             blocked[key] = "multi-clause"
             continue
         group = vocabulary.group_of(key)
@@ -119,6 +134,9 @@ def plan_bag_removals(
             # The cast list stays flat: the bag answers "who is in this image",
             # the clause "which one is where".
             blocked[key] = "character-name"
+            continue
+        if thin:
+            moved.append(_bound_everywhere(bag[key], sorted(set(indices)), positions))
             continue
         if group in cfg.character_invariant:
             if group in pinned_groups:

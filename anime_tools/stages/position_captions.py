@@ -392,6 +392,7 @@ def propose_for_image(
             bind_framing=options.bind_framing,
             bind_view_anatomy=options.bind_view_anatomy,
             max_novel_tags=options.max_novel_tags,
+            free_groups=options.free_groups,
         )
         crop_name = crop_sink(i, positions[i], crops[i]) if crop_sink else None
         proposal.instances.append(
@@ -429,6 +430,7 @@ def propose_for_image(
             score_sets,
             vocabulary=vocabulary,
             margin=options.attribution_margin,
+            thin=options.thin_bag,
         )
         proposal.pinned = dict(plan.blocked)
         taken = {normalize_tag(m.tag) for m in plan.moved}

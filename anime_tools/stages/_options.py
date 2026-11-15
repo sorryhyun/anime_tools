@@ -138,6 +138,12 @@ class PositionCaptionOptions:
     # Move an attributable tag out of the flat bag into its clause. False is the
     # additive v1 behaviour (bag untouched), kept for the training A/B.
     rewrite: bool = True
+    # Move a bag tag out once any clause carries it, however many do
+    # (``plan_bag_removals(thin=True)``).
+    thin_bag: bool = False
+    # One-per-subject only for hair/eye color; an ungrouped bag tag may enter
+    # every clause whose crop kept it (``ClauseVocabulary.select``).
+    free_groups: bool = False
     # How far the winning crop must clear every other, relative to its own
     # probability (``1 - rival/winner``), before a tag may leave the bag. Gates
     # only the removal — a tag that fails still enters its clause. 0.0 = trust

@@ -17,7 +17,12 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from anime_tools._env import resolve_path
-from anime_tools.captions.correction import TagKnowledgeBase, drop_caption_groups
+from anime_tools.captions.correction import (
+    GroupDropResult,
+    TagKnowledgeBase,
+    drop_caption_groups,
+)
+from anime_tools.captions.implied_tags import drop_implied_tags
 from anime_tools.captions.tag_drop_groups import should_drop_tag
 from anime_tools.captions.taxonomy import normalize_tag
 from anime_tools.contract import REPLAY_SHAPES
@@ -79,6 +84,7 @@ def drop_tag_groups(
     selectors: Iterable[str],
     *,
     keep: Iterable[str] = (),
+    implied: bool = False,
     recursive: bool = True,
     path_pattern: str | None = None,
     apply: bool = True,
@@ -90,7 +96,9 @@ def drop_tag_groups(
     that loses nothing is ``skip:unchanged`` and writes nothing — not even a
     revised copy of the master it read, which would say nothing new. A write
     pushes the replaced text onto the history sidecar and drops the variants
-    sidecar, whose v0 is the caption before the cut.
+    sidecar, whose v0 is the caption before the cut. ``implied`` then cuts what
+    a more specific tag already says (:func:`drop_implied_tags`), counted under
+    ``implied``.
     """
     selectors = tuple(selectors)
     keep = tuple(keep)
@@ -100,7 +108,16 @@ def drop_tag_groups(
     for image_path, rel, dst, raw, caption_path in iter_captions(
         resized_dir, source_dir, path_pattern, stats, progress, recursive=recursive
     ):
-        cut = drop_caption_groups(raw, kb, selectors, keep=keep)
+        cut = (
+            drop_caption_groups(raw, kb, selectors, keep=keep)
+            if selectors
+            else GroupDropResult(raw)
+        )
+        implied_cut = drop_implied_tags(cut.text, keep=keep) if implied else None
+        if implied_cut is not None and implied_cut.dropped_tags:
+            cut = GroupDropResult(
+                implied_cut.text, (*cut.dropped_tags, *implied_cut.dropped_tags)
+            )
         row = DropGroupProposal(
             image=str(image_path.relative_to(resized_dir)),
             caption_path=str(rel),
@@ -116,7 +133,11 @@ def drop_tag_groups(
             continue
         if caption_path != dst:
             stats.from_master += 1
-        stats.by_group.update(_selector_of(t, kb, selectors) for t in cut.dropped_tags)
+        n_implied = len(implied_cut.dropped_tags) if implied_cut is not None else 0
+        group_cut = cut.dropped_tags[: len(cut.dropped_tags) - n_implied]
+        stats.by_group.update(_selector_of(t, kb, selectors) for t in group_cut)
+        if n_implied:
+            stats.by_group["implied"] += n_implied
         if apply:
             write_caption(dst, cut.text, drop_variants=True, history_by=history_by)
         stats.written += 1
@@ -134,11 +155,12 @@ def run_drop_groups(req: DropGroupRequest):
     from anime_tools.captions.correction import load_tag_knowledge_base
 
     selectors = req.selectors
-    if not selectors:
+    if not selectors and not req.implied:
         # Here rather than in the request: an empty request is still the
         # default one every form and test builds.
         raise ValueError(
-            "Nothing to drop: pick at least one --groups slug or --category_paths prefix."
+            "Nothing to drop: pick at least one --groups slug or --category_paths "
+            "prefix, or --implied."
         )
     src = resolve_path(req.src)
     dst = resized_tree(req.dst)
@@ -150,6 +172,7 @@ def run_drop_groups(req: DropGroupRequest):
         kb,
         selectors,
         keep=req.keep_tags,
+        implied=req.implied,
         recursive=req.recursive,
         path_pattern=req.path_pattern or "*",
         apply=req.apply,
@@ -163,6 +186,7 @@ def run_drop_groups(req: DropGroupRequest):
                 src=src, dst=dst, path_pattern=req.path_pattern, apply=req.apply
             ),
             "selectors": list(selectors),
+            "implied": req.implied,
             "keep_tags": list(req.keep_tags),
             "stats": {
                 "seen": stats.seen,
@@ -178,7 +202,7 @@ def run_drop_groups(req: DropGroupRequest):
 
     verb = "written" if req.apply else "would write"
     print(
-        f"Dropped tag groups ({', '.join(selectors)}): "
+        f"Dropped tag groups ({', '.join((*selectors, *(['implied'] if req.implied else [])))}): "
         f"{stats.written} {verb}, {stats.unchanged} unchanged, "
         f"{stats.from_master} mirrored from the master, "
         f"{stats.no_caption} without a caption ({stats.seen} resized images)"

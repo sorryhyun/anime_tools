@@ -120,6 +120,11 @@ def default_clause_groups() -> ClauseGroups:
     return load_clause_groups()
 
 
+# The exclusive groups ``free_groups`` still holds to one value per subject: a
+# second hair or eye color on one crop is bleed from a neighbour.
+FREE_GROUPS_EXCLUSIVE = frozenset({"hair_color", "eye_color"})
+
+
 @dataclass(frozen=True)
 class ClauseVocabulary:
     """Which tags may enter a clause, and in what order.
@@ -181,6 +186,7 @@ class ClauseVocabulary:
         bind_framing: bool = True,
         bind_view_anatomy: bool = True,
         max_novel_tags: int = 1,
+        free_groups: bool = False,
     ) -> list[str]:
         """Clause tags for one crop, ordered most-disambiguating first.
 
@@ -200,6 +206,10 @@ class ClauseVocabulary:
         (repeated-subject layout) is strongest, dropping the name and every
         view-invariant trait — plus the view-anatomy groups when
         ``bind_view_anatomy`` is off.
+
+        ``free_groups`` keeps one-per-subject only for hair and eye color
+        (:data:`FREE_GROUPS_EXCLUSIVE`) and admits an ungrouped bag tag any crop
+        kept, not only one this crop alone kept.
         """
         cfg = self.clause_groups
         out: list[str] = []
@@ -229,7 +239,8 @@ class ClauseVocabulary:
             if tag in self.excluded or tag in cfg.page_level_framing:
                 return False
             group = self.group_of(tag)
-            if group in self.exclusive_groups and group in taken_groups:
+            exclusive = FREE_GROUPS_EXCLUSIVE if free_groups else self.exclusive_groups
+            if group in exclusive and group in taken_groups:
                 return False  # one hair color / one eye color per subject
             if not allow_identity and group in cfg.identity:
                 return False  # no head in this crop — nothing to read it off
@@ -298,7 +309,15 @@ class ClauseVocabulary:
             and t not in self.characters
             and t not in self.excluded
             and not self.is_scene_tag(t)
-            and (self.is_subject_tag(t) or (t in flat_bag and t in attributable))
+            and (
+                self.is_subject_tag(t)
+                or (
+                    t in flat_bag
+                    and (
+                        t in attributable or (free_groups and self.group_of(t) is None)
+                    )
+                )
+            )
         ]
         rest.sort(key=lambda t: (t not in flat_bag, -kept[t]))
         candidates.extend(rest)

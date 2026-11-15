@@ -285,6 +285,13 @@ thresholds span a wide range, so the absolute gap test rules 4–5 replaced
 recoverable by a flag. The report records `moved[{tag, position, margin}]` and
 `pinned{tag: rule}` per image, and `summary.pinned_tags` aggregates the rules.
 
+`--thin_bag` swaps the five rules for the smallest bag the clauses allow: a
+bag tag leaves once any clause carries it and stays in every clause that does
+(`moved[].position` joins them, `left+right`). Only rule 1 holds, so a tag a
+crop kept but its clause did not take is lost for that subject, and a hair color
+a headless crop lacks leaves the bag all the same. Built for MOSS, whose layout
+JSON gives every clause its own item.
+
 ### Backing it out
 
 The rewrite moves tags, never deletes them. `--flatten --apply` merges every
@@ -508,6 +515,8 @@ back to the box rules, so `merge_part_detections` is unaffected.
 | `--gate_view_anatomy` | — | On a repeated-subject layout, keep `body_parts` out of every clause (`ass`, `navel`, `breasts`). The A side of the anatomy A/B |
 | `--no_framing` | — | Keep `framing` out of every clause, so no clause says whether its view is a close-up or a whole figure. The A side of the framing A/B |
 | `--no_rewrite` | — | Additive v1: append the clauses, leave the flat bag untouched (every bound attribute asserted twice). The A/B control arm |
+| `--free_groups` | off | Loosen the tag-group rules: one value per subject only for hair and eye color (`gesture`, `body_shape`, `framing` … may stack), and an ungrouped bag tag enters every clause whose crop kept it, not only when one crop alone did. Scene groups stay out |
+| `--thin_bag` | off | Move a bag tag out once any clause carries it, however many do; only character names stay flat (see the move rules) |
 | `--attribution_margin` | 0.25 | How far the winning crop must clear every other relative to its own probability (`1 - runner_up/winner`) before a tag may leave the bag, on top of the hard rule that no other crop kept it. `0.0` trusts the per-tag thresholds alone. The clause carries the tag either way |
 | `--bag_relax` | 0.35 | Multiplier on the tagger's per-tag keep threshold for tags the flat bag already contains — such a tag can only move, never be invented, so the caption corroborates it and the crop only has to attribute. Applied to every crop before the attributable/shared census, so a rival crop's borderline residual also blocks a bind. `1.0` = off. It is what recovers pose tags (`lying`, `on back`) whose scores collapse when blanking removes the scene context |
 | `--bag_word_relax` | 0.85 | Extra threshold multiplier per word beyond the first, compounding with `--bag_relax` — `black panties` is more specific than `panties`, so a sub-threshold hit is less likely noise. `1.0` = off. It relaxes rival floors too: two-word generics (`high heels`) become easier to false-share |

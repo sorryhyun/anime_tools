@@ -2809,3 +2809,104 @@ def test_a_promotion_that_changes_nothing_is_not_counted(pipeline_bits, tmp_path
     )
 
     assert stats.promoted == 0 and stats.candidates == 1
+
+
+def test_thin_bag_moves_a_tag_several_clauses_carry(pipeline_bits):
+    """``thin``: a tag two of three clauses carry leaves the bag, bound to both,
+    with no multi-kept or margin check."""
+    from anime_tools.stages.position_captions import (
+        ClauseVocabulary,
+        plan_bag_removals,
+    )
+
+    vocabulary = ClauseVocabulary(tag_to_group={"maid": "costume"})
+    plan = plan_bag_removals(
+        ("3girls", "maid"),
+        [["maid"], [], ["maid"]],
+        ["left", "middle", "right"],
+        [{"maid": 0.9}, {"maid": 0.8}, {"maid": 0.9}],
+        [{"maid": 0.9}, {"maid": 0.8}, {"maid": 0.9}],
+        vocabulary=vocabulary,
+        margin=0.25,
+        thin=True,
+    )
+    assert plan.blocked == {}
+    assert [(m.tag, m.position) for m in plan.moved] == [("maid", "left+right")]
+
+
+def test_thin_bag_keeps_names_and_moves_a_sole_trait_one_clause_lacks(
+    pipeline_bits,
+):
+    """``thin`` keeps the cast list flat and moves a sole hair color even when
+    one clause lacks it."""
+    from anime_tools.stages.position_captions import (
+        ClauseVocabulary,
+        plan_bag_removals,
+    )
+
+    vocabulary = ClauseVocabulary(
+        characters=frozenset({"hatsune miku"}),
+        tag_to_group={"aqua hair": "hair_color", "pink hair": "hair_color"},
+    )
+    kept = [{"hatsune miku": 0.9, "aqua hair": 0.9}, {"aqua hair": 0.9}]
+    common = dict(vocabulary=vocabulary, margin=0.25, thin=True)
+    partial = plan_bag_removals(
+        ("2girls", "hatsune miku", "aqua hair"),
+        [["hatsune miku", "aqua hair"], []],
+        ["left", "right"],
+        kept,
+        kept,
+        **common,
+    )
+    assert [(m.tag, m.position) for m in partial.moved] == [("aqua hair", "left")]
+    assert partial.blocked == {"hatsune miku": "character-name"}
+    everywhere = plan_bag_removals(
+        ("2girls", "hatsune miku", "aqua hair"),
+        [["aqua hair"], ["aqua hair"]],
+        ["left", "right"],
+        kept,
+        kept,
+        **common,
+    )
+    assert [(m.tag, m.position) for m in everywhere.moved] == [
+        ("aqua hair", "left+right")
+    ]
+
+
+def test_free_groups_stacks_gestures_and_admits_shared_ungrouped_bag_tags(
+    pipeline_bits,
+):
+    """``free_groups``: two gestures on one crop, an ungrouped bag tag another
+    crop also kept, and still one hair color."""
+    from anime_tools.captions.clause_vocabulary import ClauseVocabulary
+
+    vocabulary = ClauseVocabulary(
+        exclusive_groups=frozenset({"gesture", "hair_color"}),
+        tag_to_group={
+            "v": "gesture",
+            "tongue out": "gesture",
+            "aqua hair": "hair_color",
+            "blue hair": "hair_color",
+        },
+    )
+    kept = {
+        "v": 0.9,
+        "tongue out": 0.85,
+        "aqua necktie": 0.9,
+        "aqua hair": 0.9,
+        "blue hair": 0.6,
+    }
+    common = dict(
+        flat_bag=frozenset(kept),
+        attributable=frozenset({"v", "tongue out"}),
+        shared=frozenset(),
+        max_tags=8,
+        name_confidence=0.5,
+        allow_unlisted_names=False,
+        bag_gated_identity=False,
+    )
+    strict = vocabulary.select(kept, {}, **common)
+    assert "tongue out" not in strict and "aqua necktie" not in strict
+    free = vocabulary.select(kept, {}, free_groups=True, **common)
+    assert {"v", "tongue out", "aqua necktie", "aqua hair"} <= set(free)
+    assert "blue hair" not in free

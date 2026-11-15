@@ -61,7 +61,11 @@ nothing else — no reorder, no trigger word, no `@no-artist` — and returns a 
 to cut from byte for byte. `--keep_tags` shields a tag from every selector, `--category_paths`
 takes literal prefixes; a write drops the stale `.variants.txt`, and the report is
 `REPLAY_SHAPES["drop_groups"]`. Correct's `--no_correct` keeps its drop too (it used to be ignored
-there). The GUI editor's **groups** view colours each tag by `tag_drop_group` through
+there).
+`--implied` (alone or beside `--groups`) also cuts a tag a more specific one already says —
+`long hair` beside `very long hair`, `bow` / `neckerchief` beside the bowtie with the same modifier
+(`captions/implied_tags.py`: suffix rule, `NON_IMPLYING_PREFIXES`, `EXTRA_IMPLIES`, `SUPERSEDED_BY`).
+A bag tag goes for a tag anywhere in the caption, a clause tag only for one in its own clause. The GUI editor's **groups** view colours each tag by `tag_drop_group` through
 `POST /api/tags/groups`, so what a tick will take is visible before the run.
 
 ## Auto-tagging (`python -m anime_tools.stages.cli.autotag_captions`)
