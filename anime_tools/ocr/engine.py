@@ -206,11 +206,9 @@ class OcrEngine:
 
         Both halves here so the thread pool does them in one hop.
         """
-        import cv2
-        import numpy as np
+        from anime_tools.ocr._io import imread
 
-        data = np.fromfile(str(image_path), dtype=np.uint8)
-        bgr = cv2.imdecode(data, cv2.IMREAD_COLOR)
+        bgr = imread(image_path)
         if bgr is None:
             return None
         return bgr, self.detector.prepare(bgr)

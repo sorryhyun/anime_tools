@@ -18,6 +18,15 @@ from pathlib import Path
 
 from anime_tools._env import models_dir, resolve_path
 
+# The Anima Tagger — our half (vocab / rules / thresholds / groups / sidecar)
+# from ``sorryhyun/anima-tagger``. The pixai checkpoint sits under ``pixai/``;
+# the repo root still holds the dbv4 one, which every anime_tools <= 0.8
+# fetches. The backbone weights are not here: they ship from their upstream
+# repo into the hub cache (:mod:`anime_tools.tagger.dbv4_meta`).
+TAGGER_HF_REPO = "sorryhyun/anima-tagger"
+TAGGER_HF_SUBFOLDER = "pixai"
+DEFAULT_TAGGER_DIR = "models/captioners/anima-tagger-pixai"
+
 # SAM 3 — gated on the Hub. The CLIs pass ``--checkpoint`` with
 # ``load_from_HF=False``, so the file must land on this path, not merely in the
 # hub cache sam3's own downloader would use.

@@ -77,3 +77,30 @@ def test_the_mask_list_is_its_own_form_kind():
     field = next(a for a in args_of(SamMaskRequest) if a.name == "masks")
     assert field.kind == "masks"
     assert field.default == [f"keep:soft:{DEFAULT_SUBJECT_PROMPT_EMBED}"]
+
+
+def test_merge_takes_a_hand_made_rgba_mask_beside_an_l_one(tmp_path):
+    """A hand-made mask saved RGBA (or RGB) is read as L: the merge is the
+    pixel-wise minimum of the two trees, written 8-bit L, not a refusal."""
+    import numpy as np
+    from PIL import Image
+
+    from anime_tools.masking.merge import run_merge_masks
+
+    sam, hand, out = tmp_path / "sam", tmp_path / "hand", tmp_path / "out"
+    for d in (sam, hand):
+        (d / "sub").mkdir(parents=True)
+    l_mask = np.full((8, 8), 255, np.uint8)
+    l_mask[:, :4] = 0
+    Image.fromarray(l_mask).save(sam / "sub" / "a_mask.png")
+    rgba = np.full((16, 16, 4), 255, np.uint8)
+    rgba[:8, :, :3] = 0  # top half painted black, at twice the size
+    Image.fromarray(rgba).save(hand / "sub" / "a_mask.png")
+
+    req = MergeMasksRequest(mask_dirs=(str(sam), str(hand)), output_dir=str(out))
+    assert run_merge_masks(req) == 1
+    with Image.open(out / "sub" / "a_mask.png") as im:
+        assert im.mode == "L" and im.size == (8, 8)
+        got = np.array(im)
+    assert (got[:, :4] == 0).all() and (got[:4] == 0).all()
+    assert (got[4:, 4:] == 255).all()

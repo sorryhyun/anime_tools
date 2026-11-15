@@ -15,9 +15,8 @@ Written by ``anime_tools/tagger/cli/vocab.py``. The schema:
 ``groups``
     :func:`anime_tools.captions.tag_groups.resolved_to_dict` output — the typed
     tag groups projected onto ``index`` slots, as
-    :class:`~anime_tools.captions.tag_groups.ResolvedGroup` dataclasses (only
-    :meth:`GroupRouter.from_vocab` turns them into tensors, keeping this module
-    torch-free). Absent for a vocab built without ``--groups``.
+    :class:`~anime_tools.captions.tag_groups.ResolvedGroup` dataclasses
+    (:func:`resolved_groups`). Absent for a vocab built without ``--groups``.
 """
 
 from __future__ import annotations

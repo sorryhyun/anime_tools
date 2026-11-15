@@ -5,7 +5,7 @@ import type { HelpArea } from "../layout";
 import type { Info, JobStatus, ModelAsset, ModelCatalog, ModelPack } from "../types";
 import { HelpToggle } from "./HelpToggle";
 import { SettingsShell } from "./SettingsShell";
-import { StatusLine } from "./StatusLine";
+import { JobActions } from "./StatusLine";
 
 /** The Models dialog: the Hub token and the weights catalog, with the download
     it started reporting under the rows. The token is the one thing OK writes,
@@ -102,25 +102,16 @@ export function SettingsModels(props: {
           </div>
         )}
       </For>
-      <div class="dlbar">
-        <button
-          type="button"
-          disabled={props.busy || !missing().length}
-          onClick={() => props.onDownload([])}
-        >
-          {missing().length
-            ? t().settings.downloadAll(missing().length)
-            : t().settings.allInstalled}
-        </button>
-        <Show when={props.downloading}>
-          <button type="button" onClick={props.onCancelDownload}>
-            {t().common.cancel}
-          </button>
-        </Show>
-        <Show when={props.progress.text}>
-          <StatusLine status={props.progress} />
-        </Show>
-      </div>
+      <JobActions
+        label={
+          missing().length ? t().settings.downloadAll(missing().length) : t().settings.allInstalled
+        }
+        disabled={props.busy || !missing().length}
+        onRun={() => props.onDownload([])}
+        running={props.downloading}
+        onCancel={props.onCancelDownload}
+        status={props.progress}
+      />
     </SettingsShell>
   );
 }

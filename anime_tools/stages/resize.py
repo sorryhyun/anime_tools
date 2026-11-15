@@ -37,36 +37,21 @@ from anime_tools.buckets import (
 # Re-exported: the defaults live in the leaf every stage request reads, so the
 # GUI's schema build does not import this module (and PIL) to read a number.
 from anime_tools.stages._options import CROP_ANCHORS, DEFAULT_CROP_ANCHOR
+
+# Re-exported: the preflight every other stage borrows lives in a PIL-free leaf.
+from anime_tools.stages._preflight import RESIZE_FIRST, resized_tree  # noqa: F401
 from anime_tools.stages._progress import make_progress
 from anime_tools.stages._report import write_stage_report
 
 if TYPE_CHECKING:
     from anime_tools.stages.requests import ResizeRequest
 
-RESIZE_FIRST = "run `make preprocess-resize` (or the Resize stage) first"
-"""What a stage says when the tree it reads has not been filled yet."""
-
-
-def resized_tree(dst: str) -> Path:
-    """``dst`` resolved against the curation home, if the tree is there.
-
-    Every stage but this one reads ``workspace/resized/`` rather than filling
-    it, so a missing tree is one preflight failure with one answer.
-    """
-    resized_dir = resolve_path(dst)
-    if not resized_dir.exists():
-        raise FileNotFoundError(
-            f"resized dir not found: {resized_dir} — {RESIZE_FIRST}"
-        )
-    return resized_dir
-
-
 MARGIN_SIDES = ("top", "right", "bottom", "left")
 
 # PNG text keys, verbatim from the trainer — its skip check reads these.
-_ANCHOR_KEY = "anima_resize_crop_anchor"
+ANCHOR_KEY = "anima_resize_crop_anchor"
 _BUCKET_RESOS_KEY = "anima_resize_bucket_resos"
-_MARGINS_KEY = "anima_resize_crop_margins"
+MARGINS_KEY = "anima_resize_crop_margins"
 # Stamped only on outputs of a source with alpha, so an output written before
 # the white composite (alpha dropped, the RGB under transparency exposed) is
 # not current and gets rewritten.
@@ -221,7 +206,7 @@ class ResizeStats:
     """``"WxH" → count`` over every image that reached the resize step."""
 
 
-def _collect_metadata(src: Image.Image) -> dict:
+def collect_metadata(src: Image.Image) -> dict:
     """Save kwargs carrying through what ``convert("RGB")`` + ``save()`` drops:
     ICC profile, raw EXIF and PNG text chunks (the ComfyUI / A1111 generation
     prompt). Best-effort per field so a malformed chunk cannot kill a worker."""
@@ -250,10 +235,10 @@ def _metadata_signature(options: ResizeOptions) -> dict[str, str]:
     if options.crop_anchor == DEFAULT_CROP_ANCHOR and not any(options.crop_margins):
         return {}
     return {
-        _ANCHOR_KEY: options.crop_anchor,
+        ANCHOR_KEY: options.crop_anchor,
         # Always empty: the trainer writes "" here too whenever it is unset.
         _BUCKET_RESOS_KEY: "",
-        _MARGINS_KEY: ",".join(f"{m:g}" for m in options.crop_margins),
+        MARGINS_KEY: ",".join(f"{m:g}" for m in options.crop_margins),
     }
 
 
@@ -277,7 +262,7 @@ def _flatten_alpha(img: Image.Image) -> Image.Image:
     return Image.alpha_composite(background, rgba).convert("RGB")
 
 
-def _oriented_size(src: Image.Image) -> tuple[int, int]:
+def oriented_size(src: Image.Image) -> tuple[int, int]:
     """``(W, H)`` as :func:`PIL.ImageOps.exif_transpose` would leave it, from the
     header alone — which is what lets an already-resized image be skipped
     without a decode.
@@ -343,7 +328,7 @@ def process_image(
 
     Nothing above that skip may decode — not the source (``exif_transpose``
     copies, and a copy loads) nor the output (``.text`` on a PNG loads) — hence
-    the header-only geometry via :func:`_oriented_size`, with the metadata read
+    the header-only geometry via :func:`oriented_size`, with the metadata read
     and the transpose *after* the skip. ``size_hint`` / ``has_alpha`` are that
     oriented size and :func:`_has_alpha` when the caller already read them.
     """
@@ -355,7 +340,7 @@ def process_image(
         if size_hint is None or has_alpha is None:
             try:
                 with Image.open(image_path) as probe:
-                    size_hint = _oriented_size(probe)
+                    size_hint = oriented_size(probe)
                     has_alpha = _has_alpha(probe)
             except Exception:  # noqa: BLE001 — let the real open below report it
                 size_hint = None
@@ -369,7 +354,7 @@ def process_image(
     with Image.open(image_path) as src:
         if _has_alpha(src):
             signature = {**_metadata_signature(options), _ALPHA_KEY: _ALPHA_FLATTEN}
-        save_kwargs = _collect_metadata(src)
+        save_kwargs = collect_metadata(src)
         img = ImageOps.exif_transpose(src)
         box = margin_box(*img.size, options.crop_margins)
         work_w, work_h = box[2] - box[0], box[3] - box[1]
@@ -407,7 +392,7 @@ def _probe(
     """
     try:
         with Image.open(image_path) as im:
-            return image_path, im.size, _oriented_size(im), _has_alpha(im), ""
+            return image_path, im.size, oriented_size(im), _has_alpha(im), ""
     except Exception as exc:  # noqa: BLE001 — one bad file must not abort the pass
         return image_path, None, None, False, str(exc)
 

@@ -615,6 +615,14 @@ _TWO_GIRLS_CAPTION = (
 )
 
 
+def _policy(**overrides):
+    """The shipped recipe's ``SelectPolicy``, with ``overrides`` applied."""
+    from anime_tools.captions.clause_vocabulary import SelectPolicy
+    from anime_tools.stages._options import PositionCaptionOptions
+
+    return SelectPolicy.of(PositionCaptionOptions(**overrides))
+
+
 def _two_girls_proposal(pipeline_bits, **option_overrides):
     """The canonical two-subject image: one name + one hair color per side."""
     from anime_tools.stages.position_captions import propose_for_image
@@ -1923,9 +1931,7 @@ def test_an_excluded_tag_cannot_ride_the_priority_path_into_a_clause(pipeline_bi
         flat_bag=frozenset({"light brown hair", "vocaloid", "maid"}),
         attributable=frozenset({"light brown hair", "maid"}),
         shared=frozenset(),
-        max_tags=8,
-        name_confidence=0.5,
-        allow_unlisted_names=False,
+        policy=_policy(),
     )
     assert tags == ["maid"]
 
@@ -2289,10 +2295,7 @@ def test_framing_binds_to_the_view_it_describes(pipeline_bits):
         flat_bag=frozenset({"full body", "underwear", "denim", "ass"}),
         attributable=frozenset({"ass focus", "underwear"}),
         shared=frozenset(),
-        max_tags=8,
-        name_confidence=0.5,
-        allow_unlisted_names=False,
-        max_novel_tags=1,
+        policy=_policy(),
     )
     assert "ass focus" in tags
 
@@ -2322,9 +2325,7 @@ def test_page_level_framing_never_binds_to_a_view(pipeline_bits):
         flat_bag=frozenset({"solo focus", "white border", "maid"}),
         attributable=frozenset({"solo focus", "white border", "maid"}),
         shared=frozenset(),
-        max_tags=8,
-        name_confidence=0.5,
-        allow_unlisted_names=False,
+        policy=_policy(),
     )
     assert tags == ["maid"]
 
@@ -2339,11 +2340,8 @@ def test_framing_survives_the_multi_view_gate(pipeline_bits):
         flat_bag=frozenset({"aqua hair", "ass", "full body"}),
         attributable=frozenset({"ass focus"}),
         shared=frozenset(),
-        max_tags=8,
-        name_confidence=0.5,
-        allow_unlisted_names=False,
+        policy=_policy(),
         view_invariant=True,
-        max_novel_tags=1,
     )
     # Hair belongs to the character and is gated; framing and the visible anatomy
     # are facts about the view.
@@ -2360,10 +2358,7 @@ def test_two_panels_of_the_same_kind_still_share_their_framing(pipeline_bits):
         flat_bag=frozenset({"denim", "ass"}),
         attributable=frozenset({"denim"}),
         shared=frozenset({"ass focus"}),
-        max_tags=8,
-        name_confidence=0.5,
-        allow_unlisted_names=False,
-        max_novel_tags=1,
+        policy=_policy(),
     )
     assert "ass focus" not in tags
 
@@ -2375,17 +2370,13 @@ def test_no_framing_restores_the_pre_change_clause(pipeline_bits):
         "flat_bag": frozenset({"full body", "underwear", "denim"}),
         "attributable": frozenset({"ass focus", "underwear"}),
         "shared": frozenset(),
-        "max_tags": 8,
-        "name_confidence": 0.5,
-        "allow_unlisted_names": False,
-        "max_novel_tags": 1,
     }
     args = (
         {"ass focus": 0.77, "underwear": 0.8, "denim": 0.6},
         {"framing": "ass focus"},
     )
-    on = vocabulary.select(*args, bind_framing=True, **kwargs)
-    off = vocabulary.select(*args, bind_framing=False, **kwargs)
+    on = vocabulary.select(*args, policy=_policy(bind_framing=True), **kwargs)
+    off = vocabulary.select(*args, policy=_policy(bind_framing=False), **kwargs)
     assert on[0] == "ass focus"
     assert "ass focus" not in off
     assert off == [t for t in on if t != "ass focus"]
@@ -2463,15 +2454,11 @@ def test_the_policy_drives_selection(pipeline_bits):
         "flat_bag": frozenset({"maid", "ass focus"}),
         "attributable": frozenset({"ass focus"}),
         "shared": frozenset(),
-        "max_tags": 8,
-        "name_confidence": 0.5,
-        "allow_unlisted_names": False,
-        "max_novel_tags": 1,
     }
     args = ({"ass focus": 0.77, "maid": 0.7}, {"framing": "ass focus"})
-    assert "ass focus" in vocabulary.select(*args, **kwargs)
+    assert "ass focus" in vocabulary.select(*args, policy=_policy(), **kwargs)
     unbound = dataclasses.replace(vocabulary, clause_groups=no_framing)
-    assert "ass focus" not in unbound.select(*args, **kwargs)
+    assert "ass focus" not in unbound.select(*args, policy=_policy(), **kwargs)
 
 
 def test_a_typo_in_the_policy_is_reported(tmp_path, caplog):
@@ -2884,7 +2871,7 @@ def test_thin_bag_keeps_names_and_moves_a_sole_trait_one_clause_lacks(
         tag_to_group={"aqua hair": "hair_color", "pink hair": "hair_color"},
     )
     kept = [{"hatsune miku": 0.9, "aqua hair": 0.9}, {"aqua hair": 0.9}]
-    common = dict(vocabulary=vocabulary, margin=0.25, thin=True)
+    common = {"vocabulary": vocabulary, "margin": 0.25, "thin": True}
     partial = plan_bag_removals(
         ("2girls", "hatsune miku", "aqua hair"),
         [["hatsune miku", "aqua hair"], []],
@@ -2931,18 +2918,18 @@ def test_free_groups_stacks_gestures_and_admits_shared_ungrouped_bag_tags(
         "aqua hair": 0.9,
         "blue hair": 0.6,
     }
-    common = dict(
-        flat_bag=frozenset(kept),
-        attributable=frozenset({"v", "tongue out"}),
-        shared=frozenset(),
-        max_tags=8,
-        name_confidence=0.5,
-        allow_unlisted_names=False,
-        bag_gated_identity=False,
+    common = {
+        "flat_bag": frozenset(kept),
+        "attributable": frozenset({"v", "tongue out"}),
+        "shared": frozenset(),
+    }
+    strict = vocabulary.select(
+        kept, {}, policy=_policy(bag_gated_identity=False), **common
     )
-    strict = vocabulary.select(kept, {}, **common)
     assert "tongue out" not in strict and "aqua necktie" not in strict
-    free = vocabulary.select(kept, {}, free_groups=True, **common)
+    free = vocabulary.select(
+        kept, {}, policy=_policy(bag_gated_identity=False, free_groups=True), **common
+    )
     assert {"v", "tongue out", "aqua necktie", "aqua hair"} <= set(free)
     assert "blue hair" not in free
 

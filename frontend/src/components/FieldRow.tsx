@@ -1,23 +1,16 @@
 import { For, Match, Switch } from "solid-js";
 import { t } from "../i18n";
-import { REPLAY_FIELD } from "../types";
 import type { Field } from "../types";
 import { MaskList } from "./MaskList";
 
-/** Group fields by argparse group, preserving order. Left out: fields bound to
-    a dataset root, a Settings stage default or the Settings `report_root` /
-    `mask_root` (the server fills them); `--device`, which the stage
-    auto-detects; and the run bar's own `--apply` / `--from_report`, since a
-    stale path in a form field would turn the next Run into a replay.
-
-    An `overridable` field is the one bound kind that stays: its `default`
-    arrives already resolved from Settings and typing over it wins for that
-    run. */
+/** Group the fields the form draws by argparse group, preserving order.
+    Which ones it draws is the server's answer (`Field.shown`): a field bound to
+    a root or a Settings value is filled server-side, `--device` is
+    auto-detected, and the run bar owns `--apply` / `--from_report`. */
 export function grouped(fields: Field[]): [string, Field[]][] {
   const m = new Map<string, Field[]>();
   for (const f of fields) {
-    if (f.dest === "apply" || f.dest === REPLAY_FIELD) continue;
-    if ((f.root || f.setting || f.report || f.mask || f.auto) && !f.overridable) continue;
+    if (!f.shown) continue;
     const g = m.get(f.group) ?? [];
     g.push(f);
     m.set(f.group, g);

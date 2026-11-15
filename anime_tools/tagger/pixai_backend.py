@@ -12,7 +12,7 @@ behind the Anima tagger contract.
   pinned ``revision``.
 
 The card duck-types :class:`~anime_tools.tagger.dbv4_backend.Dbv4Card` where
-:func:`~anime_tools.tagger.dbv4_backend.align_vocab` and the tagger read it
+:func:`~anime_tools.tagger._backbone.align_vocab` and the tagger read it
 (``name_to_col``, ``rating_cols``, ``n_classes``, ``best_thresholds``).
 """
 
@@ -28,7 +28,7 @@ from torch import nn
 
 from anime_tools._device import resolve_device
 from anime_tools._json import read_json
-from anime_tools.tagger.dbv4_backend import Dbv4Output, default_dtype
+from anime_tools.tagger._backbone import BackboneOutput, default_dtype
 from anime_tools.tagger.dbv4_meta import (
     DEFAULT_PIXAI_IMG_SIZE,
     DEFAULT_PIXAI_REPO,
@@ -159,10 +159,15 @@ class PixaiBackend:
 
     Same surface as :class:`~anime_tools.tagger.dbv4_backend.Dbv4Backend`:
     ``card``, ``d_hidden``, ``img_size``, ``preprocess``, ``forward`` /
-    ``forward_tensor`` → :class:`Dbv4Output`.
+    ``forward_tensor`` → :class:`~anime_tools.tagger._backbone.BackboneOutput`.
     """
 
     kind = "pixai"
+    feature = "attn_pool"
+    """What ``hidden`` is — stamped into the feature cache and the sidecar."""
+    preprocess_image = staticmethod(preprocess_pixai)
+    """``(PIL, size) → [3, S, S]`` — on the class so a DataLoader worker can
+    take it without the instance (and its model)."""
 
     def __init__(
         self,
@@ -231,7 +236,7 @@ class PixaiBackend:
         return model
 
     @torch.no_grad()
-    def forward_tensor(self, x01: torch.Tensor) -> Dbv4Output:
+    def forward_tensor(self, x01: torch.Tensor) -> BackboneOutput:
         """``[B, 3, S, S]`` in [0, 1] → probs + pooled feature."""
         model = self.model
         x = x01.to(self.device, dtype=torch.float32)
@@ -239,11 +244,11 @@ class PixaiBackend:
         feats = model.forward_feature(x)[-1]
         hidden = model.head_pool(feats.flatten(2).transpose(1, 2))
         logits = model.head(hidden)
-        return Dbv4Output(
+        return BackboneOutput(
             probs=logits.float().sigmoid().cpu(), hidden=hidden.float().cpu()
         )
 
     @torch.no_grad()
-    def forward(self, images) -> Dbv4Output:
+    def forward(self, images) -> BackboneOutput:
         x = torch.stack([self.preprocess(im) for im in images])
         return self.forward_tensor(x)

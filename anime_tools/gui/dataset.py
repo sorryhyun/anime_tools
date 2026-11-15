@@ -4,7 +4,7 @@ The trees it joins are keyed by the *same relative path* in each
 (:mod:`anime_tools.workspace` owns the layout):
 
 ``src``     ``<source>/<rel>``                 source image + hand-written master caption
-``master``  ``workspace/master/<rel>``         the revised master overlay (empty until Phase 2 fills it)
+``master``  ``workspace/master/<rel>``         the revised master overlay: where a master edit lands, read before ``src``
 ``dst``     ``workspace/resized/<rel>``        resized image + revised caption + ``.variants.txt`` + ``.history.txt``
 ``masks``   ``workspace/masks/<rel>``          ``{stem}_mask.png`` (nested; flat is the legacy fallback; ``<out>/masks`` when neither)
 ``out``     ``<export>/``                      the export destination, written by Export
@@ -23,454 +23,167 @@ The last rung is last because it is not a text among texts: the panel draws it a
 the diff of what changed. Only rungs marked ``editable`` can be written; editing
 the caption beside ``.variants.txt`` makes that sidecar stale, which
 :func:`write_caption` reports.
+
+This module is the façade and the listing: every name the routes and tests reach
+as ``D.<name>`` is here, re-exported from the private siblings that own a slice
+— :mod:`~anime_tools.gui._dataset_roots` (roots, reachability, the ``rel`` gate,
+the exclusion trees), :mod:`~anime_tools.gui._dataset_captions` (the ladder),
+:mod:`~anime_tools.gui._dataset_reports` (groups manifest, analysis) and
+:mod:`~anime_tools.gui._dataset_temp` (the drop area) — while the sidebar rows,
+the item panel and thumbnails live below.
 """
 
 from __future__ import annotations
 
-import base64
-import glob
-import os
-import shutil
-from collections.abc import Mapping, Sequence
-from dataclasses import dataclass, field
 from functools import lru_cache
 from io import BytesIO
 from pathlib import Path
 from typing import Any
 
 from anime_tools import workspace as WS
-from anime_tools._env import curation_home, resolve_path, workspace_dir
-from anime_tools._json import read_json
 from anime_tools._walk import (
-    IMAGE_EXTENSIONS,
     filter_paths_by_glob,
     glob_images_pathlib,
     sibling_image,
-)
-from anime_tools.captions.history import (
-    history_sidecar_path,
-    push_history,
-    read_history,
 )
 from anime_tools.captions.ocr_sidecar import (
     ocr_sidecar_path,
     read_ocr,
     usable_lines,
 )
-from anime_tools.captions.position_clauses import parse_caption, tag_spans
-from anime_tools.captions.variants import read_variants_sidecar, variants_sidecar_path
-from anime_tools.contract import is_caption_sidecar
 from anime_tools.exclude import (
-    Entry,
     ExclusionError,
-    Trees,
-    artifacts,
     exclude_one,
-    read_entries,
     restore_one,
-    write_entries,
 )
-from anime_tools.grouping.groups import MANIFEST_VERSION
-from anime_tools.gui.settings import load_settings
-from anime_tools.masking._masks import mask_name
-from anime_tools.stages._analysis import ANALYSIS_SUBDIR, analysis_paths
-
-SETTINGS_KEY = "dataset"
-DEFAULT_ROOTS = WS.DEFAULT_ROOTS
-OUTPUT_ROOTS = WS.OUTPUT_ROOTS
-EXPORT_ROOTS = WS.EXPORT_ROOTS
-
-
-@dataclass(frozen=True)
-class Rung:
-    """One rung of the caption ladder: a caption file and what may be done to it.
-
-    ``root`` names the :class:`Roots` field the file lives in. ``expand`` marks a
-    rung that is a *sidecar* of many captions rather than one: ``"variants"`` holds
-    the generated ``v0``/``v1``/``r1`` samples, ``"history"`` the versions a write
-    superseded. Each is one file, expanded into a badge apiece by
-    :func:`caption_versions`.
-    """
-
-    kind: str
-    root: str
-    editable: bool
-    expand: str | None = None
-    """``"variants"`` / ``"history"`` — the sidecar beside the caption, not the
-    caption."""
-    of: str = ""
-    """Which rung a history sidecar records the past of; its badges wear that
-    rung's name (``revised@2``)."""
-    overlay: str = ""
-    """A second root that *shadows* ``root``: read from here when it holds the
-    file, and write here always. How the master rung stays editable without
-    writing ``src`` — see :data:`CAPTION_LADDER`."""
-    dot: bool = True
-    """Whether this rung is one of the sidebar row's caption dots. The strip
-    answers "what does this image say?" at a glance, one dot per text; the
-    history rung is not a text but the record of a change, so it is a badge in
-    the panel and no dot out here. Costs the listing one stat per row less."""
-
-
-CAPTION_LADDER: tuple[Rung, ...] = (
-    Rung("master", "src", editable=True, overlay="master"),
-    Rung("revised", "dst", editable=True),
-    Rung("variants", "dst", editable=False, expand="variants"),
-    Rung("history", "dst", editable=False, expand="history", of="revised", dot=False),
+from anime_tools.gui._dataset_captions import (
+    CAPTION_KINDS,
+    CAPTION_LADDER,
+    HISTORY_OF,
+    Rung,
+    caption_paths,
+    caption_versions,
+    caption_write_path,
+    ladder_schema,
+    parsed_caption,
+    write_caption,
 )
-"""The captions of one image: the texts first, in the order a caption becomes
-them, and the record of what changed after them.
+from anime_tools.gui._dataset_reports import (
+    ANALYSIS_KINDS,
+    GROUPS_SUBPATH,
+    POSITION_SUBPATH,
+    load_analysis,
+    load_groups,
+)
+from anime_tools.gui._dataset_roots import (
+    DEFAULT_ROOTS,
+    EXPORT_ROOTS,
+    OUTPUT_ROOTS,
+    SETTINGS_KEY,
+    DatasetError,
+    Roots,
+    _rel_key,
+    dataset_bases,
+    ensure_output_dir,
+    ensure_roots,
+    excluded_entries,
+    excluded_trees,
+    item_pattern,
+    lexical,
+    owned,
+    reachable,
+    rel_for_image,
+    rel_to_home,
+    resolve_roots,
+)
+from anime_tools.gui._dataset_temp import (
+    DATASET_SPACE,
+    SPACES,
+    TEMP_SPACE,
+    clear_temp,
+    delete_temp_image,
+    save_temp_file,
+    temp_home,
+    temp_roots,
+    temp_summary,
+)
+from anime_tools.masking._mask_paths import find_mask
 
-``master`` → ``revised`` is the pipeline, and ``variants`` is the sidecar
-generated beside the second. ``history`` comes **last** even though it holds the
-oldest text of all: it is not a caption you read or write but the record of a
-change, and the panel draws it as a diff rather than as a text. Between the two
-writable rungs it read as a third one and confused them. The run bar has no
-Apply gate, so the text a run replaces survives as a badge here. The sidebar
-strip, the panel's badges and :func:`write_caption`'s guard all read this tuple.
+__all__ = [
+    "ANALYSIS_KINDS",
+    "CAPTION_KINDS",
+    "CAPTION_LADDER",
+    "DATASET_SPACE",
+    "DEFAULT_ROOTS",
+    "EXPORT_ROOTS",
+    "GROUPS_SUBPATH",
+    "HISTORY_OF",
+    "MAX_ITEMS",
+    "OUTPUT_ROOTS",
+    "POSITION_SUBPATH",
+    "SETTINGS_KEY",
+    "SPACES",
+    "TEMP_SPACE",
+    "WS",
+    "DatasetError",
+    "Roots",
+    "Rung",
+    "caption_paths",
+    "caption_versions",
+    "caption_write_path",
+    "clear_temp",
+    "dataset_bases",
+    "delete_temp_image",
+    "drawn_on",
+    "ensure_output_dir",
+    "ensure_roots",
+    "excluded_entries",
+    "excluded_trees",
+    "item_detail",
+    "item_pattern",
+    "item_rows",
+    "ladder_schema",
+    "lexical",
+    "list_items",
+    "load_analysis",
+    "load_groups",
+    "mask_path",
+    "ocr_lines",
+    "ocr_path",
+    "owned",
+    "parsed_caption",
+    "reachable",
+    "rel_for_image",
+    "rel_to_home",
+    "resolve_roots",
+    "save_temp_file",
+    "set_excluded",
+    "temp_home",
+    "temp_roots",
+    "temp_summary",
+    "thumbnail",
+    "write_caption",
+]
 
-The master rung carries an ``overlay``: ``src`` is the INPUT tree and
-**read-only for the tools** (``anime_tools.workspace``), so editing a master
-caption writes ``workspace/master/<rel>.txt`` and reads it back in preference to
-the hand-written original, which stays untouched as its own undo. Export's
-``master`` row publishes the overlay back to ``src`` — that row is the one
-consumer, and its ``is_file()`` guard is exactly "this master was edited".
-"""
-
-CAPTION_KINDS = tuple(r.kind for r in CAPTION_LADDER if r.editable)
-"""The writable rungs — what :func:`write_caption` accepts."""
-
-_SIDECAR_PATH = {
-    "variants": variants_sidecar_path,
-    "history": history_sidecar_path,
-}
-"""``Rung.expand`` → the sidecar path beside a caption."""
-
-HISTORY_OF = {r.of: r.kind for r in CAPTION_LADDER if r.expand == "history"}
-"""Editable rung → the history rung recording it, for writers that push a version
-before overwriting one. Empty for a rung the ladder gives no history."""
-
-
-def ladder_schema() -> list[dict[str, Any]]:
-    """:data:`CAPTION_LADDER` as the listing hands it to the browser.
-
-    The sidebar's dot strip is drawn from this, so it cannot come apart from
-    :func:`_row`'s ``captions`` map — both are ``Rung.dot``, which is why the
-    history rung is in neither. The ``root`` stays server-side.
-    """
-    return [{"kind": r.kind, "editable": r.editable} for r in CAPTION_LADDER if r.dot]
-
-
-GROUPS_SUBPATH = "groups/groups.json"
-"""The grouping manifest's tail under the Settings ``report_root``; the same split
-``stages.report_subpath`` makes of ``build_groups``' own ``--out`` default."""
-
-POSITION_SUBPATH = f"{WS.REPORTS_SUBDIR}/position"
-"""The position stage's report tail under the Settings ``report_root`` (the same
-split ``stages.report_subpath`` makes of its ``--report_dir`` default). Its
-per-image analysis hangs off it, and its audit phase's under ``audit/``."""
-
-ANALYSIS_KINDS: dict[str, str] = {
-    # what said it → its analysis tree under :data:`POSITION_SUBPATH`
-    "position": ANALYSIS_SUBDIR,
-    "audit": f"audit/{ANALYSIS_SUBDIR}",
-}
 
 MAX_ITEMS = 20000
 """Hard cap on one listing, and the default. Past this the answer is
 ``path_pattern``, not a bigger payload."""
 
 
-class DatasetError(ValueError):
-    """Bad root / rel path — the server turns this into a 400 or 404."""
-
-
-@dataclass(frozen=True)
-class Roots:
-    """The five dataset roots of one request, resolved and containment-checked.
-
-    Field order is :data:`DEFAULT_ROOTS`' order, which :meth:`items` walks.
-    """
-
-    src: Path
-    master: Path
-    dst: Path
-    masks: Path
-    out: Path
-    workspace: Path = field(default_factory=workspace_dir)
-    """The workspace the trees above belong to — where the trees no root names
-    live (the OCR sidecars, ``_excluded``). Not a root: nothing binds a flag to
-    it, and the temp area (:func:`temp_roots`) is the one caller that moves it."""
-
-    def items(self) -> tuple[tuple[str, Path], ...]:
-        return tuple((name, getattr(self, name)) for name in DEFAULT_ROOTS)
-
-    def as_dict(self) -> dict[str, Any]:
-        return {
-            name: {"path": rel_to_home(p), "exists": p.is_dir()}
-            for name, p in self.items()
-        }
-
-
-def lexical(path: str | Path) -> Path:
-    """``resolve_path`` with ``..`` collapsed, and nothing else.
-
-    ``normpath``, not ``resolve()``: a dataset root is routinely a symlink, and
-    following it would report the tree under a name the user never typed and
-    defeat the containment test below.
-    """
-    return Path(os.path.normpath(resolve_path(path)))
-
-
-def dataset_bases(settings: Mapping[str, Any] | None = None) -> tuple[Path, ...]:
-    """Every tree this panel may reach: the curation home, plus any dataset root
-    the **saved** settings pin outside it.
-
-    Saved only — a request's own root overrides never widen this, since a root
-    outside the home widens what may be read. Only the Settings save does that
-    (:func:`resolve_roots` with ``trusted``); every other path is checked here.
-
-    ``settings`` is the already-loaded blob, for a caller that has one: this is
-    on the path of every root a request resolves, so reading the file here is
-    one read per root on top of the caller's own.
-    """
-    home = curation_home()
-    bases = [home]
-    saved = (load_settings() if settings is None else settings).get(SETTINGS_KEY) or {}
-    for name in DEFAULT_ROOTS:
-        raw = str(saved.get(name) or "").strip()
-        if not raw:
-            continue
-        p = lexical(raw)
-        if not p.is_relative_to(home):
-            bases.append(p)
-    return tuple(bases)
-
-
-def reachable(path: str | Path, bases: Sequence[Path] | None = None) -> Path:
-    """``lexical`` + the containment rule every read enforces.
-
-    ``..`` is collapsed *before* the test: ``is_relative_to`` is purely textual,
-    so ``<home>/../elsewhere`` would otherwise sail through it.
-
-    ``bases`` is :func:`dataset_bases` already computed, for a caller checking
-    several paths against the same settings.
-    """
-    p = lexical(path)
-    bases = dataset_bases() if bases is None else bases
-    if not any(p.is_relative_to(b) for b in bases):
-        raise DatasetError(f"outside the curation home and the dataset roots: {p}")
-    return p
-
-
-def rel_to_home(p: Path) -> str:
-    """A path as the panel shows it: home-relative under the home, ``../``-style
-    for the sibling tree beside it, absolute anywhere else.
-
-    One level up only; deeper than that the absolute path says more. ``lexical``
-    collapses the ``..`` again on the way back in, so a path that goes out this
-    way comes back.
-    """
-    home = curation_home()
-    if p.is_relative_to(home):
-        return p.relative_to(home).as_posix()
-    if p != home.parent and p.is_relative_to(home.parent):
-        return "../" + p.relative_to(home.parent).as_posix()
-    return p.as_posix()
-
-
-def resolve_roots(
-    values: dict[str, Any] | None = None,
-    *,
-    trusted: bool = False,
-    bases: Sequence[Path] | None = None,
-) -> Roots:
-    """Roots from ``values``, falling back to :data:`DEFAULT_ROOTS`. Blank
-    strings fall back too, so an emptied field means "default".
-
-    ``trusted`` is the Settings **save** and nothing else: that request is what
-    *defines* :func:`dataset_bases`, so it cannot be checked against them. Every
-    other caller is.
-
-    ``bases`` is those bases already computed. Without it each of the four roots
-    recomputes them, and each of those is another read of the settings file.
-    """
-    got = values or {}
-    if not trusted and bases is None:
-        bases = dataset_bases()
-    check = lexical if trusted else (lambda raw: reachable(raw, bases))
-    paths = {}
-    for name, default in DEFAULT_ROOTS.items():
-        raw = got.get(name)
-        paths[name] = check(str(raw).strip() if raw else default)
-    return Roots(**paths)
-
-
-def owned(p: Path) -> bool:
-    """Is this a directory the panel may *create*? Only under its own home, so a
-    typo in an external root is a missing root rather than a new empty tree."""
-    return p.is_relative_to(curation_home())
-
-
-def ensure_roots(roots: Roots) -> list[str]:
-    """Create the root directories, returning the names actually made.
-
-    Every root but :data:`EXPORT_ROOTS`' (an ``out`` tree that exists should mean
-    an export happened), and only the ones this panel :func:`owned`. Called from
-    an explicit write (the Settings save) only — never from :func:`resolve_roots`,
-    so a read keeps reporting a missing root as missing.
-    """
-    made = []
-    for name, p in roots.items():
-        if name in EXPORT_ROOTS or not owned(p):
-            continue
-        if not p.is_dir():
-            p.mkdir(parents=True, exist_ok=True)
-            made.append(name)
-    return made
-
-
-def ensure_output_dir(path: str | Path) -> Path | None:
-    """Best-effort mkdir for a directory a job is about to *write* to.
-
-    ``None`` when the path is not one the panel :func:`owned` or could not be
-    created; the stage's own mkdir or failure covers that case.
-    """
-    try:
-        p = reachable(path)
-        if not owned(p):
-            return None
-        p.mkdir(parents=True, exist_ok=True)
-    except (DatasetError, OSError):
-        return None
-    return p
-
-
-def _rel_key(rel: str) -> Path:
-    """Validate a client-supplied relative image path.
-
-    Rejects absolute paths and any ``..`` segment before it is ever joined to a
-    root — ``reachable`` only catches escapes after the join, and a root can sit
-    deep enough that ``..`` stays inside the home.
-    """
-    p = Path(str(rel).replace("\\", "/"))
-    if p.is_absolute() or any(part == ".." for part in p.parts) or not p.parts:
-        raise DatasetError(f"bad relative path: {rel!r}")
-    return p
-
-
-def item_pattern(rel: str) -> str:
-    """A ``path_pattern`` matching exactly the one dataset image ``rel``.
-
-    ``<dir>/<stem>.*``, not the full filename, because the stage matches against
-    the *resized* tree where the extension may differ (:func:`sibling_image`);
-    that cannot widen the match, since ``_walk.assert_unique_stems`` refuses two
-    images sharing a stem in one folder.
-
-    fnmatch metacharacters are escaped; ``|`` cannot be, since it separates the
-    pattern's own alternatives, so such a name is refused outright.
-    """
-    p = _rel_key(rel)
-    if "|" in p.as_posix():
-        raise DatasetError(
-            f"cannot scope a run to {rel!r}: '|' separates path_pattern "
-            "alternatives, so no pattern can name this file"
-        )
-    return glob.escape(p.with_suffix("").as_posix()) + ".*"
-
-
-def rel_for_image(roots: Roots, image: str) -> str | None:
-    """The dataset rel a stage report's ``image`` names, or ``None``.
-
-    Reports name images relative to the **resized** tree, so the join back is on
-    directory + stem (:func:`sibling_image`). An image the source tree no longer
-    has is dropped rather than raising.
-    """
-    try:
-        rel = _rel_key(image)
-    except DatasetError:
-        return None
-    if (roots.src / rel).is_file():
-        return rel.as_posix()
-    p = sibling_image(roots.src / rel.parent, rel.stem)
-    return p.relative_to(roots.src).as_posix() if p else None
-
-
 def mask_path(roots: Roots, rel: Path) -> Path | None:
     """``masks/<subdir>/{stem}_mask.png``, or the legacy flat one; failing both,
     the same two under the published ``<out>/masks``.
 
-    The name comes from ``masking._masks.mask_name``. The flat fallback is this
-    reader's alone, so an older mask tree stays browsable. The published tree
-    comes last, so a mask the trainer already holds shows before any workspace
-    run, and a workspace mask still wins once one exists.
+    Each tree is ``masking._mask_paths.find_mask``, the lookup every mask reader
+    shares. The published tree comes last, so a mask the trainer already holds
+    shows before any workspace run, and a workspace mask still wins once one
+    exists.
     """
-    name = mask_name(rel.stem)
     for root in (roots.masks, roots.out / "masks"):
-        for p in (root / rel.parent / name, root / name):
-            if p.is_file():
-                return p
+        if (p := find_mask(root, rel)) is not None:
+            return p
     return None
-
-
-def caption_paths(roots: Roots, rel: Path) -> dict[str, Path]:
-    """Every rung's file to READ, keyed by rung kind; :data:`CAPTION_LADDER`
-    names the root each lives in.
-
-    A rung with an ``overlay`` resolves to it when it holds the file and to
-    ``root`` otherwise — the same overlay-first rule ``resolve_caption`` applies
-    one level down, so an edited master shadows the hand-written one. Costs the
-    master rung a second stat per row on a whole-dataset listing.
-    :func:`caption_write_path` is the write side.
-    """
-    txt = rel.with_suffix(".txt")
-    out: dict[str, Path] = {}
-    for r in CAPTION_LADDER:
-        p = getattr(roots, r.root) / txt
-        if r.overlay:
-            over = getattr(roots, r.overlay) / txt
-            if over.is_file():
-                p = over
-        out[r.kind] = _SIDECAR_PATH[r.expand](p) if r.expand else p
-    return out
-
-
-def caption_write_path(roots: Roots, rel: Path, kind: str) -> Path:
-    """Where writing rung ``kind`` lands — its ``overlay`` when it has one.
-
-    Never ``roots.src``: that is the input tree, and Export is the only thing
-    that writes it (``anime_tools.workspace``).
-    """
-    rung = next(r for r in CAPTION_LADDER if r.kind == kind)
-    return getattr(roots, rung.overlay or rung.root) / rel.with_suffix(".txt")
-
-
-def excluded_trees(roots: Roots) -> Trees:
-    """The trees an exclusion moves between, for this request's roots.
-
-    ``resized`` and ``masks`` follow the dataset roots, so a relocated root is
-    honoured; the OCR sidecars and ``_excluded`` itself are workspace trees no
-    root names, resolved the way :func:`ocr_path` resolves the first of them.
-    """
-    ws = roots.workspace
-    return Trees(
-        resized=roots.dst,
-        masks=roots.masks,
-        ocr=ws / WS.OCR_SUBDIR,
-        excluded=ws / WS.EXCLUDED_SUBDIR,
-    )
-
-
-def excluded_entries(roots: Roots) -> dict[str, Entry]:
-    """The exclusion ledger, as a 400 rather than a 500 when it will not parse.
-
-    Read once per listing: it is one small JSON file, and a stat per row would be
-    the wrong shape for a flag that is a set membership.
-    """
-    try:
-        return read_entries(excluded_trees(roots).excluded)
-    except ExclusionError as e:
-        raise DatasetError(str(e)) from e
 
 
 def set_excluded(
@@ -503,153 +216,6 @@ def set_excluded(
         **result.to_dict(),
         "row": _row(roots, rel, rel.name, excluded=rel.as_posix() in entries),
     }
-
-
-# ---- the temp area: images dropped onto the window ------------------------- #
-
-DATASET_SPACE = "dataset"
-TEMP_SPACE = "temp"
-SPACES = (DATASET_SPACE, TEMP_SPACE)
-"""What a request is answered against: the dataset the roots name, or the drop
-area under :data:`~anime_tools.workspace.TEMP`."""
-
-_TEMP_SUFFIXES = frozenset(e.lower() for e in IMAGE_EXTENSIONS) | {".txt"}
-"""What a drop may bring: images, and the captions beside them (which land as
-the drop area's hand-written masters)."""
-
-
-def temp_home() -> Path:
-    """The drop area — a curation home of its own, home-relative like every
-    default root rather than under ``ANIME_TOOLS_WORKSPACE``, so it is inside
-    what :func:`reachable` allows wherever the workspace was pointed."""
-    return curation_home() / WS.TEMP
-
-
-def temp_roots() -> Roots:
-    """:data:`DEFAULT_ROOTS` laid out again under :func:`temp_home`. Saved
-    Settings roots do not move it: they name the dataset, which this is not."""
-    home = temp_home()
-    return Roots(
-        **{name: home / default for name, default in DEFAULT_ROOTS.items()},
-        workspace=home / WS.WORKSPACE,
-    )
-
-
-def temp_summary() -> dict[str, Any]:
-    """Whether the drop area holds anything — what decides that the sidebar
-    draws its third mode at all."""
-    src = temp_roots().src
-    n = len(glob_images_pathlib(src, recursive=True)) if src.is_dir() else 0
-    return {"root": rel_to_home(src), "count": n}
-
-
-def _free_stem(directory: Path, stem: str) -> str:
-    """``stem``, or the first of ``stem_1``, ``stem_2``, … that no image or
-    caption in ``directory`` is named after.
-
-    Taken by stem and not by filename, since ``a.jpg`` dropped beside ``a.png`` is
-    a same-stem pair the stages refuse; and caselessly, since on a case-insensitive
-    filesystem ``A.png`` is ``a.png``.
-    """
-    taken = (
-        {
-            p.stem.lower()
-            for p in directory.iterdir()
-            if p.suffix.lower() in _TEMP_SUFFIXES and not is_caption_sidecar(p.name)
-        }
-        if directory.is_dir()
-        else set()
-    )
-    name, n = stem, 0
-    while name.lower() in taken:
-        n += 1
-        name = f"{stem}_{n}"
-    return name
-
-
-def save_temp_file(
-    rel_str: str, data: bytes, *, unique: bool = False
-) -> dict[str, Any]:
-    """Write one dropped file into the drop area's source tree, at the path it
-    had under whatever was dropped (a folder keeps its subfolders).
-
-    An image or a caption only; a ``{stem}.*.txt`` sidecar is refused, since in
-    the source tree it would be read as nothing at all. With ``unique`` a name
-    the folder already holds becomes ``{stem}_1``, ``{stem}_2``, … (a second drop
-    of ``a.png`` is a copy, not a replacement), and the answer's ``rel`` says
-    where it landed — which is how the browser sends the caption that came with
-    it to the same stem. Without it the file is written at ``rel`` as given.
-
-    The pick and the write have no ``await`` between them, so two uploads in
-    flight cannot both land on one free name.
-    """
-    rel = _rel_key(rel_str)
-    if rel.suffix.lower() not in _TEMP_SUFFIXES or is_caption_sidecar(rel.name):
-        raise DatasetError(f"not an image or a caption: {rel.as_posix()}")
-    src = temp_roots().src
-    if unique:
-        rel = rel.with_name(_free_stem(src / rel.parent, rel.stem) + rel.suffix)
-    dest = src / rel
-    dest.parent.mkdir(parents=True, exist_ok=True)
-    dest.write_bytes(data)
-    return {"rel": rel.as_posix(), "image": rel.suffix.lower() != ".txt"}
-
-
-def delete_temp_image(rel_str: str, report_root: str) -> dict[str, Any]:
-    """Delete one dropped image and everything the drop area holds of it.
-
-    The source image, its caption in the source and master trees with their
-    history and variants sidecars, its resized copy, mask and OCR sidecar
-    (:func:`~anime_tools.exclude.artifacts`, the same list an exclusion moves),
-    its analysis records, and — for an image that was excluded — what went to
-    ``_excluded`` along with its ledger row. All of it, because the name is free
-    again afterwards: the next drop of ``a.png`` lands as ``a.png``, and must not
-    open on the deleted one's caption or mask.
-
-    Only the drop area: the dataset's images are a curation's input, and
-    taking one out of it is an exclusion, which can be put back.
-    """
-    rel = _rel_key(rel_str)
-    roots = temp_roots()
-    if not (roots.src / rel).is_file():
-        raise DatasetError(f"not in the temp area: {rel.as_posix()}")
-    trees = excluded_trees(roots)
-    key = rel.as_posix()
-    paths: list[Path] = [roots.src / rel]
-    for root in (roots.src, roots.master):
-        caption = root / rel.with_suffix(".txt")
-        paths += [
-            caption,
-            history_sidecar_path(caption),
-            variants_sidecar_path(caption),
-        ]
-    paths += [p for _, p in artifacts(trees, key)]
-    for sub in ANALYSIS_KINDS.values():
-        paths += analysis_paths(
-            reachable(f"{report_root}/{POSITION_SUBPATH}/{sub}"), key
-        )
-    entries = excluded_entries(roots)
-    entry = entries.pop(key, None)
-    if entry is not None:
-        paths += [trees.excluded / slot for slot in entry.moved]
-    removed = 0
-    for p in paths:
-        if p.is_file():
-            p.unlink()
-            removed += 1
-    if entry is not None:
-        write_entries(trees.excluded, entries)
-    return {"rel": key, "removed": removed, "count": temp_summary()["count"]}
-
-
-def clear_temp() -> dict[str, Any]:
-    """Delete the drop area — the source tree and everything a run made from it.
-    The dataset is never under it, so this is the whole of what clearing means."""
-    removed = temp_summary()["count"]
-    home = temp_home()
-    if home.is_dir():
-        shutil.rmtree(home)
-    return {"removed": removed}
 
 
 def list_items(
@@ -748,83 +314,6 @@ def item_rows(roots: Roots, rels: list[str]) -> list[dict[str, Any]]:
     return out
 
 
-def load_analysis(report_root: str, rel: str) -> dict[str, Any]:
-    """What the position stage and its audit phase last said about one image:
-    per kind, the stage's row (``record``) and its instance label map as a PNG
-    ``data:`` URL (``mask``), or ``None`` for a kind with nothing on file.
-
-    The files are the stage's own (:mod:`anime_tools.stages._analysis`), kept
-    per image rather than per run, so a scoped Run on another image does not
-    take this one's away. An unreadable record is a 400 like an unreadable
-    groups manifest, never a silent blank.
-    """
-    key = _rel_key(rel).as_posix()
-    out: dict[str, Any] = {}
-    for kind, sub in ANALYSIS_KINDS.items():
-        root = reachable(f"{report_root}/{POSITION_SUBPATH}/{sub}")
-        record_path, mask_path = analysis_paths(root, key)
-        if not record_path.is_file():
-            out[kind] = None
-            continue
-        try:
-            record = read_json(record_path)
-        except (OSError, ValueError) as e:
-            raise DatasetError(
-                f"unreadable analysis {rel_to_home(record_path)}: {e}"
-            ) from e
-        mask = None
-        if mask_path.is_file():
-            mask = "data:image/png;base64," + base64.b64encode(
-                mask_path.read_bytes()
-            ).decode("ascii")
-        out[kind] = {"record": record, "mask": mask}
-    return out
-
-
-def load_groups(report_root: str) -> dict[str, Any]:
-    """The grouping manifest under ``report_root``, as the sidebar's group view.
-
-    Rels only: the group view joins them against the one ``/api/dataset`` listing
-    the tree view already has. A missing manifest is not an error, but one built
-    against another source tree joins onto nothing, so ``source_dir`` rides along.
-    """
-    path = reachable(f"{report_root}/{GROUPS_SUBPATH}")
-    out: dict[str, Any] = {
-        "path": rel_to_home(path),
-        "missing": True,
-        "stale": False,
-        "source_dir": "",
-        "groups": [],
-    }
-    if not path.is_file():
-        return out
-    try:
-        data = read_json(path)
-    except (OSError, ValueError) as e:
-        raise DatasetError(f"unreadable grouping manifest {out['path']}: {e}") from e
-    if not isinstance(data, dict):
-        raise DatasetError(f"not a grouping manifest: {out['path']}")
-    src = str(data.get("source_dir") or "")
-    out.update(
-        missing=False,
-        # A v1 manifest still lists usable components, so this is a "rebuild me"
-        # note rather than a reason to show nothing.
-        stale=data.get("version") != MANIFEST_VERSION,
-        source_dir=rel_to_home(Path(src)) if src else "",
-        groups=[
-            {
-                "id": int(g.get("id", i)),
-                "artist": str(g.get("artist") or ""),
-                "mean_cosine": g.get("mean_cosine"),
-                "members": [str(m) for m in (g.get("members") or [])],
-            }
-            for i, g in enumerate(data.get("groups") or [])
-            if isinstance(g, dict)
-        ],
-    )
-    return out
-
-
 def _image_info(p: Path | None) -> dict[str, Any] | None:
     """One image file as the panel gets it: where it is, how big, how many pixels."""
     if p is None or not p.is_file():
@@ -842,135 +331,6 @@ def _image_info(p: Path | None) -> dict[str, Any] | None:
     size = (info["width"], info["height"])
     info["pixels"] = size[0] * size[1] if None not in size else None
     return info
-
-
-def parsed_caption(text: str) -> dict[str, Any]:
-    """The caption grammar as JSON: flat bag + position clauses + where each tag
-    sits in the string, never a ``split(",")`` on the client.
-
-    ``spans`` lets the caption editor draw a box around every tag inside the
-    textarea by slicing the text it holds at offsets the parse handed it.
-    """
-    parsed = parse_caption(text)
-    return {
-        "flat_tags": list(parsed.flat_tags),
-        "spans": [
-            {"start": s.start, "end": s.end, "kind": s.kind, "clause": s.clause}
-            for s in tag_spans(text)
-        ],
-        "clauses": [
-            {
-                "header": c.header,
-                "prefix": c.prefix,
-                "position": c.position,
-                "tags": list(c.tags),
-            }
-            for c in parsed.clauses
-        ],
-    }
-
-
-def _version_entry(
-    kind: str,
-    *,
-    path: str,
-    exists: bool,
-    editable: bool,
-    mtime: float | None,
-    text: str,
-    rung: str = "",
-    note: str = "",
-) -> dict[str, Any]:
-    """One caption version as the panel gets it — the badge's wire shape.
-
-    ``rung`` is the :data:`CAPTION_LADDER` row this entry came out of, which is not
-    always its ``kind``: an expanded sidecar entry is called ``v1`` or ``revised@2``.
-    It defaults to ``kind``. ``note`` is the one extra line a badge can carry (a
-    history entry's who and when).
-
-    ``exists`` is told, not read off ``text``: an empty caption file is a caption
-    that says nothing, a different answer from a rung nobody ever wrote, and only
-    the second draws hollow.
-    """
-    return {
-        "kind": kind,
-        "rung": rung or kind,
-        "note": note,
-        "path": path,
-        "exists": exists,
-        "editable": editable,
-        "mtime": mtime,
-        "text": text,
-        "parsed": parsed_caption(text) if exists else None,
-    }
-
-
-def _caption_entry(
-    kind: str, p: Path, *, editable: bool, rung: str = "", note: str = ""
-) -> dict[str, Any]:
-    """One caption *file* as a version: read it, or say it is not there.
-
-    An absent file is still a (hollow) entry, so the rung keeps its place on the
-    badge row. ``editable`` is the rung's property, not the file's.
-    """
-    exists = p.is_file()
-    return _version_entry(
-        kind,
-        path=rel_to_home(p),
-        exists=exists,
-        editable=editable,
-        mtime=p.stat().st_mtime if exists else None,
-        text=p.read_text(encoding="utf-8").strip() if exists else "",
-        rung=rung,
-        note=note,
-    )
-
-
-def _expanded(rung: Rung, sidecar: Path) -> list[tuple[str, str, str]]:
-    """A sidecar rung's captions as ``(label, note, text)``, oldest first.
-
-    A variant's label *is* its name (``v0``); a history entry wears the rung's
-    name plus its sequence, with a note saying who replaced it and when.
-    """
-    if rung.expand == "history":
-        return [(e.label(rung.of), e.note(), e.text) for e in read_history(sidecar)]
-    return [(label, "", text) for label, text in read_variants_sidecar(sidecar)]
-
-
-def caption_versions(roots: Roots, rel: Path) -> list[dict[str, Any]]:
-    """Every caption this image has, oldest first — the panel's badge row.
-
-    :data:`CAPTION_LADDER` in order, with a sidecar rung *expanded* into one entry
-    per caption it holds (``v0``, ``v1``… for variants, ``revised@1``, ``revised@2``…
-    for superseded versions). An absent sidecar still contributes one hollow rung.
-    Every entry arrives parsed, since the browser may not split a caption.
-    """
-    caps = caption_paths(roots, rel)
-    out: list[dict[str, Any]] = []
-    for r in CAPTION_LADDER:
-        p = caps[r.kind]
-        rows = _expanded(r, p) if r.expand and p.is_file() else []
-        if not rows:
-            out.append(_caption_entry(r.kind, p, editable=r.editable))
-            continue
-        # The sidecar is one file however many captions it holds: stat'd and
-        # named once, with each row's text already in hand.
-        mtime = p.stat().st_mtime
-        home = rel_to_home(p)
-        out.extend(
-            _version_entry(
-                label,
-                path=home,
-                exists=True,
-                editable=False,
-                mtime=mtime,
-                text=text,
-                rung=r.kind,
-                note=note,
-            )
-            for label, note, text in rows
-        )
-    return out
 
 
 def ocr_lines(roots: Roots, rel: Path) -> list[dict[str, Any]]:
@@ -1042,43 +402,6 @@ def item_detail(roots: Roots, rel_str: str) -> dict[str, Any]:
         "ocr": ocr_lines(roots, rel),
         "ocr_base": _image_info(drawn_on(roots, rel, ocr_path(roots, rel))),
     }
-
-
-def write_caption(roots: Roots, rel_str: str, kind: str, text: str) -> dict[str, Any]:
-    """Write one caption file. The ladder's editable rungs only.
-
-    A caption is a single line by contract, so newlines fold to spaces. An empty
-    body is refused rather than treated as a delete. A hand edit pushes history
-    like a stage run does, for the rungs :data:`HISTORY_OF` gives one — the
-    master rung has none because it does not need one: the edit goes to the
-    ``workspace/master/`` overlay and the hand-written original stays put.
-
-    The answer carries the whole ladder back under ``versions``, not just the
-    entry written: the push above *creates a rung* (``revised@1``), and a caller
-    that folded one entry into the row it already had could never show it.
-    """
-    if kind not in CAPTION_KINDS:
-        raise DatasetError(f"not an editable caption: {kind!r}")
-    rel = _rel_key(rel_str)
-    if not (roots.src / rel).is_file():
-        raise DatasetError(f"not in the dataset: {rel.as_posix()}")
-    body = " ".join(str(text).split())
-    if not body:
-        raise DatasetError("refusing to write an empty caption")
-
-    caps = caption_paths(roots, rel)
-    p = caption_write_path(roots, rel, kind)
-    if kind in HISTORY_OF and p.is_file():
-        push_history(p, p.read_text(encoding="utf-8").strip(), by="edit")
-    p.parent.mkdir(parents=True, exist_ok=True)
-    p.write_text(body, encoding="utf-8")
-
-    entry = _caption_entry(kind, p, editable=True)
-    # The sidecar was generated from the previous revised text, so its v0 no
-    # longer matches what the TE step would encode.
-    entry["variants_stale"] = kind == "revised" and caps["variants"].is_file()
-    entry["versions"] = caption_versions(roots, rel)
-    return entry
 
 
 @lru_cache(maxsize=512)

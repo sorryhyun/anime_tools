@@ -19,7 +19,7 @@ from fastapi import APIRouter, HTTPException, Request
 from anime_tools._env import curation_home, resolve_path
 from anime_tools.gui import dataset as D
 from anime_tools.gui import nativepick as NP
-from anime_tools.gui._context import is_loopback
+from anime_tools.gui._context import found, is_loopback
 
 router = APIRouter()
 
@@ -31,6 +31,11 @@ def _within(p: Path) -> bool:
     except D.DatasetError:
         return False
     return True
+
+
+def _home(_path: str) -> Path:
+    """A blank path lists the curation home."""
+    return curation_home()
 
 
 def _start_dir(path: str) -> Path | None:
@@ -93,12 +98,7 @@ async def reveal_path(request: Request) -> dict[str, Any]:
     if not is_loopback(request):
         raise HTTPException(403, "not this machine")
     body = await request.json()
-    try:
-        p = D.reachable(str(body.get("path") or ""))
-    except D.DatasetError as e:
-        raise HTTPException(404, "not found") from e
-    if not p.exists():
-        raise HTTPException(404, "not found")
+    p = found(str(body.get("path") or ""))
     # The desktop returns at once, but a cold file manager may not; the
     # thread keeps a slow launch off the loop.
     return {"revealed": await asyncio.to_thread(NP.reveal, p)}
@@ -114,16 +114,11 @@ def ls(request: Request, path: str = "") -> dict[str, Any]:
     it stays inside ``D.dataset_bases``.
     """
     local = is_loopback(request)
-    try:
-        p = (
-            (D.lexical(path) if local else D.reachable(path))
-            if path
-            else curation_home()
-        )
-    except D.DatasetError as e:
-        raise HTTPException(404, "not found") from e
-    if not p.is_dir():
-        raise HTTPException(404, "not found")
+    p = found(
+        path,
+        Path.is_dir,
+        resolve=(D.lexical if local else D.reachable) if path else _home,
+    )
     entries = sorted(p.iterdir(), key=lambda e: (not e.is_dir(), e.name.lower()))
     parent = p.parent
     return {

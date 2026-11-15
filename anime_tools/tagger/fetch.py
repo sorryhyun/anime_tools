@@ -1,8 +1,8 @@
 """Getting a tagger checkpoint onto disk — torch-free.
 
 Two ensures, both idempotent and both safe to call before anything is loaded:
-:func:`ensure_tagger_checkpoint` for the checkpoint dir itself (``config.json``
-decides which file set is required), and :func:`ensure_tagger_backbone` for the
+:func:`ensure_tagger_checkpoint` for the checkpoint dir itself (the catalog's
+``tagger`` row, through :func:`anime_tools.downloads.ensure`), and :func:`ensure_tagger_backbone` for the
 upstream backbone weights, which never land in the checkpoint dir at all —
 they live in the HF hub cache (the gated dbv4 one under the user's own token).
 
@@ -15,16 +15,12 @@ from __future__ import annotations
 
 import logging
 import os
-import shutil
 from pathlib import Path
 
 from anime_tools.tagger.dbv4_meta import (
-    DBV4_OPTIONAL_FILES,
     DBV4_REQUIRED_FILES,
     TAGGER_HF_REPO,
     TAGGER_HF_SUBFOLDER,
-    TAGGER_OPTIONAL_FILES,
-    TAGGER_REQUIRED_FILES,
     backend_of,
 )
 
@@ -36,8 +32,8 @@ logger = logging.getLogger(__name__)
 def is_backbone_dir(ckpt_dir: Path) -> bool:
     """Does the checkpoint at ``ckpt_dir`` name a known backbone (pixai / dbv4)?
 
-    The package's one answer to the question, since it decides which file set is
-    required and whether a backbone has to be fetched. An unreadable or absent
+    The package's one answer to the question, since it decides whether a
+    backbone has to be fetched. An unreadable or absent
     ``config.json`` is False rather than an error: the caller is about to fetch.
     """
     return backend_of(ckpt_dir) is not None
@@ -52,67 +48,24 @@ def ensure_tagger_checkpoint(
 ) -> Path:
     """Fetch the tagger checkpoint into ``ckpt_dir`` if any required file is missing.
 
-    Files are flattened into ``ckpt_dir`` regardless of source layout; optional
-    files are best-effort. With ``backbone=True`` a backbone-backed checkpoint
-    also runs :func:`ensure_tagger_backbone`, so the upstream weights are
-    fetched here rather than lazily on the first predict.
+    The fetch is the catalog's ``tagger`` row re-pointed at ``ckpt_dir`` (and
+    ``repo`` / ``subfolder``), so files are flattened the way the Models pane
+    lands them; optional files are best-effort. With ``backbone=True`` a
+    backbone-backed checkpoint also runs :func:`ensure_tagger_backbone`, so the
+    upstream weights are fetched here rather than lazily on the first predict.
     """
+    from anime_tools.downloads import ensure
+
     ckpt_dir = Path(ckpt_dir)
-    if all((ckpt_dir / f).exists() for f in TAGGER_REQUIRED_FILES):
-        return ckpt_dir
-    if all((ckpt_dir / f).exists() for f in DBV4_REQUIRED_FILES) and is_backbone_dir(
-        ckpt_dir
-    ):
-        if backbone:
-            ensure_tagger_backbone(ckpt_dir)
-        return ckpt_dir
-    from huggingface_hub.utils import EntryNotFoundError
-
-    from anime_tools._hf import hf_download
-
-    logger.info(
-        "AnimaTagger: %s missing required files — fetching %s%s (one-time).",
-        ckpt_dir,
-        repo,
-        f"/{subfolder}" if subfolder else "",
-    )
-    ckpt_dir.mkdir(parents=True, exist_ok=True)
-
-    def _fetch_flat(fname: str) -> Path:
-        repo_path = f"{subfolder}/{fname}" if subfolder else fname
-        downloaded = Path(
-            hf_download(
-                what="AnimaTagger weights",
-                repo_id=repo,
-                filename=repo_path,
-                local_dir=str(ckpt_dir),
-            )
+    if not all((ckpt_dir / f).exists() for f in DBV4_REQUIRED_FILES):
+        logger.info(
+            "AnimaTagger: %s missing required files — fetching %s%s (one-time).",
+            ckpt_dir,
+            repo,
+            f"/{subfolder}" if subfolder else "",
         )
-        dest = ckpt_dir / fname
-        if downloaded.resolve() != dest.resolve():
-            dest.parent.mkdir(parents=True, exist_ok=True)
-            shutil.move(str(downloaded), str(dest))
-        return dest
-
-    # config.json first: it decides which file set is required.
-    _fetch_flat("config.json")
-    if is_backbone_dir(ckpt_dir):
-        required, optional = DBV4_REQUIRED_FILES, DBV4_OPTIONAL_FILES
-    else:
-        required, optional = TAGGER_REQUIRED_FILES, TAGGER_OPTIONAL_FILES
-    for fname in required:
-        if fname != "config.json":
-            _fetch_flat(fname)
-    for fname in optional:
-        if (ckpt_dir / fname).exists():
-            continue
-        try:
-            _fetch_flat(fname)
-        except (EntryNotFoundError, FileNotFoundError):
-            logger.debug("optional tagger file %s not present on %s", fname, repo)
-    if subfolder and (ckpt_dir / subfolder).is_dir():
-        # local_dir kept the repo's subfolder layout; the files were moved out.
-        shutil.rmtree(ckpt_dir / subfolder, ignore_errors=True)
+    # Logged, not printed: autotag_server's stdout is a line protocol.
+    ensure("tagger", dest=ckpt_dir, repo=repo, subfolder=subfolder, log=logger.info)
     if backbone and is_backbone_dir(ckpt_dir):
         ensure_tagger_backbone(ckpt_dir)
     return ckpt_dir

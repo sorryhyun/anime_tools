@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from anime_tools._walk import IMAGE_EXTENSIONS
+from anime_tools._walk import IMAGE_EXTENSIONS, sibling_image
 
 # Count-tag detection and people-count bucketing; re-exported for the CLI modes.
 from anime_tools.captions.taxonomy import (
@@ -38,9 +38,6 @@ IMAGE_EXTS: tuple[str, ...] = _PREFERRED + tuple(
 
 
 def find_image_for_caption(caption_path: Path) -> Path | None:
-    """Return the sibling image file matching ``{stem}.<ext>``, or None."""
-    for ext in IMAGE_EXTS:
-        candidate = caption_path.with_suffix(ext)
-        if candidate.exists():
-            return candidate
-    return None
+    """Return the sibling image file matching ``{stem}.<ext>``, or None —
+    :func:`~anime_tools._walk.sibling_image` in :data:`IMAGE_EXTS` order."""
+    return sibling_image(caption_path.parent, caption_path.stem, IMAGE_EXTS)

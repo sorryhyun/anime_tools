@@ -28,6 +28,7 @@ __all__ = [
     "EXPORT_CAP_TOKENS",
     "EXTRA_CHARACTER",
     "MULTIPLE_VIEWS",
+    "TAG_CSV_HELP",
     "PositionCaptionOptions",
 ]
 
@@ -59,6 +60,13 @@ DEFAULT_BATCH_SIZE = 8
 """Images per tagger forward. The backbone is happiest with a batch and the walk
 has to decode the next image anyway; eight is small enough that the whole batch's
 decoded pixels are nothing next to the weights."""
+
+# --- the text stages' tag KB (``captions/correction.py::resolve_tag_csv``) -----
+
+TAG_CSV_HELP = (
+    "danbooru_tags_classified.csv path (default: the curation home's models/ lookup)"
+)
+"""``--tag_csv``, shared by Correct and Tag groups (``requests.TagCsvRequest``)."""
 
 # --- multiview audit (``stages/multiview_audit.py``) -------------------------
 

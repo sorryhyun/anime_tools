@@ -21,6 +21,23 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from anime_tools._env import resolve_path
+from anime_tools._json import read_json
+
+STAGE_JOB = "stage"
+DOWNLOAD_JOB = "download"
+UPDATE_JOB = "update"
+JOB_KINDS = (STAGE_JOB, DOWNLOAD_JOB, UPDATE_JOB)
+"""What a job *is*, carried on it as :attr:`Job.kind` — a stage run (the dock
+follows it), a weights download (the Models dialog), or the self-update (the
+Update dialog). The browser adopts a job it did not start by this, never by
+parsing its name."""
+
+
+class JobBusy(RuntimeError):
+    """The single job slot is taken. The app answers it as a 409 wherever a
+    route starts a job, so no route catches it itself."""
+
 
 @dataclass(frozen=True)
 class Step:
@@ -59,6 +76,14 @@ class Job:
     """Which trees the run was over (``gui.dataset.SPACES``) — what its report is
     read back against, since a drop-area run names rels the dataset may not have."""
     cancelled: bool = False
+    kind: str = STAGE_JOB
+    """One of :data:`JOB_KINDS`."""
+    ids: list[str] = field(default_factory=list)
+    """What the job was asked for, by its own ids: a download's model rows
+    (``[]`` = every missing one), an update's tag (``[]`` = the latest), nothing
+    for a stage."""
+    _written: list[str] | None = field(default=None, repr=False)
+    _written_read: bool = field(default=False, repr=False)
     _proc: subprocess.Popen | None = field(default=None, repr=False)
     _cond: threading.Condition = field(default_factory=threading.Condition, repr=False)
 
@@ -100,7 +125,32 @@ class Job:
             "apply": self.apply,
             "space": self.space,
             "values": self.values,
+            "kind": self.kind,
+            "ids": self.ids,
+            "written": self.written,
         }
+
+    @property
+    def written(self) -> list[str] | None:
+        """The images a finished run's report says it wrote (its top-level
+        ``written`` list), or ``None`` — still running, no report, or a report
+        that names no such list. What the page re-stats after a run instead of
+        re-walking the tree, carried here so it never fetches the report itself.
+
+        Read once, after the job ends: the report is not rewritten after that.
+        """
+        if self.exit_code is None or not self.report_path:
+            return None
+        if not self._written_read:
+            self._written_read = True
+            try:
+                got = read_json(resolve_path(self.report_path))
+            except (OSError, ValueError):
+                got = None
+            w = got.get("written") if isinstance(got, dict) else None
+            if isinstance(w, list) and all(isinstance(x, str) for x in w):
+                self._written = w
+        return self._written
 
     @property
     def total_lines(self) -> int:
@@ -147,17 +197,22 @@ class JobManager:
         apply: bool = False,
         space: str = "dataset",
         env: dict[str, str] | None = None,
+        kind: str = STAGE_JOB,
+        ids: Sequence[str] = (),
     ) -> Job:
         """Queue a job's steps into the single slot and start pumping them.
 
         ``steps`` runs in order, the stage itself last; a non-zero step ends the
-        job with that code and the rest never start.
+        job with that code and the rest never start. :class:`JobBusy` while
+        another job holds the slot.
         """
         if not steps:
             raise ValueError("a job needs at least one step")
+        if kind not in JOB_KINDS:
+            raise ValueError(f"unknown job kind: {kind!r}")
         with self._lock:
             if self.running is not None:
-                raise RuntimeError(f"job {self.running.id} is still running")
+                raise JobBusy(f"job {self.running.id} is still running")
             job = Job(
                 id=uuid.uuid4().hex[:12],
                 stage=stage,
@@ -167,6 +222,8 @@ class JobManager:
                 values=values or {},
                 apply=apply,
                 space=space,
+                kind=kind,
+                ids=list(ids),
             )
             self.jobs[job.id] = job
         child_env = {

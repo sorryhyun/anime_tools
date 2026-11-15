@@ -427,11 +427,9 @@ def scan_cache_coverage(
     }
 
 
-def cmd_build_vocab(args: argparse.Namespace) -> None:
-    out_dir = Path(args.out_dir)
-    out_dir.mkdir(parents=True, exist_ok=True)
-
-    rules_src = Path(args.rules)
+def _load_checked_rules(rules_src: Path) -> tr.TagRules:
+    """``rules.yaml`` loaded, summarised to the log, and its
+    ``category_overrides`` validated (``SystemExit`` on a bad entry)."""
     rules = tr.load_rules(rules_src)
     logger.info(
         "rules: %d replacements, %d aliases, %d remove, %d dedup base tags, "
@@ -456,6 +454,128 @@ def cmd_build_vocab(args: argparse.Namespace) -> None:
             "category_overrides targets: %s",
             {k: target_counts[k] for k in sorted(target_counts)},
         )
+    return rules
+
+
+def _derive_groups(
+    args: argparse.Namespace, vocab: dict, index, rules, out_dir: Path, groups_src
+) -> tuple[Path | None, tg.TagGroups | None]:
+    """``build_vocab --derive_groups``: derive taxonomy groups, merge them onto
+    ``groups_src`` (kept verbatim) into ``out_dir/groups.yaml``, and answer
+    ``(the groups source to use, the merged groups as loaded)`` — or
+    ``(groups_src, None)`` unchanged when the tag KB is missing."""
+    from anime_tools.captions.correction import (
+        find_tag_csv,
+        load_tag_knowledge_base,
+    )
+
+    from .derive_groups import (
+        derive_from_args,
+        solo_sets_from_index,
+        write_merged_groups,
+    )
+
+    csv_path = (
+        Path(args.tag_cache)
+        if str(args.tag_cache).lower().endswith(".csv")
+        else find_tag_csv()
+    )
+    if csv_path is None or not Path(csv_path).exists():
+        logger.warning(
+            "derive_groups on but danbooru_tags_classified.csv KB not found "
+            "(set --tag_cache to it or place it under models/); skipping "
+            "derivation — using --groups as-is"
+        )
+    else:
+        rows, _unmatched, _n_general = derive_from_args(
+            args,
+            vocab,
+            load_tag_knowledge_base(csv_path),
+            rules,
+            solo_sets_from_index(index),
+            source="this build's caption scan",
+        )
+        derived_path = out_dir / "groups.yaml"
+        merged = write_merged_groups(
+            rows,
+            derived_path,
+            # Preserve --groups verbatim if it exists; else merge onto nothing.
+            groups_src if (groups_src and groups_src.exists()) else None,
+            min_group_size=args.min_group_size,
+        )
+        return derived_path, merged
+    return groups_src, None
+
+
+def _attach_groups(vocab: dict, groups: tg.TagGroups, groups_src: Path) -> tg.TagGroups:
+    """Resolve ``groups`` against the kept vocab into ``vocab["groups"]``:
+    ``$category:`` markers expanded, one sentinel slot appended per sentinel
+    group, the result logged. Answers the expanded groups — what the
+    checkpoint's ``groups.yaml`` snapshot carries."""
+    name_to_cat = {t["name"]: str(t.get("category", "general")) for t in vocab["tags"]}
+    # ``$category:<cat>`` member markers expand against the kept vocab —
+    # must happen before resolve AND before the snapshot write below, so
+    # the shipped groups.yaml carries concrete names for inference.
+    groups = tg.expand_category_members(groups, name_to_cat)
+    # One synthetic "<none:group>" tag slot per sentinel group, appended
+    # after every real tag so existing indices stay stable. Category inherits
+    # the member majority; freq=0 — the slot never appears in captions.
+    n_sentinels = 0
+    for g in groups.groups:
+        if not (g.sentinel and g.mode in ("softmax", "softmax_when_solo")):
+            continue
+        member_cats = Counter(name_to_cat[t] for t in g.tags if t in name_to_cat)
+        vocab["tags"].append(
+            {
+                "name": tg.sentinel_tag_name(g.name),
+                "index": len(vocab["tags"]),
+                "category": (
+                    member_cats.most_common(1)[0][0] if member_cats else "general"
+                ),
+                "freq": 0,
+                "median_pos": 999.0,
+                "sentinel_for": g.name,
+            }
+        )
+        n_sentinels += 1
+    if n_sentinels:
+        logger.info("appended %d sentinel tag slot(s) for typed groups", n_sentinels)
+    tag_to_idx = {t["name"]: t["index"] for t in vocab["tags"]}
+    resolved, dropped = tg.resolve_groups(groups, tag_to_idx)
+    vocab["groups"] = tg.resolved_to_dict(resolved)
+    vocab["groups_source_path"] = str(groups_src.resolve())
+    logger.info(
+        "groups: %d typed groups, %d tag/escape names dropped (not_in_vocab)",
+        len(resolved),
+        len(dropped),
+    )
+    for g in resolved:
+        n_drop = len(g.tag_names) < sum(1 for _ in groups.by_name(g.name).tags)
+        logger.info(
+            "  %-14s mode=%-18s n_tags=%3d n_escape=%2d%s",
+            g.name,
+            g.mode,
+            len(g.tag_indices),
+            len(g.escape_indices),
+            "  (some tags dropped)" if n_drop else "",
+        )
+    if dropped:
+        sample = list(dropped)[:10]
+        logger.info(
+            "first %d dropped: %s%s",
+            len(sample),
+            sample,
+            " …" if len(dropped) > len(sample) else "",
+        )
+    return groups
+
+
+def cmd_build_vocab(args: argparse.Namespace) -> None:
+    out_dir = Path(args.out_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    rules_src = Path(args.rules)
+    rules = _load_checked_rules(rules_src)
 
     roots = [Path(r) for r in args.caption_roots]
     cap_paths = find_caption_files(roots)
@@ -505,107 +625,12 @@ def cmd_build_vocab(args: argparse.Namespace) -> None:
     # one this function needs, so it is carried here.
     merged: tg.TagGroups | None = None
     if getattr(args, "derive_groups", False):
-        from anime_tools.captions.correction import (
-            find_tag_csv,
-            load_tag_knowledge_base,
+        groups_src, merged = _derive_groups(
+            args, vocab, index, rules, out_dir, groups_src
         )
-
-        from .derive_groups import (
-            derive_from_args,
-            solo_sets_from_index,
-            write_merged_groups,
-        )
-
-        csv_path = (
-            Path(args.tag_cache)
-            if str(args.tag_cache).lower().endswith(".csv")
-            else find_tag_csv()
-        )
-        if csv_path is None or not Path(csv_path).exists():
-            logger.warning(
-                "derive_groups on but danbooru_tags_classified.csv KB not found "
-                "(set --tag_cache to it or place it under models/); skipping "
-                "derivation — using --groups as-is"
-            )
-        else:
-            rows, _unmatched, _n_general = derive_from_args(
-                args,
-                vocab,
-                load_tag_knowledge_base(csv_path),
-                rules,
-                solo_sets_from_index(index),
-                source="this build's caption scan",
-            )
-            derived_path = out_dir / "groups.yaml"
-            merged = write_merged_groups(
-                rows,
-                derived_path,
-                # Preserve --groups verbatim if it exists; else merge onto nothing.
-                groups_src if (groups_src and groups_src.exists()) else None,
-                min_group_size=args.min_group_size,
-            )
-            groups_src = derived_path
     if groups_src is not None and groups_src.exists():
         groups = merged if merged is not None else tg.load_groups(groups_src)
-        name_to_cat = {
-            t["name"]: str(t.get("category", "general")) for t in vocab["tags"]
-        }
-        # ``$category:<cat>`` member markers expand against the kept vocab —
-        # must happen before resolve AND before the snapshot write below, so
-        # the shipped groups.yaml carries concrete names for inference.
-        groups = tg.expand_category_members(groups, name_to_cat)
-        # One synthetic "<none:group>" tag slot per sentinel group, appended
-        # after every real tag so existing indices stay stable. Category inherits
-        # the member majority; freq=0 — the slot never appears in captions.
-        n_sentinels = 0
-        for g in groups.groups:
-            if not (g.sentinel and g.mode in ("softmax", "softmax_when_solo")):
-                continue
-            member_cats = Counter(name_to_cat[t] for t in g.tags if t in name_to_cat)
-            vocab["tags"].append(
-                {
-                    "name": tg.sentinel_tag_name(g.name),
-                    "index": len(vocab["tags"]),
-                    "category": (
-                        member_cats.most_common(1)[0][0] if member_cats else "general"
-                    ),
-                    "freq": 0,
-                    "median_pos": 999.0,
-                    "sentinel_for": g.name,
-                }
-            )
-            n_sentinels += 1
-        if n_sentinels:
-            logger.info(
-                "appended %d sentinel tag slot(s) for typed groups", n_sentinels
-            )
-        tag_to_idx = {t["name"]: t["index"] for t in vocab["tags"]}
-        resolved, dropped = tg.resolve_groups(groups, tag_to_idx)
-        vocab["groups"] = tg.resolved_to_dict(resolved)
-        vocab["groups_source_path"] = str(groups_src.resolve())
-        logger.info(
-            "groups: %d typed groups, %d tag/escape names dropped (not_in_vocab)",
-            len(resolved),
-            len(dropped),
-        )
-        for g in resolved:
-            n_drop = len(g.tag_names) < sum(1 for _ in groups.by_name(g.name).tags)
-            logger.info(
-                "  %-14s mode=%-18s n_tags=%3d n_escape=%2d%s",
-                g.name,
-                g.mode,
-                len(g.tag_indices),
-                len(g.escape_indices),
-                "  (some tags dropped)" if n_drop else "",
-            )
-        if dropped:
-            sample = list(dropped)[:10]
-            logger.info(
-                "first %d dropped: %s%s",
-                len(sample),
-                sample,
-                " …" if len(dropped) > len(sample) else "",
-            )
+        groups = _attach_groups(vocab, groups, groups_src)
     else:
         vocab["groups"] = []
         vocab["groups_source_path"] = None
@@ -660,10 +685,17 @@ def cmd_build_vocab(args: argparse.Namespace) -> None:
         manifest["dropped_no_invocab_tags"],
     )
 
+    _print_summary(vocab, split, manifest, miss_rate, args.min_freq)
+
+
+def _print_summary(
+    vocab: dict, split: dict, manifest: dict, miss_rate: float, min_freq: int
+) -> None:
+    """The closing table ``build_vocab`` prints to stdout."""
     print()
     print(f"  caption stems indexed:  {vocab['n_captions_seen']}")
     print(f"  unique tags seen:       {vocab['n_unique_tags_seen']}")
-    print(f"  vocab size (≥{args.min_freq}):       {vocab['n_tags_kept']}")
+    print(f"  vocab size (≥{min_freq}):       {vocab['n_tags_kept']}")
     print(f"  dropped (low-freq):     {vocab['n_tags_dropped_lowfreq']}")
     print(f"  cache hit rate:         {vocab['cache_hit_rate']}")
     print("  category counts:")

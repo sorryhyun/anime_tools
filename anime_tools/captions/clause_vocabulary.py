@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Mapping
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, fields
 from functools import cache
 from pathlib import Path
 
@@ -126,6 +126,33 @@ FREE_GROUPS_EXCLUSIVE = frozenset({"hair_color", "eye_color"})
 
 
 @dataclass(frozen=True)
+class SelectPolicy:
+    """The per-pass knobs of :meth:`ClauseVocabulary.select`.
+
+    Every field is named after the ``PositionCaptionOptions`` field it is read
+    from, and has no default of its own: :meth:`of` copies them, so a new knob
+    is a field here plus its use in ``select`` — the call site never changes,
+    and the defaults stay spelled once, in ``stages/_options.py``.
+    """
+
+    max_clause_tags: int
+    max_novel_tags: int
+    name_confidence: float
+    allow_unlisted_names: bool
+    discriminative_only: bool
+    bag_gated_identity: bool
+    bind_framing: bool
+    bind_view_anatomy: bool
+    free_groups: bool
+
+    @classmethod
+    def of(cls, options: object) -> SelectPolicy:
+        """The policy an options object carries (duck-typed: ``captions`` does
+        not import ``stages``)."""
+        return cls(**{f.name: getattr(options, f.name) for f in fields(cls)})
+
+
+@dataclass(frozen=True)
 class ClauseVocabulary:
     """Which tags may enter a clause, and in what order.
 
@@ -176,23 +203,17 @@ class ClauseVocabulary:
         flat_bag: frozenset[str],
         attributable: frozenset[str],
         shared: frozenset[str],
-        max_tags: int,
-        name_confidence: float,
-        allow_unlisted_names: bool,
-        discriminative_only: bool = True,
+        policy: SelectPolicy,
         allow_identity: bool = True,
-        bag_gated_identity: bool = True,
         view_invariant: bool = False,
-        bind_framing: bool = True,
-        bind_view_anatomy: bool = True,
-        max_novel_tags: int = 1,
-        free_groups: bool = False,
     ) -> list[str]:
         """Clause tags for one crop, ordered most-disambiguating first.
 
         ``kept``/``groups`` = crop tagger output; ``flat_bag`` = curated caption
         (what's in the image; the crop only decides *where*); ``attributable`` =
         tags only this crop kept; ``shared`` = tags every crop kept.
+        ``policy`` is the pass's knobs (:class:`SelectPolicy`); ``allow_identity``
+        and ``view_invariant`` are facts about this crop and its image.
 
         Candidates are ranked once, admitted bag-first then up to
         ``max_novel_tags`` novel ones; a novel tag can never later be *moved*
@@ -212,12 +233,18 @@ class ClauseVocabulary:
         kept, not only one this crop alone kept.
         """
         cfg = self.clause_groups
+        discriminative_only = policy.discriminative_only
+        bag_gated_identity = policy.bag_gated_identity
+        bind_framing = policy.bind_framing
+        free_groups = policy.free_groups
+        name_confidence = policy.name_confidence
+        max_tags = policy.max_clause_tags
         out: list[str] = []
         seen: set[str] = set()
         taken_groups: set[str] = set()
         blocked = shared if discriminative_only else frozenset()
         invariant_groups = cfg.view_invariant
-        if not bind_view_anatomy:
+        if not policy.bind_view_anatomy:
             invariant_groups = invariant_groups | cfg.view_anatomy
         # Gated groups the caption has already spoken for.
         bag_members = (
@@ -276,7 +303,7 @@ class ClauseVocabulary:
             )
         )
         for name in names:
-            if allow_unlisted_names or name in flat_bag:
+            if policy.allow_unlisted_names or name in flat_bag:
                 candidates.append(name)
                 break  # one identity per subject
 
@@ -324,7 +351,7 @@ class ClauseVocabulary:
 
         # ---- Admit: the bag first, then a bounded number of novel tags ------
         rank = {tag: i for i, tag in enumerate(candidates)}
-        novel_budget = max(0, max_novel_tags)
+        novel_budget = max(0, policy.max_novel_tags)
         for reuse_pass in (True, False):
             for tag in candidates:
                 if len(out) >= max_tags:

@@ -42,3 +42,16 @@ def test_keep_shields_and_untouched_caption_is_byte_identical():
     text = "1girl,  long hair, very long hair"
     assert drop_implied_tags(text, keep=["long hair"]).text == text
     assert drop_implied_tags("1girl,  smile").text == "1girl,  smile"
+
+
+def test_a_newline_separated_caption_is_cut_per_tag():
+    """A raw newline separates tags, so a one-tag-per-line master is cut like
+    its comma form."""
+    out = drop_implied_tags("1girl\nlong hair\nvery long hair")
+    assert out.text == "1girl, very long hair"
+    assert out.dropped_tags == ("long hair",)
+
+
+def test_keep_is_keyed_on_normalize_tag():
+    text = "1girl, long_hair, very long hair"
+    assert drop_implied_tags(text, keep=["Long Hair"]).text == text

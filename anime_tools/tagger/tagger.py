@@ -33,8 +33,7 @@ from anime_tools.captions import tag_groups as tg
 from anime_tools.captions import tag_rules as tr
 from anime_tools.captions.taxonomy import classify_people, is_solo_names
 from anime_tools.captions.vocab_io import load_vocab
-from anime_tools.tagger.backends import Backend, build_backend
-from anime_tools.tagger.dbv4_backend import (
+from anime_tools.tagger._backbone import (
     UNSUPPORTED_LOGIT,
     SidecarHead,
     align_vocab,
@@ -42,6 +41,7 @@ from anime_tools.tagger.dbv4_backend import (
     probs_to_logits,
     rename_recovery_from_rules,
 )
+from anime_tools.tagger.backends import Backend, build_backend
 
 # Re-exported from the three torch-free leaves; callers import them from here.
 from anime_tools.tagger.dbv4_meta import (
@@ -101,23 +101,20 @@ class AnimaTagger:
         ckpt_dir: str | Path = DEFAULT_TAGGER_DIR,
         device: torch.device | str | None = None,
         dtype: torch.dtype | None = None,
-        pe_ckpt: str | Path | None = None,
         character_floor: float = 0.5,
-        pe_lora_path: str | Path | None = None,
-        pe_lora_disabled: bool = False,
-        pe_aux_ckpt: str | Path | None = None,
     ):
         self.ckpt_dir = Path(ckpt_dir)
         self.device = torch.device(resolve_device(device))
         self.dtype = dtype if dtype is not None else default_dtype(self.device)
-        # No-ops, accepted for call-site compat (ComfyUI workflows, old scripts).
-        del pe_ckpt, pe_aux_ckpt, pe_lora_path, pe_lora_disabled
         # Absolute confidence floor for characters, above the per-tag F1
         # threshold (some F1 thresholds are ~0.05, too permissive on its own).
         self._character_floor = float(character_floor)
 
         cfg_d = read_json(self.ckpt_dir / "config.json")
         self._cfg_d = cfg_d
+        # No ``backend`` key means the config predates the backbones: it is the
+        # legacy in-house head, refused below (not defaulted to a live backbone,
+        # which would load a pe vocab against the wrong card).
         self.backend_kind: str = str(cfg_d.get("backend", "pe"))
         if self.backend_kind not in BACKBONES:
             raise ValueError(
@@ -131,6 +128,30 @@ class AnimaTagger:
         self._backend: Backend | None = None
         self._sidecar: SidecarHead | None = None
 
+        self._load_vocab_tables()
+        self.n_tags = len(self.tag_entries)
+        self.rules = tr.load_rules(self.ckpt_dir / "rules.yaml")
+        self._init_backend(cfg_d)
+        if int(self.cfg.n_tags) != self.n_tags:
+            raise ValueError(
+                f"vocab.json has {self.n_tags} tags but the head expects {self.cfg.n_tags}"
+            )
+
+        self.thresholds = _load_thresholds(
+            self.ckpt_dir / "thresholds.safetensors", n_tags=self.n_tags
+        )
+        self.thresholds_dev = self.thresholds.to(self.device)
+        # Attached to every ``predict`` output so a consumer can tell how far a
+        # score fell short (the position-clause bag relaxation reads it).
+        self.threshold_map: dict[str, float] = {
+            e.name: float(t) for e, t in zip(self.tag_entries, self.thresholds)
+        }
+
+        self._load_groups()
+
+    def _load_vocab_tables(self) -> None:
+        """``vocab.json`` → the entry list and the lookups built from it once:
+        per-slot emit order, category / sentinel views by name."""
         vocab = load_vocab(self.ckpt_dir)
         self.tag_entries: list[TagEntry] = [
             TagEntry(
@@ -182,25 +203,10 @@ class AnimaTagger:
         )
         self._cat_of: dict[str, str] = {e.name: e.category for e in self.tag_entries}
 
-        self.n_tags = len(self.tag_entries)
-        self.rules = tr.load_rules(self.ckpt_dir / "rules.yaml")
-        self._init_backend(cfg_d)
-        if int(self.cfg.n_tags) != self.n_tags:
-            raise ValueError(
-                f"vocab.json has {self.n_tags} tags but the head expects {self.cfg.n_tags}"
-            )
-
-        self.thresholds = _load_thresholds(
-            self.ckpt_dir / "thresholds.safetensors", n_tags=self.n_tags
-        )
-        self.thresholds_dev = self.thresholds.to(self.device)
-        # Attached to every ``predict`` output so a consumer can tell how far a
-        # score fell short (the position-clause bag relaxation reads it).
-        self.threshold_map: dict[str, float] = {
-            e.name: float(t) for e, t in zip(self.tag_entries, self.thresholds)
-        }
-
-        # Optional groups snapshot; None when missing (older/flat-vocab).
+    def _load_groups(self) -> None:
+        """The optional ``groups.yaml`` snapshot → ``_group_lookup``, one entry
+        per ``softmax`` / ``softmax_when_solo`` group (sentinel slot appended)."""
+        # None when missing (older/flat-vocab).
         groups_path = self.ckpt_dir / "groups.yaml"
         self._groups: tg.TagGroups | None = None
         self._group_lookup: dict[str, dict] = {}
@@ -404,41 +410,7 @@ class AnimaTagger:
 
         # Group-aware refinement: one argmax winner per applicable group.
         if self._group_lookup:
-            kept_names = set(kept.keys())
-            is_solo = is_solo_names(kept_names)
-            group_preds: dict[str, str | None] = {}
-            for name, info in self._group_lookup.items():
-                mode = info["mode"]
-                escape_fired = bool(kept_names & set(info["escape_names"]))
-                if mode == "softmax_when_solo":
-                    applicable = is_solo and not escape_fired
-                else:  # "softmax"
-                    applicable = not escape_fired
-                if not applicable:
-                    # Leave the group's tags as the per-tag threshold decided.
-                    group_preds[name] = None
-                    continue
-                idx_t = info["tag_idx"]
-                group_logits = tag_logits_row.index_select(0, idx_t)
-                winner_local = int(group_logits.argmax().item())
-                for t in info["tag_names"]:
-                    kept.pop(t, None)
-                if winner_local == info.get("sentinel_local"):
-                    # "None of these" won — the group emits nothing.
-                    group_preds[name] = None
-                    continue
-                winner_idx = int(idx_t[winner_local].item())
-                # No backbone was CE-trained on our groups, so the winner must
-                # also clear its own threshold ("at most one"): otherwise an
-                # all-unsupported group emits its first member off a -30 logit.
-                if probs[winner_idx] < self.thresholds[winner_idx]:
-                    group_preds[name] = None
-                    continue
-                winner_name = names[winner_idx]
-                kept[winner_name] = probs[winner_idx]
-                group_preds[name] = winner_name
-            out["kept"] = kept
-            out["groups"] = group_preds
+            out["groups"] = self._refine_groups(kept, tag_logits_row, probs)
 
         dedupe_count_tags(kept)
 
@@ -451,6 +423,55 @@ class AnimaTagger:
             out["people_count"] = self.people_count_labels[people_idx]
             out["people_count_source"] = "count-tag-rule"
 
+        self._cap_slots(kept, probs)
+        out["kept"] = kept
+        return out
+
+    def _refine_groups(
+        self, kept: dict[str, float], tag_logits_row: torch.Tensor, probs: list[float]
+    ) -> dict[str, str | None]:
+        """Replace each applicable group's thresholded members in ``kept`` (in
+        place) with its argmax winner; ``{group: winner or None}``."""
+        names = self._tag_names
+        kept_names = set(kept.keys())
+        is_solo = is_solo_names(kept_names)
+        group_preds: dict[str, str | None] = {}
+        for name, info in self._group_lookup.items():
+            mode = info["mode"]
+            escape_fired = bool(kept_names & set(info["escape_names"]))
+            if mode == "softmax_when_solo":
+                applicable = is_solo and not escape_fired
+            else:  # "softmax"
+                applicable = not escape_fired
+            if not applicable:
+                # Leave the group's tags as the per-tag threshold decided.
+                group_preds[name] = None
+                continue
+            idx_t = info["tag_idx"]
+            group_logits = tag_logits_row.index_select(0, idx_t)
+            winner_local = int(group_logits.argmax().item())
+            for t in info["tag_names"]:
+                kept.pop(t, None)
+            if winner_local == info.get("sentinel_local"):
+                # "None of these" won — the group emits nothing.
+                group_preds[name] = None
+                continue
+            winner_idx = int(idx_t[winner_local].item())
+            # No backbone was CE-trained on our groups, so the winner must
+            # also clear its own threshold ("at most one"): otherwise an
+            # all-unsupported group emits its first member off a -30 logit.
+            if probs[winner_idx] < self.thresholds[winner_idx]:
+                group_preds[name] = None
+                continue
+            winner_name = names[winner_idx]
+            kept[winner_name] = probs[winner_idx]
+            group_preds[name] = winner_name
+        return group_preds
+
+    def _cap_slots(self, kept: dict[str, float], probs: list[float]) -> None:
+        """The booru slot conventions, in place on ``kept``: characters capped
+        at the girls count and floored, ``original`` as the empty-IP filler,
+        one artist."""
         # cap characters to the largest digit-prefixed girls-count in `kept`
         girl_caps = [
             int(m.group(1)) for name in kept if (m := GIRLS_COUNT_RE.match(name))
@@ -459,7 +480,6 @@ class AnimaTagger:
             cap = max(girl_caps)
             for _, name in self._scored(kept, "character")[cap:]:
                 kept.pop(name, None)
-            out["kept"] = kept
 
         # drop characters below the floor; if that empties both character and
         # copyright, add "original" as a slot-filler (booru non-IP convention)
@@ -482,9 +502,6 @@ class AnimaTagger:
             kept.pop(name, None)
         if "original" in kept and len(self._scored(kept, "copyright")) > 1:
             kept.pop("original")
-
-        out["kept"] = kept
-        return out
 
     def _scored(self, kept: dict[str, float], category: str) -> list[tuple[float, str]]:
         """``kept``'s tags of one category, highest score first.

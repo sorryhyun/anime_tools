@@ -20,30 +20,17 @@ from anime_tools._env import resolve_path
 from anime_tools._progress import ProgressBar
 from anime_tools._walk import walk_images
 
-MASK_SUFFIX = "_mask.png"
-"""The contract between the generators, ``merge_masks`` and the GUI's mask lookup:
-this suffix plus "mirror the source subdir"."""
-
-
-def mask_name(stem: str) -> str:
-    return f"{stem}{MASK_SUFFIX}"
-
+# The path half is stdlib-only (for the readers that only need to find a mask)
+# and re-exported here, where the generators have always imported it from.
+from anime_tools.masking._mask_paths import (  # noqa: F401
+    MASK_SUFFIX,
+    find_mask,
+    mask_candidates,
+    mask_name,
+    mask_path_for,
+)
 
 # ---- the write side ----------------------------------------------------
-
-
-def mask_path_for(image_path: Path, image_dir: Path, mask_dir: Path) -> Path:
-    """Where ``image_path``'s mask belongs: the source subdir, mirrored.
-
-    An image outside ``image_dir`` (which ``walk_images`` will not hand back,
-    but a direct caller might) lands flat at the root.
-    """
-    try:
-        rel = image_path.parent.relative_to(image_dir)
-    except ValueError:
-        rel = Path("")
-    target_dir = mask_dir if str(rel) in ("", ".") else mask_dir / rel
-    return target_dir / mask_name(image_path.stem)
 
 
 def plan_mask_jobs(

@@ -265,7 +265,7 @@ def test_an_opaque_source_carries_no_alpha_stamp(tmp_path):
 def test_exif_rotation_is_read_off_the_header(tmp_path):
     # Orientation only swaps the size, so the skip check reads it from the header;
     # missing it would measure a rotated image on the wrong aspect.
-    from anime_tools.stages.resize import _oriented_size
+    from anime_tools.stages.resize import oriented_size
 
     src, dst = tmp_path / "master", tmp_path / "resized"
     src.mkdir(parents=True)
@@ -275,7 +275,7 @@ def test_exif_rotation_is_read_off_the_header(tmp_path):
     img.save(src / "0001.jpg", exif=exif)
 
     with Image.open(src / "0001.jpg") as raw:
-        assert _oriented_size(raw) == (900, 1600)
+        assert oriented_size(raw) == (900, 1600)
 
     stats = run_resize_images(src=src, dst=dst, workers=1)
 

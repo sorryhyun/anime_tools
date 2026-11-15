@@ -14,17 +14,23 @@ cache and ComfyUI-MOSS-Toolkit's caption helper build theirs from these).
 * :func:`is_character_colour`: the colour tags one character's box carries
   (hair, eyes, clothing; not skin, background or sky).
 
-Tags are split on commas: pass a bare tag bag, not a caption with position or
-text clauses (parse those with :mod:`anime_tools.captions.position_clauses`).
-Pure stdlib.
+A caption is read through :func:`~anime_tools.captions.position_clauses.parse_caption`:
+the flat bag's tags, then each position clause's (the clause headers are not
+tags, and a text clause's quoted lines are words in the picture, not colours).
+The filters return a flat, comma-joined bag. Every tag comparison is keyed on
+:func:`~anime_tools.captions.taxonomy.normalize_tag`, so ``blue_hair`` is
+``blue hair``. Pure stdlib.
 """
 
 from __future__ import annotations
 
 import functools
-import json
 from collections.abc import Callable
 from pathlib import Path
+
+from anime_tools._json import read_json
+from anime_tools.captions.position_clauses import parse_caption
+from anime_tools.captions.taxonomy import normalize_tag
 
 # Single color words that head a "<color> <noun>" tag or end a "<x> hair/eyes".
 # Deliberately permissive: a false keep ("blue rose") is still color info.
@@ -129,12 +135,12 @@ COMIC_TAGS: frozenset[str] = frozenset(
 
 def is_comic_tag(tag: str) -> bool:
     """True if ``tag`` is a comic / panel-format tag worth keeping + binding."""
-    return tag.strip().lower() in COMIC_TAGS
+    return normalize_tag(tag) in COMIC_TAGS
 
 
 def is_color_tag(tag: str) -> bool:
     """True if ``tag`` carries color/hue information worth keeping."""
-    t = tag.strip().lower()
+    t = normalize_tag(tag)
     if not t:
         return False
     if t in COLOR_PHRASES:
@@ -150,15 +156,25 @@ def is_color_tag(tag: str) -> bool:
     return words[0] in COLOR_MODIFIERS and len(words) >= 2 and words[1] in COLOR_WORDS
 
 
-def filter_to_colors(caption: str) -> str:
-    """Reduce a comma-separated Anima caption to its color tags only.
+def _caption_tags(caption: str) -> list[str]:
+    """Every taxonomy tag of ``caption`` in reading order: the flat bag, then
+    each position clause's tags. Clause headers and text clauses are not tags."""
+    parsed = parse_caption(caption)
+    return [
+        *parsed.flat_tags,
+        *(t for c in parsed.position_clauses for t in c.tags),
+    ]
 
-    Returns a comma-joined string of the kept tags (original order), or ``""``
-    when the caption has no color tags.
+
+def filter_to_colors(caption: str) -> str:
+    """Reduce an Anima caption to its color tags only.
+
+    Returns a comma-joined string of the kept tags (original order and
+    spelling, each once), or ``""`` when the caption has no color tags.
     """
-    tags = [t.strip() for t in caption.split(",") if t.strip()]
-    kept = [t for t in tags if is_color_tag(t)]
-    return ", ".join(kept)
+    return filter_to_colors_and_protected(
+        caption, keep_copyright=False, keep_comic=False
+    )
 
 
 # Copyright-group entries that name "no series" rather than a franchise.
@@ -179,19 +195,18 @@ def load_copyright_tags(index_path: str | Path) -> frozenset[str]:
     p = Path(index_path)
     if not p.exists():
         return frozenset()
-    data = json.loads(p.read_text(encoding="utf-8"))
-    groups = data.get("groups", {})
-    copyright_group = groups.get("copyright", {})
+    copyright_group = read_json(p).get("groups", {}).get("copyright", {})
     return frozenset(
-        name.strip().lower()
+        key
         for name in copyright_group
-        if name.strip() and name.strip().lower() not in _NON_SERIES_COPYRIGHT
+        if (key := normalize_tag(name)) and key not in _NON_SERIES_COPYRIGHT
     )
 
 
 def is_copyright_tag(tag: str, copyright_tags: frozenset[str]) -> bool:
-    """True if ``tag`` is a known copyright/series name (case-insensitive)."""
-    return tag.strip().lower() in copyright_tags
+    """True if ``tag`` is a known copyright/series name; compared by
+    :func:`normalize_tag`, the form :func:`load_copyright_tags` returns."""
+    return normalize_tag(tag) in copyright_tags
 
 
 def filter_to_colors_and_protected(
@@ -212,22 +227,23 @@ def filter_to_colors_and_protected(
     """
     if copyright_tags is None:
         copyright_tags = frozenset()
-    tags = [t.strip() for t in caption.split(",") if t.strip()]
-    protected: list[str] = []
+    tags = _caption_tags(caption)
+    kept: list[str] = []
     seen: set[str] = set()
 
     def _take(pred: Callable[[str], bool]) -> None:
         for t in tags:
-            if t.lower() not in seen and pred(t):
-                protected.append(t)
-                seen.add(t.lower())
+            key = normalize_tag(t)
+            if key not in seen and pred(t):
+                kept.append(t)
+                seen.add(key)
 
     if keep_copyright:
         _take(lambda t: is_copyright_tag(t, copyright_tags))
     if keep_comic:
         _take(is_comic_tag)
-    colors = [t for t in tags if t.lower() not in seen and is_color_tag(t)]
-    return ", ".join(protected + colors)
+    _take(is_color_tag)
+    return ", ".join(kept)
 
 
 def filter_to_colors_and_copyright(
@@ -251,7 +267,7 @@ CHARACTER_COLOUR_SKIP: frozenset[str] = frozenset(
 def is_character_colour(tag: str) -> bool:
     """A colour tag a character box carries: hair, eyes and clothing, not skin
     (``dark-skinned …`` too) or a blanked crop's background."""
-    words = tag.strip().lower().split()
+    words = normalize_tag(tag).split()
     return (
         bool(words)
         and is_color_tag(tag)

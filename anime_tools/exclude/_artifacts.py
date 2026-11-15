@@ -21,7 +21,7 @@ from anime_tools.captions.history import history_sidecar_path
 from anime_tools.captions.ocr_sidecar import ocr_sidecar_path
 from anime_tools.captions.variants import variants_sidecar_path
 from anime_tools.exclude._ledger import Trees, rel_key
-from anime_tools.masking._masks import mask_name
+from anime_tools.masking._mask_paths import mask_candidates
 
 __all__ = ["artifacts"]
 
@@ -42,10 +42,9 @@ def _resized_files(root: Path, rel: Path) -> Iterator[Path]:
 
 
 def _mask_files(root: Path, rel: Path) -> Iterator[Path]:
-    """The mirrored mask, and the legacy flat one — the same two-step lookup
-    ``gui.dataset.mask_path`` and Export's ``_mask_source`` do."""
-    yield root / rel.parent / mask_name(rel.stem)
-    yield root / mask_name(rel.stem)
+    """The mirrored mask, and the legacy flat one — the one two-step lookup
+    (``masking._mask_paths.mask_candidates``) every mask reader tries."""
+    yield from mask_candidates(root, rel)
 
 
 def _ocr_files(root: Path, rel: Path) -> Iterator[Path]:

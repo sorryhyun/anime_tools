@@ -60,9 +60,13 @@ from anime_tools.stages._options import (
 from anime_tools.stages.instance_detection import Detection, crop_instance
 
 from ._analysis import ANALYSIS_SUBDIR, clear_analysis, write_analysis
-from ._caption_io import read_caption
 from ._progress import make_progress
-from ._report import print_dry_run_footer, stage_report_header, write_stage_report
+from ._report import (
+    TE_NOTE,
+    print_dry_run_footer,
+    stage_report_header,
+    write_stage_report,
+)
 from ._walk_captions import iter_captions
 from .position_captions import PositionCaptionOptions, detect_subjects
 from .replay import apply_one, undo_one
@@ -488,6 +492,7 @@ def run_multiview_audit(
     identity_confidence: float = DEFAULT_IDENTITY_CONFIDENCE,
     suggest_counts: bool = False,
     analysis_dir: Path | None = None,
+    master_dir: Path | None = None,
 ) -> tuple[list[MultiviewFinding], MultiviewAuditStats]:
     """Walk the resized tree and report every under-counted caption.
 
@@ -500,9 +505,10 @@ def run_multiview_audit(
     stats = MultiviewAuditStats()
     rows: list[MultiviewFinding] = []
 
-    for image_path, rel, dst_caption, caption, _ in iter_captions(
-        resized_dir, source_dir, path_pattern, stats, progress
+    for item in iter_captions(
+        resized_dir, source_dir, path_pattern, stats, progress, master_dir=master_dir
     ):
+        image_path, rel, caption = item.image_path, item.rel, item.caption
         image_rel = image_path.relative_to(resized_dir).as_posix()
         ok, reason = is_audit_target(caption)
         if not ok:
@@ -572,9 +578,7 @@ def run_multiview_audit(
         # that looks a promotion up by rel would miss every row.
         finding.image = image_path.relative_to(resized_dir).as_posix()
         finding.caption_path = rel.as_posix()
-        finding.target_before = (
-            read_caption(dst_caption) if dst_caption.exists() else ""
-        )
+        finding.target_before = item.target_before
         stats.findings += 1
         stats.verdicts[finding.verdict] += 1
         rows.append(finding)
@@ -585,7 +589,7 @@ def run_multiview_audit(
             target = sheet_path(sheets_dir, finding)
             target.parent.mkdir(parents=True, exist_ok=True)
             render_contact_sheet(image, finding, held).save(target)
-            finding.sheet = str(target.relative_to(sheets_dir))
+            finding.sheet = target.relative_to(sheets_dir).as_posix()
         if analysis_dir is not None:
             record = asdict(finding)
             record["labels"] = "crops"
@@ -673,6 +677,7 @@ def run_audit_phase(
     rows, stats = run_multiview_audit(
         resized_dir=dst,
         source_dir=src,
+        master_dir=resolve_path(req.master),
         detect_fn=detect_fn,
         tag_fn=tagger.predict,
         vocabulary=vocabulary,
@@ -752,7 +757,7 @@ def apply_findings(
             finding.proposed,
             apply=True,
             drop_variants=True,
-            history_by="audit",
+            history_by=REPLAY_SHAPES["audit"].history_by,
         )
         if status == "written":
             written.append(
@@ -835,7 +840,7 @@ def apply_curated(
             entry["after"],
             apply=apply,
             drop_variants=True,
-            history_by="audit",
+            history_by=REPLAY_SHAPES["audit"].history_by,
         )
     return manifest, unmatched
 
@@ -867,7 +872,7 @@ def revert_curated(
             entry["before"],
             apply=apply,
             drop_variants=True,
-            history_by="audit",
+            history_by=REPLAY_SHAPES["audit"].history_by,
         )
         outcome["status"] = _REVERT_STATUS.get(status, status)
     return results
@@ -878,9 +883,8 @@ def revert_curated(
 
 def _written_note(dst: Path, written: int, holder: str) -> str:
     return (
-        f"\n{written} revised caption(s) written ({dst}). Run "
-        "`make preprocess-te` now to re-encode. To back it out: the "
-        f"`.history.txt` sidecar beside each, or {holder}."
+        f"{TE_NOTE}\n{written} revised caption(s) under {dst}. To back it out: "
+        f"the `.history.txt` sidecar beside each, or {holder}."
     )
 
 
@@ -929,6 +933,7 @@ def run_audit(req: AuditRequest):
     rows, stats = run_multiview_audit(
         resized_dir=dst,
         source_dir=src,
+        master_dir=resolve_path(req.master),
         detect_fn=detect_fn,
         tag_fn=tagger.predict,
         vocabulary=vocabulary,

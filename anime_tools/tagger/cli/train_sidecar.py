@@ -24,6 +24,7 @@ import logging
 import math
 import time
 from collections.abc import Sequence
+from functools import partial
 from pathlib import Path
 
 import torch
@@ -31,7 +32,7 @@ import torch.nn.functional as F
 from PIL import Image
 from safetensors.torch import load_file as st_load
 from safetensors.torch import save_file as st_save
-from torch.utils.data import DataLoader, Dataset
+from torch.utils.data import DataLoader
 
 from anime_tools._device import add_device_arg, resolve_device
 from anime_tools._json import write_json
@@ -41,6 +42,11 @@ from anime_tools.captions.taxonomy import (
     artist_oc_handle,
     classify_people,
 )
+from anime_tools.tagger._backbone import (
+    SidecarHead,
+    align_vocab,
+    rename_recovery_from_rules,
+)
 from anime_tools.tagger.backends import build_backend
 from anime_tools.tagger.cli.build_ckpt import NEVER_FIRE
 from anime_tools.tagger.cli.calibrate import DEFAULT_SWEEP, calibrate_thresholds
@@ -49,20 +55,14 @@ from anime_tools.tagger.cli.eval_metrics import (
     per_tag_prf,
 )
 from anime_tools.tagger.data import TaggerCheckpoint
-from anime_tools.tagger.dbv4_backend import (
-    SidecarHead,
-    align_vocab,
-    preprocess_dbv4,
-    rename_recovery_from_rules,
-)
-from anime_tools.tagger.dbv4_meta import BACKBONES
+from anime_tools.tagger.dbv4_meta import BACKBONES, DEFAULT_TAGGER_DIR
 from anime_tools.tagger.feature_cache import (
     backbone_cache_path,
     backbone_cache_stems,
     load_backbone_cache,
     multi_hot_from_manifest,
 )
-from anime_tools.tagger.pixai_backend import preprocess_pixai
+from anime_tools.vision._decode import DecodeDataset, collate
 
 logging.basicConfig(level=logging.INFO, format="%(message)s")
 log = logging.getLogger(__name__)
@@ -77,7 +77,7 @@ DEFAULT_CATEGORIES = ("copyright", "character", "general")
 
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description=__doc__.split("\n", 1)[0])
-    p.add_argument("--ckpt_dir", default="models/captioners/anima-tagger-pixai")
+    p.add_argument("--ckpt_dir", default=DEFAULT_TAGGER_DIR)
     p.add_argument(
         "--feature_cache",
         default=None,
@@ -154,27 +154,11 @@ def select_bce_rows(
 # Stage 1 — feature cache.
 
 
-PREPROCESS = {"dbv4": preprocess_dbv4, "pixai": preprocess_pixai}
-
-
-class _ImageDS(Dataset):
-    def __init__(self, paths: Sequence[str], kind: str, size: int):
-        self.paths, self.kind, self.size = list(paths), kind, size
-
-    def __len__(self) -> int:
-        return len(self.paths)
-
-    def __getitem__(self, i: int):
-        try:
-            im = Image.open(self.paths[i])
-            return i, PREPROCESS[self.kind](im, self.size), True
-        except (OSError, ValueError):
-            return i, torch.zeros(3, self.size, self.size), False
-
-
-def _collate(b):
-    idx, x, ok = zip(*b)
-    return torch.tensor(idx), torch.stack(x), torch.tensor(ok)
+def _decode(path, preprocess, size: int) -> torch.Tensor:
+    """One image through its backbone's preprocess — module-level, so the
+    DataLoader's workers can unpickle it."""
+    with Image.open(path) as im:
+        return preprocess(im, size)
 
 
 def build_cache(
@@ -188,8 +172,13 @@ def build_cache(
     batch_size: int,
     workers: int,
 ) -> None:
-    ds = _ImageDS(image_paths, backend.kind, backend.img_size)
-    dl = DataLoader(ds, batch_size=batch_size, num_workers=workers, collate_fn=_collate)
+    # The backbone *class*'s preprocess, not the instance's: pickling the
+    # instance for a worker would pickle its loaded model with it.
+    load = partial(
+        _decode, preprocess=type(backend).preprocess_image, size=backend.img_size
+    )
+    ds = DecodeDataset(image_paths, load, backend.img_size, (OSError, ValueError))
+    dl = DataLoader(ds, batch_size=batch_size, num_workers=workers, collate_fn=collate)
     d_hidden = backend.d_hidden
     hidden = torch.zeros(len(ds), d_hidden, dtype=torch.float16)
     probs = torch.zeros(len(ds), n_tags, dtype=torch.float16)
@@ -201,7 +190,7 @@ def build_cache(
         pr = torch.zeros(len(idx), n_tags)
         pr[:, align_ours] = out.probs[:, align_ext]
         probs[idx] = pr.to(torch.float16)
-        ok_all[idx] = ok
+        ok_all[idx] = torch.tensor(ok)
         if bi % 50 == 0:
             done = min((bi + 1) * batch_size, len(ds))
             log.info(
@@ -221,13 +210,10 @@ def build_cache(
             "revision": str(backend.revision),
             "arch": backend.arch,
             "img_size": str(backend.img_size),
-            "feature": FEATURE[backend.kind],
+            "feature": backend.feature,
         },
     )
     log.info("wrote %s (%d × %d)", out_path, len(ds), d_hidden)
-
-
-FEATURE = {"dbv4": "mlp_hidden", "pixai": "attn_pool"}
 
 
 # Stage 2 — train.
@@ -503,7 +489,7 @@ def main() -> None:
     thr_all[torch.tensor(unmatched_idx)] = NEVER_FIRE
     thr_all[torch.tensor(bce_indices)] = thr_rows
     st_save({"thresholds": thr_all.contiguous()}, str(thr_path))
-    head.feature = FEATURE[backend.kind]
+    head.feature = backend.feature
     head.cpu().save(
         ckpt_dir,
         extra_meta={

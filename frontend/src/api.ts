@@ -80,7 +80,6 @@ export const api = {
   start: (stage: string, values: Values, apply: boolean, rel?: string | null) =>
     req<Job>("/api/jobs", json("POST", { stage, values, apply, rel: rel ?? "", space: sp() })),
   cancel: (id: string) => req<{ cancelled: boolean }>(`/api/jobs/${id}/cancel`, { method: "POST" }),
-  report: (id: string) => req<{ path: string; report: unknown }>(`/api/jobs/${id}/report`),
   /** Which images a finished Run changed -- the index only. */
   proposals: (id: string) => req<ProposalIndex>(`/api/jobs/${id}/proposals`),
   /** One image's before/after, both already parsed server-side. */
@@ -105,9 +104,10 @@ export const api = {
   datasetRoots: () => req<DatasetRoots>("/api/dataset/roots"),
   putDatasetRoots: (body: Record<string, string>) =>
     req<DatasetRoots>("/api/dataset/roots", json("PUT", body)),
-  dataset: (q: { q?: string; pattern?: string; limit?: number } = {}) => {
+  /** The sidebar's listing, filtered by the search box's `q`. */
+  dataset: (q = "") => {
     const p = new URLSearchParams();
-    for (const [k, v] of Object.entries(q)) if (v) p.set(k, String(v));
+    if (q) p.set("q", q);
     if (sp()) p.set("space", sp());
     return req<DatasetList>(`/api/dataset?${p}`);
   },

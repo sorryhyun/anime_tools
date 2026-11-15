@@ -363,3 +363,35 @@ def test_a_url_row_reports_a_failure_with_the_recovery(home, monkeypatch):
     assert "python -m anime_tools.downloads soft_prompt" in str(e.value)
     assert not (row.dest / DL.SOFT_PROMPT_FILENAME).exists()
     assert not list(row.dest.iterdir())  # the partial file is cleaned up
+
+
+def test_ensure_is_the_loaders_fetch(home, monkeypatch):
+    """``ensure`` fetches a missing row once and answers its dir; ``fetch=False``
+    raises the caller's error; ``dest`` re-points the row at a caller's path."""
+    fetched: list[tuple[str, Path]] = []
+
+    def fake_fetch(self, log=_say):
+        fetched.append((self.id, self.dest))
+        self.dest.mkdir(parents=True, exist_ok=True)
+        (self.dest / DL.PE_SPATIAL_FILENAME).write_bytes(b"x")
+
+    monkeypatch.setattr(DL.Asset, "fetch", fake_fetch)
+
+    class Missing(Exception):
+        pass
+
+    with pytest.raises(Missing):
+        DL.ensure("pe_spatial", fetch=False, missing=Missing)
+    assert fetched == []
+
+    row_dest = DL.by_id()["pe_spatial"].dest
+    assert DL.ensure("pe_spatial") == row_dest
+    assert DL.ensure("pe_spatial") == row_dest  # installed now: no second fetch
+    assert fetched == [("pe_spatial", row_dest)]
+
+    elsewhere = home / "custom"
+    assert DL.ensure("pe_spatial", dest=elsewhere) == elsewhere
+    assert fetched[-1] == ("pe_spatial", elsewhere)
+
+    with pytest.raises(ValueError, match="hub cache"):
+        DL.ensure("tagger_backbone")

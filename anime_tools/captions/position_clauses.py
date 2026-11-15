@@ -28,8 +28,8 @@ from __future__ import annotations
 
 import itertools
 import re
-from collections.abc import Iterable, Sequence
-from dataclasses import dataclass
+from collections.abc import Callable, Iterable, Sequence
+from dataclasses import dataclass, replace
 
 from anime_tools.captions.taxonomy import is_artist_tag, normalize_tag
 
@@ -78,22 +78,33 @@ def _outside_quotes(caption: str):
     return lambda i: not any(a <= i < b for a, b in spans)
 
 
-def _find_outside(caption: str, ch: str, at: int, hi: int, ok) -> int:
-    """``caption.find(ch, at, hi)`` skipping hits inside a quote pair."""
+# What separates two tags inside one segment: a comma, or a raw newline — a
+# hand-written master may put one tag per line. Quoted text never carries a raw
+# newline (:func:`quote_text` spells it :data:`LINE_BREAK`), and one inside a
+# closed pair is content anyway, like a comma there.
+_TAG_SEPARATORS = ",\n"
+
+
+def _find_outside(caption: str, chars: str, at: int, hi: int, ok) -> int:
+    """First offset in ``caption[at:hi]`` holding any of ``chars``, skipping
+    hits inside a quote pair; ``-1`` when there is none."""
     while True:
-        i = caption.find(ch, at, hi)
-        if i < 0 or ok(i):
+        hits = [i for ch in chars if (i := caption.find(ch, at, hi)) >= 0]
+        if not hits:
+            return -1
+        i = min(hits)
+        if ok(i):
             return i
         at = i + 1
 
 
-def _split_outside(caption: str, sep: str) -> list[str]:
-    """``caption.split(sep)`` that leaves quoted content whole."""
+def _split_outside(caption: str, seps: str) -> list[str]:
+    """``caption`` split on any of ``seps``, leaving quoted content whole."""
     ok = _outside_quotes(caption)
     out: list[str] = []
     at = 0
     while True:
-        i = _find_outside(caption, sep, at, len(caption), ok)
+        i = _find_outside(caption, seps, at, len(caption), ok)
         if i < 0:
             out.append(caption[at:])
             return out
@@ -260,7 +271,11 @@ def _text_prefix(tag: str) -> str | None:
 
 
 def _split_tags(segment: str) -> list[str]:
-    return [t for t in (raw.strip() for raw in _split_outside(segment, ",")) if t]
+    return [
+        t
+        for t in (raw.strip() for raw in _split_outside(segment, _TAG_SEPARATORS))
+        if t
+    ]
 
 
 def is_position_header(tag: str) -> bool:
@@ -311,12 +326,13 @@ def tag_spans(caption: str) -> tuple[TagSpan, ...]:
     outside = _outside_quotes(caption)
 
     def comma_parts(lo: int, hi: int) -> list[tuple[int, int]]:
-        """``caption[lo:hi].split(",")`` as offsets — the pieces, not the text.
-        A comma inside a quote pair is content and never splits."""
+        """``caption[lo:hi]`` split on commas and raw newlines, as offsets — the
+        pieces, not the text. A separator inside a quote pair is content and
+        never splits."""
         out: list[tuple[int, int]] = []
         at = lo
         while True:
-            comma = _find_outside(caption, ",", at, hi, outside)
+            comma = _find_outside(caption, _TAG_SEPARATORS, at, hi, outside)
             out.append((at, hi if comma < 0 else comma))
             if comma < 0:
                 return out
@@ -485,6 +501,44 @@ def compose_caption(
         return flat
     body = ". ".join(parts) + "."
     return f"{flat}. {body}" if flat else body
+
+
+def partition_tags(
+    parsed: ParsedCaption,
+    drops: Callable[[str, PositionClause | None], bool],
+) -> tuple[ParsedCaption, tuple[str, ...]]:
+    """Cut every tag ``drops`` names out of ``parsed``; move nothing else.
+
+    The one tag drop: group drops (:mod:`~anime_tools.captions.correction`) and
+    implied-tag drops (:mod:`~anime_tools.captions.implied_tags`) are each a
+    predicate over it. ``drops(tag, clause)`` sees a flat tag with ``clause``
+    ``None`` and a position-clause tag with its own clause, the scope a
+    clause-local rule reads. A text clause's tags are quoted lines, not taxonomy
+    tags, so it passes through untouched; a position clause left with no tags is
+    removed whole, since a bare ``On the left`` binds nothing.
+
+    Returns the kept parse and the dropped tags, bag first, then clause by
+    clause. A caller that wants a caption with nothing to drop back byte for
+    byte checks the second half before composing the first.
+    """
+    dropped: list[str] = []
+    flat: list[str] = []
+    for tag in parsed.flat_tags:
+        (dropped if drops(tag, None) else flat).append(tag)
+    clauses: list[PositionClause] = []
+    for clause in parsed.clauses:
+        if clause.is_text:
+            clauses.append(clause)
+            continue
+        tags: list[str] = []
+        for tag in clause.tags:
+            (dropped if drops(tag, clause) else tags).append(tag)
+        if tags:
+            clauses.append(replace(clause, tags=tuple(tags)))
+        elif not clause.tags:
+            # Arrived bare: not this cut's to remove.
+            clauses.append(clause)
+    return ParsedCaption(tuple(flat), tuple(clauses)), tuple(dropped)
 
 
 # ---------------------------------------------------------------------------

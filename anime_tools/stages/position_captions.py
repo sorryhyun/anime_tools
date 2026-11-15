@@ -39,10 +39,12 @@ from anime_tools.captions.clause_rewrite import MovedTag, RemovalPlan, plan_bag_
 from anime_tools.captions.clause_vocabulary import (
     ClauseGroups,
     ClauseVocabulary,
+    SelectPolicy,
     load_clause_groups,
     load_clause_vocabulary,
 )
 from anime_tools.captions.position_clauses import (
+    ParsedCaption,
     PositionClause,
     assign_positions,
     compose_caption,
@@ -63,18 +65,23 @@ from anime_tools.stages.instance_detection import (
     box_containment,
     box_iou,
     crop_instance,
-    other_masks,
     dedupe_detections,
     drop_small_boxes,
     mask_box_fill,
     mask_containment,
     merge_part_detections,
+    other_masks,
 )
 
 from ._analysis import ANALYSIS_SUBDIR, clear_analysis, write_analysis
-from ._caption_io import read_caption, write_caption
+from ._caption_io import write_caption
 from ._progress import make_progress
-from ._report import print_dry_run_footer, stage_report_header, write_stage_report
+from ._report import (
+    TE_NOTE,
+    print_dry_run_footer,
+    stage_report_header,
+    write_stage_report,
+)
 from ._walk_captions import iter_captions
 
 if TYPE_CHECKING:
@@ -274,6 +281,37 @@ def _relax_bag_keeps(
                 kept[tag] = float(scores[tag])
 
 
+def _count_skip(
+    detected: int,
+    parsed: ParsedCaption,
+    expected: int | None,
+    options: PositionCaptionOptions,
+) -> str | None:
+    """The skip status when the detection count can't be grounded, else None."""
+    if detected < options.min_instances:
+        return "skip:too-few-instances"
+    if detected > options.max_instances:
+        return "skip:too-many-instances"
+    if not options.strict_count:
+        return None
+    # Detection and the caption's count must agree, else we'd write clauses we
+    # can't ground. "Agree" is the range girls..girls+boys, because the ``girl``
+    # prompt picks up males inconsistently.
+    if expected:
+        boys = caption_boy_count(parsed)
+        upper = None if boys is None else expected + boys
+        if detected < expected or (upper is not None and detected > upper):
+            return "skip:count-mismatch"
+        return None
+    # A layout tag waives the check above (``expected`` is None by design); an
+    # ``Nkoma`` tag restores a generous ceiling so a subject detected twice
+    # still has a backstop.
+    ceiling = caption_panel_ceiling(parsed)
+    if ceiling is not None and detected > ceiling:
+        return "skip:count-mismatch"
+    return None
+
+
 def propose_for_image(
     image: Image.Image,
     caption: str,
@@ -318,29 +356,10 @@ def propose_for_image(
         }
         for d in dets
     ]
-    if len(dets) < options.min_instances:
-        proposal.status = "skip:too-few-instances"
+    skip = _count_skip(len(dets), parsed, expected, options)
+    if skip is not None:
+        proposal.status = skip
         return proposal
-    if len(dets) > options.max_instances:
-        proposal.status = "skip:too-many-instances"
-        return proposal
-    # Detection and the caption's count must agree, else we'd write clauses we
-    # can't ground. "Agree" is the range girls..girls+boys, because the ``girl``
-    # prompt picks up males inconsistently.
-    if options.strict_count and expected:
-        boys = caption_boy_count(parsed)
-        upper = None if boys is None else expected + boys
-        if len(dets) < expected or (upper is not None and len(dets) > upper):
-            proposal.status = "skip:count-mismatch"
-            return proposal
-    # A layout tag waives the check above (``expected`` is None by design); an
-    # ``Nkoma`` tag restores a generous ceiling so a subject detected twice
-    # still has a backstop.
-    if options.strict_count and not expected:
-        ceiling = caption_panel_ceiling(parsed)
-        if ceiling is not None and len(dets) > ceiling:
-            proposal.status = "skip:count-mismatch"
-            return proposal
 
     order = ordered_indices([d.box for d in dets], image.size, row_tol=options.row_tol)
     dets = [dets[i] for i in order]
@@ -378,6 +397,7 @@ def propose_for_image(
     shared = frozenset(t for t, n in counts.items() if n == len(kept_sets))
     view_invariant = options.multi_view_gate and is_repeated_subject_layout(parsed)
 
+    policy = SelectPolicy.of(options)
     for i, (det, kept, pred) in enumerate(zip(dets, kept_sets, predictions)):
         tags = vocabulary.select(
             kept,
@@ -385,17 +405,9 @@ def propose_for_image(
             flat_bag=flat_bag,
             attributable=attributable,
             shared=shared,
-            max_tags=options.max_clause_tags,
-            name_confidence=options.name_confidence,
-            allow_unlisted_names=options.allow_unlisted_names,
-            discriminative_only=options.discriminative_only,
+            policy=policy,
             allow_identity=det.source == "subject",
-            bag_gated_identity=options.bag_gated_identity,
             view_invariant=view_invariant,
-            bind_framing=options.bind_framing,
-            bind_view_anatomy=options.bind_view_anatomy,
-            max_novel_tags=options.max_novel_tags,
-            free_groups=options.free_groups,
         )
         crop_name = crop_sink(i, positions[i], crops[i]) if crop_sink else None
         proposal.instances.append(
@@ -514,6 +526,7 @@ def run_position_captions(
     part_detect_fn: Callable[[Image.Image, str, float], list[Detection]] | None = None,
     promoted: Mapping[str, str] | None = None,
     analysis_dir: Path | None = None,
+    master_dir: Path | None = None,
 ) -> tuple[list[ImageProposal], PositionCaptionStats]:
     """Walk the resized tree, propose clauses, and (with ``apply``) write them.
 
@@ -545,10 +558,11 @@ def run_position_captions(
     rows: list[ImageProposal] = []
     promoted = promoted or {}
 
-    walked = list(iter_captions(resized_dir, source_dir, path_pattern, stats))
-    for index, (image_path, rel, dst_caption, caption, _) in enumerate(walked, 1):
-        if progress is not None:
-            progress(index, len(walked), str(rel))
+    audit_by = REPLAY_SHAPES["audit"].history_by
+    for item in iter_captions(
+        resized_dir, source_dir, path_pattern, stats, progress, master_dir=master_dir
+    ):
+        image_path, rel, dst_caption, caption = item[:4]
         promotion = promoted.get(rel.as_posix())
         if promotion is not None and promotion != caption:
             caption = promotion
@@ -563,7 +577,7 @@ def run_position_captions(
             # audit's verdict is not silently dropped.
             if promotion is not None and apply:
                 write_caption(
-                    dst_caption, caption, drop_variants=True, history_by="audit"
+                    dst_caption, caption, drop_variants=True, history_by=audit_by
                 )
                 stats.promoted_written += 1
             continue
@@ -590,11 +604,9 @@ def run_position_captions(
             part_detect_fn=part_detect_fn,
             mask_sink=hold_labels if analysis_dir is not None else None,
         )
-        proposal.image = str(image_path.relative_to(resized_dir))
-        proposal.caption_path = str(rel)
-        proposal.target_before = (
-            read_caption(dst_caption) if dst_caption.exists() else ""
-        )
+        proposal.image = image_rel
+        proposal.caption_path = rel.as_posix()
+        proposal.target_before = item.target_before
         rows.append(proposal)
         if analysis_dir is not None:
             record = asdict(proposal)
@@ -609,7 +621,7 @@ def run_position_captions(
             # picture and outlives a failed proposal.
             if promotion is not None and apply:
                 write_caption(
-                    dst_caption, caption, drop_variants=True, history_by="audit"
+                    dst_caption, caption, drop_variants=True, history_by=audit_by
                 )
                 stats.promoted_written += 1
             continue
@@ -628,7 +640,7 @@ def run_position_captions(
                 dst_caption,
                 proposal.proposed,
                 drop_variants=True,
-                history_by="position",
+                history_by=REPLAY_SHAPES["position"].history_by,
             )
             stats.written += 1
 
@@ -641,6 +653,7 @@ def flatten_captions(
     source_dir: Path,
     path_pattern: str | None = None,
     apply: bool = False,
+    master_dir: Path | None = None,
 ) -> tuple[list[dict], PositionCaptionStats]:
     """Undo a rewrite: merge every caption's clauses back into its flat bag.
 
@@ -652,9 +665,10 @@ def flatten_captions(
     """
     stats = PositionCaptionStats()
     rows: list[dict] = []
-    for _, rel, dst_caption, original, _src in iter_captions(
-        resized_dir, source_dir, path_pattern, stats
+    for item in iter_captions(
+        resized_dir, source_dir, path_pattern, stats, master_dir=master_dir
     ):
+        original = item.caption
         if not has_clauses(original):
             stats.skip("no-clauses")
             continue
@@ -666,19 +680,17 @@ def flatten_captions(
         stats.proposed += 1
         rows.append(
             {
-                "caption_path": str(rel),
+                "caption_path": item.rel.as_posix(),
                 "original": original,
                 # Same distinction the sweep records: ``original`` may be the
                 # master, and flattening it creates a revised caption.
-                "target_before": (
-                    read_caption(dst_caption) if dst_caption.exists() else ""
-                ),
+                "target_before": item.target_before,
                 "proposed": flattened,
             }
         )
         if apply:
             write_caption(
-                dst_caption,
+                item.dst_caption,
                 flattened,
                 drop_variants=True,
                 history_by="flatten",
@@ -690,12 +702,6 @@ def flatten_captions(
 # ---------------------------------------------------------------------------
 # The stage runner
 # ---------------------------------------------------------------------------
-
-TE_NOTE = (
-    "\nWritten to the resized captions (the master is untouched). Run "
-    "`make preprocess-te` now to regenerate the variant sidecars and "
-    "re-encode."
-)
 
 
 def summarize(
@@ -741,7 +747,11 @@ def summarize(
 def _run_flatten(req: PositionRequest, src: Path, dst: Path, report_dir: Path):
     """The inverse pass — text only, so it short-circuits before any model load."""
     rows, stats = flatten_captions(
-        resized_dir=dst, source_dir=src, path_pattern=req.path_pattern, apply=req.apply
+        resized_dir=dst,
+        source_dir=src,
+        master_dir=resolve_path(req.master),
+        path_pattern=req.path_pattern,
+        apply=req.apply,
     )
     summary = {
         "mode": "flatten",
@@ -827,6 +837,7 @@ def run_position(req: PositionRequest):
     rows, stats = run_position_captions(
         resized_dir=dst,
         source_dir=src,
+        master_dir=resolve_path(req.master),
         detect_fn=detect_fn,
         part_detect_fn=part_detect_fn,
         tag_fn=tagger.predict,

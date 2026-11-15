@@ -146,5 +146,3 @@ export function createCaptionEditor(src: {
 
   return { entry, text, setText, clearDraft, dirty, dirtyIn, busy, msg, snap, parsed, save };
 }
-
-export type CaptionEditor = ReturnType<typeof createCaptionEditor>;

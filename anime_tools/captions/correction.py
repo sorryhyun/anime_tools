@@ -13,7 +13,11 @@ from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from pathlib import Path
 
-from anime_tools._env import models_dir
+from anime_tools._env import curation_home, models_dir, resolve_path
+from anime_tools.captions.position_clauses import (
+    ParsedCaption,
+    partition_tags,
+)
 from anime_tools.captions.position_clauses import (
     compose_caption as compose_position_caption,
 )
@@ -190,6 +194,28 @@ def find_tag_csv(root: Path | None = None, lang: str | None = None) -> Path | No
     return None
 
 
+def resolve_tag_csv(tag_csv: str | Path | None = None, *, needed_by: str = "") -> Path:
+    """The Danbooru tag KB a stage types tags against: ``tag_csv`` when given
+    (home-anchored), the curation home's :func:`find_tag_csv` otherwise.
+
+    A missing one is a ``FileNotFoundError`` naming the download, which each
+    stage's shell exits with; ``needed_by`` names what wanted it (Export's
+    ``layout_json``), for a stage the KB is optional to.
+    """
+    csv_path = resolve_path(tag_csv) if tag_csv else find_tag_csv(curation_home())
+    if csv_path is None or not csv_path.exists():
+        what = (
+            f"{needed_by} needs the danbooru tag CSV ({TAG_CSV_NAME})"
+            if needed_by
+            else f"{TAG_CSV_NAME} not found"
+        )
+        raise FileNotFoundError(
+            f"{what}: run `python -m anime_tools.downloads danbooru_tags` first "
+            "(or the GUI's Settings > Models > Danbooru tag KB)."
+        )
+    return csv_path
+
+
 def load_tag_knowledge_base(path: str | Path) -> TagKnowledgeBase:
     # Hot path: ~114k rows, hence ``csv.reader`` rather than ``DictReader`` and
     # one ``normalize_tag`` per row.
@@ -249,20 +275,22 @@ def correct_caption(
     # One parse, and it is the grammar's: the bag reaches :func:`correct_tags`
     # as the tuple ``parse_caption`` cut, never as text this module splits
     # again. A tag may legally contain a comma inside quotes (``sign reading
-    # "stop, now"``), and a bare ``split(",")`` cuts it in two.
-    #
-    # Newlines first: a hand-written master may separate its tags with them and
-    # the grammar does not — nothing this package writes has one inside a
-    # caption, text clauses included, so the substitution can only ever turn a
-    # legacy separator into the canonical one.
-    parsed = parse_position_caption(text.replace("\n", ","))
+    # "stop, now"``), and a bare ``split(",")`` cuts it in two. A hand-written
+    # master that puts one tag per line parses too: a raw newline is a tag
+    # separator in the grammar.
+    parsed = parse_position_caption(text)
     flat = correct_tags(parsed.flat_tags, kb, options=options)
     if parsed.has_clauses:
         # Bucket-reordering would dissolve a clause tag's binding back into the
         # bag, so only the flat bag is corrected and the clauses re-appended.
-        clauses, clause_dropped = _drop_clause_tags(
-            parsed.clauses, _group_dropper(kb, options.drop_groups)
-        )
+        # The bag's own drop happened in :func:`correct_tags`.
+        clauses, clause_dropped = parsed.clauses, ()
+        drops = _group_dropper(kb, options.drop_groups)
+        if drops is not None:
+            kept, clause_dropped = partition_tags(
+                ParsedCaption((), parsed.clauses), lambda tag, _clause: drops(tag)
+            )
+            clauses = kept.clauses
         corrected = compose_position_caption(list(flat.tags), clauses)
         dropped = (*flat.dropped_tags, *clause_dropped)
     else:
@@ -297,22 +325,18 @@ def drop_caption_groups(
     written in, so the one change a reader sees is the tags that went. A caption
     with nothing to drop comes back as it arrived — a re-compose would still
     respace its commas, and that is not a drop. ``keep`` names tags no selector
-    may take, compared by :func:`tag_key`.
+    may take, compared by :func:`~anime_tools.captions.taxonomy.normalize_tag`.
+    The cut is :func:`~anime_tools.captions.position_clauses.partition_tags`.
     """
     drops = _group_dropper(kb, selectors, keep)
     if drops is None:
         return GroupDropResult(text)
-    parsed = parse_position_caption(text.replace("\n", ","))
-    flat: list[str] = []
-    dropped: list[str] = []
-    for tag in parsed.flat_tags:
-        (dropped if drops(tag) else flat).append(tag)
-    clauses, clause_dropped = _drop_clause_tags(parsed.clauses, drops)
-    if not dropped and not clause_dropped:
-        return GroupDropResult(text)
-    return GroupDropResult(
-        compose_position_caption(flat, clauses), (*dropped, *clause_dropped)
+    kept, dropped = partition_tags(
+        parse_position_caption(text), lambda tag, _clause: drops(tag)
     )
+    if not dropped:
+        return GroupDropResult(text)
+    return GroupDropResult(kept.render(), dropped)
 
 
 def correct_tags(
@@ -405,42 +429,19 @@ def _group_dropper(
     kb: TagKnowledgeBase, selectors: Iterable[str], keep: Iterable[str] = ()
 ) -> Callable[[str], bool] | None:
     """``tag -> drop it?`` over drop-group ``selectors``, or ``None`` when there
-    is nothing to drop — the one rule the bag and the clauses are cut by."""
+    is nothing to drop — the one rule the bag and the clauses are cut by.
+    ``keep`` is keyed on :func:`tag_key`, which drops the artist ``@``, so
+    ``--keep_tags trig`` shields ``@trig``."""
     sels = tuple(selectors)
     if not sels:
         return None
     kept = {tag_key(t) for t in keep if t.strip()}
-    return lambda tag: (
-        tag_key(tag) not in kept and should_drop_tag(normalize_tag(tag), kb, sels)
-    )
 
+    def drops(tag: str) -> bool:
+        key = normalize_tag(tag)
+        return _key_from_normalized(key) not in kept and should_drop_tag(key, kb, sels)
 
-def _drop_clause_tags(clauses, drops: Callable[[str], bool] | None):
-    """Apply a group drop inside position clauses.
-
-    Only the dropped tags are removed; a clause left with no tags is removed
-    whole, since a bare ``On the left`` binds nothing. A text clause's tags
-    are quoted lines, not taxonomy tags — it passes through untouched.
-    """
-    if drops is None:
-        return list(clauses), ()
-    from dataclasses import replace
-
-    kept = []
-    dropped: list[str] = []
-    for clause in clauses:
-        if clause.is_text:
-            kept.append(clause)
-            continue
-        tags = []
-        for tag in clause.tags:
-            if drops(tag):
-                dropped.append(tag)
-            else:
-                tags.append(tag)
-        if tags:
-            kept.append(replace(clause, tags=tuple(tags)))
-    return kept, tuple(dropped)
+    return drops
 
 
 def tag_kind(tag: str, kb: TagKnowledgeBase) -> str:

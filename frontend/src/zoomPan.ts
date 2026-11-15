@@ -53,3 +53,5 @@ export function createZoomPan() {
 
   return { zoom, style, wheel, drag, reset };
 }
+
+export type ZoomPan = ReturnType<typeof createZoomPan>;

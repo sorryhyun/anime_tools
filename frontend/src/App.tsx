@@ -1,14 +1,14 @@
-import { batch, createEffect, createSignal, on, Show } from "solid-js";
+import { batch, createEffect, on, Show } from "solid-js";
 import { api } from "./api";
 import { createConfig } from "./config";
 import { createDataset } from "./dataset";
-import { createDownloads, isDownloadJob } from "./downloads";
+import { createDownloads } from "./downloads";
 import { t } from "./i18n";
 import { createLayout } from "./layout";
 import { createRunner } from "./runner";
 import { createStages } from "./stages";
 import { createTemp } from "./temp";
-import { createUpdates, isUpdateJob } from "./updates";
+import { createUpdates } from "./updates";
 import type { Stage } from "./types";
 import { CompareView } from "./components/CompareView";
 import { DatasetTree } from "./components/DatasetTree";
@@ -60,8 +60,8 @@ export default function App() {
       void api
         .job(id)
         .then((j) => {
-          if (isDownloadJob(j)) downloads.adopt(j);
-          else if (isUpdateJob(j)) updates.adopt(j);
+          if (j.kind === "download") downloads.adopt(j);
+          else if (j.kind === "update") updates.adopt(j);
           else runner.attach(id);
         })
         .catch(() => runner.attach(id));

@@ -28,7 +28,15 @@ It is the single source of truth for weight locations. `vision/pe.py`,
 (`default_pe_spatial_path`, `default_animetext_dir`, `default_ocr_reader_dir`, …). A path you
 could point elsewhere is a Download button that writes where the loader doesn't look;
 `test_rows_land_where_the_loaders_look` is the guard. Destinations hang off `models_dir()`
-(`_env.py`), which follows the curation home.
+(`_env.py`), which follows the curation home. The tagger's `TAGGER_HF_REPO` /
+`TAGGER_HF_SUBFOLDER` / `DEFAULT_TAGGER_DIR` live here too (`tagger.dbv4_meta` re-exports them).
+
+A loader's fetch-on-first-use goes through `ensure(row_id, *, fetch=True, missing=None,
+dest=None, **overrides)` (`_catalog.py`): the row's dir, fetched by `Asset.fetch` when a required
+file is absent; `fetch=False` raises `missing(dest)`; `dest` / `overrides` re-point the row at a
+caller's own path (`load_pe_spatial(model_path=…)`, `ensure_tagger_checkpoint(dir, repo,
+subfolder)`). PE-Spatial, the tagger checkpoint, the AnimeText detector and both OCR reader rows
+use it — never a hand-rolled `hf_download` + flatten.
 
 ## Row kinds
 

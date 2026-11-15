@@ -15,6 +15,13 @@ from anime_tools._json import write_json
 DRY_RUN_NOTE = "\nDry run — no captions written. Re-run with --apply to write."
 """What every caption stage says when it wrote nothing."""
 
+TE_NOTE = (
+    "\nWritten to the revised captions (the master is untouched). Run "
+    "`make preprocess-te` now to re-encode."
+)
+"""What every caption stage says when it wrote something: the TE caches go
+stale but still look current, so the trainer's re-encode is the next step."""
+
 
 def stage_report_header(
     *, src: Path, dst: Path, path_pattern: str | None, apply: bool

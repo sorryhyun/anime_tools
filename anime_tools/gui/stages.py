@@ -7,19 +7,49 @@ are ⚙ Settings values, which fold under Advanced — and stays torch-free: a
 request class is imported to be described (:func:`schema`) or built
 (:func:`build_argv`), and a stage whose deps are missing is listed as
 *unavailable* rather than breaking the server.
+
+The bindings are :mod:`~anime_tools.gui._stage_bindings` and the form field
+:mod:`~anime_tools.gui._stage_field`, both re-exported here; this module builds
+the schema and the argv from them.
 """
 
 from __future__ import annotations
 
 import inspect
 from collections.abc import Mapping
-from dataclasses import MISSING, dataclass
-from pathlib import PurePosixPath
 from types import SimpleNamespace
 from typing import Any
 
-from anime_tools._request import Arg, args_of
+from anime_tools._request import args_of
+
+# ``REPLAY_REPORT_NAME`` is what ``--from_report --apply`` writes; read from the
+# contract rather than the stage that owns it, so this module imports no stage.
 from anime_tools.contract import GATE_ATTR, REPLAY_REPORT_NAME
+from anime_tools.gui._stage_bindings import (
+    AUTO_FIELDS,
+    BASIC_FIELDS,
+    EXPORT_STAGE,
+    FOLLOW_UPS,
+    MASK_FIELDS,
+    MASK_SETTING,
+    NO_PREFLIGHT,
+    PANEL_FIELDS,
+    PREPROCESS_SETTINGS_KEY,
+    PREPROCESS_STAGE,
+    REPLAY_FIELD,
+    REPORT_INPUTS,
+    REPORT_SETTING,
+    ROOT_FIELDS,
+    SCOPE_FIELD,
+    SETTING_FIELDS,
+    SETTINGS_KEY,
+    UNBOUND,
+    Bindings,
+    mask_subpath,
+    preprocess_for,
+    report_subpath,
+)
+from anime_tools.gui._stage_field import Field, fields_of
 from anime_tools.stages.registry import BY_ID, PANELS, STAGES, Stage, request_class
 
 __all__ = [
@@ -45,11 +75,11 @@ __all__ = [
     "SETTINGS_KEY",
     "SETTING_FIELDS",
     "STAGES",
+    "UNBOUND",
+    "Bindings",
     "Field",
     "Stage",
-    "bound_value",
     "build_argv",
-    "dump_schemas",
     "fields_of",
     "form_values",
     "load_parser",
@@ -62,448 +92,10 @@ __all__ = [
     "schema",
 ]
 
-REPLAY_FIELD = "from_report"
-"""``--from_report``: the dest a replay-capable stage exposes."""
-# ``REPLAY_REPORT_NAME`` is what ``--from_report --apply`` writes; read from the
-# contract rather than the stage that owns it, so this module imports no stage.
-
-_PATH_HINTS = (
-    "dir",
-    "path",
-    "src",
-    "dst",
-    "out",
-    "csv",
-    "checkpoint",
-    "config",
-    "report",
-    "accept",
-    "revert",
-    "manifest",
-    "qwen3",
-    "source",
-)
-
-_DIR_HINTS = ("dir", "src", "dst", "root", "source", "tokenizer", "qwen3")
-"""Which of those name a *directory*, so the host's chooser opens in the mode that
-can return one; everything else with a path in its name is a file."""
-
-
-SETTINGS_KEY = "stage_defaults"
-"""Where :data:`SETTING_FIELDS`' values live in the settings file."""
-
-SETTING_FIELDS: dict[str, str] = {
-    # dest → settings key. Stage-independent knobs, set once in ⚙ Settings;
-    # hidden from the form and filled by :func:`build_argv`.
-    "path_pattern": "path_pattern",
-    "tagger_dir": "tagger_dir",
-    "checkpoint": "checkpoint",
-    "prompt_embed": "prompt_embed",
-}
-
-REPORT_SETTING = "report_root"
-"""The directory every stage's report lands under, in :data:`SETTINGS_KEY`.
-
-Only the *root* is the setting; each stage keeps its own sub-path
-(:func:`report_subpath`), so one stage's ``--from_report`` replay cannot read
-another's report. Blank means "beside the ``dst`` root". The one report a stage
-*reads* (:data:`REPORT_INPUTS`) is bound the same way.
-"""
-
-MASK_SETTING = "mask_root"
-"""The directory each mask generator's own tree lands under, in
-:data:`SETTINGS_KEY`.
-
-Only the root is the setting; the generator keeps its own tail
-(:func:`mask_subpath`) rather than writing into the ``masks`` root, so a second
-tree merged in beside it (a hand-painted one, another tool's) cannot overwrite
-its ``{stem}_mask.png`` at the same relative path. Blank means beside the
-``masks`` root.
-"""
-
-MASK_FIELDS: dict[str, str] = {
-    # stage id → the dest naming a mask tree under :data:`MASK_SETTING`.
-    "masks_sam": "mask_dir",
-    # The merge *reads* the generator's tree, so it moves with it; its tail is a
-    # list because the flag is.
-    "masks_merge": "mask_dirs",
-}
-
-REPORT_INPUTS: dict[str, str] = {
-    # stage id → the dest naming a report this stage *reads*. Bound to
-    # :data:`REPORT_SETTING` like the report a stage writes, but kept out of
-    # :attr:`Stage.report`, which is the report this run produces.
-    "export": "index",
-}
-
-PANEL_FIELDS: dict[str, frozenset[str]] = {
-    # stage id → bound dests this stage's own *panel* may override.
-    #
-    # A bound field is normally hidden and filled from ⚙ Settings. Export is the
-    # exception: where it publishes (``out``) and which caption index it publishes
-    # (``index``) are per-run choices. They stay bound but stay on the form, each
-    # opening on the Settings-derived value (:func:`resolved_schema`); typing over
-    # one wins for that run only. Everything Export *reads* stays hidden.
-    "export": frozenset({"out", "index"}),
-}
-
-SCOPE_FIELD = "path_pattern"
-"""The :data:`SETTING_FIELDS` key the GUI narrows to run a stage on one image."""
-
-PREPROCESS_STAGE = "resize"
-"""The stage that populates the resized tree, run as a preflight rather than a dock
-panel: every stage bound to ``dst`` walks ``workspace/resized/``, so an image only
-in the caption master is invisible to it. Idempotent, so the preflight is cheap."""
-
-EXPORT_STAGE = "export"
-"""The one stage that writes outside the workspace — so the one a run over the
-GUI's drop area (``gui.dataset.TEMP_SPACE``) is refused."""
-
-PREPROCESS_SETTINGS_KEY = "preprocess"
-"""Where the resize form's values live in the settings file. It has no panel, so
-its knobs are set once in ⚙ Settings."""
-
-BASIC_FIELDS: dict[str, frozenset[str]] = {
-    # stage id → the dests that stay on the form when Advanced is off; everything
-    # else on that stage folds away behind the form's one toggle. A stage with no
-    # row here has no advanced fields at all.
-    #
-    # The rule for a row is what a run changes its mind about: what to detect, how
-    # sure it has to be, how many there are, and what to write.
-    "position": frozenset(
-        {
-            "crops",
-            "flatten",
-            "multiview_audit",
-            "prompt",
-            "score_threshold",
-            "min_instances",
-            "max_instances",
-            "rewrite",
-        }
-    ),
-    "audit": frozenset(
-        {
-            "apply_verdicts",
-            "apply_confidence",
-            "crops",
-            "sheets",
-            "prompt",
-            "score_threshold",
-            "max_instances",
-        }
-    ),
-    "correct": frozenset(
-        {
-            "no_correct",
-            "caption_trigger_word",
-            "caption_insert_no_artist",
-            "caption_drop_groups",
-            "caption_shuffle_variants",
-        }
-    ),
-    "drop_groups": frozenset({"groups", "keep_tags"}),
-    "ocr": frozenset(
-        {"det_conf", "min_det", "min_score", "min_chars", "skip_en", "strip_symbols"}
-    ),
-    "groups": frozenset({"sim_min", "min_size"}),
-    "masks_sam": frozenset({"masks", "threshold", "dilate", "force"}),
-}
-"""Which of each stage's own knobs the form shows before Advanced is on."""
-
-
-AUTO_FIELDS: frozenset[str] = frozenset({"device"})
-"""Dests the GUI neither shows nor sends. This process is torch-free, so it
-cannot see whether the *child* will find a GPU; the stage resolves ``--device``
-itself."""
-
-
-ROOT_FIELDS: dict[str, dict[str, str]] = {
-    # stage id → {dest: dataset root name}, filled from the Settings dialog's
-    # dataset roots so no stage form re-asks for them.
-    "resize": {"src": "src", "dst": "dst"},
-    "autotag": {"src": "src", "dst": "dst"},
-    "position": {"src": "src", "dst": "dst"},
-    "correct": {"src": "src", "dst": "dst"},
-    "drop_groups": {"src": "src", "dst": "dst"},
-    "audit": {"src": "src", "dst": "dst"},
-    # OCR, grouping and the mask generator read the *resized* tree: one
-    # geometry for the whole pipeline. A mask cut from master pixels lands off the
-    # subject for a ratio-clamped image. OCR binds no `src` — it reads no caption
-    # and its sidecars go to their own tree.
-    "ocr": {"dst": "dst"},
-    "groups": {"source_dir": "dst"},
-    "masks_sam": {"image_dir": "dst"},
-    # Only the *merged* output is the masks root; the generator's --mask-dir is
-    # an intermediate that has to differ from it, so it stays on the form.
-    "masks_merge": {"output_dir": "masks"},
-    # Runs the pipeline backwards: reads the workspace trees and writes ``src``
-    # (a revised master) and ``out`` (everything else).
-    "export": {
-        "src": "src",
-        "dst": "dst",
-        "masks": "masks",
-        "master": "master",
-        "out": "out",
-    },
-}
-
-
-NO_PREFLIGHT: frozenset[str] = frozenset({PREPROCESS_STAGE, EXPORT_STAGE})
-"""Stages the resize preflight never runs in front of.
-
-``export`` is bound to ``dst`` but publishes the resized tree rather than
-consuming it, so an empty one is a refusal, not a hidden step.
-"""
-
-FOLLOW_UPS: dict[str, str] = {
-    # The generator writes only its own tree; the merge is what fills the
-    # ``masks`` root the sidebar shows and Export publishes, so a run that
-    # stopped at the generator left both empty.
-    "masks_sam": "masks_merge",
-}
-"""stage id → the stage that runs right after it in the same job, with that
-stage's last saved form (so a hand-painted tree listed on the merge form is
-merged in too)."""
-
-
-def preprocess_for(stage_id: str) -> str | None:
-    """The stage that must run before ``stage_id``, or ``None``.
-
-    A stage bound to the ``dst`` root reads the resized tree, so it needs
-    :data:`PREPROCESS_STAGE` in front of it, unless :data:`NO_PREFLIGHT` names it.
-    """
-    if stage_id in NO_PREFLIGHT:
-        return None
-    if "dst" in ROOT_FIELDS.get(stage_id, {}).values():
-        return PREPROCESS_STAGE
-    return None
-
-
-def _tail(default: str) -> str:
-    """A CLI default minus its first path component."""
-    parts = PurePosixPath(default).parts
-    return PurePosixPath(*parts[1:]).as_posix() if len(parts) > 1 else default
-
-
-def report_subpath(default: str) -> str:
-    """The part of a report default that is *not* a dataset root.
-
-    Every ``--report_dir`` / ``--out`` default is ``<dataset root>/<this stage's
-    own path>``; dropping the first component lets one :data:`REPORT_SETTING` move
-    every report at once while each stage keeps a directory of its own.
-    """
-    return _tail(default)
-
-
-def mask_subpath(default: str | list[str]) -> str | list[str]:
-    """The same, for a mask tree under :data:`MASK_SETTING`.
-
-    A list in, a list out: the merge's inputs are one bound field naming both
-    generators' tails, so they move together or the merge reads nothing.
-    """
-    if isinstance(default, list):
-        return [_tail(d) for d in default]
-    return _tail(default)
-
-
-@dataclass
-class Field:
-    """One form field — an :class:`anime_tools._request.Arg` plus the GUI's
-    bindings. Shipped to the browser as :meth:`to_json` (``frontend/src/types.ts``
-    mirrors that dict).
-
-    The :class:`Arg` is *carried*, not copied: everything the flag itself says —
-    its dest, kind, flags, default, help, choices, whether it is required, its
-    ``--no-`` spelling, its label — is a property reading the one the parser was
-    generated from, so the form and the CLI cannot disagree about a field and
-    :func:`_coerce` can dispatch on the very attributes ``build_parser`` hands
-    argparse. Only what the *GUI* decides is stored here.
-    """
-
-    arg: Arg
-    root: str | None = None
-    """Bound to a dataset root: hidden from the form, filled by :func:`build_argv`
-    from the Settings roots."""
-    setting: str | None = None
-    """Bound to a :data:`SETTING_FIELDS` key: hidden, filled from the Settings
-    dialog's stage defaults."""
-    report: str | None = None
-    """This stage's own path under the :data:`REPORT_SETTING` root: hidden, filled
-    by :func:`build_argv` as ``<root>/<report>``."""
-    mask: str | list[str] | None = None
-    """This stage's own tail(s) under the :data:`MASK_SETTING` root, bound and
-    hidden like :attr:`report`. A list for the merge, which names its input
-    trees in one flag."""
-    auto: bool = False
-    """In :data:`AUTO_FIELDS`: never shown, never sent, always auto-detected."""
-    overridable: bool = False
-    """In :data:`PANEL_FIELDS`: bound but *shown*, and a value the form sends wins
-    for that run. Its :attr:`default` is the bound value once the schema has been
-    through :func:`resolved_schema`."""
-    advanced: bool = False
-    """Not in this stage's :data:`BASIC_FIELDS` row: an ordinary form field folded
-    away until the Advanced toggle is on. Never set on a required field or on a
-    drawer's own gate."""
-
-    # --- the Arg, as the browser reads it ---------------------------------
-
-    @property
-    def dest(self) -> str:
-        return self.arg.name
-
-    @property
-    def kind(self) -> str:
-        """``bool`` | ``int`` | ``float`` | ``str`` | ``enum`` | ``list`` | ``masks``."""
-        return self.arg.kind
-
-    @property
-    def flags(self) -> list[str]:
-        """``[]`` → positional."""
-        return list(self.arg.flags)
-
-    @property
-    def default(self) -> Any:
-        """The argv spelling of the field's default (a prompt list is its
-        comma-separated string), JSON-ready; ``None`` for a required field."""
-        return _json(self.arg.default)
-
-    @property
-    def choices(self) -> list[Any] | None:
-        return list(self.arg.choices) if self.arg.choices else None
-
-    @property
-    def help(self) -> str:
-        return self.arg.help
-
-    @property
-    def required(self) -> bool:
-        return self.arg.required
-
-    @property
-    def negate(self) -> str | None:
-        """For a bool without a ``store_false`` spelling: the ``--no-…`` flag."""
-        return self.arg.negate
-
-    @property
-    def label(self) -> str:
-        """What the form shows: the flag, or the dest for a ``store_false`` flag so
-        a ticked box always means *on*."""
-        a = self.arg
-        return a.name if a.off else (a.flags[0] if a.flags else a.name)
-
-    @property
-    def gate(self) -> str | None:
-        """The dest of the boolean this field hangs off — a *drawer*. The gate
-        carries its own dest here, which is how the form tells the checkbox from
-        what it folds away. A shut drawer's fields never reach the argv."""
-        return self.arg.gate
-
-    @property
-    def group(self) -> str:
-        return self.arg.group
-
-    # --- what the bindings decide ------------------------------------------
-
-    @property
-    def bound(self) -> bool:
-        return bool(self.root or self.setting or self.report or self.mask)
-
-    @property
-    def path(self) -> bool:
-        """Does the ``…`` chooser belong beside this field?
-
-        A bound field names a path by construction, so it says so rather than
-        waiting for its flag's name to hint at it. That only matters for a field
-        on a form (:data:`PANEL_FIELDS`), where it puts the right chooser beside
-        Export's destinations.
-        """
-        if self.root or self.report or self.mask:
-            return True
-        return any(h in self._hint for h in _PATH_HINTS)
-
-    @property
-    def path_kind(self) -> str:
-        """``dir`` | ``file``: which chooser the ``…`` beside a ``path`` field
-        opens. Meaningless unless :attr:`path`."""
-        if self.root or self.report or self.mask:
-            if not self.root and PurePosixPath(str(self.default or "")).suffix:
-                return "file"
-            return "dir"
-        return "dir" if any(h in self._hint for h in _DIR_HINTS) else "file"
-
-    @property
-    def _hint(self) -> str:
-        """The dest as the ``…``-chooser hints are spelled (hyphenated)."""
-        return self.arg.name.replace("_", "-")
-
-    def to_json(self) -> dict[str, Any]:
-        """The flat dict the browser gets: the Arg's half and the bindings' half."""
-        return {
-            "dest": self.dest,
-            "kind": self.kind,
-            "flags": self.flags,
-            "default": self.default,
-            "choices": self.choices,
-            "help": self.help,
-            "required": self.required,
-            "path": self.path,
-            "path_kind": self.path_kind,
-            "group": self.group,
-            "negate": self.negate,
-            "label": self.label,
-            "gate": self.gate,
-            "root": self.root,
-            "setting": self.setting,
-            "report": self.report,
-            "mask": self.mask,
-            "auto": self.auto,
-            "overridable": self.overridable,
-            "advanced": self.advanced,
-        }
-
-    @classmethod
-    def from_json(cls, arg: Arg, fd: Mapping[str, Any]) -> Field:
-        """The inverse of :meth:`to_json`, given the field's own :class:`Arg`."""
-        return cls(
-            arg=arg,
-            root=fd.get("root"),
-            setting=fd.get("setting"),
-            report=fd.get("report"),
-            mask=fd.get("mask"),
-            auto=bool(fd.get("auto")),
-            overridable=bool(fd.get("overridable")),
-            advanced=bool(fd.get("advanced")),
-        )
-
-
-def fields_of(sc: dict[str, Any]) -> list[Field]:
-    """One schema's fields back as :class:`Field` objects.
-
-    The wire dict carries what the browser reads, not the parser's view of the
-    flag, so each field's :class:`Arg` is re-attached from the request class the
-    schema names — the same object :func:`schema` described it with. Which is why
-    a *resolved* schema (:func:`resolved_schema`, whose defaults are the Settings
-    values) and the stored one build the same argv.
-    """
-    args = {a.name: a for a in args_of(request_class(sc["request"]))}
-    return [
-        fd if isinstance(fd, Field) else Field.from_json(args[fd["dest"]], fd)
-        for fd in sc["fields"]
-    ]
-
 
 def load_parser(stage: Stage):
     """The stage's CLI parser — generated from the same request the schema is."""
     return stage.request_class().parser()
-
-
-def _json(value: Any) -> Any:
-    if value is MISSING:
-        return None
-    if isinstance(value, tuple):
-        return list(value)
-    return value
 
 
 def schema(stage: Stage) -> dict[str, Any]:
@@ -541,15 +133,13 @@ def schema(stage: Stage) -> dict[str, Any]:
         if f.dest == MASK_FIELDS.get(stage.id) and f.default is not None:
             f.mask = mask_subpath(f.default)
         f.overridable = f.dest in PANEL_FIELDS.get(stage.id, frozenset())
-        # Only a field the form actually shows can be folded away; a bound or
-        # auto one is already hidden.
+        # Only a field the form actually shows can be folded away.
         f.advanced = bool(
             basic is not None
             and f.dest not in basic
-            and (f.overridable or not (f.bound or f.auto))
+            and f.shown
             and not f.required
             and f.gate != f.dest
-            and f.dest not in ("apply", REPLAY_FIELD)
         )
     return {
         **base,
@@ -564,47 +154,9 @@ def schema(stage: Stage) -> dict[str, Any]:
     }
 
 
-def _under(root: str, tail: str | list[str]) -> str | list[str]:
-    """Join one tail, or every tail of a list field, onto a Settings root."""
-    if isinstance(tail, list):
-        return [f"{root}/{t}" for t in tail]
-    return f"{root}/{tail}"
-
-
-def bound_value(
-    f: Field,
-    *,
-    roots: dict[str, str] | None = None,
-    settings: dict[str, str] | None = None,
-    report_root: str | None = None,
-    mask_root: str | None = None,
-) -> str | list[str] | None:
-    """What Settings says this field is, or ``None`` if it is not bound.
-
-    Read by both :func:`build_argv` and :func:`resolved_schema`, so the argv and
-    the form cannot disagree.
-    """
-    if f.root:
-        return (roots or {}).get(f.root) or None
-    if f.setting:
-        return (settings or {}).get(f.setting) or None
-    if f.report:
-        return f"{report_root}/{f.report}" if report_root else None
-    if f.mask:
-        return _under(mask_root, f.mask) if mask_root else None
-    return None
-
-
-def resolved_schema(
-    sc: dict[str, Any],
-    *,
-    roots: dict[str, str] | None = None,
-    settings: dict[str, str] | None = None,
-    report_root: str | None = None,
-    mask_root: str | None = None,
-) -> dict[str, Any]:
+def resolved_schema(sc: dict[str, Any], bindings: Bindings = UNBOUND) -> dict[str, Any]:
     """``sc`` with every :attr:`Field.overridable` default replaced by what
-    Settings currently says (:func:`bound_value`).
+    Settings currently says (:meth:`Bindings.value`).
 
     The schemas are built once at startup and know nothing about a settings
     file, so the bound values a *form* has to show are filled in here, per
@@ -615,17 +167,7 @@ def resolved_schema(
         return sc
     out = []
     for f, fd in zip(fields_of(sc), fields, strict=True):
-        v = (
-            bound_value(
-                f,
-                roots=roots,
-                settings=settings,
-                report_root=report_root,
-                mask_root=mask_root,
-            )
-            if f.overridable
-            else None
-        )
+        v = bindings.value(f) if f.overridable else None
         out.append({**fd, "default": v} if v is not None else fd)
     return {**sc, "fields": out}
 
@@ -663,10 +205,11 @@ def _coerce(f: Field, v: Any) -> Any:
 def build_argv(
     sc: dict[str, Any],
     values: dict[str, Any],
+    bindings: Bindings = UNBOUND,
     *,
     apply: bool = False,
-    roots: dict[str, str] | None = None,
-    settings: dict[str, str] | None = None,
+    roots: Mapping[str, str] | None = None,
+    settings: Mapping[str, str] | None = None,
     report_root: str | None = None,
     mask_root: str | None = None,
 ) -> list[str]:
@@ -679,13 +222,24 @@ def build_argv(
     ``Request.to_argv()``: a value at the request default is omitted, and
     ``apply`` toggles ``--apply`` regardless of what the form sent.
 
-    ``roots``, ``settings``, ``report_root`` and ``mask_root`` fill the bound
-    fields (:data:`ROOT_FIELDS`, :data:`SETTING_FIELDS`, :attr:`Field.report`,
-    :attr:`Field.mask`), overriding whatever the form sent — each root joined to
-    the stage's own tail. Narrowing a run to one image is a ``path_pattern``
-    handed in through ``settings``. :data:`AUTO_FIELDS` never reach the argv,
+    ``bindings`` fills the bound fields (:data:`ROOT_FIELDS`,
+    :data:`SETTING_FIELDS`, :attr:`Field.report`, :attr:`Field.mask`), overriding
+    whatever the form sent — each root joined to the stage's own tail. Narrowing a
+    run to one image is a ``path_pattern`` handed in through its ``settings``. :data:`AUTO_FIELDS` never reach the argv,
     and neither do the knobs of a shut drawer.
+
+    ``roots`` / ``settings`` / ``report_root`` / ``mask_root`` are the four
+    keywords the trainer's preprocess form and task runner still pass
+    (``anima_lora`` ``stage_form.py``, ``scripts/tasks/_common.py``); any of them
+    builds the ``Bindings`` in place of ``bindings``.
     """
+    if any(v is not None for v in (roots, settings, report_root, mask_root)):
+        bindings = Bindings(
+            roots=roots or {},
+            settings=settings or {},
+            report_root=report_root,
+            mask_root=mask_root,
+        )
     cls = request_class(sc["request"])
     fs = fields_of(sc)
     # A drawer's own checkbox decides whether the rest of it is even a value: the
@@ -706,13 +260,7 @@ def build_argv(
             # form cannot win over the roots or the pattern the user set. The
             # exception is a :data:`PANEL_FIELDS` dest, where a typed value wins
             # and a blank means "whatever Settings says".
-            v = bound_value(
-                f,
-                roots=roots,
-                settings=settings,
-                report_root=report_root,
-                mask_root=mask_root,
-            )
+            v = bindings.value(f)
             if f.overridable:
                 typed = values.get(f.dest)
                 v = typed if str(typed or "").strip() else v
@@ -770,13 +318,9 @@ def report_path(
     return f"{base}/{filename}" if filename else str(base)
 
 
-def dump_schemas() -> dict[str, dict[str, Any]]:
-    """Every stage's schema, keyed by id. Imports every request module (all
-    torch-free, pinned by ``tests/test_stage_requests.py``)."""
-    return {s.id: schema(s) for s in STAGES}
-
-
 def load_schemas() -> dict[str, dict[str, Any]]:
-    """Every stage's schema, built in this process from the request classes.
-    Cheap enough (no model library is imported) that there is nothing to cache."""
-    return dump_schemas()
+    """Every stage's schema, keyed by id, built in this process from the request
+    classes. Imports every request module (all torch-free, pinned by
+    ``tests/test_stage_requests.py``) and nothing heavier, so there is nothing
+    to cache."""
+    return {s.id: schema(s) for s in STAGES}

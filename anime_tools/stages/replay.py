@@ -230,11 +230,6 @@ def apply_one(
     return "written"
 
 
-# What :func:`undo_one` adds to :data:`APPLY_STATUSES` — the two outcomes of
-# taking back a write that created the file.
-UNDO_STATUSES = APPLY_STATUSES + ("would-remove", "removed")
-
-
 def undo_one(
     target: Path,
     applied: str,

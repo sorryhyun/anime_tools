@@ -35,8 +35,9 @@ CACHE_TTL = 6 * 3600
 that a page reload is never a request."""
 
 JOB_PREFIX = "update:"
-"""``update:<tag>`` — what tells an adopted job apart from a stage or a
-download, the same way ``download:`` does."""
+"""``update:<tag>`` — the job's name, as the log and the job list show it. What
+tells an adopted job apart from a stage or a download is its ``kind``
+(:data:`anime_tools.gui.jobs.UPDATE_JOB`), not this prefix."""
 
 
 def auto_check(settings: dict[str, Any] | None = None) -> bool:
@@ -89,7 +90,7 @@ def check(*, force: bool = False, ttl: float = CACHE_TTL) -> dict[str, Any]:
         "notes": "",
         "url": U.RELEASES_URL,
         "install": kind,
-        "can_update": kind == "uv-tool",
+        "can_update": refusal() is None,
         "hint": U.INSTALL_HINTS.get(kind, ""),
         "auto_check": auto_check(settings),
         "checked_at": None,
@@ -131,8 +132,10 @@ def refusal() -> str | None:
     The pane greys its button on ``can_update`` and this is the 409 the route
     answers with — the same question asked once, so the two cannot disagree.
     """
+    if U.can_update():
+        return None
     kind = U.install_kind()
-    return None if kind == "uv-tool" else (U.INSTALL_HINTS.get(kind) or kind)
+    return U.INSTALL_HINTS.get(kind) or kind
 
 
 def steps(tag: str | None = None) -> list[Step]:

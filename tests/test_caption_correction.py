@@ -290,3 +290,39 @@ def test_correct_tags_takes_the_bag_without_any_caption_text(tmp_path):
         options=CaptionCorrectionOptions(insert_no_artist=False),
     )
     assert out.tags == ("1girl", "long hair", 'sign reading "stop, now"')
+
+
+def test_a_raw_newline_separates_tags_but_never_quoted_text():
+    """One tag per line is a hand-written master's separator; the parser takes
+    it, so no caller has to substitute commas first. Spans stay offsets into
+    the raw string (the GUI paints boxes from them), and a newline inside a
+    closed quote pair is content, like a comma there."""
+    from anime_tools.captions.position_clauses import (
+        has_clauses,
+        parse_caption,
+        tag_spans,
+    )
+
+    assert parse_caption("1girl, solo\nblue hair, smile").flat_tags == (
+        "1girl",
+        "solo",
+        "blue hair",
+        "smile",
+    )
+    caption = (
+        '1girl\nsmile. On the left, red hair\nblue eyes. Japanese text reads as "a,\nb"'
+    )
+    parsed = parse_caption(caption)
+    assert parsed.flat_tags == ("1girl", "smile")
+    assert parsed.clauses[0].tags == ("red hair", "blue eyes")
+    assert parsed.clauses[1].tags == ('"a,\nb"',)
+    for span in tag_spans(caption):
+        assert caption[span.start : span.end] == span.text
+    assert has_clauses("1girl\nOn the left, red hair")
+
+
+def test_a_newline_separated_master_is_corrected_without_substitution(tmp_path):
+    kb = load_tag_knowledge_base(_csv(tmp_path / "tags.csv"))
+    options = CaptionCorrectionOptions(insert_no_artist=False)
+    out = correct_caption("long_hair\n1girl\nOn the left, solo", kb, options=options)
+    assert out.text == "1girl, long hair. On the left, solo."

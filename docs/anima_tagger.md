@@ -114,15 +114,14 @@ manifest, so the band is a property of the checkpoint, not a loader constant.
 | `dbv4_meta.py` | Torch-free facts about the backbones and our checkpoint: `BACKBONES` specs, `backbone_for(ckpt_dir)`, `backend_of`, `fetch_hint`, `backbone_cached(backbone)`, repo ids, required/optional file sets, `DEFAULT_TAGGER_DIR`. Shared by the loader, the ComfyUI node and `downloads/`. |
 | `backends.py` | `build_backend(cfg)` — `config.json` → `PixaiBackend` or `Dbv4Backend`. |
 | `pixai_backend.py` | The default backbone: pixai card loader, `preprocess_pixai`, `PixaiBackend` (attention-pool feature for the sidecar). |
-| `dbv4_backend.py` | dbv4 backbone loader + `align_vocab` (the single vocab join point, shared by both backends) + `SidecarHead` (our linear head over the backbone's hidden state) + `default_dtype` (bf16 on CUDA, fp32 elsewhere — MPS included). |
-| `feature_cache.py` | The backbone hidden-state cache: `backbone_cache_path(kind, arch)` / `backbone_cache_stems` / `load_backbone_cache` (the stem list rides in the safetensors metadata — a cache built for another manifest is misaligned row-for-row, so every reader checks it) + `multi_hot_from_manifest`. |
+| `_backbone.py` | What both backbones share: `BackboneOutput` (`Dbv4Output` is its old name), `align_vocab` (the single vocab join point), `SidecarHead` (our linear head over the backbone's hidden state), `probs_to_logits`, `default_dtype` (bf16 on CUDA, fp32 elsewhere — MPS included). `dbv4_backend.py` re-exports them. |
+| `dbv4_backend.py` | dbv4 backbone: card loader, `preprocess_dbv4`, `Dbv4Backend` (MLP-head hidden feature for the sidecar). |
+| `feature_cache.py` | The backbone hidden-state cache under `<workspace>/anima_tagger/` (`backbone_cache_root()`, resolved per call so it follows the curation home): `backbone_cache_path(kind, arch)` / `backbone_cache_stems` / `load_backbone_cache` (the stem list rides in the safetensors metadata — a cache built for another manifest is misaligned row-for-row, so every reader checks it) + `multi_hot_from_manifest`. |
 | `data.py` | `TaggerCheckpoint.from_dir(path, require=…, backend=…)` — the one read of a checkpoint dir (`config.json` / `vocab.json` / `dataset.json`, the shared "run `--mode build_vocab` first" exit, `idx_to_name`) — and `TaggerManifest`. |
 | `readback.py` | Read-It-Back tag-adherence instrument. |
 
 `anime_tools/captions/` — the shared schema the tagger resolves against:
-`group_router.py` (`GroupRouter` + `compute_grouped_loss`, typed tag-group
-routing with sentinel + escape semantics — the inference rule, the calibrator
-and the benches all resolve groups through it), `tag_rules.py` (`tag_rules.yaml`
+`tag_rules.py` (`tag_rules.yaml`
 loader/applier: replacements, tag aliases, always-remove, clothing dedup,
 `category_overrides`, `coverage_ignore`), `tag_groups.py`
 (`TagGroup`/`TagGroups`/`ResolvedGroup` and the three modes), `taxonomy.py`
@@ -138,7 +137,7 @@ loader/applier: replacements, tag aliases, always-remove, clothing dedup,
 | `build_ckpt.py` | Assemble the checkpoint dir (`--backend pixai\|dbv4`, `--src` defaults to the live dbv4 checkpoint): copies vocab / rules / groups / split next to the backend descriptor. |
 | `train_sidecar.py` | Sidecar linear-head trainer over cached backbone hidden states (both backends); calls `calibrate.calibrate_thresholds`. |
 | `calibrate.py` | `calibrate_thresholds` — per-tag F1-optimal threshold sweep on val (skips softmax-group tags). Library function only. |
-| `eval_metrics.py` | Shared eval + `predict_with_inference_rule` (group argmax / count-tag rule). |
+| `eval_metrics.py` | Per-tag P/R/F1, AP and micro-F1 over collected tensors (the sidecar trainer's validation scoring). |
 | `predict.py` / `autotag.py` / `autotag_server.py` | Single-image debug entry; CLI one-shot autotag; resident GUI worker. |
 | `role_markers.py` | Read-only curator helper (see below). |
 | `constants.py` | `find_image_for_caption`, image extensions; re-exports the taxonomy count-tag regex. |
@@ -200,11 +199,11 @@ dbv4's gate is auto-approve: `hf auth
 login` (or the GUI Settings dialog's token field) plus one click on
 [the repo page](https://huggingface.co/animetimm/caformer_b36.dbv4-full). The
 hidden-state cache lives at
-`<export root>/anima_tagger/<backend>/<arch>_hidden.safetensors`
+`<workspace>/anima_tagger/<backend>/<arch>_hidden.safetensors`
 (`feature_cache.py`), read by `train_sidecar.py` and
 `bench/tagger_external/calibration_check.py`.
 
-### Group routing (`GroupRouter`)
+### Tag groups
 
 `tag_groups.yaml` declares typed groups with one of three modes:
 
@@ -219,12 +218,13 @@ hidden-state cache lives at
 * `multilabel` — left in BCE; the group exists only for introspection / UI
   grouping.
 
-`captions/group_router.py` holds the router and `compute_grouped_loss` (BCE on
-every (sample, tag), masking the positions CE supervises so each cell has
-exactly one term). At inference the same router drives group argmax via
-`eval_metrics.predict_with_inference_rule`; the sidecar trainer does not use the
-grouped loss (its tags are plain BCE), but the semantics stay pinned by
-`tests/test_tagger_sentinel_groups.py` and `tests/test_grouped_loss_negweight.py`.
+At inference `AnimaTagger.predict` applies them as a group argmax (`_refine_groups`:
+an applicable group's thresholded members give way to its argmax winner, which must
+still clear its own threshold; a sentinel winner emits nothing). The sidecar trainer
+trains plain BCE — no backbone was CE-trained on our groups — so the K-way CE
+modes describe the argmax gate, not a loss. The grouped-loss router
+(`captions/group_router.py`) that once trained on them was removed 2026-11-15 with
+no caller left; `tests/test_tagger_sentinel_groups.py` pins the resolution layer.
 
 ### Calibration
 

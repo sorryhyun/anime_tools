@@ -52,8 +52,12 @@ from collections.abc import Callable, Iterator, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
+from anime_tools import _boxes
 from anime_tools.captions.ocr_sidecar import OcrLine
+from anime_tools.masking._mask_paths import find_mask
+from anime_tools.ocr._io import imread
 from anime_tools.ocr._text import drop_symbols, keep_line, reading_order
+from anime_tools.ocr.animetext import NEST_TH
 
 Box = tuple[int, int, int, int]
 Read = str | tuple[str, float] | None
@@ -76,10 +80,10 @@ LINE_MIN_SCORE = 0.6
 """The reader's mean token confidence a read needs to be written. A read with
 no confidence (:data:`NO_SCORE`) is not held to it."""
 
-NESTED_CONTAINMENT = 0.85
+NESTED_CONTAINMENT = NEST_TH
 """A kept line's box at least this far inside another kept line's box is the
 same text read twice (:func:`drop_nested`) — the detector's block-and-line
-doubling, :data:`~anime_tools.ocr.animetext.NEST_TH`."""
+doubling, so the same share as :data:`~anime_tools.ocr.animetext.NEST_TH`."""
 
 CLOSE_FRAC = 0.025
 """Closing kernel as a fraction of the page width: merges the glyphs of one
@@ -95,15 +99,9 @@ COVERED_CONTAINMENT = 0.5
 
 def overlap(a: Box, b: Box) -> tuple[float, float]:
     """``(IoU, containment)`` of two boxes; containment is the intersection over
-    the smaller area, so a box inside another reads as 1."""
-    ix0, iy0 = max(a[0], b[0]), max(a[1], b[1])
-    ix1, iy1 = min(a[2], b[2]), min(a[3], b[3])
-    inter = max(0, ix1 - ix0) * max(0, iy1 - iy0)
-    if inter == 0:
-        return 0.0, 0.0
-    area_a = (a[2] - a[0]) * (a[3] - a[1])
-    area_b = (b[2] - b[0]) * (b[3] - b[1])
-    return inter / (area_a + area_b - inter), inter / max(1, min(area_a, area_b))
+    the smaller area (:func:`anime_tools._boxes.containment`), so a box inside
+    another reads as 1."""
+    return _boxes.iou(a, b), _boxes.containment(a, b)
 
 
 def covered(box: Box, boxes: Sequence[Box]) -> bool:
@@ -148,15 +146,13 @@ def drop_nested(lines: Sequence[OcrLine]) -> list[OcrLine]:
     lines); the inner is the detector doubling it. Equal boxes are left alone.
     """
 
-    def area(b: Box) -> int:
-        return (b[2] - b[0]) * (b[3] - b[1])
-
+    area = _boxes.area
     out = []
     for ln in lines:
         inside = any(
             o is not ln
             and area(o.box) > area(ln.box)
-            and overlap(ln.box, o.box)[1] >= NESTED_CONTAINMENT
+            and _boxes.containment(ln.box, o.box) >= NESTED_CONTAINMENT
             for o in lines
         )
         if not inside:
@@ -270,30 +266,13 @@ def split_read(read: Read) -> tuple[str | None, float]:
 
 
 def mask_for(mask_dir: Path, rel: Path) -> Path | None:
-    """``<mask_dir>/<rel dir>/{stem}_mask.png``, or the legacy flat one
-    (:func:`anime_tools.masking._masks.mask_name`), or ``None``."""
-    name = f"{rel.stem}_mask.png"
-    nested = mask_dir / rel.parent / name
-    if nested.is_file():
-        return nested
-    flat = mask_dir / name
-    return flat if flat.is_file() else None
+    """``<mask_dir>/<rel dir>/{stem}_mask.png``, or the legacy flat one, or
+    ``None`` — :func:`anime_tools.masking._mask_paths.find_mask`."""
+    return find_mask(mask_dir, rel)
 
 
-def _read_image(path: Path):
-    import cv2
-    import numpy as np
-
-    data = np.fromfile(str(path), dtype=np.uint8)
-    return cv2.imdecode(data, cv2.IMREAD_COLOR)
-
-
-def _read_mask(path: Path):
-    import cv2
-    import numpy as np
-
-    data = np.fromfile(str(path), dtype=np.uint8)
-    return cv2.imdecode(data, cv2.IMREAD_GRAYSCALE)
+_read_image = imread
+"""The fallback page decode (a module name the tests patch)."""
 
 
 @dataclass
@@ -329,7 +308,7 @@ class RereadEngine:
                 rel = Path(path.name)
             mp = mask_for(self.masks, rel)
             if mp is not None:
-                mask = _read_mask(mp)
+                mask = imread(mp, gray=True)
         if not lines and mask is None:
             return []
         # ``bgr`` is the detector pass's own decode; only a caller that has none

@@ -12,9 +12,9 @@ from it, so the vocab build and the ComfyUI node do not load a backbone to read 
 
 | Module | What is in it |
 |---|---|
-| `dbv4_meta.py` | where a checkpoint's *files* live: `BACKBONES` specs (`backbone_for`, `backend_of`, `fetch_hint`, `backbone_cached`), repo ids, the required/optional file sets, `DEFAULT_TAGGER_DIR` |
+| `dbv4_meta.py` | where a checkpoint's *files* live: `BACKBONES` specs (`backbone_for`, `backend_of`, `fetch_hint`, `backbone_cached`), the backbone repo ids, the required/optional file sets; re-exports `TAGGER_HF_REPO` / `TAGGER_HF_SUBFOLDER` / `DEFAULT_TAGGER_DIR`, which are spelled in `downloads/_locations.py` |
 | `schema.py` | what a tag *means* to a checkpoint: `SLOT_ORDER`, `TAG_TYPE_NAMES`, `RATINGS`, `PEOPLE_COUNT_LABELS`, `TagEntry`, `dedupe_count_tags` |
-| `fetch.py` | getting one onto disk: `ensure_tagger_checkpoint`, `ensure_tagger_backbone`, `is_backbone_dir` |
+| `fetch.py` | getting one onto disk: `ensure_tagger_checkpoint` (the catalog's `tagger` row through `downloads.ensure`), `ensure_tagger_backbone`, `is_backbone_dir` |
 
 Every value in `schema.py` is baked into `vocab.json` at build time and read back at inference, so
 changing one invalidates existing checkpoints. `tests/test_boundary.py` pins all three importable
@@ -41,13 +41,15 @@ report's `runtime` key). The upstream repo's own `model.onnx` was never usable a
 `embedding` output is the 768-d pooled feature, while the sidecar trains on the 3072-d
 `mlp_hidden` from inside timm's `MlpHead`.
 
+What both share — `BackboneOutput` (`Dbv4Output` is the old name), `align_vocab`, `SidecarHead`, `probs_to_logits`, `default_dtype` — is `_backbone.py`, re-exported from `dbv4_backend`; each backend class carries its `feature` name and a class-level `preprocess_image`, which is what `train_sidecar` hands its DataLoader workers (`vision/_decode.py::DecodeDataset`, shared with grouping) instead of dispatching on the kind.
+
 `default_dtype` picks the dtype per device and is the one place that decides: bf16 on CUDA,
 float32 everywhere else — including MPS, where bf16 measured *slower* (102 ms/img against 87) and
 1.3e-02 off.
 
 ## Derived state
 
-`feature_cache.py` owns the backbone hidden-state cache (`backbone_cache_path(kind, arch)`, `workspace/anima_tagger/<backend>/`) (a cache built for another manifest is
+`feature_cache.py` owns the backbone hidden-state cache (`backbone_cache_path(kind, arch)`, `<workspace_dir()>/anima_tagger/<backend>/`, resolved per call so it follows the curation home) (a cache built for another manifest is
 misaligned row-for-row, so every reader checks the stem list in the safetensors metadata).
 `derive_groups.derive_from_args` + `write_merged_groups` are the one groups-derivation path,
 shared by `--mode derive_groups --apply` and `build_vocab --derive_groups`.

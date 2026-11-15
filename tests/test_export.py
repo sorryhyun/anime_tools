@@ -116,6 +116,48 @@ def test_an_edited_master_shadows_the_hand_written_one(ws):
     assert Path(caption.src) == ws.master / "a.txt"
 
 
+@pytest.mark.parametrize(
+    "rungs",
+    [("revised", "overlay", "src"), ("overlay", "src"), ("overlay",), ("src",), ()],
+)
+def test_export_and_the_caption_stages_read_one_ladder(ws, rungs):
+    """Revised → overlay → src, spelled once (``_walk_captions.resolve_caption``):
+    what a stage walks for an image is what Export publishes for it, so a
+    master edited in the GUI is never published by one and missed by the
+    other."""
+    from anime_tools.stages._walk_captions import iter_captions, resolve_caption
+
+    files = {
+        "revised": ws.resized / "sub" / "b.txt",
+        "overlay": ws.master / "sub" / "b.txt",
+        "src": ws.src / "sub" / "b.txt",
+    }
+    for name in rungs:
+        _txt(files[name], name)
+    want = files[rungs[0]] if rungs else None
+    rel = Path("sub/b.txt")
+    assert resolve_caption(ws.resized, ws.src, rel, master_dir=ws.master) == want
+
+    published = [r for r in _by(plan_export(ws), "caption") if r.rel == "sub/b.png"]
+    assert [Path(r.src) for r in published] == ([want] if want else [])
+
+    class Stats:
+        seen = 0
+
+        def skip(self, reason: str) -> None:
+            pass
+
+    walked = {
+        i.rel.as_posix(): i
+        for i in iter_captions(ws.resized, ws.src, None, Stats(), master_dir=ws.master)
+    }
+    if want is None:
+        assert "sub/b.txt" not in walked
+    else:
+        assert walked["sub/b.txt"].caption == rungs[0]
+        assert walked["sub/b.txt"].from_master == (rungs[0] != "revised")
+
+
 def test_the_variants_sidecar_stays_a_revised_tree_artifact(ws):
     """A caption read from the master does not go looking for variants beside
     it: the sidecar is written by the caption stages, into the resized tree."""

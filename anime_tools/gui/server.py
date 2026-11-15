@@ -30,7 +30,7 @@ from anime_tools.gui import nativepick as NP
 from anime_tools.gui import proposals as P
 from anime_tools.gui import stages as S
 from anime_tools.gui._context import NO_CACHE, is_loopback
-from anime_tools.gui.jobs import JobManager
+from anime_tools.gui.jobs import JobBusy, JobManager
 from anime_tools.gui.routes import ROUTERS
 
 # `mimetypes` has no built-in font rows -- it learns them from /etc/mime.types,
@@ -167,6 +167,12 @@ def create_app(
     @app.exception_handler(P.ProposalError)
     async def _bad_request(_request: Request, exc: Exception) -> JSONResponse:
         return JSONResponse({"detail": str(exc)}, status_code=400)
+
+    # The one job slot is taken: every route that starts a job (a stage, a
+    # download, an update) answers it alike.
+    @app.exception_handler(JobBusy)
+    async def _busy(_request: Request, exc: Exception) -> JSONResponse:
+        return JSONResponse({"detail": str(exc)}, status_code=409)
 
     @app.get("/")
     def index() -> FileResponse:

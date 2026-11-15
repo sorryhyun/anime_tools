@@ -115,7 +115,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from anime_tools import workspace as WS
-from anime_tools._env import curation_home, resolve_path
+from anime_tools._env import resolve_path
 from anime_tools._walk import IMAGE_EXTENSIONS, sibling_image, suffix_key, walk_images
 from anime_tools.captions._sidecar import render_rows, sidecar_header
 from anime_tools.captions.ocr_sidecar import (
@@ -131,13 +131,14 @@ from anime_tools.captions.variants import (
     variants_sidecar_path,
 )
 from anime_tools.contract import LAYOUT_JSON_SUFFIX
-from anime_tools.masking._masks import mask_name, mask_path_for
+from anime_tools.masking._mask_paths import find_mask
 from anime_tools.stages._progress import make_progress
 from anime_tools.stages._report import (
     print_dry_run_footer,
     stage_report_header,
     write_stage_report,
 )
+from anime_tools.stages._walk_captions import resolve_caption
 
 if TYPE_CHECKING:
     from anime_tools.stages.requests import ExportRequest
@@ -383,11 +384,11 @@ def _oriented(path: Path) -> tuple[int, int] | None:
     """An image's upright ``(W, H)`` from its header, or ``None`` if unreadable."""
     from PIL import Image
 
-    from anime_tools.stages.resize import _oriented_size
+    from anime_tools.stages.resize import oriented_size
 
     try:
         with Image.open(path) as im:
-            return _oriented_size(im)
+            return oriented_size(im)
     except (OSError, ValueError):
         return None
 
@@ -406,12 +407,12 @@ def _render(row: ExportRow, dst: Path) -> None:
     what :func:`_same` recognises it by."""
     from PIL import Image, ImageOps
 
-    from anime_tools.stages.resize import _collect_metadata
+    from anime_tools.stages.resize import collect_metadata
 
     src = Path(row.src)
     fmt = Image.registered_extensions().get(suffix_key(dst), "PNG")
     with Image.open(src) as im:
-        save_kwargs = _collect_metadata(im)
+        save_kwargs = collect_metadata(im)
         img = ImageOps.exif_transpose(im)
         # The transpose rewrote the orientation tag; the source's would turn
         # the upright pixels a second time.
@@ -478,8 +479,8 @@ def _render_mask(row: ExportRow, dst: Path) -> None:
     from PIL import Image
 
     from anime_tools.stages.resize import (
-        _ANCHOR_KEY,
-        _MARGINS_KEY,
+        ANCHOR_KEY,
+        MARGINS_KEY,
         normalize_crop_anchor,
         normalize_crop_margins,
     )
@@ -500,8 +501,8 @@ def _render_mask(row: ExportRow, dst: Path) -> None:
         mask = _uncrop(
             mask,
             orig,
-            normalize_crop_anchor(text.get(_ANCHOR_KEY)),
-            normalize_crop_margins(text.get(_MARGINS_KEY)),
+            normalize_crop_anchor(text.get(ANCHOR_KEY)),
+            normalize_crop_margins(text.get(MARGINS_KEY)),
         )
     if mask.size != target:
         mask = mask.resize(target, Image.Resampling.NEAREST)
@@ -608,39 +609,33 @@ def layout_sidecar_path(caption: Path) -> Path:
     return caption.with_suffix(LAYOUT_JSON_SUFFIX)
 
 
-def _mask_source(masks: Path, images: Path, image: Path, rel: Path) -> Path:
+def _mask_source(masks: Path, rel: Path) -> Path | None:
     """The mask for ``rel``: the mirrored layout, or the legacy flat one — the
-    same two-step lookup ``gui.dataset.mask_path`` does.
+    lookup every mask reader shares (``masking._mask_paths.find_mask``).
 
-    Takes the two roots rather than the :class:`ExportPaths` so the excluded
+    Takes the mask root rather than the :class:`ExportPaths` so the excluded
     tree's own mirror (``_excluded/masks`` over ``_excluded/resized``) resolves
     through the same rule.
     """
-    nested = mask_path_for(image, images, masks)
-    if nested.is_file():
-        return nested
-    return masks / mask_name(rel.stem)
+    return find_mask(masks, rel)
 
 
-def _caption_source(paths: ExportPaths, image: Path, rel: Path) -> Path | None:
+def _caption_source(paths: ExportPaths, rel: Path) -> Path | None:
     """The caption that speaks for ``rel``, or ``None`` if none does.
 
-    The caption ladder, read from the bottom: the **revised** caption
+    The caption ladder every caption stage reads
+    (``_walk_captions.resolve_caption``): the **revised** caption
     (``workspace/resized/<rel>.txt``), then the **master** — the workspace
-    overlay first, the hand-written original under ``--src`` behind it, the
-    same overlay-first rule ``gui.dataset.caption_paths`` and
-    ``_walk_captions.resolve_caption`` read.
+    overlay first, the hand-written original under ``--src`` behind it.
 
     Falling back matters because nothing copies the master into the resized
-    tree: an image no caption stage has touched has only its hand-written
-    master, and publishing it captionless is publishing a dataset the trainer
-    reads as unlabelled.
+    tree: an image no caption stage has touched has only its master, and
+    publishing it captionless is publishing a dataset the trainer reads as
+    unlabelled.
     """
-    txt = rel.with_suffix(".txt")
-    for path in (image.with_suffix(".txt"), paths.master / txt, paths.src / txt):
-        if path.is_file():
-            return path
-    return None
+    return resolve_caption(
+        paths.resized, paths.src, rel.with_suffix(".txt"), master_dir=paths.master
+    )
 
 
 def plan_export(paths: ExportPaths) -> list[ExportRow]:
@@ -664,7 +659,7 @@ def plan_export(paths: ExportPaths) -> list[ExportRow]:
             rows.append(_image_row(rel, source, out_image, cap=paths.cap))
 
         ocr = ocr_sidecar_path(paths.ocr / rel) if paths.ocr is not None else None
-        caption = _caption_source(paths, image, rel)
+        caption = _caption_source(paths, rel)
         if caption is not None:
             out_caption = out_image.with_suffix(".txt")
             rows.append(
@@ -722,8 +717,8 @@ def plan_export(paths: ExportPaths) -> list[ExportRow]:
                 )
             )
 
-        mask = _mask_source(paths.masks, paths.resized, image, rel)
-        if mask.is_file():
+        mask = _mask_source(paths.masks, rel)
+        if mask is not None:
             dst = paths.out / "masks" / mask.relative_to(paths.masks)
             rows.append(_mask_row(rel, mask, dst, image=image, source=source, cap=cap))
 
@@ -805,22 +800,6 @@ def stale_siblings(rows: list[ExportRow]) -> list[Path]:
     return out
 
 
-def resolve_layout_kb() -> Path:
-    """The danbooru tag CSV ``--caption_format layout_json`` types captions
-    against — the curation home's, the lookup the trainer's own conversion
-    makes. A missing one is a ``FileNotFoundError`` naming the download."""
-    from anime_tools.captions.correction import find_tag_csv
-
-    csv = find_tag_csv(curation_home())
-    if csv is None:
-        raise FileNotFoundError(
-            "layout_json needs the danbooru tag CSV (danbooru_tags_classified.csv): "
-            "run `python -m anime_tools.downloads danbooru_tags` first "
-            "(or the GUI's Settings > Models > Danbooru tag KB)."
-        )
-    return csv
-
-
 def _excluded_rows(paths: ExportPaths) -> list[ExportRow]:
     """The excluded tree, mirrored under ``<out>/_excluded/``.
 
@@ -874,8 +853,8 @@ def _excluded_rows(paths: ExportPaths) -> list[ExportRow]:
                 )
             )
 
-        mask = _mask_source(masks, resized, image, rel)
-        if mask.is_file():
+        mask = _mask_source(masks, rel)
+        if mask is not None:
             rows.append(
                 _row(
                     rel,
@@ -1091,8 +1070,14 @@ def _recreate(row: ExportRow, dst: Path, *, apply: bool, stats: RevertStats) -> 
 
 def run_export(req: ExportRequest):
     """Publish the workspace under ``out``. Returns ``(rows, stats)``."""
+    from anime_tools.captions.correction import resolve_tag_csv
+
     # Before the walk: a missing KB would otherwise surface on the first row.
-    layout_kb = resolve_layout_kb() if req.caption_format == "layout_json" else None
+    layout_kb = (
+        resolve_tag_csv(needed_by="layout_json")
+        if req.caption_format == "layout_json"
+        else None
+    )
     paths = ExportPaths(
         resized=resolve_path(req.dst),
         masks=resolve_path(req.masks),

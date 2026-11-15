@@ -144,6 +144,42 @@ def _grid_match_edges(
     return edges
 
 
+def _cluster_bucket(
+    rels: list[str],
+    bucket_feats: list,
+    *,
+    device,
+    sim_min: float,
+    grid: int,
+    cell_match_min: float,
+    match_frac_min: float,
+    ratio: float,
+    min_size: int,
+) -> list[tuple[list[str], float]]:
+    """One artist's images (``rels``, row-aligned with their features) →
+    ``(member rels, mean pairwise CLS cosine)`` per connected component of at
+    least ``min_size``, in :func:`connected_components` order."""
+    import numpy as np
+
+    cls = np.stack([f.cls for f in bucket_feats]).astype(np.float32)
+    cls /= np.linalg.norm(cls, axis=1, keepdims=True) + 1e-8
+    edges = _grid_match_edges(
+        bucket_feats,
+        cls,
+        device=device,
+        sim_min=sim_min,
+        grid=grid,
+        cell_match_min=cell_match_min,
+        match_frac_min=match_frac_min,
+        ratio=ratio,
+    )
+    return [
+        ([rels[i] for i in comp], round(_mean_pairwise_cosine(cls[comp]), 4))
+        for comp in connected_components(len(rels), edges)
+        if len(comp) >= min_size
+    ]
+
+
 def build_groups(
     source_dir: Path,
     out_path: Path,
@@ -166,8 +202,6 @@ def build_groups(
     manifest dict (also written to ``out_path`` as JSON).
     """
     # Lazy torch-backed imports so the pure helpers above import without torch.
-    import numpy as np
-
     from anime_tools._progress import ProgressBar
     from anime_tools.grouping.features import Member, embed_members, iter_images
 
@@ -229,34 +263,28 @@ def build_groups(
         bucket = [p for p in by_artist[artist] if _rel_key(p) in feats]
         if len(bucket) < 2:
             continue
-        bucket_feats = [feats[_rel_key(p)] for p in bucket]
-        cls = np.stack([f.cls for f in bucket_feats]).astype(np.float32)
-        cls /= np.linalg.norm(cls, axis=1, keepdims=True) + 1e-8
-        edges = _grid_match_edges(
-            bucket_feats,
-            cls,
+        for members_rel, mean_cos in _cluster_bucket(
+            [_rel_key(p) for p in bucket],
+            [feats[_rel_key(p)] for p in bucket],
             device=dev,
             sim_min=sim_min,
             grid=grid,
             cell_match_min=cell_match_min,
             match_frac_min=match_frac_min,
             ratio=ratio,
-        )
-        for comp in connected_components(len(bucket), edges):
-            if len(comp) < min_size:
-                continue
-            members_rel = [bucket[i].relative_to(source_dir).as_posix() for i in comp]
+            min_size=min_size,
+        ):
             groups.append(
                 {
                     "id": gid,
                     "artist": artist,
-                    "size": len(comp),
-                    "mean_cosine": round(_mean_pairwise_cosine(cls[comp]), 4),
+                    "size": len(members_rel),
+                    "mean_cosine": mean_cos,
                     "members": members_rel,
                 }
             )
             gid += 1
-            n_grouped += len(comp)
+            n_grouped += len(members_rel)
 
     manifest["n_groups"] = len(groups)
     manifest["n_grouped"] = n_grouped

@@ -1,13 +1,18 @@
 import { createResource, createSignal, onCleanup } from "solid-js";
 import { api } from "./api";
 import type { Dataset } from "./dataset";
+import type { TempSummary } from "./types";
 
-/** What a drop may bring: the server's own list (`gui/dataset.py::_TEMP_SUFFIXES`),
-    checked here too so a folder full of other files is not sent file by file
-    only to be refused. */
-const ACCEPT = /\.(png|jpe?g|webp|bmp|avif|txt)$/i;
-/** A `{stem}.*.txt` sidecar is not a caption, and the server refuses it. */
-const SIDECAR = /\.[^./]+\.txt$/i;
+/** Whether the server would take `rel` into the drop area, by the lists it sent
+    on `/api/temp` (its suffixes, minus the `{stem}.*.txt` sidecars that end in
+    `.txt` without being captions) — checked here so a folder full of other
+    files is not sent file by file only to be refused. */
+function accepted(rel: string, rule: Pick<TempSummary, "accept" | "sidecars">): boolean {
+  const name = rel.toLowerCase();
+  const dot = name.lastIndexOf(".");
+  if (dot < 0 || !rule.accept.includes(name.slice(dot))) return false;
+  return !rule.sidecars.some((s) => name.endsWith(s));
+}
 /** A caption rather than an image. */
 const CAPTION = /\.txt$/i;
 /** Uploads in flight at once: enough to keep the pipe full, few enough that a
@@ -134,7 +139,17 @@ export function createTemp(dataset: Dataset) {
       in the drop area — renamed, it would caption nothing. One whose image was
       refused is not sent at all, for the same reason. */
   async function send(files: Dropped[]) {
-    const keep = files.filter((f) => ACCEPT.test(f.rel) && !SIDECAR.test(f.rel));
+    // The lists ride on the summary; a drop that beats its first fetch waits
+    // for it.
+    let rule: TempSummary | undefined;
+    try {
+      rule = (!summary.error && summary()) || (await refetch()) || undefined;
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+      return;
+    }
+    if (!rule) return;
+    const keep = files.filter((f) => accepted(f.rel, rule));
     if (!keep.length) return;
     setError("");
     setUpload({ done: 0, total: keep.length });
@@ -261,5 +276,3 @@ export function createTemp(dataset: Dataset) {
     clear,
   };
 }
-
-export type Temp = ReturnType<typeof createTemp>;

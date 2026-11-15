@@ -39,7 +39,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from anime_tools.downloads import ANIMETEXT_WEIGHTS, default_animetext_dir
+from anime_tools import _boxes
+from anime_tools.downloads import ANIMETEXT_WEIGHTS
 
 DEFAULT_IMGSZ = 640
 """Letterbox side. The card exports at 640; measured against 1024 and native
@@ -137,11 +138,8 @@ def decode(
     return boxes
 
 
-def containment(inner: Sequence[int], outer: Sequence[int]) -> float:
-    """Share of ``inner``'s area inside ``outer``."""
-    ix = max(0, min(inner[2], outer[2]) - max(inner[0], outer[0]))
-    iy = max(0, min(inner[3], outer[3]) - max(inner[1], outer[1]))
-    return ix * iy / max(1, (inner[2] - inner[0]) * (inner[3] - inner[1]))
+containment = _boxes.inside
+"""Share of ``inner``'s area inside ``outer`` — :func:`anime_tools._boxes.inside`."""
 
 
 def explained(block: Sequence, lines: Sequence) -> float:
@@ -173,9 +171,7 @@ def denest(boxes: Sequence, policy: str = "inner", th: float = NEST_TH) -> list:
     if policy == "raw" or len(boxes) < 2:
         return list(boxes)
 
-    def area(b) -> int:
-        return (b[2] - b[0]) * (b[3] - b[1])
-
+    area = _boxes.area
     keep = []
     for i, b in enumerate(boxes):
         others = [o for j, o in enumerate(boxes) if j != i]
@@ -258,7 +254,11 @@ class AnimeTextDetector:
         if nest not in NEST_POLICIES:
             raise ValueError(f"nest policy must be one of {list(NEST_POLICIES)}")
         if model_dir is None:
-            model_dir = _ensure(fetch)
+            from anime_tools.downloads import ensure
+
+            model_dir = ensure(
+                "animetext_det", fetch=fetch, missing=AnimeTextWeightsMissing
+            )
         weights = Path(model_dir) / ANIMETEXT_WEIGHTS
         if not weights.is_file():
             raise AnimeTextWeightsMissing(weights.parent)
@@ -315,19 +315,21 @@ class AnimeTextDetector:
     def boxes(self, raw, prepared: tuple, shape: tuple[int, int]) -> list:
         """One image's boxes from its head, as ``(quad, score)`` pairs, nesting
         settled — the CPU tail, pool-safe. ``shape`` is the image's ``(h, w)``."""
+        return [(as_quad(b), float(b[4])) for b in self._settle(raw, prepared, shape)]
+
+    def _settle(self, raw, prepared: tuple, shape: tuple[int, int]) -> list[Scored]:
+        """One head → its scored boxes in image coordinates, NMS'd at this
+        detector's ``conf`` / ``nms`` and denested under its ``nest`` policy."""
         _, r = prepared
-        scored = decode(raw, r, shape[1], shape[0], conf=self.conf, nms=self.nms)
-        return [(as_quad(b), float(b[4])) for b in denest(scored, self.nest)]
+        h, w = shape[:2]
+        return denest(decode(raw, r, w, h, conf=self.conf, nms=self.nms), self.nest)
 
     # ---- the plain calls ---------------------------------------------
 
     def detect_scored(self, bgr) -> list[Scored]:
         """Every text block in ``bgr`` with its score, nesting settled."""
         prepared = self.prepare(bgr)
-        raw = self.forward_batch([prepared])[0]
-        _, r = prepared
-        h, w = bgr.shape[:2]
-        return denest(decode(raw, r, w, h, conf=self.conf, nms=self.nms), self.nest)
+        return self._settle(self.forward_batch([prepared])[0], prepared, bgr.shape)
 
     def detect(self, bgr) -> list[Box]:
         """Every text block in ``bgr`` as ``(x0, y0, x1, y1)``."""
@@ -339,34 +341,9 @@ class AnimeTextDetector:
         prepared = [self.prepare(bgr) for bgr in bgrs]
         raws = self.forward_batch(prepared)
         return [
-            [
-                b[:4]
-                for b in denest(
-                    decode(
-                        raw,
-                        p[1],
-                        bgr.shape[1],
-                        bgr.shape[0],
-                        conf=self.conf,
-                        nms=self.nms,
-                    ),
-                    self.nest,
-                )
-            ]
+            [b[:4] for b in self._settle(raw, p, bgr.shape)]
             for raw, p, bgr in zip(raws, prepared, bgrs, strict=True)
         ]
-
-
-def _ensure(fetch: bool) -> Path:
-    from anime_tools.downloads import by_id
-
-    row = by_id()["animetext_det"]
-    if row.missing():
-        if not fetch:
-            raise AnimeTextWeightsMissing(row.dest or default_animetext_dir())
-        row.fetch()
-    assert row.dest is not None
-    return row.dest
 
 
 __all__ = [

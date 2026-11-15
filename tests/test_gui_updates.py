@@ -206,6 +206,7 @@ def test_run_starts_one_update_job(client, monkeypatch):
     assert r.status_code == 200, r.text
     job = r.json()
     assert job["stage"] == "update:v9.9.9"
+    assert (job["kind"], job["ids"]) == ("update", ["v9.9.9"])
     assert job["argv"][1:] == ["-m", "anime_tools.update", "--version", "v9.9.9"]
 
     for _ in range(200):

@@ -103,5 +103,3 @@ export function createLayout() {
       setHelpAreas((v) => (v.length === HELP_AREAS.length ? [] : [...HELP_AREAS])),
   };
 }
-
-export type Layout = ReturnType<typeof createLayout>;

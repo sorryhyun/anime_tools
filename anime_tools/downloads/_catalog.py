@@ -13,12 +13,14 @@ Row ids and pack ids are interchangeable wherever one is accepted —
 
 from __future__ import annotations
 
+import dataclasses
 from collections.abc import Callable
 from pathlib import Path
 
 from anime_tools._env import models_dir, resolve_path
 from anime_tools.captions.correction import TAG_CSV_EN_NAME, TAG_CSV_NAME
-from anime_tools.downloads._assets import PACKS, Asset
+from anime_tools.contract import DBV4_OPTIONAL_FILES, DBV4_REQUIRED_FILES
+from anime_tools.downloads._assets import PACKS, Asset, _say
 from anime_tools.downloads._locations import (
     ANIMETEXT_FILES,
     ANIMETEXT_REPO,
@@ -27,36 +29,31 @@ from anime_tools.downloads._locations import (
     DANBOORU_TAGS_URL,
     DANBOORU_WIKI_FILE,
     DANBOORU_WIKI_REPO,
+    DEFAULT_TAGGER_DIR,
+    OCR_READER_FILES,
+    OCR_READER_REPO,
+    OCR_READER_REVISION,
+    OCR_READER_SUBFOLDER,
     PE_SPATIAL_FILENAME,
     PE_SPATIAL_REPO,
     SAM3_DIR,
     SAM3_FILENAME,
     SAM3_REPO,
-    OCR_READER_FILES,
-    OCR_READER_REPO,
-    OCR_READER_REVISION,
-    OCR_READER_SUBFOLDER,
     SOFT_PROMPT_DIR,
     SOFT_PROMPT_FILENAME,
     SOFT_PROMPT_GH_REPO,
     SOFT_PROMPT_URL,
+    TAGGER_HF_REPO,
+    TAGGER_HF_SUBFOLDER,
     VL16_BASE_FILES,
     VL16_BASE_REPO,
     default_animetext_dir,
-    default_pe_spatial_path,
     default_ocr_reader_dir,
+    default_pe_spatial_path,
     default_vl16_base_dir,
 )
-from anime_tools.tagger.dbv4_meta import (
-    DBV4_OPTIONAL_FILES,
-    DBV4_REQUIRED_FILES,
-    DEFAULT_TAGGER_DIR,
-    TAGGER_HF_REPO,
-    TAGGER_HF_SUBFOLDER,
-    backbone_for,
-)
 
-__all__ = ["by_id", "by_pack", "catalog", "expand"]
+__all__ = ["by_id", "by_pack", "catalog", "ensure", "expand"]
 
 
 def _build_english_tag_csv(dest: Path, log: Callable[[str], None]) -> None:
@@ -71,6 +68,10 @@ def catalog() -> tuple[Asset, ...]:
     """The full catalog, rebuilt per call: the home moves with
     ``ANIME_TOOLS_HOME`` and the backbone repo follows the installed
     checkpoint."""
+    # Deferred: ``tagger.dbv4_meta`` re-exports the tagger's locations from
+    # this package, so a top-level import would be a cycle.
+    from anime_tools.tagger.dbv4_meta import backbone_for
+
     tagger_dir = resolve_path(DEFAULT_TAGGER_DIR)
     backbone = backbone_for(tagger_dir)
     return (
@@ -264,3 +265,43 @@ def expand(
         picked.extend(i for i in ids if i not in picked)
     order = list(assets)
     return sorted(picked, key=order.index)
+
+
+def ensure(
+    row_id: str,
+    *,
+    fetch: bool = True,
+    missing: Callable[[Path], BaseException] | None = None,
+    dest: str | Path | None = None,
+    log: Callable[[str], None] = _say,
+    **overrides,
+) -> Path:
+    """A loader's first-use fetch: row ``row_id``'s directory, fetched when a
+    required file is absent.
+
+    The one fetch-on-load path, so a loader flattens files the way the Models
+    pane does. ``dest`` (and any other :class:`Asset` field in ``overrides``,
+    e.g. a tagger checkpoint's ``repo`` / ``subfolder``) re-points the row for a
+    caller holding a path of its own; ``fetch=False`` raises ``missing(dest)``
+    instead of downloading (a ``FileNotFoundError`` when no factory is given).
+    A dest-less (hub-cache) row has no directory to return and is refused.
+    """
+    row = by_id()[row_id]
+    if dest is not None:
+        overrides["dest"] = Path(dest)
+    if overrides:
+        row = dataclasses.replace(row, **overrides)
+    if row.dest is None:
+        raise ValueError(
+            f"{row_id!r} lands in the hub cache; there is no dir to ensure"
+        )
+    if row.missing():
+        if not fetch:
+            if missing is not None:
+                raise missing(row.dest)
+            raise FileNotFoundError(
+                f"{row.title} not found in {row.dest} — run "
+                f"`python -m anime_tools.downloads {row_id}`"
+            )
+        row.fetch(log)
+    return row.dest

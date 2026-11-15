@@ -40,10 +40,12 @@ caches per process on its arguments, so a second pass in one interpreter reuses 
   `"cuda"` literals to CPU when torch has none. Neither fakes `triton` itself: torch guards its own
   import of it and would take a fake one for real. `tests/test_sam3_import.py` pins the shims.
 - `_masks.py` owns the mask layout — `plan_mask_jobs`, `write_mask`/`write_ignore_mask`
-  (`detected=1 → alpha=0`), the read side (`mask_name`/`mask_path_for`/`iter_masks`), and
+  (`detected=1 → alpha=0`), the read side (`iter_masks`, and re-exported from the stdlib-only
+  `_mask_paths.py`: `mask_name`/`mask_path_for` and `find_mask`/`mask_candidates`, the
+  mirrored-then-legacy-flat lookup the GUI, Export, exclusion and OCR all use), and
   `mask_run`, the scaffolding a generator wraps its inner loop in (it reads the walk fields of
-  `MaskWalkRequest` by attribute). It deliberately does not import `_sam3`, because
-  `gui/dataset.py` imports `mask_name` and would otherwise drag in that side effect.
+  `MaskWalkRequest` by attribute). It deliberately does not import `_sam3`; the GUI, Export,
+  exclusion and OCR import `_mask_paths` instead, so none of them pays for numpy/PIL to find a mask.
 
 ## Prompts, drawers, directories
 

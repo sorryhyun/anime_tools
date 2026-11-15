@@ -1,5 +1,6 @@
-import { createSignal, For, onCleanup, onMount, Show } from "solid-js";
+import { createSignal, For, Show } from "solid-js";
 import { locale, localeName, LOCALES, setLocale, t } from "../i18n";
+import { onDismiss } from "../state";
 import type { SettingsPane } from "../config";
 
 /** The ☰ menu: the four Settings dialogs, the Hub token they all need, the
@@ -22,26 +23,9 @@ export function HeaderMenu(props: {
 }) {
   const [open, setOpen] = createSignal(false);
 
-  onMount(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape" && open()) {
-        e.stopPropagation();
-        setOpen(false);
-      }
-    };
-    // Capture phase, like the tag lens: a click anywhere but inside the menu
-    // dismisses it, including the ☰ itself (whose own handler then toggles).
-    const onDown = (e: MouseEvent) => {
-      if ((e.target as HTMLElement | null)?.closest(".hmenu")) return;
-      setOpen(false);
-    };
-    window.addEventListener("keydown", onKey, true);
-    window.addEventListener("mousedown", onDown, true);
-    onCleanup(() => {
-      window.removeEventListener("keydown", onKey, true);
-      window.removeEventListener("mousedown", onDown, true);
-    });
-  });
+  // A press anywhere but inside the menu dismisses it -- not the ☰ itself,
+  // which is inside and toggles.
+  onDismiss({ open, inside: ".hmenu", close: () => setOpen(false) });
 
   /** Every item closes the menu, so a dialog does not open behind one. */
   const pick = (run: () => void) => () => {

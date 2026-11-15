@@ -1,15 +1,9 @@
 import { batch, createSignal, onCleanup } from "solid-js";
 import { api, toStatus } from "./api";
 import { t } from "./i18n";
-import { createJobFollower } from "./state";
+import { createJobFollower, newestNonEmpty } from "./state";
 import type { Job } from "./types";
 import type { Config } from "./config";
-
-/** `/api/models/download` names its job `download:<ids>`; that prefix is the
-    only thing that tells an adopted job apart from a stage run. */
-const DOWNLOAD_STAGE = "download:";
-
-export const isDownloadJob = (job: Job) => job.stage.startsWith(DOWNLOAD_STAGE);
 
 /** A weights fetch: to the server a job like any other, taking the same single
  * slot, but it belongs to the Settings dialog rather than the dock, so it gets
@@ -17,9 +11,8 @@ export const isDownloadJob = (job: Job) => job.stage.startsWith(DOWNLOAD_STAGE);
  */
 export function createDownloads(config: Config) {
   const dl$ = createJobFollower({
-    // The downloader prints a blank line between models (and hub progress bars
-    // arrive as \r-terminated lines): the newest *non-empty* one is the status.
-    line: (line) => (line.trim() ? { text: line.trim(), state: "running" } : null),
+    // The downloader prints a blank line between models.
+    line: newestNonEmpty,
     done: (job) => {
       dl$.setStatus({
         text: job.state === "done" ? t().downloads.finished : t().runner.exit(job.exit_code),
@@ -44,11 +37,10 @@ export function createDownloads(config: Config) {
     });
   }
 
-  /** Re-attach to a download that was already running when the page loaded.
-      `download:<ids>` is the only record of what it asked for. */
+  /** Re-attach to a download that was already running when the page loaded;
+      the job's own `ids` say what it asked for. */
   function adopt(job: Job) {
-    const rest = job.stage.slice(DOWNLOAD_STAGE.length);
-    follow(job.id, rest === "missing" ? [] : rest.split(",").filter(Boolean));
+    follow(job.id, job.ids);
     config.openSettings("models");
   }
 
@@ -72,5 +64,3 @@ export function createDownloads(config: Config) {
     cancel: () => dl$.id() && api.cancel(dl$.id()!),
   };
 }
-
-export type Downloads = ReturnType<typeof createDownloads>;

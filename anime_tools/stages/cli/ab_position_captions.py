@@ -24,9 +24,12 @@ from anime_tools import workspace as WS
 from anime_tools._device import add_device_arg, resolve_device
 from anime_tools._env import resolve_path
 from anime_tools._json import write_json
+from anime_tools._progress import ProgressBar
 from anime_tools._walk import walk_images
 from anime_tools.captions.position_clauses import parse_caption
+from anime_tools.stages._caption_io import read_caption
 from anime_tools.stages._models import load_tagger
+from anime_tools.stages._walk_captions import master_caption
 from anime_tools.stages.cli.position_captions import options_from_flag_string
 
 # Geometry and ink are shared with the review sheet, so a background that
@@ -58,6 +61,11 @@ _B = (80, 200, 120)  # challenger
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--src", default=WS.SOURCE_ROOT)
+    p.add_argument(
+        "--master",
+        default=WS.DEFAULT_ROOTS["master"],
+        help="The master overlay, read before --src (a master edited in the GUI)",
+    )
     p.add_argument("--dst", default=WS.RESIZED)
     p.add_argument("--path_pattern", dest="path_pattern", default="*")
     p.add_argument("--out", default=f"{WS.REPORTS}/position_ab")
@@ -199,6 +207,7 @@ def write_index(out_dir: Path, rows: list[dict], labels: tuple[str, str]) -> Pat
 def main() -> None:
     args = parse_args()
     src, dst = resolve_path(args.src), resolve_path(args.dst)
+    master = resolve_path(args.master)
     out_dir = resolve_path(args.out)
     (out_dir / "sheets").mkdir(parents=True, exist_ok=True)
     labels = (
@@ -237,16 +246,19 @@ def main() -> None:
     rows: list[dict] = []
     stats = {"seen": 0, "candidates": 0, "identical": 0, "differ": 0, "no_caption": 0}
     status_counts: dict[str, dict[str, int]] = {"a": {}, "b": {}}
-    for index, image_path in enumerate(images, 1):
+    bar = ProgressBar(len(images))
+    for image_path in images:
+        bar.advance()
         stats["seen"] += 1
-        rel = str(image_path.relative_to(dst))
-        # The master, not the revised caption: after one `--apply` the revised
-        # side carries clauses and `is_candidate` would reject the corpus.
-        caption_path = (src / rel).with_suffix(".txt")
-        if not caption_path.exists():
+        rel = image_path.relative_to(dst).as_posix()
+        # The master (overlay, then --src), not the revised caption: after one
+        # `--apply` the revised side carries clauses and `is_candidate` would
+        # reject the corpus.
+        caption_path = master_caption(master, src, Path(rel).with_suffix(".txt"))
+        if not caption_path.is_file():
             stats["no_caption"] += 1
             continue
-        caption = caption_path.read_text(encoding="utf-8").strip()
+        caption = read_caption(caption_path)
         ok, _reason = is_candidate(caption)
         if not ok:
             continue
@@ -298,7 +310,7 @@ def main() -> None:
                 "status": [a_prop.status, b_prop.status],
             }
         )
-        print(f"  [{index}/{len(images)}] {rel}  +{gained}")
+        bar.note(f"{rel}  +{gained}")
 
     rows.sort(key=lambda r: -r["gained"])
     write_json(

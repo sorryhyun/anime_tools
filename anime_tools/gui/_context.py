@@ -5,34 +5,39 @@ asking, and the caching rule every file this server hands out goes out under.
 used to recompute ``roots_for`` / ``stage_defaults`` / ``report_root`` /
 ``mask_root`` in its own combination and then pass all four into
 ``S.build_argv``; here they are one object, and :meth:`RunContext.bindings` is
-the four keyword arguments a form is resolved and turned into argv with. The
+the :class:`~anime_tools.gui.stages.Bindings` a form is resolved and turned into
+argv with. The
 free functions below are still the implementations, because two routes need a
 value computed against *empty* settings — the Settings dialog's placeholders.
 
 ``D.DatasetError`` propagates to the app-wide 400 handler, so nothing here
-catches it.
+catches it. The two route helpers at the bottom (:func:`found`,
+:func:`failing_as`) are the 404 and 500 answers several routes owe alike.
 """
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Callable, Iterator, Mapping
+from contextlib import contextmanager
 from dataclasses import dataclass, field, replace
 from pathlib import Path, PurePosixPath
 from typing import Any
 
-from fastapi import Request
+from fastapi import HTTPException, Request
 
 from anime_tools._env import curation_home, models_dir
 from anime_tools.gui import dataset as D
 from anime_tools.gui import stages as S
 from anime_tools.gui.jobs import Step
-from anime_tools.gui.settings import load_settings
+from anime_tools.gui.settings import FORM_VALUES_KEY, load_settings
 
 __all__ = [
     "LOOPBACK_HOSTS",
     "NO_CACHE",
     "RunContext",
+    "failing_as",
     "follow_up_steps",
+    "found",
     "is_loopback",
     "make_output_dirs",
     "mask_root",
@@ -41,6 +46,7 @@ __all__ = [
     "root_paths",
     "roots_for",
     "stage_defaults",
+    "stage_step",
     "temp_defaults",
 ]
 
@@ -232,15 +238,15 @@ class RunContext:
             return {name: str(p) for name, p in self.roots.items()}
         return root_paths(self.roots)
 
-    def bindings(self) -> dict[str, Any]:
-        """The four keyword arguments ``S.resolved_schema`` and ``S.build_argv``
-        bind a stage form with — what used to be four recomputed values."""
-        return {
-            "roots": self.root_paths,
-            "settings": self.defaults,
-            "report_root": self.report_root,
-            "mask_root": self.mask_root,
-        }
+    def bindings(self) -> S.Bindings:
+        """What ``S.resolved_schema`` and ``S.build_argv`` bind a stage form
+        with — what used to be four recomputed values."""
+        return S.Bindings(
+            roots=self.root_paths,
+            settings=self.defaults,
+            report_root=self.report_root,
+            mask_root=self.mask_root,
+        )
 
     def scoped_to(self, rel: str) -> RunContext:
         """The same context with the run narrowed to one dataset image."""
@@ -267,6 +273,40 @@ def make_output_dirs(stage: S.Stage, report: str | None, roots: D.Roots) -> None
         D.ensure_output_dir(Path(report).parent)
 
 
+def stage_step(
+    stage: S.Stage,
+    sc: Mapping[str, Any],
+    values: dict[str, Any],
+    ctx: RunContext,
+    *,
+    apply: bool = False,
+) -> tuple[Step, str | None]:
+    """One stage of a job, bound to ``ctx``: its step, and where its report lands.
+
+    The argv is built first, so a form the request refuses (a ``ValueError``)
+    creates nothing; then the directories the run writes to are made.
+    """
+    argv = S.build_argv(sc, values, ctx.bindings(), apply=apply)
+    report = S.report_path(stage, sc["fields"], values, ctx.report_root)
+    make_output_dirs(stage, report, ctx.roots)
+    return Step(stage.module, argv, stage.id), report
+
+
+def _saved_step(
+    stage_id: str | None,
+    saved: Mapping[str, Any],
+    ctx: RunContext,
+    schemas: Mapping[str, Any],
+) -> list[Step]:
+    """``stage_id`` run with a saved form, or nothing when it is unavailable."""
+    st = S.BY_ID.get(stage_id or "")
+    sc = schemas.get(stage_id or "")
+    if st is None or sc is None or not sc["available"]:
+        return []
+    step, _ = stage_step(st, sc, S.form_values(sc["fields"], dict(saved)), ctx)
+    return [step]
+
+
 def preprocess_steps(
     stage: S.Stage, ctx: RunContext, *, schemas: Mapping[str, Any]
 ) -> list[Step]:
@@ -276,18 +316,8 @@ def preprocess_steps(
     resizes exactly that image; its own knobs come from the Settings
     ``preprocess`` block. A stage whose preflight is unavailable runs alone.
     """
-    pre_id = S.preprocess_for(stage.id)
-    pre = S.BY_ID.get(pre_id or "")
-    sc = schemas.get(pre_id or "")
-    if pre is None or sc is None or not sc["available"]:
-        return []
     saved = ctx.settings.get(S.PREPROCESS_SETTINGS_KEY) or {}
-    values = S.form_values(sc["fields"], saved)
-    argv = S.build_argv(sc, values, **ctx.bindings())
-    make_output_dirs(
-        pre, S.report_path(pre, sc["fields"], values, ctx.report_root), ctx.roots
-    )
-    return [Step(pre.module, argv, pre.id)]
+    return _saved_step(S.preprocess_for(stage.id), saved, ctx, schemas)
 
 
 def follow_up_steps(
@@ -296,17 +326,46 @@ def follow_up_steps(
     """The stage that runs after ``stage`` (``S.FOLLOW_UPS``), or nothing.
 
     Its form is the one it was last run with — the per-stage memory the jobs
-    route saves under ``values`` — bound to the same roots as ``stage``. One that
-    is unavailable is left off rather than failing the job.
+    route saves under :data:`FORM_VALUES_KEY` — bound to the same roots as
+    ``stage``. One that is unavailable is left off rather than failing the job.
     """
-    nxt = S.BY_ID.get(S.FOLLOW_UPS.get(stage.id, ""))
-    sc = schemas.get(nxt.id) if nxt else None
-    if nxt is None or sc is None or not sc["available"]:
-        return []
-    saved = (ctx.settings.get("values") or {}).get(nxt.id) or {}
-    values = S.form_values(sc["fields"], saved)
-    argv = S.build_argv(sc, values, **ctx.bindings())
-    make_output_dirs(
-        nxt, S.report_path(nxt, sc["fields"], values, ctx.report_root), ctx.roots
-    )
-    return [Step(nxt.module, argv, nxt.id)]
+    nxt = S.FOLLOW_UPS.get(stage.id)
+    saved = (ctx.settings.get(FORM_VALUES_KEY) or {}).get(nxt or "") or {}
+    return _saved_step(nxt, saved, ctx, schemas)
+
+
+# ---- what several routes answer alike -------------------------------------- #
+
+
+def found(
+    path: str,
+    test: Callable[[Path], bool] = Path.exists,
+    *,
+    resolve: Callable[[str], Path] = D.reachable,
+) -> Path:
+    """``path`` as one the panel may read and that passes ``test``, else a 404.
+
+    ``resolve`` refuses what lies outside the panel's reach (``D.reachable``,
+    which collapses ``..`` before the containment test); that refusal and a path
+    that is simply not there are the same "not found", so a 404 never says which.
+    """
+    try:
+        p = resolve(path)
+    except D.DatasetError as e:
+        raise HTTPException(404, "not found") from e
+    if not test(p):
+        raise HTTPException(404, "not found")
+    return p
+
+
+@contextmanager
+def failing_as(what: str) -> Iterator[None]:
+    """A filesystem error inside the block as a 500 that says ``what`` failed.
+
+    Only around the writes and deletes a route makes on purpose; an ``OSError``
+    anywhere else is a crash, and should read as one.
+    """
+    try:
+        yield
+    except OSError as e:
+        raise HTTPException(500, f"{what}: {e}") from e

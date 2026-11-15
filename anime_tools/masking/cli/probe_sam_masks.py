@@ -23,7 +23,8 @@ from anime_tools._json import write_json
 from anime_tools._walk import walk_images
 
 # Importing _sam3 also installs the `np.bool` alias sam3 needs before it loads.
-from anime_tools.masking._sam3 import add_checkpoint_arg, load_sam3
+from anime_tools.masking._sam3 import add_checkpoint_arg, autocast, load_sam3
+from anime_tools.masking.sam import load_image
 from anime_tools.stages.instance_detection import Detection, mask_box_fill
 
 COLORS = [
@@ -231,7 +232,6 @@ def render(overlay: np.ndarray, boxes, path: Path) -> None:
 
 def main() -> None:
     args = parse_args()
-    import torch
 
     prompts = parse_prompts(args.prompts)
     if not prompts:
@@ -253,13 +253,13 @@ def main() -> None:
 
     summary: list[dict] = []
     for path, name in zip(paths, out_names(paths)):
-        image = Image.open(path).convert("RGB")
+        image = load_image(path)
         out_dir = out_root / name
         out_dir.mkdir(parents=True, exist_ok=True)
         print(f"\n=== {path}  size={image.size} (W,H)")
 
         entry: dict = {"image": str(path), "size": list(image.size), "prompts": {}}
-        with torch.autocast(device_type="cuda", dtype=torch.bfloat16):
+        with autocast(args.device):
             state = processor.set_image(image)
             for idx, (label, prompt) in enumerate(prompts):
                 print(f"  -- {label}: {prompt!r}")

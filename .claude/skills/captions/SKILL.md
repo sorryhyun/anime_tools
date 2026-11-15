@@ -58,7 +58,7 @@ The **Tag groups** stage is the same drop without Correct around it:
 `python -m anime_tools.stages.cli.drop_group_captions --groups artist lighting` (`DropGroupRequest`,
 runner `stages/drop_groups.py`). `correction.drop_caption_groups` cuts the selectors and moves
 nothing else — no reorder, no trigger word, no `@no-artist` — and returns a caption it has nothing
-to cut from byte for byte. `--keep_tags` shields a tag from every selector, `--category_paths`
+to cut from byte for byte. `--keep_tags` shields a tag (by `tag_key`, so `trig` also shields `@trig`) from every selector, `--category_paths`
 takes literal prefixes; a write drops the stale `.variants.txt`, and the report is
 `REPLAY_SHAPES["drop_groups"]`. Correct's `--no_correct` keeps its drop too (it used to be ignored
 there).

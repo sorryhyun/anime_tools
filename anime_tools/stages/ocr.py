@@ -28,9 +28,9 @@ from anime_tools._progress import phase
 from anime_tools._walk import walk_images
 from anime_tools.captions.ocr_sidecar import OcrLine, write_ocr_for
 
+from ._preflight import resized_tree
 from ._progress import make_progress
 from ._report import write_stage_report
-from .resize import resized_tree
 
 if TYPE_CHECKING:
     from anime_tools.ocr import OcrEngine
@@ -159,8 +159,8 @@ def _vl_engine(
     Takes the device the runner resolved rather than probing again: the two
     models cannot land on different ones.
     """
-    from anime_tools.ocr.reread import RereadEngine
     from anime_tools.ocr.reader import OcrReader
+    from anime_tools.ocr.reread import RereadEngine
 
     print(f"Loading the manga VL reader ({device})...", flush=True)
     with phase("load vl reader"):

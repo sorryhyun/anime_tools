@@ -20,6 +20,7 @@ from anime_tools._env import (
     load_dotenv,
     setup_logging,
 )
+from anime_tools.downloads import DEFAULT_TAGGER_DIR
 
 # Before argparse builds defaults; CLI flags still win over env values.
 load_dotenv()
@@ -244,7 +245,7 @@ def parse_args() -> argparse.Namespace:
     )
     p.add_argument(
         "--preserve_groups",
-        default="models/captioners/anima-tagger-pixai/groups.yaml",
+        default=f"{DEFAULT_TAGGER_DIR}/groups.yaml",
         help="derive_groups --apply: existing groups.yaml whose groups are "
         "preserved verbatim and claim their tags first (no regression).",
     )
@@ -252,7 +253,7 @@ def parse_args() -> argparse.Namespace:
     # build_vocab writes the checkpoint here; the other modes read from it.
     p.add_argument(
         "--out_dir",
-        default="models/captioners/anima-tagger-pixai",
+        default=DEFAULT_TAGGER_DIR,
     )
 
     args = p.parse_args()

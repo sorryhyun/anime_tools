@@ -163,19 +163,11 @@ export function createRunner(deps: {
   }
 
   /** Reload the dataset after a job that wrote. A replay's report names the
-      images it touched (`written`), so only those rows are re-stat'd; anything
-      else falls back to re-walking the tree. */
+      images it touched, which the finished job carries as `written`, so only
+      those rows are re-stat'd; anything else (no report, or one that names no
+      such list) falls back to re-walking the tree. */
   async function reloadTouched(job: Job) {
-    let touched: string[] | null = null;
-    if (job.report_path) {
-      try {
-        const { report } = await api.report(job.id);
-        const w = (report as { written?: unknown } | null)?.written;
-        if (Array.isArray(w)) touched = w.map(String);
-      } catch {
-        // No report on disk (a failed or cancelled run): re-walk instead.
-      }
-    }
+    const touched = job.written;
     if (!touched) return dataset.reloadAll();
     await dataset.reloadRels(touched);
     setStatus((st) => ({ ...st, text: `${st.text} — ${t().runner.changed(touched.length)}` }));
@@ -262,5 +254,3 @@ export function createRunner(deps: {
     undoBlocked,
   };
 }
-
-export type Runner = ReturnType<typeof createRunner>;

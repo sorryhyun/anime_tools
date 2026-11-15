@@ -1,6 +1,7 @@
-import { createResource, createSignal, onCleanup, onMount, Show } from "solid-js";
+import { createResource, createSignal, Show } from "solid-js";
 import { api } from "../api";
 import { t } from "../i18n";
+import { onDismiss } from "../state";
 
 /** Click a tag chip anywhere -- the caption's bag, a clause, a diff -- and ask
     the Danbooru KB what it means. A floating card, not a tooltip, so its often
@@ -40,27 +41,9 @@ export function TagLens(props: { onInstall: () => void }) {
   const [info] = createResource(target, (t) => api.describeTag(t.tag));
   const close = () => setTarget(null);
 
-  onMount(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape" && target()) {
-        e.stopPropagation();
-        close();
-      }
-    };
-    // Capture phase: a click on another chip re-targets the card (its own
-    // handler runs after this one), anything else dismisses it.
-    const onDown = (e: MouseEvent) => {
-      const el = e.target as HTMLElement | null;
-      if (el?.closest(".taglens") || el?.closest(".tag")) return;
-      close();
-    };
-    window.addEventListener("keydown", onKey, true);
-    window.addEventListener("mousedown", onDown, true);
-    onCleanup(() => {
-      window.removeEventListener("keydown", onKey, true);
-      window.removeEventListener("mousedown", onDown, true);
-    });
-  });
+  // A press on another chip re-targets the card (its own handler runs after
+  // this one); anything else dismisses it.
+  onDismiss({ open: () => !!target(), inside: ".taglens, .tag", close });
 
   /** Below the chip, nudged in from the right edge; flipped above when the
       bottom of the window is closer than the card is tall. */

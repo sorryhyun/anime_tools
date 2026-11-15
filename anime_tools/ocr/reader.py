@@ -289,15 +289,11 @@ def _without_vl_notices() -> Iterator[None]:
 
 
 def _ensure(row_id: str, fetch: bool) -> Path:
-    from anime_tools.downloads import by_id
+    from anime_tools.downloads import ensure
 
-    row = by_id()[row_id]
-    if row.missing():
-        if not fetch:
-            raise OcrReaderWeightsMissing(row.dest, row_id)  # type: ignore[arg-type]
-        row.fetch()
-    assert row.dest is not None
-    return row.dest
+    return ensure(
+        row_id, fetch=fetch, missing=lambda d: OcrReaderWeightsMissing(d, row_id)
+    )
 
 
 @dataclass

@@ -12,6 +12,11 @@
 * :class:`SidecarHead` — a linear head emitting only what dbv4 cannot say:
   copyright, dataset-only characters, the 8-way people-count bucket.
 
+:func:`align_vocab`, :class:`SidecarHead`, ``Dbv4Output`` (now
+:class:`BackboneOutput`), :func:`probs_to_logits` and :func:`default_dtype`
+serve the pixai backbone too, so they live in
+:mod:`anime_tools.tagger._backbone`; they are re-exported here.
+
 dbv4 card categories: 0 general, 4 character, 9 rating — no copyright, no
 artist. Its danbooru rating names are mapped onto Anima's here.
 """
@@ -20,21 +25,34 @@ from __future__ import annotations
 
 import csv
 import logging
-from collections.abc import Mapping, Sequence
+from collections.abc import Sequence
 from dataclasses import dataclass, field
-from pathlib import Path
 
 import numpy as np
 import torch
 from PIL import Image
 from safetensors.torch import load_file as st_load
-from safetensors.torch import save_file as st_save
 from torch import nn
 
-logger = logging.getLogger(__name__)
-
 from anime_tools._device import resolve_device
-from anime_tools._json import read_json, write_json
+from anime_tools._json import read_json
+
+# The backbone-agnostic half lives in ``_backbone``; re-exported here so every
+# ``from anime_tools.tagger.dbv4_backend import …`` written before the split
+# still resolves.
+from anime_tools.tagger._backbone import (
+    SIDECAR_META,
+    SIDECAR_WEIGHTS,
+    UNSUPPORTED_LOGIT,
+    BackboneOutput,
+    Dbv4Output,
+    SidecarHead,
+    VocabAlignment,
+    align_vocab,
+    default_dtype,
+    probs_to_logits,
+    rename_recovery_from_rules,
+)
 from anime_tools.tagger.dbv4_meta import (
     DEFAULT_DBV4_ARCH,
     DEFAULT_DBV4_IMG_SIZE,
@@ -43,6 +61,28 @@ from anime_tools.tagger.dbv4_meta import (
     gated_hint,
 )
 
+logger = logging.getLogger(__name__)
+
+__all__ = [
+    "DBV4_RATING_MAP",
+    "SIDECAR_META",
+    "SIDECAR_WEIGHTS",
+    "UNSUPPORTED_LOGIT",
+    "BackboneOutput",
+    "Dbv4Backend",
+    "Dbv4Card",
+    "Dbv4Output",
+    "SidecarHead",
+    "VocabAlignment",
+    "align_vocab",
+    "default_dtype",
+    "load_dbv4_card",
+    "pad_square_white",
+    "preprocess_dbv4",
+    "probs_to_logits",
+    "rename_recovery_from_rules",
+]
+
 # danbooru rating name (dbv4 card, category 9) -> Anima rating name.
 DBV4_RATING_MAP: dict[str, str] = {
     "general": "safe",
@@ -50,34 +90,6 @@ DBV4_RATING_MAP: dict[str, str] = {
     "questionable": "nsfw",
     "explicit": "explicit",
 }
-
-# Sigmoid probability floor/ceiling when converting projected probs back to
-# logits for the group-argmax path; tags dbv4 cannot emit get ``UNSUPPORTED_LOGIT``.
-_PROB_EPS = 1e-6
-UNSUPPORTED_LOGIT = -30.0
-
-
-def default_dtype(device: torch.device | str) -> torch.dtype:
-    """bfloat16 on CUDA, float32 everywhere else.
-
-    bf16 is a win only where the hardware has kernels for it. On CPU torch emulates
-    it: measured on caformer_b36 at 384px, 2.21 s/img against float32's 1.54 — 43%
-    slower *and* 2e-2 off the float32 scores, which is the larger error of the two
-    the tagger can make. (``bench/tagger_external/probe_position_rescore.py`` has
-    picked per device this way all along; this is that rule, in the one place every
-    caller goes through.)
-
-    MPS is the same story and stays on the ``cuda``-only side of the test: measured
-    2026-09-09 at batch 4, float32 87 ms/img against bfloat16's 102 and 1.3e-02 off.
-    float16 is the one that would be faster there (77 ms), but at 2.4e-03 on the
-    scores for a 12 % saving — not a trade this stage wants made for it silently.
-    """
-    return torch.bfloat16 if torch.device(device).type == "cuda" else torch.float32
-
-
-SIDECAR_WEIGHTS = "sidecar.safetensors"
-SIDECAR_META = "sidecar.json"
-
 
 # Card (tag list + thresholds) and vocab alignment.
 
@@ -137,63 +149,6 @@ def load_dbv4_card(
     return card
 
 
-@dataclass
-class VocabAlignment:
-    ours_idx: torch.Tensor
-    """LongTensor — our vocab indices that dbv4 can emit."""
-    ext_idx: torch.Tensor
-    """LongTensor — the matching dbv4 columns, same order as ``ours_idx``."""
-    unmatched_by_category: dict[str, int]
-    unmatched: list[tuple[int, str, str]]
-    """``(our_index, name, category)`` for every tag dbv4 cannot emit."""
-
-    def supported_mask(self, n_tags: int) -> torch.Tensor:
-        m = torch.zeros(n_tags, dtype=torch.bool)
-        m[self.ours_idx] = True
-        return m
-
-
-def align_vocab(
-    vocab_tags: Sequence[Mapping[str, object]],
-    card: Dbv4Card,
-    rename_recovery: Mapping[str, str] | None = None,
-) -> VocabAlignment:
-    """Join our ``vocab.json['tags']`` onto the dbv4 card by name.
-
-    Our names are space-separated (``rules.yaml`` may have renamed some — the
-    recovered original is tried second); dbv4's are snake_case, normalised in
-    :func:`load_dbv4_card`.
-    """
-    rename_recovery = rename_recovery or {}
-    ours_idx: list[int] = []
-    ext_idx: list[int] = []
-    unmatched_by_cat: dict[str, int] = {}
-    unmatched: list[tuple[int, str, str]] = []
-    for t in vocab_tags:
-        name = str(t["name"])
-        j = card.name_to_col.get(name)
-        if j is None and name in rename_recovery:
-            j = card.name_to_col.get(rename_recovery[name])
-        cat = str(t["category"])
-        if j is None:
-            unmatched_by_cat[cat] = unmatched_by_cat.get(cat, 0) + 1
-            unmatched.append((int(t["index"]), name, cat))
-            continue
-        ours_idx.append(int(t["index"]))
-        ext_idx.append(j)
-    return VocabAlignment(
-        ours_idx=torch.tensor(ours_idx, dtype=torch.long),
-        ext_idx=torch.tensor(ext_idx, dtype=torch.long),
-        unmatched_by_category=unmatched_by_cat,
-        unmatched=unmatched,
-    )
-
-
-def rename_recovery_from_rules(rules) -> dict[str, str]:
-    """``rules.yaml`` replacements are ``src → tgt``; alignment needs ``tgt → src``."""
-    return {tgt: src for src, tgt in rules.replacements}
-
-
 # Image preprocessing — matches the card's preprocess.json: pad-white square →
 # bicubic resize → ImageNet normalisation.
 
@@ -217,14 +172,6 @@ def preprocess_dbv4(im: Image.Image, size: int) -> torch.Tensor:
 # Backend.
 
 
-@dataclass
-class Dbv4Output:
-    probs: torch.Tensor
-    """``[B, n_classes]`` sigmoid probabilities over the dbv4 columns (float32, cpu)."""
-    hidden: torch.Tensor
-    """``[B, d_hidden]`` MLP-head hidden feature (post fc1→act→norm; float32, cpu)."""
-
-
 class Dbv4Backend:
     """Lazy-loading timm wrapper around a dbv4 checkpoint.
 
@@ -233,6 +180,11 @@ class Dbv4Backend:
     """
 
     kind = "dbv4"
+    feature = "mlp_hidden"
+    """What ``hidden`` is — stamped into the feature cache and the sidecar."""
+    preprocess_image = staticmethod(preprocess_dbv4)
+    """``(PIL, size) → [3, S, S]`` — on the class so a DataLoader worker can
+    take it without the instance (and its model)."""
 
     def __init__(
         self,
@@ -336,7 +288,7 @@ class Dbv4Backend:
         return model
 
     @torch.no_grad()
-    def forward_tensor(self, x01: torch.Tensor) -> Dbv4Output:
+    def forward_tensor(self, x01: torch.Tensor) -> BackboneOutput:
         """``[B, 3, S, S]`` in [0, 1] → probs + hidden.
 
         The transfer comes first and the normalisation runs on the device: the
@@ -352,93 +304,11 @@ class Dbv4Backend:
         fc = model.head.fc
         hidden = fc.norm(fc.act(fc.fc1(pooled)))
         logits = fc.fc2(hidden)
-        return Dbv4Output(
+        return BackboneOutput(
             probs=logits.float().sigmoid().cpu(), hidden=hidden.float().cpu()
         )
 
     @torch.no_grad()
-    def forward(self, images: Sequence[Image.Image]) -> Dbv4Output:
+    def forward(self, images: Sequence[Image.Image]) -> BackboneOutput:
         x = torch.stack([self.preprocess(im) for im in images])
         return self.forward_tensor(x)
-
-
-# Sidecar head — what dbv4 cannot say.
-
-
-class SidecarHead(nn.Module):
-    """Linear head on the backend's hidden feature.
-
-    Output layout: ``[bce_indices…] ++ [people_count_labels…]``. BCE rows are
-    our-vocab tag indices (copyright + dataset-only characters); the trailing
-    block is the softmax people-count bucket (empty list = no people head).
-    """
-
-    def __init__(
-        self,
-        d_in: int,
-        bce_indices: Sequence[int],
-        people_count_labels: Sequence[str] = (),
-        feature: str = "mlp_hidden",
-    ):
-        super().__init__()
-        self.d_in = int(d_in)
-        self.bce_indices: tuple[int, ...] = tuple(int(i) for i in bce_indices)
-        self.people_count_labels: tuple[str, ...] = tuple(people_count_labels)
-        self.feature = feature
-        n_out = len(self.bce_indices) + len(self.people_count_labels)
-        self.fc = nn.Linear(self.d_in, n_out)
-
-    @property
-    def n_bce(self) -> int:
-        return len(self.bce_indices)
-
-    def forward(self, hidden: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor | None]:
-        out = self.fc(hidden)
-        bce = out[:, : self.n_bce]
-        people = out[:, self.n_bce :] if self.people_count_labels else None
-        return bce, people
-
-    def meta(self) -> dict[str, object]:
-        return {
-            "d_in": self.d_in,
-            "feature": self.feature,
-            "bce_indices": list(self.bce_indices),
-            "people_count_labels": list(self.people_count_labels),
-        }
-
-    def save(
-        self, ckpt_dir: str | Path, extra_meta: Mapping[str, object] | None = None
-    ) -> None:
-        ckpt_dir = Path(ckpt_dir)
-        st_save(
-            {k: v.detach().cpu().contiguous() for k, v in self.state_dict().items()},
-            str(ckpt_dir / SIDECAR_WEIGHTS),
-        )
-        meta = self.meta()
-        if extra_meta:
-            meta.update(dict(extra_meta))
-        write_json(ckpt_dir / SIDECAR_META, meta)
-
-    @classmethod
-    def load(cls, ckpt_dir: str | Path) -> SidecarHead | None:
-        ckpt_dir = Path(ckpt_dir)
-        w, m = ckpt_dir / SIDECAR_WEIGHTS, ckpt_dir / SIDECAR_META
-        if not (w.exists() and m.exists()):
-            return None
-        meta = read_json(m)
-        head = cls(
-            d_in=int(meta["d_in"]),
-            bce_indices=meta.get("bce_indices", []),
-            people_count_labels=meta.get("people_count_labels", []),
-            feature=str(meta.get("feature", "mlp_hidden")),
-        )
-        head.load_state_dict(st_load(str(w)))
-        head.eval()
-        for p in head.parameters():
-            p.requires_grad_(False)
-        return head
-
-
-def probs_to_logits(probs: torch.Tensor) -> torch.Tensor:
-    p = probs.clamp(_PROB_EPS, 1.0 - _PROB_EPS)
-    return torch.log(p) - torch.log1p(-p)

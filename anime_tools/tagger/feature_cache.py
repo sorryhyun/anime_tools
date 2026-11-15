@@ -18,19 +18,25 @@ import torch
 from safetensors import safe_open
 from safetensors.torch import load_file as st_load
 
-from anime_tools import workspace as WS
+from anime_tools._env import workspace_dir
 
 __all__ = [
-    "BACKBONE_CACHE_ROOT",
     "backbone_cache_path",
+    "backbone_cache_root",
     "backbone_cache_stems",
     "load_backbone_cache",
     "multi_hot_from_manifest",
 ]
 
-# Dataset-derived, not checkpoint-derived: shared across every checkpoint built
-# over the same corpus.
-BACKBONE_CACHE_ROOT = Path(WS.WORKSPACE) / "anima_tagger"
+
+def backbone_cache_root() -> Path:
+    """``<workspace>/anima_tagger`` — resolved per call, so it follows the
+    curation home (``ANIME_TOOLS_HOME`` / ``ANIME_TOOLS_WORKSPACE``) rather than
+    the process's working directory.
+
+    Dataset-derived, not checkpoint-derived: shared across every checkpoint
+    built over the same corpus."""
+    return workspace_dir() / "anima_tagger"
 
 
 def backbone_cache_path(
@@ -40,7 +46,7 @@ def backbone_cache_path(
     ``--feature_cache`` override, passed straight through."""
     if explicit:
         return Path(explicit)
-    return BACKBONE_CACHE_ROOT / kind / f"{arch}_hidden.safetensors"
+    return backbone_cache_root() / kind / f"{arch}_hidden.safetensors"
 
 
 def backbone_cache_stems(path: str | Path) -> list[str]:

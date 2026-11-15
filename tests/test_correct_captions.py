@@ -292,3 +292,41 @@ def test_a_trailing_newline_is_not_a_change(tmp_path, kb):
 
     assert (stats.unchanged, stats.written) == (1, 0)
     assert not history_sidecar_path(revised).exists()
+
+
+def test_the_erasure_pool_excludes_every_real_tag_clause_final_included(
+    tmp_path, kb, monkeypatch
+):
+    """The exclusion set comes from the parse: a clause-final ``smile.`` is
+    ``smile`` (a comma split kept the period and let the tag into the pool),
+    headers and quoted text lines are not tags."""
+    import anime_tools.stages.captions as captions_stage
+
+    seen: dict[str, set[str]] = {}
+
+    def fake_pool(qwen3, t5, *, exclude):
+        seen["exclude"] = set(exclude)
+        return ["zzzz"]
+
+    monkeypatch.setattr(captions_stage, "build_erasure_token_pool", fake_pool)
+    resized, source = _dataset(
+        tmp_path,
+        {"a": 'long_hair, 1girl. On the left, smile. Japanese text reads as "hi"'},
+    )
+    _correct(
+        resized,
+        source,
+        kb,
+        num_variants=2,
+        tag_randomize_rate=0.5,
+        qwen3_tokenizer=object(),
+        t5_tokenizer=object(),
+    )
+    assert seen["exclude"] == {"1girl", "long hair", "smile"}
+
+
+def test_correct_reports_progress_per_walked_image(tmp_path, kb):
+    resized, source = _dataset(tmp_path, {"a": "1girl", "b": None})
+    calls: list[tuple[int, int]] = []
+    _correct(resized, source, kb, progress=lambda i, n, _d: calls.append((i, n)))
+    assert calls == [(1, 2), (2, 2)]

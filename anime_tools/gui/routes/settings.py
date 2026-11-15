@@ -4,7 +4,8 @@ What the ☰ menu's dialogs read and write, none of it touching the dataset or a
 job's output: the settings file itself, the download catalog, the manual, and
 the two update routes. The two that install something (weights, a release) start
 a normal job, so a large pull or an upgrade cannot land under a running Run —
-they share the one slot with the stages.
+they share the one slot with the stages, and a taken slot is the app-wide 409
+(``JobBusy``).
 """
 
 from __future__ import annotations
@@ -15,12 +16,32 @@ from fastapi import APIRouter, HTTPException, Request
 
 from anime_tools import downloads as DL
 from anime_tools._env import curation_home, models_dir
+from anime_tools.gui import dataset as D
 from anime_tools.gui import guidebook as GB
+from anime_tools.gui import stages as S
 from anime_tools.gui import updates as UP
-from anime_tools.gui.jobs import Step
+from anime_tools.gui.jobs import DOWNLOAD_JOB, UPDATE_JOB, Step
 from anime_tools.gui.settings import edit_settings, load_settings
 
 router = APIRouter()
+
+TOKEN_KEY = "hf_token"
+"""Never stored: handed to ``huggingface_hub.login`` and dropped."""
+
+WRITABLE_SETTINGS = frozenset(
+    {
+        S.SETTINGS_KEY,
+        S.PREPROCESS_SETTINGS_KEY,
+        UP.AUTO_KEY,
+        # Saved by the roots route in the panel; a PUT here keeps the raw
+        # spelling (no root created), which is how a missing root is set up.
+        D.SETTINGS_KEY,
+    }
+)
+"""The settings blocks ``PUT /api/settings`` may write. Everything else in the
+blob is the server's own — the per-stage forms a job start records, the update
+check's cache — and a PUT naming it is refused rather than allowed to clobber
+it."""
 
 
 @router.get("/api/settings")
@@ -31,7 +52,12 @@ def get_settings() -> dict[str, Any]:
 @router.put("/api/settings")
 async def put_settings(request: Request) -> dict[str, Any]:
     body = await request.json()
-    token = body.pop("hf_token", None)
+    if not isinstance(body, dict):
+        raise HTTPException(400, "settings must be an object")
+    token = body.pop(TOKEN_KEY, None)
+    unknown = sorted(set(body) - WRITABLE_SETTINGS)
+    if unknown:
+        raise HTTPException(400, f"not a writable setting: {', '.join(unknown)}")
     with edit_settings() as data:
         data.update(body)
     if token:
@@ -72,14 +98,13 @@ async def download_models(request: Request) -> dict[str, Any]:
         ids = DL.expand([str(i) for i in (body.get("ids") or [])])
     except KeyError as e:
         raise HTTPException(404, f"unknown model: {e.args[0]}") from e
-    try:
-        job = request.app.state.jobs.start(
-            f"download:{','.join(ids) or 'missing'}",
-            [Step(DL.__name__, ids, label="download")],
-            home=curation_home(),
-        )
-    except RuntimeError as e:
-        raise HTTPException(409, str(e)) from e
+    job = request.app.state.jobs.start(
+        f"download:{','.join(ids) or 'missing'}",
+        [Step(DL.__name__, ids, label="download")],
+        home=curation_home(),
+        kind=DOWNLOAD_JOB,
+        ids=ids,
+    )
     return job.to_dict()
 
 
@@ -119,12 +144,11 @@ async def run_update(request: Request) -> dict[str, Any]:
     why = UP.refusal()
     if why is not None:
         raise HTTPException(409, why)
-    try:
-        job = request.app.state.jobs.start(
-            f"{UP.JOB_PREFIX}{tag or 'latest'}",
-            UP.steps(tag or None),
-            home=curation_home(),
-        )
-    except RuntimeError as e:
-        raise HTTPException(409, str(e)) from e
+    job = request.app.state.jobs.start(
+        f"{UP.JOB_PREFIX}{tag or 'latest'}",
+        UP.steps(tag or None),
+        home=curation_home(),
+        kind=UPDATE_JOB,
+        ids=[tag] if tag else [],
+    )
     return job.to_dict()

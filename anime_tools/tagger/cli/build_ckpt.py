@@ -22,14 +22,15 @@ from safetensors.torch import save_file as st_save
 
 from anime_tools._json import read_json, write_json
 from anime_tools.captions import tag_rules as tr
+from anime_tools.tagger._backbone import align_vocab, rename_recovery_from_rules
 from anime_tools.tagger.backends import build_backend
-from anime_tools.tagger.dbv4_backend import align_vocab, rename_recovery_from_rules
 from anime_tools.tagger.dbv4_meta import (
     BACKBONES,
     DEFAULT_BACKEND,
     DEFAULT_DBV4_ARCH,
     DEFAULT_DBV4_IMG_SIZE,
     DEFAULT_PIXAI_IMG_SIZE,
+    DEFAULT_TAGGER_DIR,
 )
 
 logger = logging.getLogger(__name__)
@@ -38,7 +39,7 @@ logger = logging.getLogger(__name__)
 NEVER_FIRE = 1.01
 COPIED = ("vocab.json", "rules.yaml", "groups.yaml", "dataset.json")
 DEFAULT_OUT = {
-    "pixai": "models/captioners/anima-tagger-pixai",
+    "pixai": DEFAULT_TAGGER_DIR,
     "dbv4": "models/captioners/anima-tagger-dbv4",
 }
 

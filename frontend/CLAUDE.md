@@ -114,8 +114,10 @@ the Settings dialog rather than the dock), `updates.ts` (the same shape again
 for the self-update: `/api/update` once on load and again on Check now — the
 six-hour cache is the server's, so nothing here polls — and the upgrade as a job
 followed into the Update dialog) and `state.ts`, the primitives
-that outlive a render: `persisted`, `createJobFollower`, `debounced` and
-`trackPointer` (the one pointer-drag loop; every grip in the page is it). The
+that outlive a render: `persisted`, `createJobFollower`, `debounced`,
+`trackPointer` (the one pointer-drag loop; every grip in the page is it),
+`onDismiss` (the outside-click / Escape close every popover shares) and
+`newestNonEmpty` (the status line a job follower shows). The
 follower is also where the log is read: two line formats, one writer each —
 `make_progress`'s `  [done/total] detail` and `jobs.py`'s `── step i/n: label ──`
 header — and nothing else in a job's output is parsed here. A stage that prints
@@ -162,7 +164,8 @@ whose rows solo their region on hover. A selection carried onto an image with no
 back to the editor.
 
 `CompareView` is a grid of tiles for any pick, and for a pick of exactly two it can lay one over
-the other instead — `layout.ts`'s `compareMode` (a saved preference; any other pick size is the
+the other instead (`components/ComparePair.tsx`'s `Pair`; every zoomable frame, there and in
+`ItemView`, is `components/ZoomFrame.tsx`) — `layout.ts`'s `compareMode` (a saved preference; any other pick size is the
 grid whatever it says). `slider` stacks the right image over the left and clips it at a line you
 drag; `diff` paints their per-pixel difference (capped at `DIFF_MAX_SIDE`, with a gain for
 differences a few levels out of 255). Both draw from one `imageDiff.loadPair`, which decodes the

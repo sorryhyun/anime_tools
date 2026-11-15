@@ -22,8 +22,8 @@ from dataclasses import dataclass
 
 from anime_tools.captions.position_clauses import (
     PositionClause,
-    compose_caption,
     parse_caption,
+    partition_tags,
 )
 from anime_tools.captions.taxonomy import normalize_tag
 
@@ -77,42 +77,35 @@ def implies(specific: str, generic: str) -> bool:
     return False
 
 
-def _kept(
-    tags: Iterable[str], pool: frozenset[str], shield: frozenset[str]
-) -> tuple[list[str], list[str]]:
-    keep: list[str] = []
-    drop: list[str] = []
-    for tag in tags:
-        key = normalize_tag(tag)
-        implied = key not in shield and any(implies(other, key) for other in pool)
-        (drop if implied else keep).append(tag)
-    return keep, drop
-
-
 def drop_implied_tags(text: str, *, keep: Iterable[str] = ()) -> ImpliedDropResult:
-    """Cut every tag another tag in scope implies; ``keep`` names tags never cut.
-    A caption with nothing to cut comes back byte for byte."""
+    """Cut every tag another tag in scope implies; ``keep`` names tags never cut
+    (both keyed on :func:`normalize_tag`). A caption with nothing to cut comes
+    back byte for byte. The cut is
+    :func:`~anime_tools.captions.position_clauses.partition_tags`."""
     shield = frozenset(normalize_tag(t) for t in keep)
-    parsed = parse_caption(text.replace("\n", ","))
-    scoped = [c for c in parsed.clauses if not c.is_text]
+    parsed = parse_caption(text)
     everything = frozenset(
         normalize_tag(t)
-        for t in (*parsed.flat_tags, *(t for c in scoped for t in c.tags))
-    )
-    flat, dropped = _kept(parsed.flat_tags, everything, shield)
-    clauses: list[PositionClause] = []
-    for clause in parsed.clauses:
-        if clause.is_text:
-            clauses.append(clause)
-            continue
-        own = frozenset(normalize_tag(t) for t in clause.tags)
-        kept, drop = _kept(clause.tags, own, shield)
-        dropped.extend(drop)
-        clauses.append(
-            PositionClause(
-                position=clause.position, tags=tuple(kept), prefix=clause.prefix
-            )
+        for t in (
+            *parsed.flat_tags,
+            *(t for c in parsed.position_clauses for t in c.tags),
         )
+    )
+    own: dict[PositionClause, frozenset[str]] = {}
+
+    def implied(tag: str, clause: PositionClause | None) -> bool:
+        # A bag tag goes for a tag anywhere; a clause tag only for one in its
+        # own clause — a specific tag on another subject says nothing here.
+        key = normalize_tag(tag)
+        if key in shield:
+            return False
+        if clause is None:
+            pool = everything
+        elif (pool := own.get(clause)) is None:
+            pool = own[clause] = frozenset(normalize_tag(t) for t in clause.tags)
+        return any(implies(other, key) for other in pool)
+
+    kept, dropped = partition_tags(parsed, implied)
     if not dropped:
         return ImpliedDropResult(text)
-    return ImpliedDropResult(compose_caption(flat, clauses), tuple(dropped))
+    return ImpliedDropResult(kept.render(), dropped)

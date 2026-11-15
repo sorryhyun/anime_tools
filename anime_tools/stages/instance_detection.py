@@ -14,9 +14,10 @@ from __future__ import annotations
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 
-import cv2
 import numpy as np
 from PIL import Image
+
+from anime_tools import _boxes
 
 
 @dataclass(frozen=True)
@@ -33,32 +34,14 @@ class Detection:
     source: str = "subject"
 
 
-def box_iou(a: Sequence[float], b: Sequence[float]) -> float:
-    ix = max(0.0, min(a[2], b[2]) - max(a[0], b[0]))
-    iy = max(0.0, min(a[3], b[3]) - max(a[1], b[1]))
-    inter = ix * iy
-    union = (a[2] - a[0]) * (a[3] - a[1]) + (b[2] - b[0]) * (b[3] - b[1]) - inter
-    return inter / union if union > 0 else 0.0
-
-
-def box_area(box: Sequence[float]) -> float:
-    return max(0.0, box[2] - box[0]) * max(0.0, box[3] - box[1])
-
-
-def box_containment(a: Sequence[float], b: Sequence[float]) -> float:
-    """Intersection over the *smaller* box — how nested the pair is.
-
-    IoU is blind to nesting: a box wholly inside another scores tiny while
-    scoring ~1.0 here.
-
-    GOTCHA: suppressing on this is off by default — a *real* second subject (one
-    girl in front of another) is just as nested as a group box, and ablation
-    found far more of the former.
-    """
-    ix = max(0.0, min(a[2], b[2]) - max(a[0], b[0]))
-    iy = max(0.0, min(a[3], b[3]) - max(a[1], b[1]))
-    smallest = min(box_area(a), box_area(b))
-    return (ix * iy) / smallest if smallest > 0 else 0.0
+# The geometry is the package's one spelling (``anime_tools/_boxes.py``),
+# re-exported under the names the position stage's ``__all__`` publishes.
+# GOTCHA (box_containment): suppressing on it is off by default — a *real*
+# second subject (one girl in front of another) is just as nested as a group
+# box, and ablation found far more of the former.
+box_iou = _boxes.iou
+box_area = _boxes.area
+box_containment = _boxes.containment
 
 
 def _binary_mask(det: Detection) -> np.ndarray | None:
@@ -271,6 +254,10 @@ def crop_instance(
     if det.mask is not None and blank:
         mask = _mask2d(det.mask)
         if dilate > 0:
+            # Here, not at the top: the request half imports this module, and
+            # cv2 stays out of it (tests/test_registry_requests.py).
+            import cv2
+
             kernel = cv2.getStructuringElement(
                 cv2.MORPH_ELLIPSE, (2 * dilate + 1, 2 * dilate + 1)
             )

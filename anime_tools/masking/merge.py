@@ -19,6 +19,19 @@ from anime_tools.masking._masks import iter_masks
 from anime_tools.masking.requests import MergeMasksRequest
 
 
+def _read_l(path: Path, size: tuple[int, int] | None = None) -> np.ndarray:
+    """One mask as an 8-bit L array (``size`` = ``(W, H)`` to resize to,
+    nearest-neighbour). Converted, because a hand-made mask is often saved RGB
+    or RGBA, which ``np.minimum`` would merge channel-wise and ``fromarray``
+    refuses as ``L``; closed, because a merge over a large tree otherwise holds
+    a file handle per mask until the collector gets to it."""
+    with Image.open(path) as im:
+        im = im.convert("L")
+        if size is not None and im.size != size:
+            im = im.resize(size, Image.NEAREST)
+        return np.array(im)
+
+
 def run_merge_masks(req: MergeMasksRequest) -> int:
     """Returns how many masks were written under ``req.output_dir``."""
     # Home-anchored, so the defaults name the trees the generators wrote however the
@@ -43,16 +56,10 @@ def run_merge_masks(req: MergeMasksRequest) -> int:
     # ``  [n/total]`` off stdout and a carriage-return bar matches nothing.
     bar = ProgressBar(len(by_rel), every=25, first=True)
     for (rel_str, name), sources in sorted(by_rel.items()):
-        if len(sources) == 1:
-            arr = np.array(Image.open(sources[0]))
-        else:
-            # lower alpha = more masking
-            arr = np.array(Image.open(sources[0]))
-            for src in sources[1:]:
-                other = np.array(
-                    Image.open(src).resize((arr.shape[1], arr.shape[0]), Image.NEAREST)
-                )
-                arr = np.minimum(arr, other)
+        # lower alpha = more masking
+        arr = _read_l(sources[0])
+        for src in sources[1:]:
+            arr = np.minimum(arr, _read_l(src, (arr.shape[1], arr.shape[0])))
 
         target_dir = output_dir / rel_str if rel_str else output_dir
         target_dir.mkdir(parents=True, exist_ok=True)

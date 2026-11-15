@@ -1,4 +1,13 @@
-import { batch, createEffect, createSignal, on, type Accessor, type Setter } from "solid-js";
+import {
+  batch,
+  createEffect,
+  createSignal,
+  on,
+  onCleanup,
+  onMount,
+  type Accessor,
+  type Setter,
+} from "solid-js";
 import { followLog } from "./api";
 import { t } from "./i18n";
 import type { Job, JobProgress, JobStatus } from "./types";
@@ -59,6 +68,34 @@ export function trackPointer(
   window.addEventListener("pointerup", onUp);
 }
 
+/** Dismiss a floating thing (the ☰ menu, the tag card): Escape while it is
+ * open, or a mousedown anywhere outside `inside` (a selector). Both listen in
+ * the capture phase, so the press that dismisses runs before whatever it landed
+ * on — a click on another tag chip re-targets the card after this closed it,
+ * and the ☰ itself toggles after this shut the menu. Call it from a component;
+ * the listeners come off with it.
+ */
+export function onDismiss(opts: { open: () => boolean; inside: string; close: () => void }): void {
+  onMount(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && opts.open()) {
+        e.stopPropagation();
+        opts.close();
+      }
+    };
+    const onDown = (e: MouseEvent) => {
+      if ((e.target as HTMLElement | null)?.closest(opts.inside)) return;
+      opts.close();
+    };
+    window.addEventListener("keydown", onKey, true);
+    window.addEventListener("mousedown", onDown, true);
+    onCleanup(() => {
+      window.removeEventListener("keydown", onKey, true);
+      window.removeEventListener("mousedown", onDown, true);
+    });
+  });
+}
+
 /** How many of a job's lines the browser keeps. The server holds 20 000 and
  * replays every one of them when the stream is opened, so this is only how far
  * back the log window scrolls; the job's own file under `workspace/gui_logs/`
@@ -72,6 +109,14 @@ const PROGRESS_LINE = /^\s*\[(\d+)\/(\d+)\]\s*(.*)$/;
 /** `── step i/n: label ──` — the header `gui/jobs.py` prints in front of each
  * step of a job that has more than one. */
 const STEP_LINE = /^──\s*step (\d+)\/(\d+):\s*(.*?)\s*──\s*$/;
+
+/** The status a fetch-style job (a download, the self-update) shows: its newest
+ * *non-empty* line. Both print blank lines between their parts and their
+ * progress arrives as \r-terminated lines, so a blank one leaves the last
+ * status standing.
+ */
+export const newestNonEmpty = (line: string): JobStatus | null =>
+  line.trim() ? { text: line.trim(), state: "running" } : null;
 
 /** A job being followed over SSE: its id, whether it is still going, the
  * newest line as a status, the tail of its output and how far it has got. Two

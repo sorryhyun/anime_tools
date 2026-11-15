@@ -130,3 +130,34 @@ def test_the_module_is_stdlib_only():
         [sys.executable, "-c", code], capture_output=True, text=True, check=False
     )
     assert out.stdout.strip() == "False", out.stderr
+
+
+def test_a_caption_is_read_through_the_grammar_not_split_on_commas():
+    """Position-clause tags count, their headers do not, and a text clause's
+    quoted lines are words in the picture — a comma inside one is not a tag
+    separator (it used to come back as ``"red'``)."""
+    caption = (
+        "1girl, blue hair, red eyes. On the left, 1boy, black hair, green shirt. "
+        'Japanese text reads as "red, blue"'
+    )
+    assert filter_to_colors(caption) == "blue hair, red eyes, black hair, green shirt"
+
+
+def test_tags_are_keyed_on_normalize_tag():
+    assert filter_to_colors("blue_hair, red_eyes, Dark_Skin") == (
+        "blue_hair, red_eyes, Dark_Skin"
+    )
+    # One colour, two spellings: kept once, in its first spelling.
+    assert filter_to_colors("blue hair, smile, blue_hair") == "blue hair"
+    out = filter_to_colors_and_copyright("Genshin_Impact, blue hair", _COPYRIGHT)
+    assert out == "Genshin_Impact, blue hair"
+
+
+def test_loaded_copyright_vocab_is_in_normalize_tag_form(tmp_path):
+    p = tmp_path / "caption_index.json"
+    p.write_text(
+        json.dumps({"groups": {"copyright": {"Blue_Archive": [1], "original": [2]}}}),
+        encoding="utf-8",
+    )
+    load_copyright_tags.cache_clear()
+    assert load_copyright_tags(p) == frozenset({"blue archive"})

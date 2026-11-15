@@ -10,7 +10,10 @@ or touching this package**. This file is the module map. Docs: `docs/position_ca
 - `position_clauses.py` — the one parser: `<flat tag bag>. On the left, …. In the …, ….` Periods
   delimit clauses, commas delimit tags inside one. Never `split(",")` a caption; go through
   `parse_caption` / `compose_caption`, and `tag_spans` for `[start, end)` offsets (what the GUI
-  editor paints boxes from).
+  editor paints boxes from). A raw newline outside quotes is a tag separator, so no caller
+  substitutes commas first. `partition_tags(parsed, drops)` is the one tag drop — the group drop
+  (`correction.drop_caption_groups`) and `implied_tags.drop_implied_tags` are predicates over it
+  (text clauses pass through, a position clause it empties goes).
 - `taxonomy.py` is the one tag-shape vocabulary (pure stdlib): `normalize_tag` is the key every
   "does the caption already say this?" comparison uses, so two danbooru spellings of a tag can never
   read as two tags. `tests/test_tag_taxonomy.py` greps `stages/` for the bare `.lower()` that should
@@ -42,12 +45,13 @@ or touching this package**. This file is the module map. Docs: `docs/position_ca
   it at cache and generate time; the caption on disk stays Anima-format. Export's
   `--caption_format layout_json` publishes it beside the caption as `{stem}.layout.txt`
   (`contract.LAYOUT_JSON_SUFFIX`), which the trainer reads instead of converting.
-- `color_tags.py` is the colour-tag vocabulary a colorize caption keeps (`is_color_tag`,
+- `color_tags.py` is the colour-tag vocabulary a colorize caption keeps — read through the
+  parser (bag + position-clause tags, never text clauses), keyed on `normalize_tag` (`is_color_tag`,
   `filter_to_colors_and_protected` with a series vocabulary from `load_copyright_tags(index)`,
   `is_character_colour` for one character's box). The trainer's MOSS colorize cache and
   ComfyUI-MOSS-Toolkit's caption helper both build from it. The OCR floors those captions box
   lines with are `anime_tools.ocr.floors` (`readable`, `keep_line`, `load_reread_engine`).
-- `clause_rewrite.py` / `clause_vocabulary.py` / `group_router.py` / `caption_layout.py` are the
+- `clause_rewrite.py` / `clause_vocabulary.py` / `caption_layout.py` are the
   position-clause rewrite: which tag may enter which clause, and what moves out of the bag. Gate
   and group sets are data in `data/clause_vocabulary.yaml` (the trainer's
   `configs/clause_vocabulary.yaml` overrides it) — retune there, not in Python.

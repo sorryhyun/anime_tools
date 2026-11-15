@@ -128,6 +128,20 @@ class OddRequest(Request):
             )
 
 
+def test_the_server_decides_which_fields_the_form_draws():
+    """``shown`` is the one answer the form filters on: no bound field but an
+    overridable one, no auto field, never the run bar's own two flags."""
+    for st in S.STAGES:
+        sc = S.schema(st)
+        for f in sc["fields"]:
+            hidden = (
+                (f["root"] or f["setting"] or f["report"] or f["mask"] or f["auto"])
+                and not f["overridable"]
+            ) or f["dest"] in ("apply", S.REPLAY_FIELD)
+            assert f["shown"] is (not hidden), (st.id, f["dest"])
+            assert not (f["advanced"] and not f["shown"]), (st.id, f["dest"])
+
+
 def test_a_form_value_is_coerced_by_the_parsers_own_type():
     """``_coerce`` reads the ``type`` / ``nargs`` ``build_parser`` hands argparse.
 
@@ -159,7 +173,9 @@ def test_a_form_value_is_coerced_by_the_parsers_own_type():
     by = {f["dest"]: f for f in masks["fields"]}
     assert by["masks"]["kind"] == "masks"
     argv = S.build_argv(
-        masks, {"masks": "keep:text:girl\nignore:text:logo"}, roots={"dst": "d"}
+        masks,
+        {"masks": "keep:text:girl\nignore:text:logo"},
+        S.Bindings(roots={"dst": "d"}),
     )
     assert argv[argv.index("--masks") :] == [
         "--masks",
@@ -185,9 +201,8 @@ def test_argv_round_trips_through_the_real_parser():
     argv = S.build_argv(
         sc,
         values,
+        S.Bindings(roots={"src": "img"}, settings={"path_pattern": "a/*|b/*"}),
         apply=True,
-        roots={"src": "img"},
-        settings={"path_pattern": "a/*|b/*"},
     )
     ns = S.load_parser(st).parse_args(argv)
     assert ns.src == "img" and ns.path_pattern == "a/*|b/*"
@@ -210,18 +225,23 @@ def test_enum_and_float_kinds():
 
 
 def test_dataset_roots_fill_the_bound_fields():
-    """--src/--dst come from the Settings roots, not from the stage form."""
+    """--src/--master/--dst come from the Settings roots, not from the stage
+    form — the master overlay too, which is where the caption editor writes a
+    master edit and so the rung a caption stage reads before --src."""
     _, sc = _stage("position")
     assert {f["dest"]: f["root"] for f in sc["fields"] if f["root"]} == {
         "src": "src",
+        "master": "master",
         "dst": "dst",
     }
     argv = S.build_argv(
-        sc, {"src": "ignored", "dst": "ignored"}, roots={"src": "a", "dst": "b"}
+        sc,
+        {"src": "ignored", "dst": "ignored", "master": "ignored"},
+        S.Bindings(roots={"src": "a", "dst": "b", "master": "m"}),
     )
-    assert argv == ["--src", "a", "--dst", "b"]
+    assert argv == ["--src", "a", "--dst", "b", "--master", "m"]
     # A root left at its default still drops out of the argv.
-    assert S.build_argv(sc, {}, roots={"src": "image_dataset"}) == []
+    assert S.build_argv(sc, {}, S.Bindings(roots={"src": "image_dataset"})) == []
 
 
 def test_settings_fill_the_bound_stage_defaults():
@@ -232,7 +252,7 @@ def test_settings_fill_the_bound_stage_defaults():
         "tagger_dir": "tagger_dir",
     }
     argv = S.build_argv(
-        sc, {}, settings={"path_pattern": "char/*", "tagger_dir": "ckpt"}
+        sc, {}, S.Bindings(settings={"path_pattern": "char/*", "tagger_dir": "ckpt"})
     )
     assert argv == ["--path_pattern", "char/*", "--tagger_dir", "ckpt"]
     # A value stranded in a saved form never beats Settings.
@@ -251,7 +271,9 @@ def test_device_is_never_on_the_form_or_the_argv():
         device = next(f for f in sc["fields"] if f["dest"] == "device")
         assert device["auto"] is True
         argv = S.build_argv(
-            sc, {**required, "device": "cuda"}, roots={"src": "i", "dst": "d"}
+            sc,
+            {**required, "device": "cuda"},
+            S.Bindings(roots={"src": "i", "dst": "d"}),
         )
         assert "--device" not in argv and "cuda" not in argv
 
@@ -279,22 +301,26 @@ def test_required_field_is_enforced():
     # writes a tree of its own and will not guess which pixels it read.
     _, sc = _stage("masks_sam")
     with pytest.raises(ValueError, match="--image-dir"):
-        S.build_argv(sc, {}, mask_root="ws")
+        S.build_argv(sc, {}, S.Bindings(mask_root="ws"))
 
 
 def test_boolean_optional_action_and_positional_list():
     # A True-default switch turned off is spelled as its negation.
     _, sc = _stage("resize")
-    argv = S.build_argv(sc, {"recursive": False}, roots={"src": "i", "dst": "d"})
+    argv = S.build_argv(
+        sc, {"recursive": False}, S.Bindings(roots={"src": "i", "dst": "d"})
+    )
     assert argv == ["--src", "i", "--dst", "d", "--no-recursive"]
     # --image-dir is bound to `dst` (the mask is cut from the pixels the loader
     # rescales it onto); --mask-dir to the mask root plus the generator's tail.
     _, sc = _stage("masks_sam")
-    argv = S.build_argv(sc, {"force": True}, roots={"dst": "d"}, mask_root="ws")
+    argv = S.build_argv(
+        sc, {"force": True}, S.Bindings(roots={"dst": "d"}, mask_root="ws")
+    )
     assert argv == ["--image-dir", "d", "--mask-dir", "ws/masks_sam", "--force"]
     # A positional list binds the same way, one joined tail per input.
     _, sc = _stage("masks_merge")
-    argv = S.build_argv(sc, {}, roots={"masks": "o"}, mask_root="ws")
+    argv = S.build_argv(sc, {}, S.Bindings(roots={"masks": "o"}, mask_root="ws"))
     assert argv == ["--output-dir", "o", "ws/masks_sam"]
 
 
@@ -303,14 +329,16 @@ def test_a_shut_drawer_sends_none_of_its_knobs():
     rides only when ``combine_ocr`` is on."""
     _, sc = _stage("export")
     roots = {"src": "s", "dst": "d", "masks": "m", "master": "mm", "out": "o"}
-    bound = S.build_argv(sc, {}, roots=roots)
+    bound = S.build_argv(sc, {}, S.Bindings(roots=roots))
     assert "--ocr_dir" not in bound and "--combine_ocr" not in bound
 
     # Shut, the drawer's knob stays off the argv...
-    argv = S.build_argv(sc, {"ocr_dir": "elsewhere"}, roots=roots)
+    argv = S.build_argv(sc, {"ocr_dir": "elsewhere"}, S.Bindings(roots=roots))
     assert argv == bound
     # ...and arrives the moment the drawer opens.
-    argv = S.build_argv(sc, {"combine_ocr": True, "ocr_dir": "elsewhere"}, roots=roots)
+    argv = S.build_argv(
+        sc, {"combine_ocr": True, "ocr_dir": "elsewhere"}, S.Bindings(roots=roots)
+    )
     assert argv == [*bound, "--combine_ocr", "--ocr_dir", "elsewhere"]
 
 
@@ -325,9 +353,9 @@ def test_export_caption_format_is_a_saved_dropdown():
     assert tuple(f["choices"]) == EXPORT_CAPTION_FORMATS
     assert not (f["root"] or f["setting"] or f["report"] or f["advanced"])
     roots = {"src": "s", "dst": "d", "masks": "m", "master": "mm", "out": "o"}
-    bound = S.build_argv(sc, {}, roots=roots)
+    bound = S.build_argv(sc, {}, S.Bindings(roots=roots))
     assert "--caption_format" not in bound
-    argv = S.build_argv(sc, {"caption_format": "layout_json"}, roots=roots)
+    argv = S.build_argv(sc, {"caption_format": "layout_json"}, S.Bindings(roots=roots))
     assert argv == [*bound, "--caption_format", "layout_json"]
     saved = {"caption_format": "layout_json", "sidecars_only": True}
     assert S.form_values(sc["fields"], saved) == saved
@@ -397,19 +425,21 @@ def test_an_overridable_field_opens_on_settings_and_yields_to_the_form():
     """
     sc = S.schema(S.BY_ID["export"])
     roots, reports = {"out": "/data/export"}, "ws/captions"
-    got = S.resolved_schema(sc, roots=roots, report_root=reports)
+    got = S.resolved_schema(sc, S.Bindings(roots=roots, report_root=reports))
     by = {f["dest"]: f for f in got["fields"]}
     assert by["out"]["default"] == "/data/export"
     assert by["index"]["default"] == "ws/captions/captions/caption_index.json"
     # Untouched for every other stage, and the stored schema is left alone.
-    assert S.resolved_schema(S.schema(S.BY_ID["autotag"]), roots=roots) == S.schema(
-        S.BY_ID["autotag"]
-    )
+    assert S.resolved_schema(
+        S.schema(S.BY_ID["autotag"]), S.Bindings(roots=roots)
+    ) == S.schema(S.BY_ID["autotag"])
     raw = {f["dest"]: f["default"] for f in sc["fields"]}
     assert raw["out"] == "post_image_dataset"
 
     def _out(schema, values):
-        argv = S.build_argv(schema, values, roots=roots, report_root=reports)
+        argv = S.build_argv(
+            schema, values, S.Bindings(roots=roots, report_root=reports)
+        )
         return argv[argv.index("--out") + 1]
 
     # Resolved and raw build the same argv: the bound value is what goes out,
@@ -433,11 +463,13 @@ def test_a_stale_mask_dir_in_a_saved_form_never_wins():
     """``mask_dir`` lives in ⚙ Settings, so a value left in a saved payload is
     dead: two generators sharing one directory overwrite each other."""
     _, sc = _stage("masks_sam")
-    argv = S.build_argv(sc, {"mask_dir": "typo"}, roots={"dst": "d"}, mask_root="ws")
+    argv = S.build_argv(
+        sc, {"mask_dir": "typo"}, S.Bindings(roots={"dst": "d"}, mask_root="ws")
+    )
     assert "typo" not in argv
     assert argv == ["--image-dir", "d", "--mask-dir", "ws/masks_sam"]
     # With no root to bind against, the flag falls away and the CLI default stands.
-    assert S.build_argv(sc, {"mask_dir": "typo"}, roots={"dst": "d"}) == [
+    assert S.build_argv(sc, {"mask_dir": "typo"}, S.Bindings(roots={"dst": "d"})) == [
         "--image-dir",
         "d",
     ]
@@ -454,15 +486,14 @@ def test_the_sam3_checkpoint_is_one_setting_for_three_stages():
         argv = S.build_argv(
             sc,
             required,
-            settings={"checkpoint": "w.pt"},
-            roots={"src": "i", "dst": "d"},
+            S.Bindings(settings={"checkpoint": "w.pt"}, roots={"src": "i", "dst": "d"}),
         )
         assert _opt(argv, "--checkpoint") == "w.pt", stage_id
         # A path stranded in a saved form never stands in for the setting.
         assert "--checkpoint" not in S.build_argv(
             sc,
             {**required, "checkpoint": "stale.pt"},
-            roots={"src": "i", "dst": "d"},
+            S.Bindings(roots={"src": "i", "dst": "d"}),
         )
 
 
@@ -472,7 +503,7 @@ def test_the_soft_prompt_is_one_setting_for_both_detector_stages():
         _, sc = _stage(stage_id)
         embed = next(f for f in sc["fields"] if f["dest"] == "prompt_embed")
         assert embed["setting"] == "prompt_embed", stage_id
-        argv = S.build_argv(sc, {}, settings={"prompt_embed": "none"})
+        argv = S.build_argv(sc, {}, S.Bindings(settings={"prompt_embed": "none"}))
         assert _opt(argv, "--prompt_embed") == "none", stage_id
         # Blank in Settings = the shipped default, which the CLI already holds.
         assert "--prompt_embed" not in S.build_argv(
@@ -490,9 +521,9 @@ def test_the_report_root_moves_every_report_and_splits_none():
         f = next(x for x in sc["fields"] if x["dest"] == dest)
         assert f["report"] and f["default"].endswith(f["report"])
         tails[stage_id] = f["report"]
-        assert _opt(S.build_argv(sc, {}, report_root="d"), f["flags"][0]) == (
-            f"d/{f['report']}"
-        )
+        assert _opt(
+            S.build_argv(sc, {}, S.Bindings(report_root="d")), f["flags"][0]
+        ) == (f"d/{f['report']}")
     assert len(set(tails.values())) == len(tails), tails
 
 
@@ -711,11 +742,49 @@ def test_job_runs_streams_and_persists_values(client):
         if c.get(f"/api/jobs/{job['id']}").json()["state"] != "running":
             break
         time.sleep(0.05)
-    assert c.get(f"/api/jobs/{job['id']}").json()["state"] == "done"
+    done = c.get(f"/api/jobs/{job['id']}").json()
+    assert done["state"] == "done"
+    # A stage job says what it is; its report holds no `written` list.
+    assert (done["kind"], done["ids"], done["written"]) == ("stage", [], None)
     rep = c.get(f"/api/jobs/{job['id']}/report").json()
     assert rep["report"] == {"apply": True, "rows": [{"k": 1}]}
     assert c.get("/api/settings").json()["values"]["stub"] == {"n": 3}
     assert c.post("/api/jobs", json={"stage": "nope"}).status_code == 404
+
+
+def test_a_finished_job_carries_the_rels_its_report_wrote(tmp_path):
+    """``written`` rides on the job dict, so the page re-stats those rows
+    without fetching the whole report."""
+    from anime_tools._json import write_json
+    from anime_tools.gui.jobs import Job
+
+    report = tmp_path / "report.json"
+    write_json(report, {"rows": [], "written": ["a.png", "sub/b.jpg"]})
+    job = Job(id="j", stage="s", steps=[], home=tmp_path, report_path=str(report))
+    assert job.to_dict()["written"] is None  # still running
+    job.exit_code = 0
+    assert job.to_dict()["written"] == ["a.png", "sub/b.jpg"]
+
+    # A `written` that is a count or a list of records is not a list of rels.
+    write_json(report, {"written": [{"caption_path": "x"}]})
+    other = Job(id="k", stage="s", steps=[], home=tmp_path, report_path=str(report))
+    other.exit_code = 0
+    assert other.to_dict()["written"] is None
+
+
+def test_put_settings_writes_only_the_blocks_the_browser_owns(client):
+    """The server's own keys (the saved forms, the update cache) are not the
+    PUT's to overwrite, and a token is never stored."""
+    c, _home = client
+    r = c.put(
+        "/api/settings", json={"auto_update": False, "preprocess": {"workers": 1}}
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["auto_update"] is False and "hf_token" not in r.json()
+    r = c.put("/api/settings", json={"values": {}, "update_check": {}})
+    assert r.status_code == 400
+    assert r.json()["detail"] == "not a writable setting: update_check, values"
+    assert c.get("/api/settings").json()["preprocess"] == {"workers": 1}
 
 
 def test_stage_schemas_carry_the_settings_value_for_a_panel_field(client):
@@ -1166,6 +1235,7 @@ def test_model_catalog_and_download_job(client, monkeypatch):
         c, c.post("/api/models/download", json={"ids": ["tagger_backbone"]})
     )
     assert job["argv"][1:] == ["-m", "anime_tools.downloads", "tagger_backbone"]
+    assert (job["kind"], job["ids"]) == ("download", ["tagger_backbone"])
     assert job["state"] in ("done", "failed")
 
     # A pack id is expanded to its rows before the job is named, so the job
@@ -1507,3 +1577,16 @@ def test_the_guidebook_route_answers_in_the_language_it_read(client):
     # What a book's own `../../../docs/x.md` links resolve against.
     assert body["base"].endswith("/anime_tools/gui/guidebooks/")
     assert c.get("/api/guidebook", params={"lang": "xx"}).json()["lang"] == "en"
+
+
+def test_build_argv_keeps_the_trainers_keywords():
+    """The trainer's preprocess form and task runner pass the four bindings as
+    keywords (``anima_lora`` ``stage_form.py``, ``scripts/tasks/_common.py``)."""
+    from anime_tools.gui import stages as S
+
+    sc = S.schema(S.BY_ID["correct"])
+    roots = {"src": "/data/src", "dst": "/data/dst", "master": "/data/master"}
+    by_keywords = S.build_argv(sc, {}, roots=roots, settings={}, apply=True)
+    by_bindings = S.build_argv(sc, {}, S.Bindings(roots=roots), apply=True)
+    assert by_keywords == by_bindings
+    assert "/data/src" in by_keywords

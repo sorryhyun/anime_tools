@@ -13,6 +13,7 @@ at the call that produces it.
 from __future__ import annotations
 
 import mimetypes
+from pathlib import Path
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Body, HTTPException, Request
@@ -23,6 +24,8 @@ from anime_tools.gui import tags as T
 from anime_tools.gui._context import (
     NO_CACHE,
     RunContext,
+    failing_as,
+    found,
     mask_root,
     report_root,
     roots_for,
@@ -41,18 +44,20 @@ def _context(body: dict[str, Any]) -> RunContext:
     )
 
 
-@router.get("/api/dataset/roots")
-def dataset_roots() -> dict[str, Any]:
-    settings = load_settings()
-    roots = roots_for(settings)
+def _roots_payload(roots: D.Roots) -> dict[str, Any]:
+    """The roots as the Settings dialog reads them, plus what a blank
+    ``report_root`` / ``mask_root`` resolves to — its placeholders."""
     return {
         "roots": roots.as_dict(),
         "defaults": D.DEFAULT_ROOTS,
-        # What a blank `report_root` / `mask_root` resolves to, as
-        # Settings' placeholders.
         "report_root": report_root({}, roots),
         "mask_root": mask_root({}, roots),
     }
+
+
+@router.get("/api/dataset/roots")
+def dataset_roots() -> dict[str, Any]:
+    return _roots_payload(roots_for(load_settings()))
 
 
 @router.put("/api/dataset/roots")
@@ -62,19 +67,11 @@ async def put_dataset_roots(request: Request) -> dict[str, Any]:
     roots = D.resolve_roots(picked, trusted=True)
     # The only ``trusted`` resolve: saving Settings is what defines the trees
     # the panel may read (``dataset_bases``).
-    try:
+    with failing_as("cannot create root"):
         created = D.ensure_roots(roots)
-    except OSError as e:
-        raise HTTPException(500, f"cannot create root: {e}") from e
     with edit_settings() as data:
         data[D.SETTINGS_KEY] = picked
-    return {
-        "roots": roots.as_dict(),
-        "defaults": D.DEFAULT_ROOTS,
-        "report_root": report_root({}, roots),
-        "mask_root": mask_root({}, roots),
-        "created": created,
-    }
+    return {**_roots_payload(roots), "created": created}
 
 
 @router.get("/api/dataset")
@@ -140,15 +137,13 @@ def dataset_item(
 async def put_dataset_item(request: Request) -> dict[str, Any]:
     body = await request.json()
     ctx = _context(body)
-    try:
+    with failing_as("write failed"):
         return D.write_caption(
             ctx.roots,
             str(body.get("rel") or ""),
             str(body.get("kind") or ""),
             body.get("text") or "",
         )
-    except OSError as e:
-        raise HTTPException(500, f"write failed: {e}") from e
 
 
 @router.post("/api/dataset/exclude")
@@ -186,10 +181,8 @@ async def put_temp_file(
     folder does not hold yet. One file per request rather than a multipart form:
     the browser sends a drop file by file anyway, and a body needs no parser."""
     data = await request.body()
-    try:
+    with failing_as("write failed"):
         return D.save_temp_file(rel, data, unique=unique)
-    except OSError as e:
-        raise HTTPException(500, f"write failed: {e}") from e
 
 
 @router.delete("/api/temp/file")
@@ -198,10 +191,8 @@ def delete_temp_file(request: Request, rel: str) -> dict[str, Any]:
     sidebar's Delete key. Refused while a run is over the drop area, like the
     clear below."""
     _refuse_during_temp_job(request)
-    try:
+    with failing_as(f"cannot delete {rel}"):
         return D.delete_temp_image(rel, RunContext.load(space=D.TEMP_SPACE).report_root)
-    except OSError as e:
-        raise HTTPException(500, f"cannot delete {rel}: {e}") from e
 
 
 def _refuse_during_temp_job(request: Request) -> None:
@@ -215,10 +206,8 @@ def clear_temp(request: Request) -> dict[str, Any]:
     """Empty the drop area. Refused while a run is over it, which would find
     its trees gone from under it."""
     _refuse_during_temp_job(request)
-    try:
+    with failing_as("cannot clear the temp area"):
         return D.clear_temp()
-    except OSError as e:
-        raise HTTPException(500, f"cannot clear the temp area: {e}") from e
 
 
 @router.post("/api/dataset/parse")
@@ -278,11 +267,6 @@ def thumb(path: str, size: int = 192) -> Response:
 def files(path: str) -> FileResponse:
     # reachable collapses ".." before the containment test — resolve_path +
     # is_relative_to alone is purely textual and lets traversal through.
-    try:
-        p = D.reachable(path)
-    except D.DatasetError as e:
-        raise HTTPException(404, "not found") from e
-    if not p.is_file():
-        raise HTTPException(404, "not found")
+    p = found(path, Path.is_file)
     mime = mimetypes.guess_type(p.name)[0] or "application/octet-stream"
     return FileResponse(p, media_type=mime, headers=NO_CACHE)

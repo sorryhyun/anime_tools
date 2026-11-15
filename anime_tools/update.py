@@ -226,7 +226,7 @@ def status(tag: str | None = None, *, timeout: float = 15.0) -> dict[str, object
         "notes": release.notes,
         "url": release.url,
         "install": kind,
-        "can_update": kind == "uv-tool",
+        "can_update": can_update(),
         "hint": INSTALL_HINTS.get(kind, ""),
     }
 

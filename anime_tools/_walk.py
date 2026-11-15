@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import fnmatch
 import os
-from collections.abc import Iterator
+from collections.abc import Iterable, Iterator
 from pathlib import Path
 
 CAPTION_EXTENSIONS = (".txt", ".caption")
@@ -121,12 +121,15 @@ def suffix_key(path: Path) -> str:
     return path.suffix.lower()
 
 
-def sibling_image(directory: Path, stem: str) -> Path | None:
+def sibling_image(
+    directory: Path, stem: str, exts: Iterable[str] | None = None
+) -> Path | None:
     """The image named ``stem`` in ``directory``, whatever its extension: the
     resize step may re-encode (``.jpg`` master → ``.png`` resized), so the
     source and resized trees are matched on stem, not on the full relative
-    path."""
-    for ext in IMAGE_EXTENSIONS:
+    path. ``exts`` is the preference order, first hit wins (default
+    :data:`IMAGE_EXTENSIONS`)."""
+    for ext in IMAGE_EXTENSIONS if exts is None else exts:
         p = directory / f"{stem}{ext}"
         if p.is_file():
             return p

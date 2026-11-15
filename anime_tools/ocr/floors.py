@@ -22,8 +22,8 @@ import re
 from typing import Any
 
 from anime_tools.captions.ocr_sidecar import DEFAULT_MIN_GLYPH
-from anime_tools.ocr.reread import LINE_MIN_DET
 from anime_tools.ocr.reader import is_latin
+from anime_tools.ocr.reread import LINE_MIN_DET
 
 LOW_DET_SCORE = 0.9
 """Reader score a box under ``LINE_MIN_DET`` needs."""
@@ -40,6 +40,12 @@ JA_SCRIPT = re.compile(
 def readable(ln: Any) -> bool:
     """A read with text, a det at ``LINE_MIN_DET`` or a score at
     :data:`LOW_DET_SCORE`, and a glyph at its script's floor."""
+    # No letter outside ASCII. Unlike :func:`is_latin` (which ``keep_line``'s
+    # rescue uses) this needs no letter at all, so a letterless read — ``♡♡``,
+    # ``!!``, ``12`` — takes the Latin glyph floor too. Kept deliberately: it
+    # is the floor the colorize / swap_text LoRAs trained on and the
+    # ComfyUI-MOSS-Toolkit helper mirrors, so tightening it moves which lines
+    # a caption boxes away from both.
     latin = all(ch.isascii() for ch in ln.text if ch.isalpha())
     floor = LATIN_MIN_GLYPH if latin else DEFAULT_MIN_GLYPH
     sure = ln.det >= LINE_MIN_DET or ln.score >= LOW_DET_SCORE
@@ -71,8 +77,8 @@ def load_reread_engine(device: str):
 
     from anime_tools.ocr import load_ocr
     from anime_tools.ocr.animetext import DEFAULT_CONF
-    from anime_tools.ocr.reread import RereadEngine
     from anime_tools.ocr.reader import OcrReader
+    from anime_tools.ocr.reread import RereadEngine
 
     reader = OcrReader.load(device=device)
     return RereadEngine(

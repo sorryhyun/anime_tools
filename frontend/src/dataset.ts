@@ -50,7 +50,7 @@ export function createDataset(config: Config) {
   api.bindSpace(space);
   const [list, { refetch: refetchList, mutate: mutateList }] = createResource(
     () => [debouncedQuery(), config.roots(), reload(), space()] as const,
-    ([q]) => api.dataset({ q }),
+    ([q]) => api.dataset(q),
   );
   const [sel, setSel] = createSignal<Sel | null>(parseHash());
   const [groups] = createResource(

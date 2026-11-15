@@ -1,9 +1,9 @@
 """Batch auto-tagging: image → Anima Tagger → the revised caption.
 
 Walks the resized tree and writes ``.txt`` sidecars beside the resized image —
-the **revised** caption, like every other caption stage. The hand-written master
-under ``source_dir`` is read (as ``resolve_caption``'s fallback) and never
-written, so a run cannot lose text nobody can get back: what it replaces is
+the **revised** caption, like every other caption stage. The master — the
+``master_dir`` overlay, then the hand-written one under ``source_dir`` — is read
+(as ``resolve_caption``'s fallback) and never written, so a run cannot lose text nobody can get back: what it replaces is
 pushed onto ``{stem}.history.txt`` and is one badge away in the GUI.
 
 "Unchanged" is measured against what already *speaks* for the image — the
@@ -48,13 +48,18 @@ from PIL import Image
 from anime_tools._env import resolve_path
 from anime_tools.captions.position_clauses import compose_caption, parse_caption
 from anime_tools.captions.taxonomy import RATING_LITERALS, normalize_tag
-from anime_tools.contract import AUTOTAG_MODES
+from anime_tools.contract import AUTOTAG_MODES, REPLAY_SHAPES
 
-from ._caption_io import read_caption, write_caption
+from ._caption_io import write_caption
 from ._options import DEFAULT_BATCH_SIZE
 from ._progress import make_progress
-from ._report import print_dry_run_footer, stage_report_header, write_stage_report
-from ._walk_captions import resolve_caption
+from ._report import (
+    TE_NOTE,
+    print_dry_run_footer,
+    stage_report_header,
+    write_stage_report,
+)
+from ._walk_captions import CaptionItem, iter_captions
 
 if TYPE_CHECKING:
     from anime_tools.stages.requests import AutotagRequest
@@ -171,14 +176,15 @@ def run_autotag_captions(
     batch_size: int = DEFAULT_BATCH_SIZE,
     apply: bool = False,
     progress: Callable[[int, int, str], None] | None = None,
+    master_dir: Path | None = None,
 ) -> tuple[list[AutotagProposal], AutotagStats]:
     """Walk the resized tree, tag, and (with ``apply``) write the revised caption.
 
     Tagging runs on the *resized* image (the pixel data training sees) and the
-    caption lands beside it under ``resized_dir``. ``source_dir`` is the master
-    tree, read-only here: it is the fallback half of ``resolve_caption``, so
-    "what this image already says" means the revised caption when there is one
-    and the hand-written master otherwise. ``tag_batch`` is normally
+    caption lands beside it under ``resized_dir``. ``master_dir`` (the overlay)
+    and ``source_dir`` are the master, read-only here: the fallback half of
+    ``resolve_caption``, so "what this image already says" means the revised
+    caption when there is one and the master otherwise. ``tag_batch`` is normally
     ``AnimaTagger.predict_caption_batch`` bound to ``min_confidence``: it takes
     images and answers one caption each, in order.
 
@@ -189,38 +195,41 @@ def run_autotag_captions(
     So the reports, the skip reasons and the progress line are what a
     one-image-at-a-time pass produced, and the GPU sees whole batches.
     """
-    from anime_tools._walk import walk_images
-
     options = options or AutotagOptions()
     stats = AutotagStats()
     rows: list[AutotagProposal] = []
     size = max(1, int(batch_size))
 
-    images = walk_images(resized_dir, recursive=True, pattern=path_pattern)
-    stats.seen = len(images)
-
     # Half one, no pixels: what each image already says. Revised first, master
     # as the read-only fallback — `missing` means no caption anywhere, and
     # `merge` merges into the text that actually speaks for the image, clauses
-    # included.
-    walked: list[tuple[Path, Path, str]] = []
-    for image_path in images:
-        rel = image_path.relative_to(resized_dir).with_suffix(".txt")
-        speaks = resolve_caption(resized_dir, source_dir, rel)
-        walked.append(
-            (image_path, rel, read_caption(speaks) if speaks is not None else "")
+    # included. Captionless images are walked too: they are `missing`'s work.
+    walked: list[CaptionItem] = list(
+        iter_captions(
+            resized_dir,
+            source_dir,
+            path_pattern,
+            stats,
+            master_dir=master_dir,
+            uncaptioned=True,
         )
+    )
 
     # The candidates, in tree order: exactly the images the loop below will ask
     # the tagger about, which is what lets it fill a whole batch ahead.
-    queue = [w for w in walked if not (w[2] and options.mode == "missing")]
+    queue = [w for w in walked if not (w.caption and options.mode == "missing")]
     tagged_by_path: dict[Path, str] = {}
     taken = 0
 
-    for index, (image_path, rel, existing) in enumerate(walked, 1):
-        caption_path = resized_dir / rel
+    for index, item in enumerate(walked, 1):
+        image_path, rel, caption_path, existing = (
+            item.image_path,
+            item.rel,
+            item.dst_caption,
+            item.caption,
+        )
         if progress is not None:
-            progress(index, len(images), str(rel))
+            progress(index, len(walked), rel.as_posix())
 
         if existing and options.mode == "missing":
             stats.skip("has-caption")
@@ -230,16 +239,16 @@ def run_autotag_captions(
         if image_path not in tagged_by_path:  # the buffer ran out: fill it
             chunk = queue[taken : taken + size]
             taken += len(chunk)
-            texts = tag_batch([_open_rgb(path) for path, _, _ in chunk])
-            for (path, _, _), text in zip(chunk, texts, strict=True):
-                tagged_by_path[path] = str(text).strip()
+            texts = tag_batch([_open_rgb(w.image_path) for w in chunk])
+            for w, text in zip(chunk, texts, strict=True):
+                tagged_by_path[w.image_path] = str(text).strip()
         tagged = tagged_by_path.pop(image_path)
 
         proposal = AutotagProposal(
-            image=str(image_path.relative_to(resized_dir)),
-            caption_path=str(rel),
+            image=image_path.relative_to(resized_dir).as_posix(),
+            caption_path=rel.as_posix(),
             existing=existing,
-            target_before=read_caption(caption_path) if caption_path.exists() else "",
+            target_before=item.target_before,
         )
         if not tagged:
             proposal.status = "skip:no-tags"
@@ -274,7 +283,7 @@ def run_autotag_captions(
                 caption_path,
                 proposal.proposed,
                 drop_variants=True,
-                history_by="autotag",
+                history_by=REPLAY_SHAPES["autotag"].history_by,
             )
             stats.written += 1
 
@@ -310,9 +319,6 @@ def build_tag_batch(
     }
 
 
-TE_NOTE = "captions changed — run `make preprocess-te` to re-encode."
-
-
 def run_autotag(req: AutotagRequest):
     """Tag the resized tree and propose (with ``apply``, write) the revised
     caption. Returns ``(rows, stats)`` from the tagging pass.
@@ -323,6 +329,7 @@ def run_autotag(req: AutotagRequest):
     """
     resized_dir = resolve_path(req.dst)
     source_dir = resolve_path(req.src)
+    master_dir = resolve_path(req.master)
     report_dir = resolve_path(req.report_dir)
 
     tag_batch, info = build_tag_batch(
@@ -331,6 +338,7 @@ def run_autotag(req: AutotagRequest):
     rows, stats = run_autotag_captions(
         resized_dir=resized_dir,
         source_dir=source_dir,
+        master_dir=master_dir,
         tag_batch=tag_batch,
         options=AutotagOptions(mode=req.mode, min_confidence=req.min_confidence),
         path_pattern=req.path_pattern,

@@ -6,6 +6,7 @@ import { createZoomPan } from "../zoomPan";
 import { CaptionCard } from "./CaptionCard";
 import { OcrBoxes, OcrPanel } from "./OcrPanel";
 import { RevealButton } from "./RevealButton";
+import { ZoomFrame, ZoomLevel } from "./ZoomFrame";
 import type {
   Analysis,
   ExcludeResult,
@@ -264,13 +265,7 @@ export function ItemView(props: {
                       when={overlayOk()}
                       fallback={<div class="empty dim">{t().item.noOverlay}</div>}
                     >
-                      <div
-                        classList={{ frame: true, zoomed: zp.zoom() > 1 }}
-                        onWheel={zp.wheel}
-                        onPointerDown={zp.drag}
-                        onDblClick={zp.reset}
-                        title={t().item.zoomHint}
-                      >
+                      <ZoomFrame zp={zp} title={t().item.zoomHint}>
                         <div class="overlay" style={zp.style()}>
                           <img src={api.fileUrl(base()!.path)} alt={it().rel} draggable={false} />
                           <img class="ov" src={api.fileUrl(it().mask!.path)} alt="" />
@@ -287,10 +282,10 @@ export function ItemView(props: {
                             </filter>
                           </svg>
                         </div>
-                      </div>
+                      </ZoomFrame>
                       <div class="dim hint mono" title={`${it().mask!.path} · ${base()!.path}`}>
                         {t().item.overlayHint} · <Dims info={base()} />
-                        <Show when={zp.zoom() > 1}> · {zp.zoom().toFixed(1)}×</Show>
+                        <ZoomLevel zp={zp} />
                       </div>
                     </Show>
                   </Match>
@@ -300,26 +295,20 @@ export function ItemView(props: {
                   <Match when={view() === "ocr" && ocrBase()}>
                     {(img) => (
                       <>
-                        <div
-                          classList={{ frame: true, zoomed: zp.zoom() > 1 }}
-                          onWheel={zp.wheel}
-                          onPointerDown={zp.drag}
-                          onDblClick={zp.reset}
-                          title={t().item.zoomHint}
-                        >
+                        <ZoomFrame zp={zp} title={t().item.zoomHint}>
                           <OcrBoxes
                             base={img()}
                             lines={it().ocr}
                             focus={ocrFocus()}
                             style={zp.style()}
                           />
-                        </div>
+                        </ZoomFrame>
                         <div class="dim hint mono" title={img().path}>
                           {ocrFocus() === null
                             ? t().ocr.boxesAll(it().ocr.length)
                             : t().ocr.boxesOne(ocrFocus()!)}{" "}
                           · <Dims info={img()} />
-                          <Show when={zp.zoom() > 1}> · {zp.zoom().toFixed(1)}×</Show>
+                          <ZoomLevel zp={zp} />
                         </div>
                       </>
                     )}
@@ -331,23 +320,17 @@ export function ItemView(props: {
                     >
                       {(img) => (
                         <>
-                          <div
-                            classList={{ frame: true, zoomed: zp.zoom() > 1 }}
-                            onWheel={zp.wheel}
-                            onPointerDown={zp.drag}
-                            onDblClick={zp.reset}
-                            title={t().item.zoomHint}
-                          >
+                          <ZoomFrame zp={zp} title={t().item.zoomHint}>
                             <img
                               src={api.fileUrl(img().path)}
                               alt={it().rel}
                               draggable={false}
                               style={zp.style()}
                             />
-                          </div>
+                          </ZoomFrame>
                           <div class="dim hint mono" title={img().path}>
                             <Dims info={img()} />
-                            <Show when={zp.zoom() > 1}> · {zp.zoom().toFixed(1)}×</Show>
+                            <ZoomLevel zp={zp} />
                           </div>
                         </>
                       )}

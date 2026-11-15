@@ -1,16 +1,9 @@
 import { createResource, createSignal, onCleanup } from "solid-js";
 import { api, toStatus } from "./api";
 import { t } from "./i18n";
-import { createJobFollower } from "./state";
+import { createJobFollower, newestNonEmpty } from "./state";
 import type { Job, UpdateInfo } from "./types";
 import type { Config } from "./config";
-
-/** `/api/update/run` names its job `update:<tag>`, the way a weights fetch is
-    `download:<ids>` — the prefix is the only thing that tells an adopted job
-    apart from a stage run. */
-const UPDATE_STAGE = "update:";
-
-export const isUpdateJob = (job: Job) => job.stage.startsWith(UPDATE_STAGE);
 
 /** The Update pane's state: what the server says about installed-vs-latest, and
  * the upgrade job when one is running.
@@ -28,9 +21,9 @@ export function createUpdates(config: Config) {
   const [restart, setRestart] = createSignal(false);
 
   const up$ = createJobFollower({
-    // uv writes its resolution over several lines and its own progress with
-    // \r; the newest non-empty one is the status, as in the download pane.
-    line: (line) => (line.trim() ? { text: line.trim(), state: "running" } : null),
+    // uv writes its resolution over several lines, as the download pane's
+    // fetch does.
+    line: newestNonEmpty,
     done: (job) => {
       const ok = job.state === "done";
       if (ok) setRestart(true);
@@ -104,5 +97,3 @@ export function createUpdates(config: Config) {
     cancel: () => up$.id() && api.cancel(up$.id()!),
   };
 }
-
-export type Updates = ReturnType<typeof createUpdates>;

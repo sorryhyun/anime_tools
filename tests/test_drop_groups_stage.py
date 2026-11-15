@@ -118,6 +118,17 @@ def test_no_correct_still_drops_the_groups(tmp_path, kb):
     assert _read(resized / "a.txt") == "long_hair, 1girl"
 
 
+def test_keep_is_keyed_on_normalize_tag(kb):
+    out = drop_caption_groups("Long Hair, 1girl", kb, ("hair",), keep=("long_hair",))
+    assert out.text == "Long Hair, 1girl"
+
+
+def test_a_clause_that_arrived_bare_is_not_the_cuts_to_remove(kb):
+    text = "1girl, backlighting. On the left. On the right, long hair."
+    out = drop_caption_groups(text, kb, ("lighting",))
+    assert out.text == "1girl. On the left. On the right, long hair."
+
+
 # ---- the stage ----------------------------------------------------------------
 
 
@@ -144,6 +155,20 @@ def test_a_run_cuts_the_revised_caption_and_leaves_the_master(tmp_path, kb):
     assert by["b.png"].status == "skip:unchanged"
     assert (stats.written, stats.unchanged, stats.from_master) == (1, 1, 0)
     assert stats.by_group == {"artist": 1}
+
+
+def test_groups_and_implied_are_counted_apart(tmp_path, kb):
+    """The implied cut runs over what the group cut left, and each tag is
+    counted under the cut that took it."""
+    resized, source = _dataset(
+        tmp_path, {"a": "1girl, @sincos, long_hair, very long hair, backlighting"}
+    )
+    rows, stats = drop_tag_groups(
+        source, resized, kb, ("artist", "lighting"), implied=True
+    )
+    assert _read(resized / "a.txt") == "1girl, very long hair"
+    assert rows[0].dropped == ["@sincos", "backlighting", "long_hair"]
+    assert stats.by_group == {"artist": 1, "lighting": 1, "implied": 1}
 
 
 def test_a_cut_of_a_master_creates_the_revised_caption(tmp_path, kb):
@@ -183,6 +208,37 @@ def test_the_report_is_the_shape_undo_reads(tmp_path, kb_csv, capsys):
     assert "artist: 1 tag" in capsys.readouterr().out
 
 
+def test_a_master_edited_in_the_gui_is_the_one_the_stage_reads(tmp_path, kb_csv):
+    """The GUI writes a master edit to the overlay (``--master``), never to
+    ``--src``; the run reads it ahead of the hand-written one, so the revised
+    caption it creates carries the edit rather than mirroring the stale text."""
+    resized, source = _dataset(tmp_path, {"a": "1girl, @sincos"})
+    overlay = tmp_path / "overlay"
+    overlay.mkdir()
+    (overlay / "a.txt").write_text("1girl, @sincos, long_hair", encoding="utf-8")
+    report_dir = tmp_path / "rep"
+    run_drop_groups(
+        DropGroupRequest(
+            src=str(source),
+            master=str(overlay),
+            dst=str(resized),
+            groups=("artist",),
+            tag_csv=str(kb_csv),
+            report_dir=str(report_dir),
+            apply=True,
+        )
+    )
+    assert _read(resized / "a.txt") == "1girl, long_hair"
+    report = json.loads((report_dir / "report.json").read_text(encoding="utf-8"))
+    (row,) = report["rows"]
+    assert row["existing"] == "1girl, @sincos, long_hair"
+    assert row["target_before"] == ""
+    assert report["stats"]["from_master"] == 1
+    # Neither master is touched.
+    assert _read(overlay / "a.txt") == "1girl, @sincos, long_hair"
+    assert _read(source / "a.txt") == "1girl, @sincos"
+
+
 def test_a_run_with_nothing_picked_is_refused(tmp_path):
     with pytest.raises(ValueError, match="Nothing to drop"):
         run_drop_groups(DropGroupRequest(src=str(tmp_path), dst=str(tmp_path)))
@@ -196,3 +252,8 @@ def test_groups_are_one_flag_of_known_slugs():
     assert req.selectors == ("artist", "lighting", "의상 > 상의")
     with pytest.raises(SystemExit):
         DropGroupRequest.parser().parse_args(["--groups", "nope"])
+
+
+def test_keep_without_the_at_still_shields_the_artist_tag(kb):
+    out = drop_caption_groups("@trig, @sincos, 1girl", kb, ("artist",), keep=("trig",))
+    assert out.text == "@trig, 1girl"

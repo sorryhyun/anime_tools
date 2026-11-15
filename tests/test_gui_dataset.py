@@ -694,8 +694,7 @@ def test_the_mask_root_setting_moves_both_generators_and_the_merge(client):
         argv = S.build_argv(
             S.schema(S.BY_ID[sid]),
             {},
-            roots=root_paths(roots),
-            mask_root="elsewhere",
+            S.Bindings(roots=root_paths(roots), mask_root="elsewhere"),
         )
         got[sid] = [a for a in argv if a.startswith("elsewhere")]
     assert got["masks_sam"] == ["elsewhere/masks_sam"]
@@ -813,7 +812,12 @@ def test_a_drop_lands_in_the_temp_area_and_lists_apart_from_the_dataset(
 ):
     c, home = client
     temp = home / "workspace" / "_temp"
-    assert c.get("/api/temp").json()["count"] == 0
+    summary = c.get("/api/temp").json()
+    assert summary["count"] == 0
+    # What a drop may bring is the server's list, sent so the browser does not
+    # spell it again.
+    assert {".png", ".txt"} <= set(summary["accept"])
+    assert ".history.txt" in summary["sidecars"]
 
     r = c.put("/api/temp/file?rel=drop/x.png", content=_png_bytes(tmp_path))
     assert r.json() == {"rel": "drop/x.png", "image": True}

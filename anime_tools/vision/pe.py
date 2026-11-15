@@ -619,7 +619,7 @@ def load_pe_spatial(
     from pathlib import Path
 
     from anime_tools._device import resolve_device
-    from anime_tools._hf import hf_download
+    from anime_tools.downloads import ensure
 
     dev = torch.device(resolve_device(device))
     ckpt = Path(model_path) if model_path else default_pe_spatial_path()
@@ -628,16 +628,9 @@ def load_pe_spatial(
             f"{PE_SPATIAL_CONFIG} checkpoint missing at {ckpt} - fetching "
             f"{PE_SPATIAL_REPO}/{PE_SPATIAL_FILENAME} (one-time)."
         )
-        ckpt.parent.mkdir(parents=True, exist_ok=True)
-        got = Path(
-            hf_download(
-                what=f"{PE_SPATIAL_CONFIG} checkpoint",
-                hint="python -m anime_tools.downloads pe_spatial",
-                repo_id=PE_SPATIAL_REPO,
-                filename=PE_SPATIAL_FILENAME,
-                local_dir=str(ckpt.parent),
-            )
-        )
+        # The catalog row re-pointed at the checkpoint's dir; it lands the file
+        # under the repo's name, which a custom ``model_path`` may not share.
+        got = ensure("pe_spatial", dest=ckpt.parent) / PE_SPATIAL_FILENAME
         if got.resolve() != ckpt.resolve():
             shutil.move(str(got), str(ckpt))
         if not ckpt.is_file():

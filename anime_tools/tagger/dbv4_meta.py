@@ -30,11 +30,24 @@ from anime_tools.contract import (
     TAGGER_REQUIRED_FILES,
 )
 
+# Our half of the tagger: where it is fetched from and where it lands. Spelled
+# in ``downloads/`` with every other weight location (the catalog row and the
+# loaders read the same names); re-exported here for the ComfyUI node, the GUI
+# and the trainer. The file sets are contract (the trainer probes them too).
+from anime_tools.downloads._locations import (
+    DEFAULT_TAGGER_DIR,
+    TAGGER_HF_REPO,
+    TAGGER_HF_SUBFOLDER,
+)
+
 __all__ = [
     "DBV4_BACKBONE_FILES",
     "DBV4_OPTIONAL_FILES",
     "DBV4_REQUIRED_FILES",
+    "DEFAULT_TAGGER_DIR",
     "PIXAI_BACKBONE_FILES",
+    "TAGGER_HF_REPO",
+    "TAGGER_HF_SUBFOLDER",
     "TAGGER_OPTIONAL_FILES",
     "TAGGER_REQUIRED_FILES",
 ]
@@ -77,15 +90,6 @@ BACKBONES: dict[str, BackboneSpec] = {
     ),
 }
 DEFAULT_BACKEND = "pixai"
-
-# Our half of the tagger: auto-fetched when ckpt_dir is missing required files.
-# The pixai checkpoint sits under ``pixai/``; the repo root still holds the
-# dbv4 one, which every anime_tools <= 0.8 fetches. The file sets are contract
-# (the trainer probes them too), so they live in ``anime_tools.contract`` and
-# are re-exported here.
-TAGGER_HF_REPO = "sorryhyun/anima-tagger"
-TAGGER_HF_SUBFOLDER = "pixai"
-DEFAULT_TAGGER_DIR = "models/captioners/anima-tagger-pixai"
 
 
 @dataclass(frozen=True)

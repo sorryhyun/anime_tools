@@ -23,12 +23,12 @@ from anime_tools.gui import proposals as P
 from anime_tools.gui import stages as S
 from anime_tools.gui._context import (
     RunContext,
+    failing_as,
     follow_up_steps,
-    make_output_dirs,
     preprocess_steps,
+    stage_step,
 )
-from anime_tools.gui.jobs import Step
-from anime_tools.gui.settings import edit_settings
+from anime_tools.gui.settings import FORM_VALUES_KEY, edit_settings
 
 router = APIRouter()
 
@@ -51,7 +51,7 @@ def list_stages(request: Request) -> list[dict[str, Any]]:
     schemas = request.app.state.schemas.get()
     ctx = RunContext.load()
     return [
-        S.resolved_schema(schemas[s.id], **ctx.bindings())
+        S.resolved_schema(schemas[s.id], ctx.bindings())
         for s in S.STAGES
         if s.id in schemas
     ]
@@ -90,34 +90,30 @@ async def start_job(request: Request) -> dict[str, Any]:
             raise HTTPException(400, f"{stage.id} cannot be scoped to one image")
         ctx = ctx.scoped_to(rel)
     try:
-        argv = S.build_argv(sc, values, apply=apply, **ctx.bindings())
+        step, report = stage_step(stage, sc, values, ctx, apply=apply)
     except ValueError as e:
         raise HTTPException(400, str(e)) from e
-    report = S.report_path(stage, sc["fields"], values, ctx.report_root)
-    make_output_dirs(stage, report, ctx.roots)
     steps = [
         *preprocess_steps(stage, ctx, schemas=store.get()),
-        Step(stage.module, argv, stage.id),
+        step,
         *follow_up_steps(stage, ctx, schemas=store.get()),
     ]
-    try:
-        job = request.app.state.jobs.start(
-            stage.id,
-            steps,
-            home=ctx.home,
-            report_path=report,
-            values=values,
-            apply=apply,
-            space=ctx.space,
-            env=ctx.env,
-        )
-    except RuntimeError as e:
-        raise HTTPException(409, str(e)) from e
+    # A taken slot is the app-wide 409 (``JobBusy``).
+    job = request.app.state.jobs.start(
+        stage.id,
+        steps,
+        home=ctx.home,
+        report_path=report,
+        values=values,
+        apply=apply,
+        space=ctx.space,
+        env=ctx.env,
+    )
     # Read *and* write under the settings lock: a settings PUT could have
     # landed while the job started, and merging into this request's snapshot
     # would roll it back.
     with edit_settings() as data:
-        data.setdefault("values", {})[stage.id] = values
+        data.setdefault(FORM_VALUES_KEY, {})[stage.id] = values
     return job.to_dict()
 
 
@@ -243,7 +239,5 @@ def job_undo(request: Request, job_id: str) -> dict[str, Any]:
     job, path = _report_of(request, job_id)
     if not job.apply:
         raise HTTPException(400, "that run wrote nothing — nothing to undo")
-    try:
+    with failing_as("undo failed"):
         return P.undo(path, RunContext.load(space=job.space).roots, job.stage)
-    except OSError as e:
-        raise HTTPException(500, f"undo failed: {e}") from e

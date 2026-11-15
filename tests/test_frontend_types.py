@@ -102,6 +102,13 @@ def test_job_states_are_the_states_a_job_reports():
     assert reachable == declared
 
 
+def test_job_kinds_are_the_kinds_a_job_carries():
+    from anime_tools.gui.jobs import JOB_KINDS
+
+    src = TYPES.read_text(encoding="utf-8")
+    assert _string_union(src, "JobKind") == JOB_KINDS
+
+
 def test_the_update_unions_are_the_update_modules():
     from anime_tools import update as U
 

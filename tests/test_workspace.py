@@ -118,6 +118,22 @@ def test_every_pixel_reading_stage_is_bound_to_the_resized_tree():
         assert "dst" in bound.values(), f"{stage_id} does not read the resized tree"
 
 
+def test_every_caption_reading_stage_is_bound_to_the_master_overlay():
+    """A stage that reads the caption ladder reads the overlay the caption
+    editor writes; unbound, its ``--master`` would fall back to the CLI default
+    under the server's home and miss a Settings-moved root."""
+    from anime_tools._request import args_of
+
+    carriers = {
+        stage.id
+        for stage in S.STAGES
+        if any(a.name == "master" for a in args_of(stage.request_class()))
+    }
+    assert {"autotag", "position", "correct", "drop_groups", "audit"} <= carriers
+    for stage_id in carriers:
+        assert S.ROOT_FIELDS[stage_id].get("master") == "master", stage_id
+
+
 # ---- migrate ------------------------------------------------------------
 
 

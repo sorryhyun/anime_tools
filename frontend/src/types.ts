@@ -54,6 +54,10 @@ export interface Field {
       away until the form's Advanced toggle is on. Never set on a drawer's own
       gate or on a required field. */
   advanced: boolean;
+  /** Whether the form draws this field at all (`Field.shown`): not a bound one
+      unless `overridable`, not an `auto` one, not the run bar's own `--apply` /
+      `--from_report`. The server decides; the form only filters on it. */
+  shown: boolean;
 }
 
 /** The argparse dest a replay-capable stage exposes. Like `--apply` it is
@@ -102,6 +106,11 @@ export interface Stage {
 
 export type JobState = "running" | "done" | "failed" | "cancelled";
 
+/** What a job is (`jobs.py::JOB_KINDS`): a stage run the dock follows, a weights
+    download the Models dialog follows, or the self-update the Update dialog
+    follows. An adopted job is routed by this, never by its name. */
+export type JobKind = "stage" | "download" | "update";
+
 /** One `python -m <module>` invocation inside a job. A job is a sequence:
     the stage itself, preceded by its preflight when it has one. */
 export interface JobStep {
@@ -126,6 +135,14 @@ export interface Job {
   /** The trees the run was over; its report is read back against them. */
   space: Space;
   values: Record<string, unknown>;
+  kind: JobKind;
+  /** What the job asked for: a download's model rows (`[]` = every missing
+      one), an update's tag (`[]` = the latest); nothing for a stage. */
+  ids: string[];
+  /** Once finished: the images its report says it wrote, which is what the
+      page re-stats instead of re-walking the tree. Null while running, or when
+      the report names no such list. */
+  written: string[] | null;
 }
 
 export interface Info {
@@ -404,6 +421,11 @@ export type Space = "dataset" | "temp";
 export interface TempSummary {
   root: string;
   count: number;
+  /** The suffixes a drop may bring (lower case, dot included) — the server's
+      list, which has `.avif` / `.jxl` only where their plugin is installed. */
+  accept: string[];
+  /** The `{stem}.*.txt` sidecar suffixes it refuses, though they end in `.txt`. */
+  sidecars: string[];
 }
 
 /** One caption of one image: a rung of the ladder, already parsed. `editable`

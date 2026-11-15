@@ -30,6 +30,7 @@ from anime_tools import _progress
 from anime_tools._walk import IMAGE_EXTENSIONS, walk_images
 from anime_tools.captions.position_clauses import parse_caption
 from anime_tools.captions.taxonomy import normalize_tag
+from anime_tools.vision._decode import DecodeDataset, collate
 
 CACHE_ROOT = Path(
     os.environ.get("NEAR_TWIN_CACHE", Path.home() / ".cache" / "near_twin")
@@ -162,33 +163,6 @@ def _load_512(image_path: Path) -> torch.Tensor:
     return t * 2.0 - 1.0
 
 
-_BAD_TENSOR = torch.zeros(3, PE_NATIVE, PE_NATIVE)  # placeholder for a failed decode
-
-
-class _ImageDataset(torch.utils.data.Dataset):
-    """Decode+resize on DataLoader workers. A corrupt image yields ``ok=False``
-    (skipped downstream) instead of crashing the pass."""
-
-    def __init__(self, members: list[Member]):
-        self.members = members
-
-    def __len__(self) -> int:
-        return len(self.members)
-
-    def __getitem__(self, i: int):
-        try:
-            return i, _load_512(self.members[i].image_path), True
-        except Exception:  # noqa: BLE001 — corrupt/unreadable image
-            return i, _BAD_TENSOR, False
-
-
-def _collate(batch):
-    idxs = [b[0] for b in batch]
-    tens = torch.stack([b[1] for b in batch])
-    oks = [b[2] for b in batch]
-    return idxs, tens, oks
-
-
 @runtime_checkable
 class Embedder(Protocol):
     """Image-batch → (global descriptor, pooled patch grid) for the feature cache.
@@ -289,11 +263,12 @@ def embed_members(
 
     pin = embedder.device.type == "cuda"
     loader = torch.utils.data.DataLoader(
-        _ImageDataset(todo),
+        # Decode+resize on the workers; any failed decode is a skipped row.
+        DecodeDataset([m.image_path for m in todo], _load_512, PE_NATIVE),
         batch_size=batch_size,
         num_workers=min(num_workers, len(todo)),
         pin_memory=pin,
-        collate_fn=_collate,
+        collate_fn=collate,
         persistent_workers=False,
     )
     # The shared counter line on stdout, not a ``tqdm`` bar on stderr: the web

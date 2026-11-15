@@ -81,8 +81,10 @@ def test_a_long_loop_is_still_a_runaway():
         "WAIT, WAIT, WAIT.",
         "WHAAAAAAAAT?!",
         "Cock♡ Cock♡ Cock♡ Cock♡",
-        "BUT… YOU CAN COME TO MY ROOM, OKAY? YOU KNOW WHERE IT IS, RIGHT? "
-        "ANYTIME, EVEN IN THE MIDDLE OF THE NIGHT! OH, BUT I REALLY WANT YOU TO",
+        (
+            "BUT… YOU CAN COME TO MY ROOM, OKAY? YOU KNOW WHERE IT IS, RIGHT? "
+            "ANYTIME, EVEN IN THE MIDDLE OF THE NIGHT! OH, BUT I REALLY WANT YOU TO"
+        ),
     ],
 )
 def test_latin_lettering_is_not_a_runaway(text):

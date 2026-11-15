@@ -33,10 +33,10 @@ A runner lives beside the library function it drives, because `registry.py` addr
 
 | Runner | Module | Also there |
 |---|---|---|
-| `run_resize` | `resize.py` | `resized_tree()` + `RESIZE_FIRST`, the "run Resize first" preflight every other stage borrows |
+| `run_resize` | `resize.py` | `oriented_size` / `collect_metadata` / `ANCHOR_KEY` / `MARGINS_KEY` (Export's); re-exports `_preflight.py`'s `resized_tree()` + `RESIZE_FIRST`, the PIL-free "run Resize first" preflight every other stage borrows |
 | `run_autotag` | `autotag.py` | `run_autotag_captions`, whose `tag_batch` is one forward per `--batch_size` images |
 | `run_position` | `position_captions.py` | `summarize()` (the report's own counts), `_run_flatten` |
-| `run_correct` | `captions.py` | `resolve_tag_csv`, the KB lookup both text stages share |
+| `run_correct` | `captions.py` | re-exports `correction.resolve_tag_csv`, the KB lookup Correct, Tag groups and Export share (`--tag_csv` is the `TagCsvRequest` mixin) |
 | `run_drop_groups` | `drop_groups.py` | `drop_tag_groups`; the cut is `correction.drop_caption_groups`, Correct's drop minus its reorder |
 | `run_audit` | `multiview_audit.py` | `run_audit_phase` (the same sweep as the position stage's phase 1) |
 | `run_ocr` | `ocr.py` | `_vl_engine`; the library walk is `read_tree` |
@@ -44,7 +44,7 @@ A runner lives beside the library function it drives, because `registry.py` addr
 
 `anime_tools/stages/__init__.py` re-exports all eight lazily (`_RUNNERS` is the same mapping), so
 `from anime_tools.stages import run_autotag` still costs one module. `_report.py` (the `report.json`
-header, the dry-run footer) and `_progress.py` (`make_progress`) are the two things every runner
+header, the dry-run footer, `TE_NOTE` — the one "now re-encode" line) and `_progress.py` (`make_progress`) are the two things every runner
 shares; they were under `cli/` until the library depended on its own CLI package.
 
 Every default and help string a request field names comes from a leaf — `_options.py` here
@@ -109,7 +109,7 @@ the files are always the latest word on the image.
 
 Both write the revised tree, like every other caption stage — the phase through
 `run_position_captions`, the standalone stage through `apply_findings`. No stage writes the
-hand-written master (Export and the GUI caption editor are its only writers), and revised-first
+master (Export writes `--src`, the GUI caption editor the overlay), and revised-first
 (`_walk_captions.resolve_caption`) means a master write would be read past anyway once a revised
 caption exists.
 
@@ -149,8 +149,9 @@ have had. It is for a trainer that resizes from `--src` itself and reads exclusi
 together with `--resize_cap` or `--webp`.
 
 The `caption` row reads the ladder, not one file (`_caption_source`): the revised caption, else the
-master — overlay (`workspace/master/`) first, hand-written (`--src`) behind it, the same
-overlay-first rule `gui.dataset.caption_paths` and `resolve_caption` read. Nothing copies a master
+master — overlay (`workspace/master/`) first, hand-written (`--src`) behind it. It *is*
+`_walk_captions.resolve_caption`, the call every caption stage reads through, and
+`gui.dataset.caption_paths` reads the master half (`master_caption`). Nothing copies a master
 into the resized tree, so an image no caption stage has touched would otherwise publish
 captionless, which the trainer reads as unlabelled. The `variants` sidecar stays a revised-tree
 artifact and is looked up there whichever rung the caption came from.
@@ -179,7 +180,7 @@ trailing newline. The trainer's MOSS cache reads the sidecar in place of convert
 `.txt`; its own conversion has no boxes. The row is a render like a combined one (`ExportRow.derived`: `text`
 re-derived at decide time, revert compared against the recorded text, `before` kept for restore)
 and carries the KB it typed against (`tag_csv`); the KB is the curation home's `find_tag_csv`,
-resolved before the walk so a missing CSV fails the run up front (`resolve_layout_kb`). The `.txt`
+resolved before the walk so a missing CSV fails the run up front (`resolve_tag_csv(needed_by=…)`). The `.txt`
 stays Anima format. No `layout` row for `variants` or the excluded mirror; `--sidecars_only` keeps
 it (it is a sidecar). Re-exporting as `anima` takes an earlier `.layout.txt` beside a caption it
 publishes in the live tree away — a `layout` row with `remove` set: `would-remove` dry, `removed`
@@ -217,9 +218,14 @@ Settings value each.
   `from_report` / `path_pattern` / `apply` off the request).
 - `_caption_io.py` — `read_caption`/`write_caption`, the trailing-newline invariant, the
   `.variants.txt` drop, and `history_by`.
-- `_walk_captions.py` — `resolve_caption`/`iter_captions`: revised caption first, master as
-  read-only fallback. `autotag` walks images rather than captions, so it calls `resolve_caption`
-  itself; `cli/ab_position_captions` deliberately reads the master only.
+- `_walk_captions.py` — the caption ladder, spelled once: `resolve_caption` (revised → the
+  `--master` overlay → `--src`; Export's `_caption_source` is the same call), `master_caption` (the
+  last two, which the GUI's ladder and `cli/ab_position_captions`' deliberate master-only read use),
+  and `iter_captions`, which yields `CaptionItem`s — `target_before` and `from_master` are
+  properties there, not re-derived per stage. `autotag` walks with `uncaptioned=True`, since an image
+  no caption speaks for is its `missing` mode's work. Every caption stage's request is a
+  `CaptionRequest` (`--master`), bound to the `master` root by `gui/stages.py::ROOT_FIELDS`. Report
+  rels (`image`, `caption_path`) are `.as_posix()`.
 - `replay.apply_one` — the one drift-guarded write: `no-proposal` → `missing-caption` →
   `already-applied` → `drifted` → `would-write`/`written`. Its baseline is what the *write
   target* held, which is why every row records `target_before` beside the caption that spoke for

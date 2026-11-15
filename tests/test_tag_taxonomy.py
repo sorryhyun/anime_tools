@@ -162,7 +162,7 @@ def test_index_and_tagger_agree_on_tag_shape():
 
 
 def test_constants_reexports_for_back_compat():
-    # group_router imports _COUNT_RE from anime_tools.captions.taxonomy; constants re-exports it.
+    # The tagger CLI modes import _COUNT_RE through constants, which re-exports it.
     from anime_tools.tagger.cli import constants as c
 
     assert c.is_count_tag is tx.is_count_tag

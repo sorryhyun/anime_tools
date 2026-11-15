@@ -21,18 +21,23 @@ from anime_tools.captions.correction import (
     GroupDropResult,
     TagKnowledgeBase,
     drop_caption_groups,
+    resolve_tag_csv,
 )
-from anime_tools.captions.implied_tags import drop_implied_tags
+from anime_tools.captions.implied_tags import ImpliedDropResult, drop_implied_tags
 from anime_tools.captions.tag_drop_groups import should_drop_tag
 from anime_tools.captions.taxonomy import normalize_tag
 from anime_tools.contract import REPLAY_SHAPES
 
-from ._caption_io import read_caption, write_caption
+from ._caption_io import write_caption
+from ._preflight import resized_tree
 from ._progress import make_progress
-from ._report import print_dry_run_footer, stage_report_header, write_stage_report
+from ._report import (
+    TE_NOTE,
+    print_dry_run_footer,
+    stage_report_header,
+    write_stage_report,
+)
 from ._walk_captions import iter_captions
-from .captions import TE_NOTE, resolve_tag_csv
-from .resize import resized_tree
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterable
@@ -85,6 +90,7 @@ def drop_tag_groups(
     *,
     keep: Iterable[str] = (),
     implied: bool = False,
+    master_dir: Path | None = None,
     recursive: bool = True,
     path_pattern: str | None = None,
     apply: bool = True,
@@ -92,7 +98,8 @@ def drop_tag_groups(
 ) -> tuple[list[DropGroupProposal], DropGroupStats]:
     """Cut ``selectors`` out of every caption under the resized tree.
 
-    Revised first, master as the fallback, like every caption stage. An image
+    Revised first, master (the ``master_dir`` overlay, then ``source_dir``) as
+    the fallback, like every caption stage. An image
     that loses nothing is ``skip:unchanged`` and writes nothing — not even a
     revised copy of the master it read, which would say nothing new. A write
     pushes the replaced text onto the history sidecar and drops the variants
@@ -105,24 +112,36 @@ def drop_tag_groups(
     history_by = REPLAY_SHAPES["drop_groups"].history_by
     stats = DropGroupStats()
     rows: list[DropGroupProposal] = []
-    for image_path, rel, dst, raw, caption_path in iter_captions(
-        resized_dir, source_dir, path_pattern, stats, progress, recursive=recursive
+    for item in iter_captions(
+        resized_dir,
+        source_dir,
+        path_pattern,
+        stats,
+        progress,
+        master_dir=master_dir,
+        recursive=recursive,
     ):
-        cut = (
+        raw = item.caption
+        # Two cuts in turn, the implied one over what the group cut left: a tag
+        # a group took no longer implies anything.
+        group_cut = (
             drop_caption_groups(raw, kb, selectors, keep=keep)
             if selectors
             else GroupDropResult(raw)
         )
-        implied_cut = drop_implied_tags(cut.text, keep=keep) if implied else None
-        if implied_cut is not None and implied_cut.dropped_tags:
-            cut = GroupDropResult(
-                implied_cut.text, (*cut.dropped_tags, *implied_cut.dropped_tags)
-            )
+        implied_cut = (
+            drop_implied_tags(group_cut.text, keep=keep)
+            if implied
+            else ImpliedDropResult(group_cut.text)
+        )
+        cut = GroupDropResult(
+            implied_cut.text, (*group_cut.dropped_tags, *implied_cut.dropped_tags)
+        )
         row = DropGroupProposal(
-            image=str(image_path.relative_to(resized_dir)),
-            caption_path=str(rel),
+            image=item.image_path.relative_to(resized_dir).as_posix(),
+            caption_path=item.rel.as_posix(),
             existing=raw,
-            target_before=read_caption(dst) if dst.exists() else "",
+            target_before=item.target_before,
             proposed=cut.text,
             dropped=list(cut.dropped_tags),
         )
@@ -131,15 +150,17 @@ def drop_tag_groups(
             row.status = "skip:unchanged"
             stats.unchanged += 1
             continue
-        if caption_path != dst:
+        if item.from_master:
             stats.from_master += 1
-        n_implied = len(implied_cut.dropped_tags) if implied_cut is not None else 0
-        group_cut = cut.dropped_tags[: len(cut.dropped_tags) - n_implied]
-        stats.by_group.update(_selector_of(t, kb, selectors) for t in group_cut)
-        if n_implied:
-            stats.by_group["implied"] += n_implied
+        stats.by_group.update(
+            _selector_of(t, kb, selectors) for t in group_cut.dropped_tags
+        )
+        if implied_cut.dropped_tags:
+            stats.by_group["implied"] += len(implied_cut.dropped_tags)
         if apply:
-            write_caption(dst, cut.text, drop_variants=True, history_by=history_by)
+            write_caption(
+                item.dst_caption, cut.text, drop_variants=True, history_by=history_by
+            )
         stats.written += 1
     return rows, stats
 
@@ -173,6 +194,7 @@ def run_drop_groups(req: DropGroupRequest):
         selectors,
         keep=req.keep_tags,
         implied=req.implied,
+        master_dir=resolve_path(req.master),
         recursive=req.recursive,
         path_pattern=req.path_pattern or "*",
         apply=req.apply,

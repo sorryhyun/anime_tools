@@ -80,6 +80,7 @@ CASES: dict[str, Request] = {
     "autotag": AutotagRequest(
         src="s",
         dst="d",
+        master="mm",
         path_pattern="a/*",
         mode="merge",
         min_confidence=0.4,
@@ -119,9 +120,10 @@ CASES: dict[str, Request] = {
     "correct": CorrectRequest(
         src="s",
         dst="d",
+        master="mm",
         tag_csv="t.csv",
         path_pattern="a/*",
-        recursive=True,
+        recursive=False,
         caption_insert_no_artist=True,
         caption_trigger_word="trig",
         caption_trigger_at_front=True,
@@ -433,6 +435,8 @@ def test_every_flag_takes_both_separators(stage):
         ("device", ("--device",), None),
         ("src", ("--src",), "image_dataset"),
         ("dst", ("--dst",), "workspace/resized"),
+        ("master", ("--master",), "workspace/master"),
+        ("tag_csv", ("--tag_csv", "--tag-csv"), None),
     ],
 )
 def test_shared_flags_keep_one_spelling(parsers, dest, flags, default):

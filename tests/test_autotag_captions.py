@@ -414,3 +414,36 @@ def test_progress_still_counts_every_image_in_tree_order(tmp_path):
     )
 
     assert seen == [(1, 3, "a.txt"), (2, 3, "b.txt"), (3, 3, "c.txt")]
+
+
+# ---------------------------------------------------------------------------
+# the master overlay
+# ---------------------------------------------------------------------------
+
+
+def test_a_master_edited_in_the_gui_is_what_the_image_already_says(tmp_path):
+    """The GUI's caption editor writes a master edit to the overlay
+    (``workspace/master/``), not to ``--src``. ``missing`` must count that as a
+    caption, and ``merge`` must merge into it rather than into the stale
+    hand-written text behind it."""
+    resized, source = _dataset(tmp_path, {"a": "1girl", "b": None})
+    overlay = tmp_path / "overlay"
+    overlay.mkdir()
+    (overlay / "a.txt").write_text("1girl, smile", encoding="utf-8")
+    (overlay / "b.txt").write_text("1boy", encoding="utf-8")
+
+    rows, stats = _run(resized, source, "1girl, hat", master_dir=overlay)
+    assert stats.candidates == 0 and stats.skipped["has-caption"] == 2
+
+    rows, _ = _run(
+        resized,
+        source,
+        "1girl, hat",
+        master_dir=overlay,
+        options=AutotagOptions(mode="merge"),
+    )
+    by_image = {r.image: r for r in rows}
+    assert by_image["a.png"].existing == "1girl, smile"
+    assert by_image["a.png"].proposed == "1girl, smile, hat"
+    # The write would create the revised caption: nothing there yet.
+    assert by_image["a.png"].target_before == ""

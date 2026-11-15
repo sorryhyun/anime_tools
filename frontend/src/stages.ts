@@ -81,10 +81,13 @@ export function createStages(config: Config) {
     return [...m.values()];
   });
   /** The hidden preflight stage, so Settings can render its form: it has no
-      dock panel, and its knobs apply to every stage it precedes. */
-  const preprocessStage = createMemo(() =>
-    (all() ?? []).find((s) => s.hidden && s.id === "resize"),
-  );
+      dock panel, and its knobs apply to every stage it precedes. Which stage
+      that is, the schemas say themselves — each names its `preprocess`. */
+  const preprocessStage = createMemo(() => {
+    const ss = all() ?? [];
+    const id = ss.find((s) => s.preprocess)?.preprocess;
+    return id ? ss.find((s) => s.id === id) : undefined;
+  });
   /** Catalog rows the open stage needs that are not downloaded yet — surfaced
       in the stage bar, so a Run does not stall on a surprise multi-GB fetch. */
   const missingModels = createMemo(() =>

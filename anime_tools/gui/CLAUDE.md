@@ -15,6 +15,12 @@ request's own validation runs server-side, as a 400) and spells it with `to_argv
 in-process: the request modules are torch-free by test, and building all eleven schemas takes
 ~0.1 s, so there is no child interpreter and no cache.
 
+It is three files behind one name: `stages.py` builds (`schema`, `resolved_schema`, `build_argv`,
+`form_values`, `report_path`, `load_schemas`), `_stage_bindings.py` holds the maps below plus
+`Bindings` / `UNBOUND` / `preprocess_for` / the subpath helpers, `_stage_field.py` holds `Field` /
+`fields_of`. `stages.py` re-exports both, so every caller and test stays on `S.x`; a monkeypatch
+reaches only a lookup made through `S` (`server.py`'s `S.load_schemas()` is one).
+
 A `Field` *carries* its `Arg` rather than restating it: dest, kind, flags, default, help, choices,
 required, the `--no-` spelling, the label and the `…`-chooser hints are all properties over the one
 object the parser was generated from, `to_json()` is the flat dict the browser gets, and
@@ -25,7 +31,7 @@ Field binding:
 
 | Map | Bound to | Shown? |
 |---|---|---|
-| `ROOT_FIELDS` (`--src`, `--dst`, `--image-dir`, …) | dataset roots | hidden |
+| `ROOT_FIELDS` (`--src`, `--master`, `--dst`, `--image-dir`, …; every caption stage binds all three caption roots) | dataset roots | hidden |
 | `SETTING_FIELDS` (`--path_pattern`, `--tagger_dir`, `--checkpoint`, `--prompt_embed` — the detection stages'; the mask stage names its soft prompts per `--masks` row) | Settings stage defaults | hidden |
 | `REPORT_SETTING` / `REPORT_INPUTS` (`--report_dir`, groups' `--out`, Export's `--index`) | `report_root` + the stage's own tail | hidden |
 | `MASK_FIELDS` | `mask_root` + tail | hidden |
@@ -35,8 +41,11 @@ Field binding:
 
 Report and mask roots are split per-stage (`report_subpath` / `mask_subpath`) so one stage's
 `--from_report` can't read another's report, and so a stage's masks land in its own tree. A
-blank root means beside the relevant dataset root (`_root_beside`). A drawer's gate, a required
-field and an already-hidden field are never folded — the server settles that, not the browser.
+blank root means beside the relevant dataset root (`_root_beside`). Whether the form draws a
+field at all is `Field.shown` (sent as `shown`; the browser only filters on it), and a drawer's
+gate, a required field and an unshown field are never folded — the server settles both, not the
+browser. The bound values themselves travel as one frozen `Bindings` (`roots` / `settings` /
+`report_root` / `mask_root`), the third argument of `resolved_schema` and `build_argv`.
 `PREPROCESS_STAGE` (`resize`) runs as a preflight in front of every stage bound to `dst`;
 `NO_PREFLIGHT` names the exceptions.
 
@@ -47,14 +56,26 @@ field and an already-hidden field are never folded — the server settles that, 
 | `server.py` | `create_app()`, the static routes and `/api/info`; `Schemas` (the background schema build) and `ClientWatch` (exit with the window) |
 | `routes/` | the API, one router per area — `settings` (settings, models, guidebook, update), `jobs` (stages, runs, proposals, `/api/alive`), `dataset`, `desktop` (`/api/pick`, `/reveal`, `/ls`) |
 | `_context.py` | `RunContext` — the settings file read **once** per request — plus `NO_CACHE` and `is_loopback` |
+| `dataset.py` | the `D.x` façade (`__all__` re-exports the four below) and what it owns itself: the sidebar rows (`list_items` / `_row` / `item_rows`, `set_excluded`, `mask_path`), the item panel (`item_detail`, `ocr_lines` / `ocr_path`, `drawn_on`) and `thumbnail` |
+| `_dataset_roots.py` | `Roots`, `resolve_roots`, `dataset_bases` / `reachable` / `owned` / `lexical` / `rel_to_home`, `ensure_*`, the `_rel_key` gate, `item_pattern` / `rel_for_image`, `excluded_trees` / `excluded_entries` |
+| `_dataset_captions.py` | the ladder: `Rung`, `CAPTION_LADDER`, `caption_paths` / `caption_write_path`, `parsed_caption`, `caption_versions`, `write_caption` |
+| `_dataset_reports.py` | `GROUPS_SUBPATH` / `POSITION_SUBPATH` / `ANALYSIS_KINDS`, `load_groups`, `load_analysis` |
+| `_dataset_temp.py` | the drop area: `SPACES`, `temp_home` / `temp_roots` / `temp_summary`, `save_temp_file`, `delete_temp_image`, `clear_temp` |
 | `launch.py` | `main()`, `pick_port`, the Chromium app window: the process, not the API |
 
 A router reaches its state through `request.app.state` (`jobs` / `schemas` / `watch`), which is what
-lets it live outside `create_app`. `RunContext.bindings()` is the four keyword arguments
-`S.resolved_schema` and `S.build_argv` bind a form with (`roots` / `settings` / `report_root` /
-`mask_root`) — one object instead of four values recomputed per handler — and `ctx.scoped_to(rel)`
+lets it live outside `create_app`. `RunContext.bindings()` is the `S.Bindings` a form is bound
+with — one object instead of four values recomputed per handler — `stage_step` is every step of a
+job built against it (the stage, its preflight and its follow-up alike), and `ctx.scoped_to(rel)`
 is how a per-image Run narrows `--path_pattern`. The free `roots_for` / `report_root` / `mask_root`
 stay, because Settings' placeholders are those values computed against *empty* settings.
+
+Errors several routes owe alike are answered once: `D.DatasetError` / `P.ProposalError` → 400 and
+`jobs.JobBusy` (the slot is taken, raised by `JobManager.start`) → 409 are app-wide handlers in
+`server.py`; `_context.found` is the reachable-and-exists 404, `_context.failing_as(what)` the
+`OSError` → 500 `"{what}: {e}"` around a route's deliberate write. `PUT /api/settings` writes only
+`WRITABLE_SETTINGS` (stage defaults, preprocess, `auto_update`, the raw dataset roots) and 400s any
+other key, so the saved forms (`FORM_VALUES_KEY`) and the update cache stay the server's.
 
 ## Other server pieces
 
@@ -82,7 +103,9 @@ stay, because Settings' placeholders are those values computed against *empty* s
   `/api/temp` counts it, `PUT /api/temp/file` takes one dropped file as the raw body (with
   `unique`, a taken stem lands as `{stem}_1`, `{stem}_2`, … and the answer says where),
   `DELETE /api/temp/file` deletes one image and every file the drop area made of it, and
-  `DELETE /api/temp` removes it whole (both 409 while a temp job runs). A missing groups manifest is not an error; an
+  `DELETE /api/temp` removes it whole (both 409 while a temp job runs). `/api/temp` also sends
+  `accept` (`_TEMP_SUFFIXES`, so `.avif` / `.jxl` only where their plugin is) and `sidecars`
+  (`contract.CAPTION_SIDECAR_SUFFIXES`), which is all the browser filters a drop by. A missing groups manifest is not an error; an
   unparseable one is a 400. `POST /api/dataset/exclude` is the ⊘ button:
   `anime_tools.exclude` seen from the server, an instant move rather than a job (there is
   nothing to run and no report to undo), answering with the ledger row and the sidebar row it
@@ -118,7 +141,10 @@ stay, because Settings' placeholders are those values computed against *empty* s
   progress bar and log window are read straight off it — `stages/_progress.py::make_progress`'s
   `  [done/total] detail` and the `── step i/n: label ──` header this module prints in front of
   each step of a sequence are the two formats parsed there, and a stage printing neither simply
-  has no bar.
+  has no bar. `Job.to_dict()` carries `kind` (`JOB_KINDS`: `stage` / `download` / `update`) and
+  `ids` (what a download or update asked for) — what the page adopts a job by, never its name — and,
+  once finished, `written`: the report's own top-level list of the images it wrote, read once, so
+  the page re-stats those rows without fetching `/report`.
 - The server exits with the window it opened. `main()`'s `--open` implies `--exit-with-window`
   (`--no-exit-with-window` opts out, and the flag alone turns it on for a run that opens nothing),
   which hands `create_app` a `ClientWatch`. The page holds `/api/alive` open for as long as it is on
@@ -160,7 +186,7 @@ stay, because Settings' placeholders are those values computed against *empty* s
   `{packs: [{id, title, description}], models: [Asset.to_dict()…], models_dir}` — `packs` in
   `PACKS` order, only packs that have rows, each model carrying its `pack` — and
   `POST /api/models/download {ids}` takes row or pack ids, expanding a pack before the job is named
-  so the job stays `download:<row ids>`.
+  so the job stays `download:<row ids>` (and its `ids` are those rows).
 - `guidebook.py` + `guidebooks/*.md` are the manual the panel opens (☰ → 📖). One book per UI
   language, keyed by the same locale ids `frontend/src/i18n/` uses, and a locale with no book of
   its own reads the English one rather than 404ing. They sit in the package because

@@ -208,7 +208,7 @@ def caption_to_layout(
     pixels of a ``size = (W, H)`` image; pass both or neither."""
     if (text_boxes is None) != (size is None):
         raise ValueError("text_boxes and size go together")
-    parsed = as_parsed(caption.replace("\n", ","))
+    parsed = as_parsed(caption)
     items: list[dict] = []
     for clause in parsed.position_clauses:
         items.append(_character_item(clause, kb))

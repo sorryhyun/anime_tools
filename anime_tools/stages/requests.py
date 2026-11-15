@@ -52,6 +52,7 @@ from anime_tools.stages._options import (
     EXPORT_CAP_TOKENS,
     EXTRA_CHARACTER,
     MULTIPLE_VIEWS,
+    TAG_CSV_HELP,
     PositionCaptionOptions,
 )
 from anime_tools.tagger.dbv4_meta import DEFAULT_TAGGER_DIR
@@ -61,6 +62,7 @@ __all__ = [
     "POSITION_ONLY_FLAGS",
     "AuditRequest",
     "AutotagRequest",
+    "CaptionRequest",
     "CorrectRequest",
     "DetectionRequest",
     "DropGroupRequest",
@@ -69,6 +71,7 @@ __all__ = [
     "OcrRequest",
     "PositionRequest",
     "ResizeRequest",
+    "TagCsvRequest",
 ]
 
 DEFAULT_MAX_TOKENS = 512
@@ -133,7 +136,8 @@ class DatasetRequest(StageRequest):
     src: str = arg(
         WS.SOURCE_ROOT,
         help="Caption master dir — hand-written, and the read-only fallback for "
-        "every stage. Only Export writes it, publishing a revised master back",
+        "every stage (behind --master, the overlay). Only Export writes it, "
+        "publishing a revised master back",
     )
     dst: str = arg(
         WS.RESIZED,
@@ -144,7 +148,22 @@ class DatasetRequest(StageRequest):
 
 
 @dataclass(frozen=True, kw_only=True)
-class ApplyRequest(DatasetRequest):
+class CaptionRequest(DatasetRequest):
+    """Adds the master overlay: the caption stages read a caption down the
+    ladder — revised under ``--dst``, then the overlay, then ``--src``
+    (``_walk_captions.resolve_caption``) — and the overlay is where the GUI's
+    caption editor writes a master edit."""
+
+    master: str = arg(
+        WS.DEFAULT_ROOTS["master"],
+        help="Revised-master overlay — a master edited in the GUI, read before "
+        f"the one under --src (default: {WS.DEFAULT_ROOTS['master']}). Never "
+        "written by a stage",
+    )
+
+
+@dataclass(frozen=True, kw_only=True)
+class ApplyRequest(CaptionRequest):
     """Dry-run by default; ``apply`` writes.
 
     The report every run leaves is what the GUI's Undo reads back
@@ -189,6 +208,15 @@ class TaggerRequest(StageRequest):
     device: str | None = arg(None, help=DEVICE_HELP)
     """``None`` resolves at model-load time, never earlier, so the torch-free
     replay path never pays for the probe."""
+
+
+@dataclass(frozen=True, kw_only=True)
+class TagCsvRequest(StageRequest):
+    """The Danbooru tag KB the text stages type tags against."""
+
+    tag_csv: str | None = arg(None, help=TAG_CSV_HELP)
+    """``None`` is the curation home's lookup
+    (``captions.correction.resolve_tag_csv``)."""
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -673,7 +701,7 @@ class _Pinned:
 
 
 @dataclass(frozen=True, kw_only=True)
-class CorrectRequest(ApplyRequest):
+class CorrectRequest(TagCsvRequest, ApplyRequest):
     """Write corrected captions next to resized preprocessing images.
 
     Corrects the revised caption in place, reading the master only for an image
@@ -683,10 +711,7 @@ class CorrectRequest(ApplyRequest):
     """
 
     report_dir: str = _report_dir(f"{WS.REPORTS}/correct")
-    tag_csv: str | None = arg(
-        None, help="danbooru_tags_classified.csv path (default: models/ lookup)"
-    )
-    recursive: bool = arg(False, help="Walk subfolders")
+    recursive: bool = arg(True, help="Walk subfolders")
     caption_insert_no_artist: bool = arg(
         False, help="Insert @no-artist at the artist slot when no artist marker exists"
     )
@@ -752,7 +777,7 @@ class CorrectRequest(ApplyRequest):
 
 
 @dataclass(frozen=True, kw_only=True)
-class DropGroupRequest(ApplyRequest):
+class DropGroupRequest(TagCsvRequest, ApplyRequest):
     """Drop whole tag groups — artists, clothing, lighting — from the revised captions.
 
     Only the cut: every tag left keeps its place and nothing is added — no bucket
@@ -792,9 +817,6 @@ class DropGroupRequest(ApplyRequest):
         "`very long hair`, `neckerchief` beside `diagonal-striped neckerchief`, `bow` "
         "beside `bowtie`. A clause tag goes only for a tag in its own clause. Runs "
         "without any --groups",
-    )
-    tag_csv: str | None = arg(
-        None, help="danbooru_tags_classified.csv path (default: models/ lookup)"
     )
     recursive: bool = arg(True, help="Walk subfolders")
 

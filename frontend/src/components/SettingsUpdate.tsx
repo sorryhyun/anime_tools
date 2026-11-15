@@ -5,7 +5,7 @@ import type { HelpArea } from "../layout";
 import type { JobStatus, UpdateInfo } from "../types";
 import { HelpToggle } from "./HelpToggle";
 import { SettingsShell } from "./SettingsShell";
-import { StatusLine } from "./StatusLine";
+import { JobActions } from "./StatusLine";
 
 /** The Update dialog: which version is installed, which one GitHub has, and the
     one button between them. Nothing here is written on OK — the checkbox saves
@@ -138,24 +138,15 @@ export function SettingsUpdate(props: {
         <p class="notes">{t().update.restart}</p>
       </Show>
 
-      <div class="dlbar">
-        <button
-          type="button"
-          class="primary"
-          disabled={props.busy || props.checking || !canUpdate()}
-          onClick={props.onUpdate}
-        >
-          {label()}
-        </button>
-        <Show when={props.updating}>
-          <button type="button" onClick={props.onCancelUpdate}>
-            {t().common.cancel}
-          </button>
-        </Show>
-        <Show when={props.progress.text}>
-          <StatusLine status={props.progress} />
-        </Show>
-      </div>
+      <JobActions
+        primary
+        label={label()}
+        disabled={props.busy || props.checking || !canUpdate()}
+        onRun={props.onUpdate}
+        running={props.updating}
+        onCancel={props.onCancelUpdate}
+        status={props.progress}
+      />
 
       <Show when={props.log.length}>
         <div class="logbox" style="margin-top:8px; max-height:22vh">

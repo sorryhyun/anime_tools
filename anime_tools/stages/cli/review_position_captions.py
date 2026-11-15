@@ -23,10 +23,13 @@ from anime_tools import workspace as WS
 from anime_tools._device import add_device_arg, resolve_device
 from anime_tools._env import resolve_path
 from anime_tools._json import write_json
+from anime_tools._progress import ProgressBar
 from anime_tools._walk import walk_images
 from anime_tools.captions.position_clauses import parse_caption
 from anime_tools.captions.taxonomy import normalize_tag
+from anime_tools.stages._caption_io import read_caption
 from anime_tools.stages._models import load_tagger
+from anime_tools.stages._walk_captions import master_caption, read_if_file
 from anime_tools.stages.cli.position_captions import options_from_flag_string
 from anime_tools.stages.multiview_sheet import BOX_COLORS, _fit, _font
 from anime_tools.stages.position_captions import is_candidate, propose_for_image
@@ -58,6 +61,11 @@ class PositionPalette:
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--src", default=WS.SOURCE_ROOT, help="Caption master (before)")
+    p.add_argument(
+        "--master",
+        default=WS.DEFAULT_ROOTS["master"],
+        help="The master overlay, read before --src (a master edited in the GUI)",
+    )
     p.add_argument(
         "--dst",
         default=WS.RESIZED,
@@ -247,6 +255,7 @@ figcaption{font-size:12px;color:#b8b8c0;margin-top:4px}
 def main() -> None:
     args = parse_args()
     src, dst = resolve_path(args.src), resolve_path(args.dst)
+    master = resolve_path(args.master)
     out_dir = resolve_path(args.out)
     (out_dir / "crops").mkdir(parents=True, exist_ok=True)
     (out_dir / "overlays").mkdir(parents=True, exist_ok=True)
@@ -276,21 +285,18 @@ def main() -> None:
         "skipped": 0,
         "no caption": 0,
     }
-    for index, image_path in enumerate(images, 1):
+    bar = ProgressBar(len(images))
+    for image_path in images:
+        bar.advance()
         summary["seen"] += 1
         rel = image_path.relative_to(dst)
         stem = rel.with_suffix("").as_posix().replace("/", "__")
-        before_path = (src / rel).with_suffix(".txt")
-        after_path = (dst / rel).with_suffix(".txt")
-        if not before_path.exists():
+        before_path = master_caption(master, src, rel.with_suffix(".txt"))
+        if not before_path.is_file():
             summary["no caption"] += 1
             continue
-        before = before_path.read_text(encoding="utf-8").strip()
-        after = (
-            after_path.read_text(encoding="utf-8").strip()
-            if after_path.exists()
-            else ""
-        )
+        before = read_caption(before_path)
+        after = read_if_file((dst / rel).with_suffix(".txt"))
         before_bag, after_bag = flat_key_set(before), flat_key_set(after)
         has_clauses = bool(parse_caption(after).clauses)
         if has_clauses:
@@ -383,7 +389,7 @@ def main() -> None:
                 "proposed_text": proposal.proposed if proposal else None,
             }
         )
-        print(f"  [{index}/{len(images)}] {rel}  {status}{'  DRIFT' if drift else ''}")
+        bar.note(f"{rel.as_posix()}  {status}{'  DRIFT' if drift else ''}")
 
     # Clause-carrying rows first, then drifted ones.
     rows.sort(key=lambda r: (not r["has_clauses"], not r["drift"], r["image"]))

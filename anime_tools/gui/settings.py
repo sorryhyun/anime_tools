@@ -18,6 +18,11 @@ from anime_tools._json import read_json, write_json
 
 SETTINGS_NAME = ".anime_tools_gui.json"
 
+FORM_VALUES_KEY = "values"
+"""Where the blob keeps each stage's last-run form, keyed by stage id: written
+by the jobs route on every start, read back as a follow-up stage's form and as
+the browser's saved forms."""
+
 _LOCK = threading.RLock()
 """Serialises :func:`edit_settings` — the blob is read-modify-written from the
 event loop (a settings PUT), from the threadpool (a job start recording its

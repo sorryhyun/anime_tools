@@ -12,15 +12,15 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from anime_tools._env import curation_home, resolve_path
+from anime_tools._env import resolve_path
 from anime_tools.captions.correction import (
     CaptionCorrectionOptions,
     TagKnowledgeBase,
     correct_caption,
     drop_caption_groups,
-    find_tag_csv,
+    resolve_tag_csv,
 )
-from anime_tools.captions.position_clauses import has_clauses
+from anime_tools.captions.position_clauses import has_clauses, parse_caption
 from anime_tools.captions.taxonomy import normalize_tag
 from anime_tools.captions.variants import (
     build_erasure_token_pool,
@@ -29,11 +29,18 @@ from anime_tools.captions.variants import (
     variants_sidecar_path,
     write_variants_sidecar,
 )
+from anime_tools.contract import REPLAY_SHAPES
 
 from ._caption_io import read_caption, write_caption
-from ._report import print_dry_run_footer, stage_report_header, write_stage_report
+from ._preflight import resized_tree
+from ._progress import make_progress
+from ._report import (
+    TE_NOTE,
+    print_dry_run_footer,
+    stage_report_header,
+    write_stage_report,
+)
 from ._walk_captions import iter_captions
-from .resize import resized_tree
 
 if TYPE_CHECKING:
     from anime_tools.stages.requests import CorrectRequest
@@ -170,6 +177,7 @@ def write_corrected_preprocess_captions(
     kb: TagKnowledgeBase,
     *,
     options: CaptionCorrectionOptions,
+    master_dir: Path | None = None,
     recursive: bool = True,
     path_pattern: str | None = None,
     correct: bool = True,
@@ -180,13 +188,15 @@ def write_corrected_preprocess_captions(
     t5_tokenizer=None,
     protect_fn: Callable[[str], bool] | None = None,
     apply: bool = True,
+    progress: Callable[[int, int, str], None] | None = None,
 ) -> PreprocessCaptionResult:
     """Write ``.txt`` captions next to already-resized images.
 
     The resized tree is the authority over which images are visited, and the
     caption read for each is the **revised** one (``resized_dir / rel``) when it
-    exists, the master under ``source_dir`` otherwise — the same rule every
-    other caption stage follows (:func:`resolve_caption`). Correcting the
+    exists, the master otherwise — the ``master_dir`` overlay, then the
+    hand-written one under ``source_dir`` — the same ladder every other caption
+    stage follows (:func:`resolve_caption`). Correcting the
     revised caption in place is what keeps the tags autotag merged and the
     clauses the position rewrite bound: :func:`correct_caption` reorders the
     flat bag around the clauses. The master is never modified, and once an image
@@ -209,9 +219,13 @@ def write_corrected_preprocess_captions(
     sidecar, not the orphan sidecar of an image that lost its caption. The
     default is True because the in-process callers (the GUI, the trainer's
     wrapper) always apply; the CLI passes ``req.apply``.
+
+    ``progress(index, total, detail)`` is called once per walked image
+    (:func:`~anime_tools.stages._walk_captions.iter_captions`).
     """
 
     stats = PreprocessCaptionStats()
+    history_by = REPLAY_SHAPES["correct"].history_by
 
     # First pass, collected up front (captions are tiny) so the erasure pool can
     # exclude the full real-tag set before any variant is drawn.
@@ -230,8 +244,8 @@ def write_corrected_preprocess_captions(
         dst_caption = resized_dir / rel_caption
         rows.append(
             CorrectionProposal(
-                image=str(image_path.relative_to(resized_dir)),
-                caption_path=str(rel_caption),
+                image=image_path.relative_to(resized_dir).as_posix(),
+                caption_path=rel_caption.as_posix(),
                 target_before="",
                 status="skip:no-caption",
             )
@@ -242,15 +256,18 @@ def write_corrected_preprocess_captions(
                 sidecar.unlink()
             stats.variants_removed += 1
 
-    for image_path, rel_caption, dst_caption, raw, caption_path in iter_captions(
+    for item in iter_captions(
         resized_dir,
         source_dir,
         path_pattern,
         stats,
+        progress,
+        master_dir=master_dir,
         recursive=recursive,
         missing=_orphaned,
     ):
-        if caption_path != dst_caption:
+        raw = item.caption
+        if item.from_master:
             stats.from_master += 1
 
         if correct:
@@ -263,14 +280,14 @@ def write_corrected_preprocess_captions(
             stats.clauses_preserved += 1
         rows.append(
             row := CorrectionProposal(
-                image=str(image_path.relative_to(resized_dir)),
-                caption_path=str(rel_caption),
-                target_before=read_caption(dst_caption) if dst_caption.exists() else "",
+                image=item.image_path.relative_to(resized_dir).as_posix(),
+                caption_path=item.rel.as_posix(),
+                target_before=item.target_before,
                 existing=raw,
                 proposed=corrected,
             )
         )
-        entries.append(_Entry(dst_caption, corrected, row))
+        entries.append(_Entry(item.dst_caption, corrected, row))
 
     n_rand = _resolve_n_rand(num_variants, tag_randomize_rate)
     erasure_pool: list[str] | None = None
@@ -280,14 +297,20 @@ def write_corrected_preprocess_captions(
                 "tag_randomize_rate > 0 requires qwen3_tokenizer and t5_tokenizer "
                 "(load them tokenizer-only) to build the dual-single erasure pool."
             )
-        # Split rather than parsed: the pool only cares about the tag *set*,
-        # clauses included. Keyed on ``normalize_tag`` like every other tag key.
-        real_tags = {
-            key
-            for e in entries
-            for t in e.corrected.split(",")
-            if (key := normalize_tag(t))
-        }
+        # The pool only cares about the tag *set*: the bag and every position
+        # clause's tags (a text clause's quoted lines are not tags). Keyed on
+        # ``normalize_tag`` like every other tag key.
+        real_tags = set()
+        for e in entries:
+            parsed = parse_caption(e.corrected)
+            real_tags.update(
+                key
+                for t in (
+                    *parsed.flat_tags,
+                    *(t for c in parsed.position_clauses for t in c.tags),
+                )
+                if (key := normalize_tag(t))
+            )
         erasure_pool = build_erasure_token_pool(
             qwen3_tokenizer, t5_tokenizer, exclude=real_tags
         )
@@ -305,7 +328,7 @@ def write_corrected_preprocess_captions(
             # No ``drop_variants``: the sidecar is this pass's own output and
             # is rebuilt (or removed) a few lines down.
             if apply:
-                write_caption(e.dst, e.corrected, history_by="correct")
+                write_caption(e.dst, e.corrected, history_by=history_by)
             stats.written += 1
 
         sidecar = variants_sidecar_path(e.dst)
@@ -329,26 +352,6 @@ def write_corrected_preprocess_captions(
             stats.variants_removed += 1
 
     return PreprocessCaptionResult(stats=stats, rows=rows)
-
-
-TE_NOTE = (
-    "\nWritten to the resized captions (the master is untouched). Run "
-    "`make preprocess-te` now to re-encode."
-)
-
-
-def resolve_tag_csv(tag_csv: str | None) -> Path:
-    """The Danbooru tag KB a caption stage types tags against: ``tag_csv`` when
-    given, the curation home's lookup otherwise. A missing one is a
-    ``FileNotFoundError`` naming the download, which each shell exits with."""
-    csv_path = resolve_path(tag_csv) if tag_csv else find_tag_csv(curation_home())
-    if csv_path is None or not csv_path.exists():
-        raise FileNotFoundError(
-            "danbooru_tags_classified.csv not found. Run "
-            "`python -m anime_tools.downloads danbooru_tags` first "
-            "(or the GUI's Settings > Models > Danbooru tag KB)."
-        )
-    return csv_path
 
 
 def run_correct(req: CorrectRequest):
@@ -384,6 +387,7 @@ def run_correct(req: CorrectRequest):
         src,
         dst,
         load_tag_knowledge_base(csv_path),
+        master_dir=resolve_path(req.master),
         options=CaptionCorrectionOptions(
             insert_no_artist=req.caption_insert_no_artist,
             trigger_word=req.caption_trigger_word,
@@ -399,6 +403,7 @@ def run_correct(req: CorrectRequest):
         qwen3_tokenizer=qwen3_tokenizer,
         t5_tokenizer=t5_tokenizer,
         apply=req.apply,
+        progress=make_progress(50),
     )
     stats, rows = result.stats, result.rows
 

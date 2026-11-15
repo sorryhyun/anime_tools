@@ -67,8 +67,10 @@ from `src` (`--resize_cap` holds it to `--resize_cap_tokens`, 4200 by default; `
 re-encodes it), with each mask fitted back to that image's size.
 
 Caption stages write the revised caption under `workspace/resized/` and read it first —
-the correction pass included, which corrects it in place; the hand-written master under the
-`src` root is a read-only fallback for an image that has no revised caption yet.
+the correction pass included, which corrects it in place; the master is a read-only fallback for
+an image that has no revised caption yet: the `workspace/master/` overlay (where the GUI's caption
+editor writes a master edit), then the hand-written one under the `src` root. That ladder is one
+function (`stages/_walk_captions.py::resolve_caption`), which Export and the GUI read too.
 Export, the GUI's caption editor and the multiview audit's `--apply` (which adds `multiple views`
 to the master, report holding the before-text) are the only writers of the `src` root. Each
 write pushes the replaced text onto `{stem}.history.txt`, which is what makes a run safe without
