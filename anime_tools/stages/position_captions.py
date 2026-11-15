@@ -443,7 +443,8 @@ def propose_for_image(
                 for m in plan.moved
             ]
 
-    proposal.proposed = compose_caption(flat, clauses)
+    # A text clause binds no subject, so the rewrite carries it over as it was.
+    proposal.proposed = compose_caption(flat, [*clauses, *parsed.text_clauses])
     return proposal
 
 

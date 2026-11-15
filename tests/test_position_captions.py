@@ -2910,3 +2910,36 @@ def test_free_groups_stacks_gestures_and_admits_shared_ungrouped_bag_tags(
     free = vocabulary.select(kept, {}, free_groups=True, **common)
     assert {"v", "tongue out", "aqua necktie", "aqua hair"} <= set(free)
     assert "blue hair" not in free
+
+
+def test_the_rewrite_keeps_the_text_clause(pipeline_bits):
+    """A text clause binds no subject; the proposal carries it over, last."""
+    from anime_tools.stages.position_captions import propose_for_image
+
+    image, vocabulary, _, Options = pipeline_bits
+    proposal = propose_for_image(
+        image,
+        'safe, 2girls, akita neru, hatsune miku, blonde hair, aqua hair. '
+        'Japanese text reads as "こいつ…"',
+        detect_fn=_detector(
+            {0.5: [((0, 0, 400, 500), 0.9), ((600, 0, 1000, 500), 0.9)]}
+        ),
+        tag_fn=_tagger(
+            [
+                {
+                    "kept": {"akita neru": 0.9, "blonde hair": 0.8},
+                    "groups": {"hair_color": "blonde hair"},
+                },
+                {
+                    "kept": {"hatsune miku": 0.9, "aqua hair": 0.8},
+                    "groups": {"hair_color": "aqua hair"},
+                },
+            ]
+        ),
+        vocabulary=vocabulary,
+        options=Options(),
+    )
+    parsed = parse_caption(proposal.proposed)
+    assert [c.position for c in parsed.position_clauses] == ["left", "right"]
+    assert [c.tags for c in parsed.text_clauses] == [('"こいつ…"',)]
+    assert proposal.proposed.endswith('Japanese text reads as "こいつ…".')
