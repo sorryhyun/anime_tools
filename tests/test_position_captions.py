@@ -2919,7 +2919,7 @@ def test_the_rewrite_keeps_the_text_clause(pipeline_bits):
     image, vocabulary, _, Options = pipeline_bits
     proposal = propose_for_image(
         image,
-        'safe, 2girls, akita neru, hatsune miku, blonde hair, aqua hair. '
+        "safe, 2girls, akita neru, hatsune miku, blonde hair, aqua hair. "
         'Japanese text reads as "こいつ…"',
         detect_fn=_detector(
             {0.5: [((0, 0, 400, 500), 0.9), ((600, 0, 1000, 500), 0.9)]}
