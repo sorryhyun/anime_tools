@@ -14,6 +14,7 @@ from __future__ import annotations
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 
+import cv2
 import numpy as np
 from PIL import Image
 
@@ -225,6 +226,24 @@ def drop_small_boxes(
     return [d for d in detections if box_area(d.box) >= floor]
 
 
+def _mask2d(mask) -> np.ndarray:
+    region = np.asarray(mask)
+    if region.ndim == 3:
+        region = region[0]
+    return region > 0.5
+
+
+def other_masks(dets: Sequence[Detection], index: int) -> np.ndarray | None:
+    """Union of every subject mask but ``dets[index]``'s; None when none has one."""
+    union = None
+    for j, det in enumerate(dets):
+        if j == index or det.mask is None or det.source != "subject":
+            continue
+        region = _mask2d(det.mask)
+        union = region if union is None else union | region
+    return union
+
+
 def crop_instance(
     image: Image.Image,
     det: Detection,
@@ -232,15 +251,35 @@ def crop_instance(
     pad: float = 0.06,
     blank: bool = True,
     blank_color: tuple[int, int, int] = (255, 255, 255),
+    dilate: int = 0,
+    exclude: np.ndarray | None = None,
 ) -> Image.Image:
     """Padded bbox crop with every non-instance pixel blanked out.
 
     GOTCHA if skipped: a neighbor standing inside the padded box contributes
     their hair/outfit to this subject's tags. Falls back to a plain crop when
     the detector supplied no mask.
+
+    ``dilate`` grows the kept mask by that many pixels (elliptical kernel) so an
+    object in hand, which the person mask leaves out, survives the blanking;
+    ``exclude`` (the other subjects' masks) is never grown into. The crop box
+    then follows the grown mask.
     """
     width, height = image.size
     x1, y1, x2, y2 = det.box
+    mask = None
+    if det.mask is not None and blank:
+        mask = _mask2d(det.mask)
+        if dilate > 0:
+            kernel = cv2.getStructuringElement(
+                cv2.MORPH_ELLIPSE, (2 * dilate + 1, 2 * dilate + 1)
+            )
+            mask = cv2.dilate(mask.astype(np.uint8), kernel).astype(bool)
+            if exclude is not None:
+                mask &= ~exclude
+            ys, xs = np.nonzero(mask)
+            if xs.size:
+                x1, y1, x2, y2 = xs.min(), ys.min(), xs.max() + 1, ys.max() + 1
     px, py = (x2 - x1) * pad, (y2 - y1) * pad
     box = (
         max(0, int(x1 - px)),
@@ -248,12 +287,9 @@ def crop_instance(
         min(width, int(x2 + px)),
         min(height, int(y2 + py)),
     )
-    if det.mask is None or not blank:
+    if mask is None:
         return image.crop(box)
-    mask = np.asarray(det.mask)
-    if mask.ndim == 3:
-        mask = mask[0]
-    keep = mask[box[1] : box[3], box[0] : box[2]] > 0.5
+    keep = mask[box[1] : box[3], box[0] : box[2]]
     pixels = np.asarray(image.crop(box).convert("RGB")).copy()
     pixels[~keep] = blank_color
     return Image.fromarray(pixels)

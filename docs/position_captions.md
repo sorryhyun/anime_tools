@@ -501,6 +501,7 @@ back to the box rules, so `merge_part_detections` is unaffected.
 | `--dedupe_fill_ratio` | 2.0 | Mask-quality tie-break inside an NMS-matched pair; `0` = score-only survivor |
 | `--min_area_frac` | 0.005 | Drop detections below this fraction of the image (insets are not subjects) |
 | `--no_blank_crops` | — | Skip mask-blanking (diagnostic only — it is what causes cross-subject hair bleed) |
+| `--mask_dilate` | 0 (off) | Grow each subject mask by this many pixels before blanking, never into another subject's mask; the crop box follows. Keeps an object in hand (a phone, a straw) that the person mask leaves out. 16 moved every held tag on caststation into its holder's clause |
 | `--row_tol` | 0.25 | Minimum fractional overlap (of the narrower extent) for two subjects to share a row — and a column, on magazine layouts |
 | `--part_prompts` | off | Comma-separated body-part prompts, tried only when the subject prompt undershoots — recovers headless close-up panels. Try `buttocks,hips,thighs` |
 | `--part_score_threshold` / `--part_containment_threshold` | 0.5 / 0.7 | Part-box confidence floor; drop a part box this nested inside an already-kept box |

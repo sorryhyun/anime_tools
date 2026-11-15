@@ -78,7 +78,7 @@ DEFAULT_EXPORT_INDEX = f"{WS.REPORTS}/caption_index.json"
 
 PATTERN_HELP = "fnmatch glob (| to OR-combine) on the path relative to {root}"
 
-POSITION_ONLY_FLAGS = ("blank_crops", "min_instances", "strict_count")
+POSITION_ONLY_FLAGS = ("blank_crops", "mask_dilate", "min_instances", "strict_count")
 """Detection-group knobs only the position stage declares: the audit pins
 ``min_instances`` and takes the ``PositionCaptionOptions`` default for the other
 two."""
@@ -454,6 +454,12 @@ class PositionRequest(TaggerRequest, ReplayRequest):
         True,
         "--no_blank_crops",
         help="Skip mask-blanking (probe B: this is what caused the hair-color misses)",
+        group=DETECTION,
+    )
+    mask_dilate: int = arg(
+        0,
+        help="Grow each subject mask by this many pixels before blanking, never into "
+        "another subject's mask, so an object in hand stays in the crop (0 = off)",
         group=DETECTION,
     )
     min_instances: int = arg(

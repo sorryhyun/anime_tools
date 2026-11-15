@@ -63,6 +63,7 @@ from anime_tools.stages.instance_detection import (
     box_containment,
     box_iou,
     crop_instance,
+    other_masks,
     dedupe_detections,
     drop_small_boxes,
     mask_box_fill,
@@ -358,8 +359,10 @@ def propose_for_image(
             d,
             pad=options.pad,
             blank=options.blank_crops and d.source == "subject",
+            dilate=options.mask_dilate if d.source == "subject" else 0,
+            exclude=other_masks(dets, i) if options.mask_dilate > 0 else None,
         )
-        for d in dets
+        for i, d in enumerate(dets)
     ]
     predictions = [tag_fn(crop) for crop in crops]
     kept_sets = [dict(p.get("kept") or {}) for p in predictions]

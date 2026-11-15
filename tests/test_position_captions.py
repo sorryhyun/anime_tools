@@ -2102,6 +2102,41 @@ def test_mask_blanking_removes_the_neighbour(pipeline_bits):
     assert (crop == (255, 0, 0)).all(axis=-1).any()
 
 
+def test_mask_dilate_keeps_the_held_object_not_the_neighbour(pipeline_bits):
+    import numpy as np
+    from PIL import Image
+
+    from anime_tools.stages.instance_detection import other_masks
+    from anime_tools.stages.position_captions import Detection, crop_instance
+
+    # Subject red (x < 80), a green phone just past her mask (80..90), a blue
+    # neighbour right beside it (90..).
+    pixels = np.zeros((100, 200, 3), dtype=np.uint8)
+    pixels[:, :80] = (255, 0, 0)
+    pixels[40:60, 80:90] = (0, 255, 0)
+    pixels[:, 90:] = (0, 0, 255)
+    image = Image.fromarray(pixels)
+    own = np.zeros((100, 200), dtype=np.uint8)
+    own[:, :80] = 1
+    rival = np.zeros((100, 200), dtype=np.uint8)
+    rival[:, 90:] = 1
+    dets = [
+        Detection(box=(0, 0, 80, 100), score=0.9, mask=own),
+        Detection(box=(90, 0, 200, 100), score=0.9, mask=rival),
+    ]
+
+    def has(crop, rgb):
+        return (np.asarray(crop) == rgb).all(axis=-1).any()
+
+    plain = crop_instance(image, dets[0], pad=0.0)
+    grown = crop_instance(
+        image, dets[0], pad=0.0, dilate=16, exclude=other_masks(dets, 0)
+    )
+    assert not has(plain, (0, 255, 0))
+    assert has(grown, (0, 255, 0))
+    assert not has(grown, (0, 0, 255))
+
+
 # ----- where the rewrite lands --------------------------------------------
 
 

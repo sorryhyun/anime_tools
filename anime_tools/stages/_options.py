@@ -102,6 +102,9 @@ class PositionCaptionOptions:
     min_area_frac: float = 0.005
     pad: float = 0.06
     blank_crops: bool = True
+    # Grow each subject mask by this many pixels before blanking (never into
+    # another subject's mask), so a held object survives the crop. 0 = off.
+    mask_dilate: int = 0
     row_tol: float = 0.25
     max_clause_tags: int = 8
     # How many tags a clause may introduce that the caption never contained;
