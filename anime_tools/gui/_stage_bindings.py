@@ -156,7 +156,9 @@ ROOT_FIELDS: dict[str, dict[str, str]] = {
     "resize": {"src": "src", "dst": "dst"},
     # The caption stages read the ladder — revised, then the master overlay the
     # caption editor writes, then the hand-written master — so all three roots.
-    "autotag": _CAPTION_ROOTS,
+    # ``--masked`` paints out what the merged masks root (the tree Export
+    # publishes, so the one the trainer's masked loss reads) ignores.
+    "autotag": {**_CAPTION_ROOTS, "mask_dir": "masks"},
     "position": _CAPTION_ROOTS,
     "correct": _CAPTION_ROOTS,
     "drop_groups": _CAPTION_ROOTS,

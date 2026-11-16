@@ -437,6 +437,25 @@ class AutotagRequest(TaggerRequest, ApplyRequest):
         "(0-1). 0 leaves its own decisions untouched",
     )
     batch_size: int = arg(DEFAULT_BATCH_SIZE, help="Images per tagger forward pass")
+    exclude_tags: tuple[str, ...] = _csv(
+        (),
+        help="Comma-separated tags the tagger never writes (speech bubble, text, …); "
+        "`speech_bubble` and `speech bubble` are one tag, and * matches any run "
+        "(`*text` takes english text and japanese text). Filters only what the "
+        "tagger proposes: in merge mode a tag the caption already holds stays",
+    )
+    masked: bool = arg(
+        False,
+        help="Tag each image with its mask's ignored region painted white — what "
+        "masked-loss training sees — so a masked-out speech bubble or background "
+        "is not tagged. Background tags only the blank produced (white background, "
+        "simple background) are dropped. An image with no mask is tagged as it is",
+    )
+    mask_dir: str = arg(
+        WS.MASKS,
+        help=f"The mask tree --masked reads ({{stem}}_mask.png mirroring --dst; "
+        f"default: {WS.MASKS})",
+    )
     report_dir: str = _report_dir(f"{WS.REPORTS}/autotag")
 
     def __post_init__(self) -> None:

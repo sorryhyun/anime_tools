@@ -10,6 +10,10 @@
    stays in ``{stem}.history.txt``.
 6. "Unchanged" is measured against what spoke for the image, master included: a
    proposal equal to the master writes no revised copy of it.
+7. ``exclude_tags`` takes its tags out of every proposal, keyed like any tag
+   compare, ``*`` the one wildcard; a tag the caption already holds stays.
+8. ``mask_dir`` tags a masked image with its ignored region painted white, and
+   drops the background tags only the painted copy has.
 """
 
 from __future__ import annotations
@@ -25,8 +29,12 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from anime_tools.stages.autotag import (
+    BLANK_FILL,
     AutotagOptions,
+    drop_blank_backgrounds,
+    drop_excluded,
     merge_tags,
+    painted_out,
     run_autotag_captions,
 )
 
@@ -447,3 +455,114 @@ def test_a_master_edited_in_the_gui_is_what_the_image_already_says(tmp_path):
     assert by_image["a.png"].proposed == "1girl, smile, hat"
     # The write would create the revised caption: nothing there yet.
     assert by_image["a.png"].target_before == ""
+
+
+# ---------------------------------------------------------------------------
+# exclude_tags
+# ---------------------------------------------------------------------------
+
+
+def test_exclude_keys_on_the_normalized_tag_and_globs_on_star():
+    kept, dropped = drop_excluded(
+        "safe, 1girl, speech bubble, english text, japanese text, smile, text focus",
+        ["Speech_Bubble", "*text"],
+    )
+    assert kept == "safe, 1girl, smile, text focus"
+    assert dropped == ("speech bubble", "english text", "japanese text")
+
+
+def test_exclude_treats_brackets_and_question_marks_literally():
+    kept, dropped = drop_excluded("safe, ?, [abc], a", ["?", "[abc]"])
+    assert kept == "safe, a"
+    assert dropped == ("?", "[abc]")
+
+
+def test_overwrite_with_exclude_never_writes_the_excluded_tag(tmp_path):
+    resized, source = _dataset(tmp_path, {"a": "safe, speech bubble"})
+    rows, _ = _run(
+        resized,
+        source,
+        "safe, 1girl, speech bubble",
+        options=AutotagOptions(mode="overwrite"),
+        exclude_tags=("speech bubble",),
+        apply=True,
+    )
+    assert (resized / "a.txt").read_text(encoding="utf-8") == "safe, 1girl"
+    assert rows[0].excluded == ("speech bubble",)
+
+
+def test_merge_with_exclude_keeps_what_the_caption_already_holds(tmp_path):
+    resized, source = _dataset(tmp_path, {"a": "safe, speech bubble"})
+    rows, _ = _run(
+        resized,
+        source,
+        "safe, 1girl, speech bubble, english text",
+        options=AutotagOptions(mode="merge"),
+        exclude_tags=("speech bubble", "*text"),
+    )
+    assert rows[0].proposed == "safe, speech bubble, 1girl"
+
+
+# ---------------------------------------------------------------------------
+# mask-aware tagging
+# ---------------------------------------------------------------------------
+
+
+def _mask(path: Path, ignore_left: bool, size=(8, 8)) -> None:
+    alpha = Image.new("L", size, 255)
+    if ignore_left:
+        alpha.paste(0, (0, 0, size[0] // 2, size[1]))
+    path.parent.mkdir(parents=True, exist_ok=True)
+    alpha.save(path)
+
+
+def test_painted_out_blanks_only_the_ignored_region(tmp_path):
+    image = Image.new("RGB", (8, 8), (10, 20, 30))
+    _mask(tmp_path / "m_mask.png", ignore_left=True, size=(4, 4))
+    painted = painted_out(image, tmp_path / "m_mask.png")
+    assert painted.getpixel((0, 0)) == BLANK_FILL
+    assert painted.getpixel((7, 7)) == (10, 20, 30)
+    _mask(tmp_path / "n_mask.png", ignore_left=False)
+    assert painted_out(image, tmp_path / "n_mask.png") is None
+    assert painted_out(image, None) is None
+
+
+def test_blank_backgrounds_survive_only_when_the_plain_image_has_them():
+    assert (
+        drop_blank_backgrounds(
+            "safe, 1girl, white background, simple background, blue background",
+            "safe, 1girl, blue background, speech bubble",
+        )
+        == "safe, 1girl, blue background"
+    )
+
+
+def test_a_masked_image_is_tagged_painted_and_plain(tmp_path):
+    resized, source = _dataset(tmp_path, {"a": None, "b": None})
+    masks = tmp_path / "masks"
+    _mask(masks / "a_mask.png", ignore_left=True)
+    seen: list[tuple[int, int, int]] = []
+
+    def tag_batch(images):
+        seen.extend(im.getpixel((0, 0)) for im in images)
+        return [
+            "safe, 1girl, white background, simple background"
+            if im.getpixel((0, 0)) == BLANK_FILL
+            else "safe, 1girl, speech bubble, outdoors"
+            for im in images
+        ]
+
+    rows, stats = run_autotag_captions(
+        resized_dir=resized,
+        source_dir=source,
+        tag_batch=tag_batch,
+        mask_dir=masks,
+    )
+    by_image = {r.image: r for r in rows}
+    assert by_image["a.png"].proposed == "safe, 1girl"
+    assert by_image["a.png"].masked
+    assert by_image["b.png"].proposed == "safe, 1girl, speech bubble, outdoors"
+    assert not by_image["b.png"].masked
+    assert stats.masked == 1
+    # One forward: both plain images, then a's painted copy.
+    assert seen == [(10, 20, 30), (10, 20, 30), BLANK_FILL]

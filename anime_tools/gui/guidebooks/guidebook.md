@@ -380,6 +380,19 @@ Only `missing` is non-destructive; the other two are undoable through the histor
 Undo. Treat the output as a starting point — check names, series and artists before training.
 See [`docs/anima_tagger.md`](../../../docs/anima_tagger.md) for the tagger itself.
 
+Two knobs decide what the tagger may say:
+
+- **Exclude tags** (`exclude_tags`) — a comma-separated list the tagger never writes, such as
+  `speech bubble, *text`. `*` matches any run, so `*text` takes `english text` and
+  `japanese text`. It filters only the tagger's proposals: in `merge` a tag the caption already
+  holds stays, so to take one out of finished captions run `overwrite` with the list.
+- **Masked** (`masked`) — tags each image with what its mask (§7.8) ignores painted white, the
+  part a masked-loss run never trains on. A masked-out speech bubble or background is then not
+  tagged, and neither are extras standing in it. The white itself reads as `white background`
+  / `simple background`, so the image is also tagged as it is and a background tag only the
+  painted copy has is dropped. An image with no mask is tagged as it is. Run Masks before
+  Autotag for this; turn it off when you train without the mask.
+
 ### 7.3 Correct + mirror captions
 
 Reads the master captions and the Danbooru tag KB. Writes the revised caption and,

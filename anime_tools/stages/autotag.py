@@ -26,6 +26,15 @@ Three modes:
 ``overwrite``
     Replace the caption with the tagger's output.
 
+Two filters sit between the tagger and the caption. ``exclude_tags`` drops the
+tags it names from every proposal (:func:`drop_excluded`). ``mask_dir`` tags each
+image that has a mask with the mask's ignored region painted out
+(:func:`painted_out`), so a speech bubble or background the trainer's masked loss
+never sees is not described either; the blank itself reads as ``white
+background`` / ``simple background``, so the image is also tagged as it is and
+a background tag only the painted copy has is dropped
+(:func:`drop_blank_backgrounds`).
+
 **Dry-run is the default** (the caller passes ``apply``). An applied run must be
 followed by ``make preprocess-te``, since caption edits do not invalidate the TE
 caches.
@@ -37,18 +46,21 @@ is the shell over it.
 
 from __future__ import annotations
 
+import re
 from collections import Counter
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+import numpy as np
 from PIL import Image
 
 from anime_tools._env import resolve_path
 from anime_tools.captions.position_clauses import compose_caption, parse_caption
 from anime_tools.captions.taxonomy import RATING_LITERALS, normalize_tag
 from anime_tools.contract import AUTOTAG_MODES, REPLAY_SHAPES
+from anime_tools.masking._mask_paths import find_mask
 
 from ._caption_io import write_caption
 from ._options import DEFAULT_BATCH_SIZE
@@ -100,6 +112,10 @@ class AutotagProposal:
     master writes a revised caption that was never there."""
     proposed: str = ""
     added: tuple[str, ...] = ()
+    excluded: tuple[str, ...] = ()
+    """Tagger tags ``exclude_tags`` took out of this proposal."""
+    masked: bool = False
+    """Whether the tags came from the mask-painted image."""
     status: str = "ok"
 
     @property
@@ -113,6 +129,7 @@ class AutotagStats:
     candidates: int = 0
     proposed: int = 0
     written: int = 0
+    masked: int = 0
     skipped: Counter = field(default_factory=Counter)
 
     def skip(self, reason: str) -> None:
@@ -166,6 +183,77 @@ def _open_rgb(image_path: Path) -> Image.Image:
         return handle.convert("RGB")
 
 
+def _tag_pattern(pattern: str) -> re.Pattern[str]:
+    """``pattern`` keyed like a tag, with ``*`` as the one wildcard.
+
+    Not ``fnmatch``: ``?`` and ``[…]`` are literal in a tag.
+    """
+    parts = normalize_tag(pattern).split("*")
+    return re.compile(".*".join(re.escape(p) for p in parts))
+
+
+def drop_excluded(tagged: str, patterns: Sequence[str]) -> tuple[str, tuple[str, ...]]:
+    """Take the tags ``patterns`` name out of the tagger's flat output.
+
+    Returns ``(kept, dropped)``. Matching is on :func:`normalize_tag`, so
+    ``speech_bubble`` excludes ``speech bubble``; ``*`` matches any run.
+    """
+    compiled = [_tag_pattern(p) for p in patterns if p.strip()]
+    tags = [t.strip() for t in tagged.split(",") if t.strip()]
+    if not compiled:
+        return ", ".join(tags), ()
+    kept: list[str] = []
+    dropped: list[str] = []
+    for tag in tags:
+        key = normalize_tag(tag)
+        (dropped if any(c.fullmatch(key) for c in compiled) else kept).append(tag)
+    return ", ".join(kept), tuple(dropped)
+
+
+BLANK_FILL = (255, 255, 255)
+"""What a mask's ignored region is painted with: the colour the tagger letterboxes
+with and the position stage blanks a crop with."""
+
+
+def painted_out(image: Image.Image, mask_path: Path | None) -> Image.Image | None:
+    """``image`` with the mask's ignored region (alpha < 128) painted
+    :data:`BLANK_FILL`, or ``None`` when there is no mask or it ignores nothing.
+
+    A mask at another size than the image is scaled to it (nearest).
+    """
+    if mask_path is None:
+        return None
+    with Image.open(mask_path) as handle:
+        mask = handle.convert("L")
+    if mask.size != image.size:
+        mask = mask.resize(image.size, Image.Resampling.NEAREST)
+    ignored = np.asarray(mask) < 128
+    if not ignored.any():
+        return None
+    pixels = np.asarray(image).copy()
+    pixels[ignored] = BLANK_FILL
+    return Image.fromarray(pixels)
+
+
+def drop_blank_backgrounds(masked: str, plain: str) -> str:
+    """The painted image's tags minus the background tags the blank made.
+
+    A tag ending in ``background`` is kept only when the unpainted image has it
+    too: painting a region white makes the tagger see ``white background`` /
+    ``simple background`` whether or not the picture had one.
+    """
+    plain_keys = {normalize_tag(t) for t in plain.split(",") if t.strip()}
+    kept = []
+    for tag in (t.strip() for t in masked.split(",")):
+        if not tag:
+            continue
+        key = normalize_tag(tag)
+        if key.endswith("background") and key not in plain_keys:
+            continue
+        kept.append(tag)
+    return ", ".join(kept)
+
+
 def run_autotag_captions(
     *,
     resized_dir: Path,
@@ -177,6 +265,8 @@ def run_autotag_captions(
     apply: bool = False,
     progress: Callable[[int, int, str], None] | None = None,
     master_dir: Path | None = None,
+    exclude_tags: Sequence[str] = (),
+    mask_dir: Path | None = None,
 ) -> tuple[list[AutotagProposal], AutotagStats]:
     """Walk the resized tree, tag, and (with ``apply``) write the revised caption.
 
@@ -194,6 +284,11 @@ def run_autotag_captions(
     and pulls its tags from a buffer filled ``batch_size`` candidates at a time.
     So the reports, the skip reasons and the progress line are what a
     one-image-at-a-time pass produced, and the GPU sees whole batches.
+
+    ``exclude_tags`` is :func:`drop_excluded`'s pattern list. ``mask_dir`` (the
+    mask tree, mirroring ``resized_dir``) turns on mask-aware tagging: an image
+    with a mask that ignores anything is tagged twice in its batch, painted and
+    as it is, and :func:`drop_blank_backgrounds` merges the two.
     """
     options = options or AutotagOptions()
     stats = AutotagStats()
@@ -218,8 +313,28 @@ def run_autotag_captions(
     # The candidates, in tree order: exactly the images the loop below will ask
     # the tagger about, which is what lets it fill a whole batch ahead.
     queue = [w for w in walked if not (w.caption and options.mode == "missing")]
-    tagged_by_path: dict[Path, str] = {}
+    tagged_by_path: dict[Path, tuple[str, bool]] = {}
     taken = 0
+
+    def fill(chunk: list[CaptionItem]) -> None:
+        images = [_open_rgb(w.image_path) for w in chunk]
+        painted: list[tuple[int, Image.Image]] = []
+        if mask_dir is not None:
+            for i, (w, image) in enumerate(zip(chunk, images, strict=True)):
+                rel_image = w.image_path.relative_to(resized_dir)
+                blank = painted_out(image, find_mask(mask_dir, rel_image))
+                if blank is not None:
+                    painted.append((i, blank))
+        texts = [str(t).strip() for t in tag_batch([*images, *(b for _, b in painted)])]
+        by_index = {i: texts[len(chunk) + k] for k, (i, _) in enumerate(painted)}
+        for i, w in enumerate(chunk):
+            if i in by_index:
+                tagged_by_path[w.image_path] = (
+                    drop_blank_backgrounds(by_index[i], texts[i]),
+                    True,
+                )
+            else:
+                tagged_by_path[w.image_path] = (texts[i], False)
 
     for index, item in enumerate(walked, 1):
         image_path, rel, caption_path, existing = (
@@ -239,16 +354,18 @@ def run_autotag_captions(
         if image_path not in tagged_by_path:  # the buffer ran out: fill it
             chunk = queue[taken : taken + size]
             taken += len(chunk)
-            texts = tag_batch([_open_rgb(w.image_path) for w in chunk])
-            for w, text in zip(chunk, texts, strict=True):
-                tagged_by_path[w.image_path] = str(text).strip()
-        tagged = tagged_by_path.pop(image_path)
+            fill(chunk)
+        tagged, masked = tagged_by_path.pop(image_path)
+        tagged, excluded = drop_excluded(tagged, exclude_tags)
+        stats.masked += masked
 
         proposal = AutotagProposal(
             image=image_path.relative_to(resized_dir).as_posix(),
             caption_path=rel.as_posix(),
             existing=existing,
             target_before=item.target_before,
+            excluded=excluded,
+            masked=masked,
         )
         if not tagged:
             proposal.status = "skip:no-tags"
@@ -331,6 +448,9 @@ def run_autotag(req: AutotagRequest):
     source_dir = resolve_path(req.src)
     master_dir = resolve_path(req.master)
     report_dir = resolve_path(req.report_dir)
+    mask_dir = resolve_path(req.mask_dir) if req.masked else None
+    if mask_dir is not None and not mask_dir.is_dir():
+        print(f"--masked: no mask tree at {mask_dir}; every image is tagged as it is")
 
     tag_batch, info = build_tag_batch(
         req.tagger_dir, device=req.device, min_confidence=req.min_confidence
@@ -345,6 +465,8 @@ def run_autotag(req: AutotagRequest):
         batch_size=req.batch_size,
         apply=req.apply,
         progress=make_progress(50, first=True),
+        exclude_tags=req.exclude_tags,
+        mask_dir=mask_dir,
     )
 
     report_path = write_stage_report(
@@ -353,6 +475,8 @@ def run_autotag(req: AutotagRequest):
             "mode": req.mode,
             "min_confidence": req.min_confidence,
             "batch_size": req.batch_size,
+            "exclude_tags": list(req.exclude_tags),
+            "mask_dir": str(mask_dir) if mask_dir is not None else None,
             **stage_report_header(
                 src=source_dir,
                 dst=resized_dir,
@@ -365,6 +489,7 @@ def run_autotag(req: AutotagRequest):
                 "candidates": stats.candidates,
                 "proposed": stats.proposed,
                 "written": stats.written,
+                "masked": stats.masked,
                 "skipped": dict(stats.skipped),
             },
             "rows": [asdict(r) for r in rows],
@@ -374,6 +499,7 @@ def run_autotag(req: AutotagRequest):
     print(
         f"\nseen={stats.seen} candidates={stats.candidates} "
         f"proposed={stats.proposed} written={stats.written}"
+        + (f" masked={stats.masked}" if mask_dir is not None else "")
     )
     for reason, count in stats.skipped.most_common():
         print(f"  skip:{reason} {count}")

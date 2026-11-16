@@ -355,6 +355,13 @@ write keeps what it replaced as a `{stem}.history.txt` version.
 Dry run by default, `--apply` writes,
 and any apply must be followed by a downstream text-embedding re-encode.
 
+`--exclude_tags` drops the tags it lists from every proposal (keyed on
+`normalize_tag`, `*` the one wildcard; a tag `merge` finds already in the caption
+stays). `--masked` tags an image that has a mask under `--mask_dir` with the
+mask's ignored region (alpha < 128) painted white, in the same batch as the
+unpainted image; a `… background` tag only the painted copy has is the blank's,
+and is dropped. Each report row records `excluded` and `masked`.
+
 ### ComfyUI nodes (`comfyui/anima_tagger/`)
 
 Two nodes share the `ANIMA_TAGGER` socket type:
