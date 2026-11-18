@@ -225,9 +225,10 @@ def test_cli_list_reports_every_row_under_its_pack_header(home, capsys):
     # rows sit under their own header, in catalog order
     lines = out.splitlines()
     ocr = lines.index(next(h for h in headers if h.startswith("[ocr]")))
-    assert [ln.split()[1] for ln in lines[ocr + 1 : ocr + 4]] == [
+    assert [ln.split()[1] for ln in lines[ocr + 1 : ocr + 5]] == [
         "vl16_base",
         "ocr_reader",
+        "ocr_reader_v7_preview",
         "animetext_det",
     ]
 
@@ -266,7 +267,12 @@ def test_by_pack_keeps_pack_order_and_catalog_order_and_covers_every_row():
 
 
 def test_expand_accepts_rows_and_packs_and_raises_on_unknown():
-    assert DL.expand(["ocr"]) == ["vl16_base", "ocr_reader", "animetext_det"]
+    assert DL.expand(["ocr"]) == [
+        "vl16_base",
+        "ocr_reader",
+        "ocr_reader_v7_preview",
+        "animetext_det",
+    ]
     # deduped and re-sorted into catalog order whatever the argument order
     assert DL.expand(["soft_prompt", "pe_spatial", "sam3", "masking"]) == [
         "sam3",

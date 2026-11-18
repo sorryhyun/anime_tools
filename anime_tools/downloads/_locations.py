@@ -78,8 +78,8 @@ VL16_BASE_DIR = "models/paddleocr_vl_1.6"
 # on the base's vision tower + projector plus its fully fine-tuned ERNIE
 # decoder layers, trained on Manga109-s / COO, KO / ZH pseudo-labelled SFX and KO speech
 # (attribution and citations on the model card). Weights only — no Manga109-s
-# image ships. ``v4/`` / ``v5/`` hold v4 / v5; the repo root still holds v3 (LM LoRA +
-# ``tower.safetensors``).
+# image ships. ``v4/`` / ``v5/`` hold v4 / v5; v1–v3 (LM LoRA + ``tower.safetensors`` at
+# the repo root) were removed from the head 2026-11-18 and stay at their commits below.
 OCR_READER_REPO = "sorryhyun/paddleocr-vl-1.6-manga-lora"
 OCR_READER_SUBFOLDER = "v6"
 OCR_READER_ADAPTER_FILES = ("adapter_config.json", "adapter_model.safetensors")
@@ -91,10 +91,17 @@ OCR_READER_REVISION = "57e7c65024d753022299340b3b9b6aafc158a79b"
 v5 plus 20,745 proofread Korean speech lines; v5 ``fb08a10b`` in ``v5/`` — v4's
 recipe with the labels' line breaks kept as ``\\n`` and the crops cut at the
 page edge; v4 ``926eafb1`` in ``v4/``, its 1-epoch run ``9fe3d41e``; v3
-``26292839``, v2 ``4caffe65``, v1 ``3b5fe022``, all at the repo root). The
+``26292839``, v2 ``4caffe65``, v1 ``3b5fe022``, at the repo root of those commits). The
 adapter file names are shared across versions, so the catalog row pins this and
 stamps it under the dest — an install that predates the pin re-fetches instead
 of reading an older adapter under the new name."""
+
+# The opt-in v7 preview (``sfxpc_1118_0412``) in ``v7_preview/``: v6's file layout, read
+# under two prompts (``OCR:`` speech, ``SFX:`` sound effects) on 4 px-margin crops. Its
+# own dest, so it installs beside v6 rather than over it.
+OCR_READER_V7_PREVIEW_SUBFOLDER = "v7_preview"
+OCR_READER_V7_PREVIEW_DIR = "models/paddleocr_vl_1.6_manga_lora_v7_preview"
+OCR_READER_V7_PREVIEW_REVISION = "1987992e57e516a1eb80988c63f348463311ab11"
 
 # The AnimeText text-block detector: a YOLO12-l trained on deepghs/AnimeText
 # (735k anime / manga pages, one class), the OCR stage's one detector.
@@ -135,6 +142,12 @@ def default_ocr_reader_dir() -> Path:
     """``<home>/models/paddleocr_vl_1.6_manga_lora`` — adapter + fine-tuned
     tower, what :class:`anime_tools.ocr.reader.OcrReader` loads."""
     return resolve_path(OCR_READER_DIR)
+
+
+def default_ocr_reader_v7_preview_dir() -> Path:
+    """``<home>/models/paddleocr_vl_1.6_manga_lora_v7_preview`` — the opt-in
+    two-prompt reader (``OcrReader.load(version="v7_preview")``)."""
+    return resolve_path(OCR_READER_V7_PREVIEW_DIR)
 
 
 def default_animetext_dir() -> Path:

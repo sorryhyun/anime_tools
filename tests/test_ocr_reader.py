@@ -253,3 +253,27 @@ def test_vl_notices_drop_and_other_warnings_print(capfd) -> None:
     assert "for this load" not in err
     assert "Some weights were not initialized" in err
     assert "after the load" in err
+
+
+def test_tight_pad_box_is_the_v7_margin_capped_by_the_sides():
+    # 4 px on a box whose sides allow it
+    assert reader.tight_pad_box((10, 10, 110, 60), 200, 200) == (6, 6, 114, 64)
+    # 0.3 x the short side caps it (5 px wide -> 1.5 px, rounded half to even
+    # like the trainer's margin_box)
+    assert reader.tight_pad_box((50, 50, 55, 150), 200, 200) == (48, 48, 56, 152)
+    # clipped at the page edge
+    assert reader.tight_pad_box((0, 0, 100, 100), 102, 102) == (0, 0, 102, 102)
+    bgr = np.zeros((200, 200, 3), dtype=np.uint8)
+    assert reader.crop_box(bgr, (10, 10, 110, 60), tight=True).shape == (58, 108, 3)
+
+
+def test_the_v7_preview_row_installs_beside_v6(home):
+    by = DL.by_id()
+    row = by["ocr_reader_v7_preview"]
+    assert row.dest == home / "models" / "paddleocr_vl_1.6_manga_lora_v7_preview"
+    assert row.dest != by["ocr_reader"].dest
+    assert row.subfolder == "v7_preview" and row.revision
+    assert row.files == by["ocr_reader"].files and row.pack == "ocr"
+    assert reader.READER_VERSIONS == ("v6", "v7_preview")
+    with pytest.raises(ValueError, match="unknown reader version"):
+        reader.OcrReader.load(fetch=False, version="v8")

@@ -34,6 +34,8 @@ from anime_tools.downloads._locations import (
     OCR_READER_REPO,
     OCR_READER_REVISION,
     OCR_READER_SUBFOLDER,
+    OCR_READER_V7_PREVIEW_REVISION,
+    OCR_READER_V7_PREVIEW_SUBFOLDER,
     PE_SPATIAL_FILENAME,
     PE_SPATIAL_REPO,
     SAM3_DIR,
@@ -49,6 +51,7 @@ from anime_tools.downloads._locations import (
     VL16_BASE_REPO,
     default_animetext_dir,
     default_ocr_reader_dir,
+    default_ocr_reader_v7_preview_dir,
     default_pe_spatial_path,
     default_vl16_base_dir,
 )
@@ -200,6 +203,23 @@ def catalog() -> tuple[Asset, ...]:
             "not a detector. Needs the base above; both fetched on first use. "
             "Trained on Manga109-s (COO) plus KO / ZH SFX; reads JA, KO and ZH, "
             "with a block's line breaks as \\n.",
+        ),
+        Asset(
+            id="ocr_reader_v7_preview",
+            pack="ocr",
+            title="Manga OCR reader v7 preview (two prompts: speech / SFX)",
+            repo=OCR_READER_REPO,
+            subfolder=OCR_READER_V7_PREVIEW_SUBFOLDER,
+            files=OCR_READER_FILES,
+            revision=OCR_READER_V7_PREVIEW_REVISION,
+            dest=default_ocr_reader_v7_preview_dir(),
+            used_by="OCR text with --vl_reader v7_preview (anime_tools.ocr.reader)",
+            stages=(),
+            notes="Opt-in: 0.65 GB, fetched on first use of --vl_reader v7_preview. "
+            "Reads each box twice, under OCR: (speech) and SFX: "
+            "(sound effects), on 4 px-margin crops, so a line's kind comes from the "
+            "image. Against v6: doujin SFX strict 349 → 358, COO speech 88.9 → 89.0 %, "
+            "COO SFX 85.3 → 78.0 %.",
         ),
         Asset(
             id="animetext_det",

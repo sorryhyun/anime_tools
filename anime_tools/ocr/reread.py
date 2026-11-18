@@ -40,7 +40,9 @@ Measured on the sincos shard (the trainer's ``project/cjk_aware_anima_dit``,
 (``91`` → ``9``) and two-glyph crops. A VL line's ``score`` is the reader's
 mean greedy token probability (:meth:`~anime_tools.ocr.reader.OcrReader.read_boxes_scored`);
 a reader answering bare strings leaves :data:`NO_SCORE`. The detector's box
-confidence rides through as ``det`` (a mask component has none).
+confidence rides through as ``det`` (a mask component has none). The two-prompt
+v7 preview answers a list per crop (:data:`KindedReads`): each read becomes a line
+carrying its ``kind``, so one box can give a speech line and an SFX line.
 
 Torch-free to import; cv2 loads inside the two functions that need it.
 """
@@ -49,7 +51,7 @@ from __future__ import annotations
 
 import unicodedata
 from collections.abc import Callable, Iterator, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 from anime_tools import _boxes
@@ -63,7 +65,10 @@ Box = tuple[int, int, int, int]
 Read = str | tuple[str, float] | None
 """One crop's read: the text with the reader's confidence, a bare text (no
 confidence — :data:`NO_SCORE`), or ``None`` for a read the guard rejected."""
-ReadBoxes = Callable[[object, Sequence[Box]], list[Read]]
+KindedReads = list[tuple[str, float, str]]
+"""One crop's reads from the two-prompt reader: ``(text, confidence, kind)`` per
+prompt that found text (``kind`` ``"speech"`` / ``"sfx"``); empty when none did."""
+ReadBoxes = Callable[[object, Sequence[Box]], list[Read | KindedReads]]
 """``(bgr, boxes) → reads``: :meth:`~anime_tools.ocr.reader.OcrReader.read_boxes_scored`."""
 
 NO_SCORE = 0.0
@@ -139,11 +144,14 @@ def mask_components(
 
 def drop_nested(lines: Sequence[OcrLine]) -> list[OcrLine]:
     """``lines`` minus every one whose box sits at least
-    :data:`NESTED_CONTAINMENT` inside a *larger* line's box, order kept.
+    :data:`NESTED_CONTAINMENT` inside a *larger* line's box of the same
+    ``kind``, order kept.
 
     Both lines are reads that survived, so the outer one already says what
     the inner one says (``ぱん♡`` over ``ぱん``, a balloon over one of its
     lines); the inner is the detector doubling it. Equal boxes are left alone.
+    A line the reader kinded is only doubled by a line of its kind: an SFX
+    read inside a block whose ``OCR:`` read is speech is not in that read.
     """
 
     area = _boxes.area
@@ -151,6 +159,7 @@ def drop_nested(lines: Sequence[OcrLine]) -> list[OcrLine]:
     for ln in lines:
         inside = any(
             o is not ln
+            and o.kind == ln.kind
             and area(o.box) > area(ln.box)
             and _boxes.containment(ln.box, o.box) >= NESTED_CONTAINMENT
             for o in lines
@@ -217,9 +226,12 @@ def reread_lines(
         ][:comp_max]
     if not boxes and not comps:
         return []
-    reads = [split_read(r) for r in read_boxes(bgr, boxes + comps)]
+    reads = [split_reads(r) for r in read_boxes(bgr, boxes + comps)]
     if strip_symbols:
-        reads = [(t if t is None else drop_symbols(t), c) for t, c in reads]
+        reads = [
+            [(t if t is None else drop_symbols(t), c, k) for t, c, k in rs]
+            for rs in reads
+        ]
 
     def keeps(text: str | None) -> bool:
         return (
@@ -235,23 +247,25 @@ def reread_lines(
 
     out: list[OcrLine] = drop_nested(
         [
-            OcrLine(seq=0, box=box, score=conf, text=text, det=det)
-            for box, det, (text, conf) in zip(
-                boxes, dets, reads[: len(boxes)], strict=True
-            )
+            OcrLine(seq=0, box=box, score=conf, text=text, det=det, kind=kind)
+            for box, det, rs in zip(boxes, dets, reads[: len(boxes)], strict=True)
+            for text, conf, kind in rs
             if keeps(text) and sure(det, conf)
         ]
     )
     seen = list(boxes)
-    for box, (text, conf) in zip(comps, reads[len(boxes) :], strict=True):
-        if not keeps(text) or not sure(NO_SCORE, conf) or covered(box, seen):
+    for box, rs in zip(comps, reads[len(boxes) :], strict=True):
+        if covered(box, seen):
             continue
-        seen.append(box)
-        out.append(OcrLine(seq=0, box=box, score=conf, text=text, det=NO_SCORE))
-    return [
-        OcrLine(seq=i, box=ln.box, score=ln.score, text=ln.text, det=ln.det)
-        for i, ln in enumerate(reading_order(out), 1)
-    ]
+        lines_here = [
+            OcrLine(seq=0, box=box, score=conf, text=text, det=NO_SCORE, kind=kind)
+            for text, conf, kind in rs
+            if keeps(text) and sure(NO_SCORE, conf)
+        ]
+        if lines_here:
+            seen.append(box)
+            out.extend(lines_here)
+    return [replace(ln, seq=i) for i, ln in enumerate(reading_order(out), 1)]
 
 
 def split_read(read: Read) -> tuple[str | None, float]:
@@ -263,6 +277,14 @@ def split_read(read: Read) -> tuple[str | None, float]:
         return read, NO_SCORE
     text, conf = read
     return text, float(conf)
+
+
+def split_reads(read: Read | KindedReads) -> list[tuple[str | None, float, str]]:
+    """One crop's reads as ``(text, confidence, kind)`` rows: a two-prompt
+    reader's list as is, a one-prompt :data:`Read` as one row of kind ``""``."""
+    if isinstance(read, list):
+        return [(t, float(c), k) for t, c, k in read]
+    return [(*split_read(read), "")]
 
 
 def mask_for(mask_dir: Path, rel: Path) -> Path | None:
@@ -353,6 +375,7 @@ __all__ = [
     "LINE_MIN_SCORE",
     "NESTED_CONTAINMENT",
     "NO_SCORE",
+    "KindedReads",
     "Read",
     "RereadEngine",
     "covered",
@@ -363,4 +386,5 @@ __all__ = [
     "overlap",
     "reread_lines",
     "split_read",
+    "split_reads",
 ]

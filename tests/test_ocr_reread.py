@@ -274,9 +274,12 @@ def test_the_request_round_trips_the_vl_flags():
     argv = req.to_argv()
     assert "--mask_dir" in argv and "--vl_batch_size" in argv
     assert OcrRequest.from_argv(OcrRequest.parser(), argv) == req
-    # There is one reader and one detector: neither is a flag any more.
-    assert "--reader" not in argv and "--detector" not in argv
-    assert not hasattr(OcrRequest(), "reader") and not hasattr(OcrRequest(), "detector")
+    # One detector, no flag for it; the VL reader is v6 unless --vl_reader opts
+    # into the v7 preview, and the default stays off the command line.
+    assert "--vl_reader" not in argv and "--detector" not in argv
+    assert not hasattr(OcrRequest(), "detector")
+    v7 = OcrRequest(vl_reader="v7_preview")
+    assert OcrRequest.from_argv(OcrRequest.parser(), v7.to_argv()) == v7
 
 
 def test_a_line_read_inside_another_surviving_line_is_the_same_text_twice():
@@ -300,3 +303,43 @@ def test_the_export_request_carries_the_det_floor():
     from anime_tools.stages.requests import ExportRequest
 
     assert ExportRequest().ocr_min_det == 0.5
+
+
+# ---- the two-prompt reader ------------------------------------------------
+
+
+def test_kinded_reads_give_a_line_per_kind_and_nest_only_within_a_kind():
+    outer, inner = (10, 10, 200, 200), (20, 20, 60, 60)
+    lines = [line("", outer, score=0.0), line("", inner, seq=2, score=0.0)]
+
+    def read_boxes(bgr, boxes):
+        return [
+            [("そんなの", 0.9, "speech"), ("ドキドキ", 0.9, "sfx")],  # a mixed box
+            [("ドキ", 0.9, "sfx"), ("いや", 0.95, "speech")],  # nested in it
+        ]
+
+    out = reread.reread_lines(page(), lines, read_boxes)
+    got = sorted((ln.box, ln.kind, ln.text) for ln in out)
+    # the inner sfx sits inside an outer sfx line, the inner speech inside an
+    # outer speech line: both doubled, both drop; the outer box keeps one of each
+    assert got == [(outer, "sfx", "ドキドキ"), (outer, "speech", "そんなの")]
+    assert sorted(ln.seq for ln in out) == [1, 2]
+
+
+def test_an_inner_line_of_the_other_kind_survives():
+    outer, inner = (10, 10, 200, 200), (20, 20, 60, 60)
+    lines = [line("", outer, score=0.0), line("", inner, seq=2, score=0.0)]
+
+    def read_boxes(bgr, boxes):
+        return [[("そんなの", 0.9, "speech")], [("ドキ", 0.9, "sfx")]]
+
+    out = reread.reread_lines(page(), lines, read_boxes)
+    assert sorted((ln.kind, ln.text) for ln in out) == [
+        ("sfx", "ドキ"),
+        ("speech", "そんなの"),
+    ]
+
+
+def test_a_box_neither_prompt_read_is_dropped():
+    lines = [line("", (10, 10, 40, 120), score=0.0)]
+    assert reread.reread_lines(page(), lines, lambda bgr, boxes: [[]]) == []

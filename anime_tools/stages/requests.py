@@ -43,6 +43,8 @@ from anime_tools.masking._prompts import (
     SUBJECT_PROMPT,
     prompt_list,
 )
+from anime_tools.ocr.reader import DEFAULT_VERSION as OCR_READER_DEFAULT
+from anime_tools.ocr.reader import READER_VERSIONS as OCR_READER_VERSIONS
 from anime_tools.stages._options import (
     CROP_ANCHORS,
     DEFAULT_BATCH_SIZE,
@@ -936,6 +938,15 @@ class OcrRequest(StageRequest):
         help="Read at most this many boxes per image, largest first, so one "
         "misread texture cannot cost a thousand crops",
         group=DETECTOR,
+    )
+    vl_reader: str = arg(
+        OCR_READER_DEFAULT,
+        choices=OCR_READER_VERSIONS,
+        help="Which manga VL reader: v6, or the opt-in v7_preview — two prompts "
+        "(OCR: speech, SFX: sound effects) on 4 px-margin crops, so each line's "
+        "kind comes from the image and is written to the sidecar (0.65 GB more, "
+        "fetched on first use)",
+        group=VL_READER,
     )
     vl_batch_size: int = arg(16, help="Crops per VL forward pass", group=VL_READER)
     min_score: float = arg(

@@ -14,6 +14,12 @@ confidence in the text (both ``0.000`` when nothing stood behind them). There
 is no language column — the reader returns a string, never a language. A pre-``det`` record (``seq ⇥ box ⇥ score ⇥ text``, four
 fields) still reads, with ``det`` as ``0.0``.
 
+A line whose kind the reader decided — the two-prompt v7 preview reads each box
+under ``OCR:`` (speech) and ``SFX:`` (sound effects) — is the six-field
+``seq ⇥ box ⇥ det ⇥ score ⇥ kind ⇥ text``, ``kind`` one of :data:`LINE_KINDS`.
+A line without one is written in five fields as before, and the text rules
+(:func:`~anime_tools.captions.ocr_sfx.line_kind`) decide it at combine time.
+
 The one place the record meets a caption is :func:`with_ocr_clause`, which
 Export's ``--combine_ocr`` uses to publish the caption with the lines attached
 as text clauses — speech, one per line said, as ``Japanese text reads as "…",
@@ -90,6 +96,13 @@ LEGACY_OCR_FIELDS = 4
 """``seq ⇥ box ⇥ score ⇥ text``: the record before the detector's ``det`` column
 (2026-09-07). Read, never written."""
 
+KINDED_OCR_FIELDS = 6
+"""``seq ⇥ box ⇥ det ⇥ score ⇥ kind ⇥ text``: a line whose kind the reader decided."""
+
+LINE_KINDS = ("speech", "sfx")
+"""The kinds a reader may decide, as :func:`~anime_tools.captions.ocr_sfx.line_kind`
+spells them."""
+
 
 @dataclass(frozen=True)
 class OcrLine:
@@ -101,7 +114,8 @@ class OcrLine:
     (the VL reader's greedy-decode probability, averaged; ``0.0`` when no
     reader stood behind the line). ``det`` is the detector's confidence in the
     box itself (YOLO objectness; ``0.0`` for a box no detector scored, such as a
-    text-mask component).
+    text-mask component). ``kind`` is ``"speech"`` / ``"sfx"`` when the reader
+    decided it (the two-prompt reader), ``""`` when the text rules decide later.
     """
 
     seq: int
@@ -109,6 +123,7 @@ class OcrLine:
     score: float
     text: str
     det: float = 0.0
+    kind: str = ""
 
     @property
     def width(self) -> int:
@@ -133,27 +148,32 @@ class OcrLine:
         n = len(self.text.strip())
         return (self.width * self.height / n) ** 0.5 if n else 0.0
 
-    def as_row(self) -> tuple[str, str, str, str]:
+    def as_row(self) -> tuple[str, ...]:
         """The record as the sidecar spells it; ``score`` is rounded to three
-        places for a human reader."""
-        return (
+        places for a human reader. A kinded line carries ``kind`` before the
+        text."""
+        head = (
             str(self.seq),
             ",".join(str(int(v)) for v in self.box),
             f"{self.det:.3f}",
             f"{self.score:.3f}",
-            escape_text(self.text),
         )
+        kind = (self.kind,) if self.kind else ()
+        return (*head, *kind, escape_text(self.text))
 
     def to_dict(self) -> dict[str, object]:
         """The row shape a stage report carries, so a dry run can show every
         line it would have written."""
-        return {
+        out: dict[str, object] = {
             "seq": self.seq,
             "box": list(self.box),
             "det": round(self.det, 4),
             "score": round(self.score, 4),
             "text": self.text,
         }
+        if self.kind:
+            out["kind"] = self.kind
+        return out
 
 
 def ocr_sidecar_path(path: Path) -> Path:
@@ -189,8 +209,23 @@ def read_ocr(path: Path) -> list[OcrLine]:
 
 
 def _parse_record(line: str) -> OcrLine | None:
-    """One sidecar line as an :class:`OcrLine`, trying the five-field record
-    first and the legacy four-field one after it; ``None`` when neither fits."""
+    """One sidecar line as an :class:`OcrLine`, trying the kinded six-field
+    record, then the five-field one, then the legacy four-field one; ``None``
+    when none fits."""
+    parts = line.split("\t", KINDED_OCR_FIELDS - 1)
+    if len(parts) == KINDED_OCR_FIELDS and parts[4] in LINE_KINDS:
+        seq, box, det, score, kind, text = parts
+        try:
+            return OcrLine(
+                seq=int(seq),
+                box=_parse_box(box),
+                score=float(score),
+                text=unescape_text(text),
+                det=float(det),
+                kind=kind,
+            )
+        except ValueError:
+            pass
     parts = line.split("\t", OCR_FIELDS - 1)
     if len(parts) == OCR_FIELDS:
         seq, box, det, score, text = parts
@@ -298,7 +333,8 @@ def with_ocr_clause(
     """``caption`` with ``lines`` attached as its text clauses, in reading order.
 
     The lines that pass :func:`usable_lines` are split into speech and sound
-    effects by :func:`~anime_tools.captions.ocr_sfx.split_lines`. Each kind is
+    effects by :func:`~anime_tools.captions.ocr_sfx.split_lines` (a line's
+    recorded ``kind`` wins over the text rules). Each kind is
     then deduplicated on its own key — speech to one per line actually said
     (:func:`~anime_tools.captions.ocr_sfx.dedupe_speech`, since a page read as
     ``はあ`` seven times is not seven lines of dialogue) and SFX to one per
@@ -313,10 +349,10 @@ def with_ocr_clause(
     """
     parsed = parse_caption(caption)
     clauses = list(parsed.position_clauses)
-    texts = [
-        ln.text for ln in usable_lines(lines, min_det=min_det, min_glyph=min_glyph)
-    ]
-    speech, sfx = split_lines(texts)
+    usable = usable_lines(lines, min_det=min_det, min_glyph=min_glyph)
+    speech, sfx = split_lines(
+        [ln.text for ln in usable], kinds=[ln.kind for ln in usable]
+    )
     if speech:
         clauses.append(text_clause(dedupe_speech(speech)))
     if sfx:

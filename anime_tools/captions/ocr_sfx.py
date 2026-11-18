@@ -220,12 +220,19 @@ def line_kind(text: str, in_bubble: bool | None = None) -> str:
 
 
 def split_lines(
-    lines: list[str], in_bubble: list[bool | None] | None = None
+    lines: list[str],
+    in_bubble: list[bool | None] | None = None,
+    kinds: list[str] | None = None,
 ) -> tuple[list[str], list[str]]:
     """``(speech, sfx)`` in the input (reading) order; ``in_bubble`` is the
-    per-line balloon veto, when known."""
+    per-line balloon veto, when known. ``kinds`` holds the kind the reader
+    decided per line (the two-prompt reader's ``OCR:`` / ``SFX:``); a line with
+    one keeps it, a line with ``""`` goes through :func:`line_kind`."""
     flags = in_bubble if in_bubble is not None else [None] * len(lines)
-    kinds = [line_kind(ln, b) for ln, b in zip(lines, flags, strict=True)]
+    decided = kinds if kinds is not None else [""] * len(lines)
+    kinds = [
+        k or line_kind(ln, b) for ln, b, k in zip(lines, flags, decided, strict=True)
+    ]
     speech = [ln for ln, k in zip(lines, kinds, strict=True) if k == "speech"]
     sfx = [ln for ln, k in zip(lines, kinds, strict=True) if k == "sfx"]
     return speech, sfx

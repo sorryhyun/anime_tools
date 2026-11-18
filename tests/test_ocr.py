@@ -309,7 +309,8 @@ def test_the_ocr_stage_resolves_one_device_and_gives_it_to_both_models(
         given.append(device)
         return _Engine()
 
-    def fake_reader_load(*, device, batch_size):
+    def fake_reader_load(*, device, batch_size, version):
+        assert version == "v6"
         given.append(device)
         return _Reader()
 
@@ -574,3 +575,46 @@ def test_the_det_floor_keeps_low_boxes_out_of_the_caption_but_not_unscored_lines
     )
     # every usable line gone → the clause goes too
     assert with_ocr_clause('1girl. Japanese text reads as "旧".', [shaky]) == "1girl"
+
+
+# ---- the reader-decided kind (v7 preview) --------------------------------
+
+
+def test_a_kinded_line_writes_six_fields_and_reads_back(tmp_path: Path):
+    lines = [
+        OcrLine(
+            seq=1,
+            box=(0, 0, 400, 40),
+            score=0.9,
+            text="ぱん\tぱん",
+            det=0.8,
+            kind="sfx",
+        ),
+        OcrLine(
+            seq=2, box=(0, 0, 400, 40), score=0.9, text="やめて", det=0.8, kind="speech"
+        ),
+        line("ドン", seq=3),
+    ]
+    p = write_ocr_for(tmp_path, Path("a.txt"), lines)
+    assert p.read_text(encoding="utf-8").splitlines()[1:] == [
+        "1\t0,0,400,40\t0.800\t0.900\tsfx\tぱん\tぱん",
+        "2\t0,0,400,40\t0.800\t0.900\tspeech\tやめて",
+        "3\t0,0,400,40\t0.000\t0.950\tドン",
+    ]
+    assert read_ocr(p) == lines
+    assert lines[0].to_dict()["kind"] == "sfx" and "kind" not in lines[2].to_dict()
+
+
+def test_a_recorded_kind_beats_the_text_rules_in_the_clause():
+    from anime_tools.captions.ocr_sidecar import with_ocr_clause
+
+    # はあ is speech by the text rules (h-row initial), ドン SFX (katakana, short);
+    # the reader's kind wins where it is recorded, the rules decide the rest
+    lines = [
+        OcrLine(seq=1, box=(0, 0, 400, 40), score=0.9, text="はあ", kind="sfx"),
+        OcrLine(seq=2, box=(0, 0, 400, 40), score=0.9, text="ドン", kind="speech"),
+        line("ゴゴ", seq=3),
+    ]
+    got = with_ocr_clause("1girl", lines)
+    assert 'text reads as "ドン"' in got
+    assert 'SFX reads as "はあ", "ゴゴ"' in got

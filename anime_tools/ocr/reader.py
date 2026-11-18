@@ -40,6 +40,15 @@ counts it.
 Weights are two catalog rows (:mod:`anime_tools.downloads`): ``vl16_base``
 (the Apache-2.0 base, 1.9 GB) and ``ocr_reader`` (tower LoRA 143 MB + LM
 layers 510 MB). :meth:`OcrReader.load` fetches what is missing.
+
+**v7 preview (opt-in, ``version="v7_preview"``)**: the same model shape trained
+on two prompts — ``OCR:`` reads the speech in a crop and answers ``""`` where
+there is none, ``SFX:`` reads the sound effects likewise — on crops grown by
+min(0.12 · long, 0.3 · short, 4 px) (:func:`tight_pad_box`). Every box is read
+under both, so a line's kind comes from the image, and a box holding speech and
+an SFX gives one line of each (:meth:`OcrReader.read_boxes_scored`). Against v6:
+doujin SFX strict 349 → 358 / 597, COO speech 88.9 → 89.0 %, COO SFX 85.3 →
+78.0 % (Hub ``v7_preview/``; catalog row ``ocr_reader_v7_preview``).
 """
 
 from __future__ import annotations
@@ -57,12 +66,35 @@ from typing import Any
 from anime_tools.downloads import OCR_READER_ADAPTER_FILES, OCR_READER_LM_FILE
 
 PROMPT = "OCR:"
-"""The crop task of the base model's chat template; the fine-tune kept it."""
+"""The crop task of the base model's chat template; the fine-tune kept it. For
+the v7 preview it is the speech prompt."""
+
+SFX_PROMPT = "SFX:"
+"""The v7 preview's sound-effect prompt."""
+
+DEFAULT_VERSION = "v6"
+V7_PREVIEW = "v7_preview"
+READER_VERSIONS = (DEFAULT_VERSION, V7_PREVIEW)
+"""The readers :meth:`OcrReader.load` knows: v6 (one prompt, :data:`CROP_PAD`
+crops) and the opt-in v7 preview (two prompts, :func:`tight_pad_box` crops)."""
+
+_CATALOG_ROW = {DEFAULT_VERSION: "ocr_reader", V7_PREVIEW: "ocr_reader_v7_preview"}
+
+TASK_KIND = {PROMPT: "speech", SFX_PROMPT: "sfx"}
+"""What a v7 preview read under each prompt is
+(:data:`~anime_tools.captions.ocr_sidecar.LINE_KINDS`)."""
 
 CROP_PAD = 0.12
 """Padding around a box, as a fraction of its longer side. The polygons hug the
 glyphs and the model was trained on crops with this margin; a zero-pad crop
 clips the strokes of the outer characters."""
+
+TIGHT_PAD_FRAC = 0.12
+TIGHT_PAD_SHORT_FRAC = 0.3
+TIGHT_PAD_PX = 4
+"""The v7 preview's margin: min(0.12 · long side, 0.3 · short side, 4 px). Its
+training crops were detector boxes cut this way; the 12 % margin pulls a
+neighbouring line into a quarter of the COO SFX crops."""
 
 MAX_NEW_TOKENS = 200
 """The tokenizer spends about one token per CJK character; COO's longest
@@ -220,10 +252,29 @@ def pad_box(
     )
 
 
-def crop_box(bgr, box: Sequence[int], pad: float = CROP_PAD):
-    """The padded crop of an axis-aligned box, or ``None`` if it is empty."""
+def tight_pad_box(
+    box: Sequence[int], width: int, height: int
+) -> tuple[int, int, int, int]:
+    """``(x0, y0, x1, y1)`` grown by the v7 preview's margin
+    (:data:`TIGHT_PAD_PX` capped by the box's sides), clipped to the image —
+    the trainer's ``build_sfx_prefix.margin_box``."""
+    x0, y0, x1, y1 = (int(v) for v in box)
+    w, h = x1 - x0, y1 - y0
+    p = min(TIGHT_PAD_FRAC * max(w, h), TIGHT_PAD_SHORT_FRAC * min(w, h), TIGHT_PAD_PX)
+    return (
+        round(max(0, x0 - p)),
+        round(max(0, y0 - p)),
+        round(min(width, x1 + p)),
+        round(min(height, y1 + p)),
+    )
+
+
+def crop_box(bgr, box: Sequence[int], pad: float = CROP_PAD, *, tight: bool = False):
+    """The padded crop of an axis-aligned box, or ``None`` if it is empty.
+    ``tight`` cuts the v7 preview's margin (:func:`tight_pad_box`) instead of
+    ``pad``."""
     h, w = bgr.shape[:2]
-    x0, y0, x1, y1 = pad_box(box, w, h, pad)
+    x0, y0, x1, y1 = tight_pad_box(box, w, h) if tight else pad_box(box, w, h, pad)
     if x1 <= x0 or y1 <= y0:
         return None
     return bgr[y0:y1, x0:x1]
@@ -305,6 +356,7 @@ class OcrReader:
     device: str
     batch_size: int = 16
     min_edge: int = 28
+    version: str = DEFAULT_VERSION
 
     @classmethod
     def load(
@@ -315,25 +367,33 @@ class OcrReader:
         adapter_dir: Path | None = None,
         batch_size: int = 16,
         fetch: bool = True,
+        version: str = DEFAULT_VERSION,
     ) -> OcrReader:
         """Base + tower adapter merged + fine-tuned LM layers, in bf16 on ``device``
         (auto when ``None``).
 
         ``base_dir`` / ``adapter_dir`` default to the catalog rows and are
         fetched when missing (``fetch=False`` raises :class:`OcrReaderWeightsMissing`
-        instead). A dir passed explicitly is used as is.
+        instead). A dir passed explicitly is used as is. ``version`` picks the
+        reader (:data:`READER_VERSIONS`): its catalog row, its crop margin and
+        its prompts.
 
         bf16 holds on every device, MPS included — measured 2026-09-09 at 860 ms
         a crop there against a CPU's 4960, same decodes.
         """
         from anime_tools._device import resolve_device
 
+        if version not in READER_VERSIONS:
+            raise ValueError(
+                f"unknown reader version {version!r}; known: {READER_VERSIONS}"
+            )
+        row = _CATALOG_ROW[version]
         device = resolve_device(device)
         base = Path(base_dir) if base_dir else _ensure("vl16_base", fetch)
-        adapter = Path(adapter_dir) if adapter_dir else _ensure("ocr_reader", fetch)
+        adapter = Path(adapter_dir) if adapter_dir else _ensure(row, fetch)
         for name in (*OCR_READER_ADAPTER_FILES, OCR_READER_LM_FILE):
             if not (adapter / name).is_file():
-                raise OcrReaderWeightsMissing(adapter, "ocr_reader")
+                raise OcrReaderWeightsMissing(adapter, row)
 
         import torch
         from peft import PeftModel
@@ -365,31 +425,50 @@ class OcrReader:
             device=device,
             batch_size=batch_size,
             min_edge=int(processor.image_processor.size["shortest_edge"]),
+            version=version,
         )
 
-    @cached_property
-    def prompt(self) -> str:
-        """The chat-templated prompt every crop is read under.
+    @property
+    def two_prompt(self) -> bool:
+        """Whether every box is read under ``OCR:`` and ``SFX:`` (the v7 preview)."""
+        return self.version == V7_PREVIEW
 
-        One string for the life of the reader: it depends on nothing but the
+    @cached_property
+    def _prompts(self) -> dict[str, str]:
+        return {
+            task: self.processor.apply_chat_template(
+                [
+                    {
+                        "role": "user",
+                        "content": [{"type": "image"}, {"type": "text", "text": task}],
+                    }
+                ],
+                add_generation_prompt=True,
+                tokenize=False,
+            )
+            for task in (PROMPT, SFX_PROMPT)
+        }
+
+    def prompt_for(self, task: str = PROMPT) -> str:
+        """The chat-templated prompt for ``task`` (``OCR:`` / ``SFX:``).
+
+        Templated once for the life of the reader: it depends on nothing but the
         processor, and templating it per batch was a tokenizer round trip inside
         the read loop.
         """
-        return self.processor.apply_chat_template(
-            [
-                {
-                    "role": "user",
-                    "content": [{"type": "image"}, {"type": "text", "text": PROMPT}],
-                }
-            ],
-            add_generation_prompt=True,
-            tokenize=False,
-        )
+        return self._prompts[task]
 
-    def read_raw_scored(self, crops: Sequence) -> list[tuple[str, float]]:
+    @property
+    def prompt(self) -> str:
+        """The ``OCR:`` prompt (:meth:`prompt_for`)."""
+        return self.prompt_for(PROMPT)
+
+    def read_raw_scored(
+        self, crops: Sequence, task: str = PROMPT
+    ) -> list[tuple[str, float]]:
         """Every crop's raw decode with its confidence (BGR ``uint8`` arrays
-        in, ``(text, confidence)`` out), in input order. Unguarded —
-        :meth:`read_scored` is the one to call.
+        in, ``(text, confidence)`` out), in input order, under ``task``'s
+        prompt. Unguarded — :meth:`read_scored` is the one to call.
 
         The confidence is the mean, over the tokens the reader emitted, of the
         probability it put on each (:func:`token_confidence`): a logits
@@ -410,7 +489,7 @@ class OcrReader:
         out: list[tuple[str, float]] = [("", 0.0)] * len(crops)
         tok = self.processor.tokenizer
         skip = {tok.eos_token_id, tok.pad_token_id}
-        prompt = self.prompt
+        prompt = self.prompt_for(task)
         for s in range(0, len(order), self.batch_size):
             idx = order[s : s + self.batch_size]
             images = [Image.fromarray(crops[i][:, :, ::-1]) for i in idx]
@@ -444,10 +523,13 @@ class OcrReader:
                 out[i] = (tok.decode(ids).strip(), conf)
         return out
 
-    def read_scored(self, crops: Sequence) -> list[tuple[str, float] | None]:
+    def read_scored(
+        self, crops: Sequence, task: str = PROMPT
+    ) -> list[tuple[str, float] | None]:
         """:meth:`read_raw_scored` through :func:`guard`: ``(text, confidence)``
-        per crop, or ``None`` for a crop the decoder ran away on."""
-        raws = self.read_raw_scored(crops)
+        per crop, or ``None`` for a crop the decoder ran away on (or, for the
+        v7 preview, one that holds no text of ``task``'s kind: ``""``)."""
+        raws = self.read_raw_scored(crops, task)
         out: list[tuple[str, float] | None] = []
         for (raw, conf), c in zip(raws, crops, strict=True):
             text = guard(raw, int(c.shape[1]), int(c.shape[0]))
@@ -456,32 +538,49 @@ class OcrReader:
 
     def read_boxes_scored(
         self, bgr, boxes: Sequence[Sequence[int]], pad: float = CROP_PAD
-    ) -> list[tuple[str, float] | None]:
+    ) -> list:
         """One page, many boxes: :func:`crop_box` each, :meth:`read_scored`
-        them all. An empty box reads as ``None``. What
-        :class:`~anime_tools.ocr.reread.RereadEngine` calls."""
+        them all. What :class:`~anime_tools.ocr.reread.RereadEngine` calls.
+
+        v6: one ``(text, confidence)`` or ``None`` per box (an empty box reads
+        as ``None``). The v7 preview cuts its own tight margin (``pad`` is
+        unused) and reads every crop under ``OCR:`` and ``SFX:``: a list per
+        box of ``(text, confidence, kind)``, one per prompt that found text —
+        empty for a box neither did."""
         crops, owners = [], []
         for i, box in enumerate(boxes):
-            crop = crop_box(bgr, box, pad)
+            crop = crop_box(bgr, box, pad, tight=self.two_prompt)
             if crop is not None and crop.size:
                 crops.append(crop)
                 owners.append(i)
-        reads = self.read_scored(crops)
-        out: list[tuple[str, float] | None] = [None] * len(boxes)
-        for i, r in zip(owners, reads, strict=True):
-            out[i] = r
-        return out
+        if not self.two_prompt:
+            reads = self.read_scored(crops)
+            out: list = [None] * len(boxes)
+            for i, r in zip(owners, reads, strict=True):
+                out[i] = r
+            return out
+        kinded: list = [[] for _ in boxes]
+        for task, kind in TASK_KIND.items():
+            for i, r in zip(owners, self.read_scored(crops, task), strict=True):
+                if r is not None:
+                    kinded[i].append((r[0], r[1], kind))
+        return kinded
 
 
 __all__ = [
     "CROP_PAD",
+    "DEFAULT_VERSION",
     "ELLIPSIS",
     "HEART_FOLD",
     "LATIN_GLYPH_AREA",
     "MAX_NEW_TOKENS",
     "PROMPT",
+    "READER_VERSIONS",
     "RUNAWAY_RUN",
     "RUNAWAY_UNIT_REPEATS",
+    "SFX_PROMPT",
+    "TASK_KIND",
+    "V7_PREVIEW",
     "OcrReader",
     "OcrReaderWeightsMissing",
     "crop_box",
@@ -491,5 +590,6 @@ __all__ = [
     "length_cap",
     "normalize_read",
     "pad_box",
+    "tight_pad_box",
     "token_confidence",
 ]

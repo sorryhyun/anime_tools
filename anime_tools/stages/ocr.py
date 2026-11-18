@@ -19,7 +19,7 @@ from __future__ import annotations
 
 from collections import Counter
 from collections.abc import Callable, Iterable, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -80,10 +80,7 @@ def number_lines(lines: Sequence[OcrLine]) -> tuple[OcrLine, ...]:
     the reader (:mod:`anime_tools.ocr._text`), which knows the pixels each line
     came from.
     """
-    return tuple(
-        OcrLine(seq=i, box=ln.box, score=ln.score, text=ln.text, det=ln.det)
-        for i, ln in enumerate(lines, 1)
-    )
+    return tuple(replace(ln, seq=i) for i, ln in enumerate(lines, 1))
 
 
 def read_tree(
@@ -162,9 +159,11 @@ def _vl_engine(
     from anime_tools.ocr.reader import OcrReader
     from anime_tools.ocr.reread import RereadEngine
 
-    print(f"Loading the manga VL reader ({device})...", flush=True)
+    print(f"Loading the manga VL reader {req.vl_reader} ({device})...", flush=True)
     with phase("load vl reader"):
-        reader = OcrReader.load(device=device, batch_size=req.vl_batch_size)
+        reader = OcrReader.load(
+            device=device, batch_size=req.vl_batch_size, version=req.vl_reader
+        )
     mask_dir = resolve_path(req.mask_dir) if req.mask_dir else None
     if mask_dir is not None and not mask_dir.is_dir():
         raise FileNotFoundError(f"--mask_dir {mask_dir} is not a directory")
