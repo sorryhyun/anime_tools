@@ -136,10 +136,12 @@ ELLIPSIS = "…"
 HEART_FOLD = str.maketrans({"♥": "♡", "❤": "♡"})
 """The reader emits ``♥`` and ``♡`` for the same drawn heart (sincos records:
 332 vs 889); a caption says one glyph, and it is the one the artists draw."""
-CIRCLE_FOLD = str.maketrans({"◯": "○", "〇": "○"})
-"""A drawn circle is one glyph: the censor mark (``○○바이러스``, ``オ〇ニー``),
+SHAPE_FOLD = str.maketrans({"◯": "○", "〇": "○", **{c: "×" for c in "☓✕✖╳✗✘"}})
+"""A drawn shape is one glyph. The circle: the censor mark (``○○바이러스``, ``オ〇ニー``),
 the bullet ``◯`` and the kanji zero ``〇`` (``二〇三六年``) are the same shape in
-lettering, and the labels spell them all three ways. Latin ``O`` stays."""
+lettering, and the labels spell them all three ways. The cross likewise: ``☓`` /
+``✕`` / ``✖`` / ``╳`` / ``✗`` / ``✘`` → ``×`` (one label wrote ``☓☓☓と☓×☓``).
+Latin ``O`` / ``x`` / ``X`` stay."""
 
 
 def is_runaway(text: str) -> bool:
@@ -184,7 +186,8 @@ def length_cap(width: int, height: int, *, latin: bool = False) -> int:
 def normalize_read(text: str) -> str:
     """The raw decode as a record: NFC-stable glyphs, every heart (``♥``, the
     emoji ``❤`` + variation selector) folded to ``♡``, every circle (``◯``,
-    ``〇``) to ``○`` (:data:`CIRCLE_FOLD`), every dot run
+    ``〇``) to ``○`` and every cross (``☓``, ``✕`` …) to ``×``
+    (:data:`SHAPE_FOLD`), every dot run
     (``......``, ``・・・・・・``, ``‥``) to one ``…``, VL's LaTeX wrapping of a
     measurement (``\\( 156 \\, cm \\)``) stripped, whitespace runs inside a line
     collapsed to one space, and the line breaks the reader wrote kept as one
@@ -194,7 +197,7 @@ def normalize_read(text: str) -> str:
     The folds are what make a line comparable: the speech clause dedupes on
     exact text (:func:`~anime_tools.captions.ocr_sfx.dedupe_speech`), and
     ``あ・・・っ♥`` beside ``あ・・・っ♡`` was two lines of the same word."""
-    text = text.replace("\ufe0f", "").translate(HEART_FOLD).translate(CIRCLE_FOLD)
+    text = text.replace("\ufe0f", "").translate(HEART_FOLD).translate(SHAPE_FOLD)
     text = _LATEX_RE.sub("", text)
     text = unicodedata.normalize("NFC", text)
     text = _ELLIPSIS_RE.sub(ELLIPSIS, text)
@@ -575,7 +578,6 @@ class OcrReader:
 
 
 __all__ = [
-    "CIRCLE_FOLD",
     "CROP_PAD",
     "DEFAULT_VERSION",
     "ELLIPSIS",
@@ -587,6 +589,7 @@ __all__ = [
     "RUNAWAY_RUN",
     "RUNAWAY_UNIT_REPEATS",
     "SFX_PROMPT",
+    "SHAPE_FOLD",
     "TASK_KIND",
     "V7_PREVIEW",
     "OcrReader",

@@ -148,6 +148,9 @@ def test_the_guard_normalises_what_it_keeps():
     assert reader.guard("○○바이러스", 80, 120) == "○○바이러스"
     assert reader.guard("オ〇ニー ◯二〇三六年", 300, 120) == "オ○ニー ○二○三六年"
     assert reader.guard("O자키군", 80, 120) == "O자키군"
+    # Every cross → ×; Latin x / X stays.
+    assert reader.guard("☓☓☓と☓×✕", 300, 120) == "×××と×××"
+    assert reader.guard("X파일 2x", 300, 120) == "X파일 2x"
 
 
 @pytest.mark.parametrize(
