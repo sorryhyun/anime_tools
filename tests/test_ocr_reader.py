@@ -108,12 +108,12 @@ def test_is_latin_reads_the_letters_only():
 def test_the_length_cap_follows_the_crop_area():
     # A two-glyph crop sits at the floor; a five-glyph column and a balloon
     # block cap well above what they hold (the repetition test owns those).
-    assert reader.length_cap(40, 80) == reader.MIN_LENGTH_CAP
-    assert reader.length_cap(40, 200) == 31
-    assert reader.length_cap(300, 300) == 352
+    assert reader.length_cap(30, 60) == reader.MIN_LENGTH_CAP
+    assert reader.length_cap(40, 200) == 41
+    assert reader.length_cap(300, 300) == 459
     assert reader.length_cap(0, 0) == reader.MIN_LENGTH_CAP
     # A Latin letter takes half a CJK square.
-    assert reader.length_cap(40, 200, latin=True) == 62
+    assert reader.length_cap(40, 200, latin=True) == 82
 
 
 def test_the_guard_rejects_empty_runaway_and_overlong_reads():
@@ -144,6 +144,10 @@ def test_the_guard_normalises_what_it_keeps():
     assert reader.guard("身長: \\( 156 \\, cm \\)", 300, 40) == "身長: 156 cm"
     # A native ♡ is kept as read — the reader emits it itself.
     assert reader.guard("ぱん♡", 40, 120) == "ぱん♡"
+    # Every circle → ○; Latin O stays.
+    assert reader.guard("○○바이러스", 80, 120) == "○○바이러스"
+    assert reader.guard("オ〇ニー ◯二〇三六年", 300, 120) == "オ○ニー ○二○三六年"
+    assert reader.guard("O자키군", 80, 120) == "O자키군"
 
 
 @pytest.mark.parametrize(

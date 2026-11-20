@@ -106,9 +106,11 @@ MAX_PIXELS = 1280 * 28 * 28
 """The vision tower's pixel budget per crop (the training and eval setting)."""
 
 MIN_LENGTH_CAP = 12
-MIN_GLYPH_PX = 16
-"""The smallest glyph a crop is assumed to hold (the crop builders' 16 px
-floor): the length cap is how many of them fit in the crop's area."""
+MIN_GLYPH_PX = 14
+"""The smallest glyph a crop is assumed to hold: the length cap is how many of
+them fit in the crop's area. At 16 px the cap dropped correct reads of dense
+lettering (21 KO balloons at 12–14 px glyphs, a 29-character Manga109 box);
+over 483k labelled reads 14 px let through nothing else (2026-11-20)."""
 LATIN_GLYPH_AREA = MIN_GLYPH_PX * MIN_GLYPH_PX // 2
 """A Latin letter's share of a line: half a CJK square. Scanlation lettering
 at the CJK area overran the cap on plain balloons (``Yesterday's video was
@@ -134,6 +136,10 @@ ELLIPSIS = "…"
 HEART_FOLD = str.maketrans({"♥": "♡", "❤": "♡"})
 """The reader emits ``♥`` and ``♡`` for the same drawn heart (sincos records:
 332 vs 889); a caption says one glyph, and it is the one the artists draw."""
+CIRCLE_FOLD = str.maketrans({"◯": "○", "〇": "○"})
+"""A drawn circle is one glyph: the censor mark (``○○바이러스``, ``オ〇ニー``),
+the bullet ``◯`` and the kanji zero ``〇`` (``二〇三六年``) are the same shape in
+lettering, and the labels spell them all three ways. Latin ``O`` stays."""
 
 
 def is_runaway(text: str) -> bool:
@@ -177,7 +183,8 @@ def length_cap(width: int, height: int, *, latin: bool = False) -> int:
 
 def normalize_read(text: str) -> str:
     """The raw decode as a record: NFC-stable glyphs, every heart (``♥``, the
-    emoji ``❤`` + variation selector) folded to ``♡``, every dot run
+    emoji ``❤`` + variation selector) folded to ``♡``, every circle (``◯``,
+    ``〇``) to ``○`` (:data:`CIRCLE_FOLD`), every dot run
     (``......``, ``・・・・・・``, ``‥``) to one ``…``, VL's LaTeX wrapping of a
     measurement (``\\( 156 \\, cm \\)``) stripped, whitespace runs inside a line
     collapsed to one space, and the line breaks the reader wrote kept as one
@@ -187,7 +194,7 @@ def normalize_read(text: str) -> str:
     The folds are what make a line comparable: the speech clause dedupes on
     exact text (:func:`~anime_tools.captions.ocr_sfx.dedupe_speech`), and
     ``あ・・・っ♥`` beside ``あ・・・っ♡`` was two lines of the same word."""
-    text = text.replace("\ufe0f", "").translate(HEART_FOLD)
+    text = text.replace("\ufe0f", "").translate(HEART_FOLD).translate(CIRCLE_FOLD)
     text = _LATEX_RE.sub("", text)
     text = unicodedata.normalize("NFC", text)
     text = _ELLIPSIS_RE.sub(ELLIPSIS, text)
@@ -568,6 +575,7 @@ class OcrReader:
 
 
 __all__ = [
+    "CIRCLE_FOLD",
     "CROP_PAD",
     "DEFAULT_VERSION",
     "ELLIPSIS",
