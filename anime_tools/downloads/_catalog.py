@@ -34,6 +34,8 @@ from anime_tools.downloads._locations import (
     OCR_READER_REPO,
     OCR_READER_REVISION,
     OCR_READER_SUBFOLDER,
+    OCR_READER_V6_REVISION,
+    OCR_READER_V6_SUBFOLDER,
     OCR_READER_V7_PREVIEW_REVISION,
     OCR_READER_V7_PREVIEW_SUBFOLDER,
     PE_SPATIAL_FILENAME,
@@ -51,6 +53,7 @@ from anime_tools.downloads._locations import (
     VL16_BASE_REPO,
     default_animetext_dir,
     default_ocr_reader_dir,
+    default_ocr_reader_v6_dir,
     default_ocr_reader_v7_preview_dir,
     default_pe_spatial_path,
     default_vl16_base_dir,
@@ -189,7 +192,7 @@ def catalog() -> tuple[Asset, ...]:
         Asset(
             id="ocr_reader",
             pack="ocr",
-            title="Manga OCR reader v6 (VL-1.6 tower LoRA + LM)",
+            title="Manga OCR reader v7 (VL-1.6 tower LoRA + LM)",
             repo=OCR_READER_REPO,
             subfolder=OCR_READER_SUBFOLDER,
             files=OCR_READER_FILES,
@@ -201,8 +204,25 @@ def catalog() -> tuple[Asset, ...]:
             "box the detector finds — balloon speech, hearts, small kana and the "
             "hand-lettered onomatopoeia a print recognizer garbles; a crop reader, "
             "not a detector. Needs the base above; both fetched on first use. "
-            "Trained on Manga109-s (COO) plus KO / ZH SFX; reads JA, KO and ZH, "
+            "Trained on detector boxes over Manga109-s plus KO / ZH SFX and KO speech; "
+            "reads the main text of a box cut with a 4 px margin, JA, KO and ZH, "
             "with a block's line breaks as \\n.",
+        ),
+        Asset(
+            id="ocr_reader_v6",
+            pack="ocr",
+            title="Manga OCR reader v6 (the reader before 0.14.0)",
+            repo=OCR_READER_REPO,
+            subfolder=OCR_READER_V6_SUBFOLDER,
+            files=OCR_READER_FILES,
+            revision=OCR_READER_V6_REVISION,
+            dest=default_ocr_reader_v6_dir(),
+            used_by="OCR text with --vl_reader v6 (anime_tools.ocr.reader)",
+            stages=(),
+            notes="Opt-in: 0.65 GB, fetched on first use of --vl_reader v6. One prompt "
+            "on 12 %-margin crops. Against v7 on the same crops: COO SFX 85.2 % "
+            "(v7 80.8 %), COO speech 88.4 % (89.0 %), doujin SFX strict 294 / 593 (334), "
+            "KO 28 / 48 (30), ZH 30 / 48 (33).",
         ),
         Asset(
             id="ocr_reader_v7_preview",
@@ -218,7 +238,7 @@ def catalog() -> tuple[Asset, ...]:
             notes="Opt-in: 0.65 GB, fetched on first use of --vl_reader v7_preview. "
             "Reads each box twice, under OCR: (speech) and SFX: "
             "(sound effects), on 4 px-margin crops, so a line's kind comes from the "
-            "image. Against v6: doujin SFX strict 349 → 358, COO speech 88.9 → 89.0 %, "
+            "image; v7 replaced it. Against v6: doujin SFX strict 349 → 358, COO speech 88.9 → 89.0 %, "
             "COO SFX 85.3 → 78.0 %.",
         ),
         Asset(

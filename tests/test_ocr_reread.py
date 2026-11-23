@@ -274,12 +274,14 @@ def test_the_request_round_trips_the_vl_flags():
     argv = req.to_argv()
     assert "--mask_dir" in argv and "--vl_batch_size" in argv
     assert OcrRequest.from_argv(OcrRequest.parser(), argv) == req
-    # One detector, no flag for it; the VL reader is v6 unless --vl_reader opts
-    # into the v7 preview, and the default stays off the command line.
+    # One detector, no flag for it; the VL reader is v7 unless --vl_reader opts
+    # into v6 or the v7 preview, and the default stays off the command line.
     assert "--vl_reader" not in argv and "--detector" not in argv
     assert not hasattr(OcrRequest(), "detector")
-    v7 = OcrRequest(vl_reader="v7_preview")
-    assert OcrRequest.from_argv(OcrRequest.parser(), v7.to_argv()) == v7
+    for name in ("v6", "v7_preview"):
+        opt = OcrRequest(vl_reader=name)
+        assert "--vl_reader" in opt.to_argv()
+        assert OcrRequest.from_argv(OcrRequest.parser(), opt.to_argv()) == opt
 
 
 def test_a_line_read_inside_another_surviving_line_is_the_same_text_twice():

@@ -942,10 +942,11 @@ class OcrRequest(StageRequest):
     vl_reader: str = arg(
         OCR_READER_DEFAULT,
         choices=OCR_READER_VERSIONS,
-        help="Which manga VL reader: v6, or the opt-in v7_preview — two prompts "
-        "(OCR: speech, SFX: sound effects) on 4 px-margin crops, so each line's "
-        "kind comes from the image and is written to the sidecar (0.65 GB more, "
-        "fetched on first use)",
+        help="Which manga VL reader: v7 (detector boxes on 4 px-margin crops), "
+        "the opt-in v6 (a 0.12 margin; the reader before 0.14.0), or the opt-in "
+        "v7_preview — two prompts (OCR: speech, SFX: sound effects), so each "
+        "line's kind comes from the image and is written to the sidecar. An "
+        "opt-in reader is 0.65 GB more, fetched on first use",
         group=VL_READER,
     )
     vl_batch_size: int = arg(16, help="Crops per VL forward pass", group=VL_READER)

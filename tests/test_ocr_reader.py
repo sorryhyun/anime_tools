@@ -274,13 +274,20 @@ def test_tight_pad_box_is_the_v7_margin_capped_by_the_sides():
     assert reader.crop_box(bgr, (10, 10, 110, 60), tight=True).shape == (58, 108, 3)
 
 
-def test_the_v7_preview_row_installs_beside_v6(home):
+def test_the_opt_in_rows_install_beside_the_default(home):
     by = DL.by_id()
-    row = by["ocr_reader_v7_preview"]
-    assert row.dest == home / "models" / "paddleocr_vl_1.6_manga_lora_v7_preview"
-    assert row.dest != by["ocr_reader"].dest
-    assert row.subfolder == "v7_preview" and row.revision
-    assert row.files == by["ocr_reader"].files and row.pack == "ocr"
-    assert reader.READER_VERSIONS == ("v6", "v7_preview")
+    assert by["ocr_reader"].subfolder == "v7"
+    for row_id, name in (
+        ("ocr_reader_v6", "v6"),
+        ("ocr_reader_v7_preview", "v7_preview"),
+    ):
+        row = by[row_id]
+        assert row.dest == home / "models" / f"paddleocr_vl_1.6_manga_lora_{name}"
+        assert row.dest != by["ocr_reader"].dest
+        assert row.subfolder == name and row.revision
+        assert row.revision != by["ocr_reader"].revision
+        assert row.files == by["ocr_reader"].files and row.pack == "ocr"
+    assert reader.READER_VERSIONS == ("v7", "v6", "v7_preview")
+    assert reader.DEFAULT_VERSION == "v7"
     with pytest.raises(ValueError, match="unknown reader version"):
         reader.OcrReader.load(fetch=False, version="v8")

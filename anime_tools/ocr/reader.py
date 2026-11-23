@@ -6,13 +6,15 @@ as ``はんぱん`` / ``でくv`` / nothing from the CTC stack this package reti
 :class:`OcrReader` is the reader for those lines and the speech alike: a crop
 in, a string out, no detection. It is the
 PaddleOCR-VL-1.6 base with a LoRA on the vision tower + projector **and fully
-fine-tuned ERNIE decoder layers** (v6), trained on the Manga109-s COO
-onomatopoeia polygons plus a 1 : 1 replay of the ``<text>`` speech boxes
-(official COO book split), 3,838 KO / ZH SFX crops pseudo-labelled by the
-stock model and 20,745 proofread KO speech lines (COO test SFX exact 85.3 % on
-page-edge crops, doujin SFX 413 / 597 ♡-blind, KO 28 / 48 and ZH 30 / 48
-against stock's 21 / 31 — ``sorryhyun/paddleocr-vl-1.6-manga-lora`` ``v6/``, Manga109-s attribution on the
-card). It reads ``♡`` / ``ー`` / small kana natively, vertical or horizontal, so
+fine-tuned ERNIE decoder layers** (v7), trained on AnimeText detector boxes
+over the Manga109-s train pages with the box's main text as target (official
+COO book split), KO / ZH SFX crops pseudo-labelled by the stock model and
+proofread KO speech lines (on 4 px-margin crops: COO test SFX exact 80.8 %,
+speech 89.0 %, doujin SFX 334 / 593 strict, KO 30 / 48 and ZH 33 / 48 —
+``sorryhyun/paddleocr-vl-1.6-manga-lora`` ``v7/``, Manga109-s attribution on the
+card). Its crops are detector boxes grown by min(0.12 · long, 0.3 · short, 4 px)
+(:func:`tight_pad_box`); the model's second prompt, ``OCR2:`` for a box's smaller
+text, is not read here. It reads ``♡`` / ``ー`` / small kana natively, vertical or horizontal, so
 it needs no symbol patching, and returns a block's line breaks as ``\\n``
 (v4 and earlier joined the lines with a space).
 
@@ -40,6 +42,11 @@ counts it.
 Weights are two catalog rows (:mod:`anime_tools.downloads`): ``vl16_base``
 (the Apache-2.0 base, 1.9 GB) and ``ocr_reader`` (tower LoRA 143 MB + LM
 layers 510 MB). :meth:`OcrReader.load` fetches what is missing.
+
+**v6 (opt-in, ``version="v6"``)**: the reader before 0.14.0, trained on the COO
+onomatopoeia polygons and the ``<text>`` speech boxes and read on :data:`CROP_PAD`
+crops. On the same 4 px crops it reads COO SFX at 85.2 %, speech 88.4 %, doujin
+SFX 294 / 593, KO 28 and ZH 30 (catalog row ``ocr_reader_v6``).
 
 **v7 preview (opt-in, ``version="v7_preview"``)**: the same model shape trained
 on two prompts — ``OCR:`` reads the speech in a crop and answers ``""`` where
@@ -72,28 +79,34 @@ the v7 preview it is the speech prompt."""
 SFX_PROMPT = "SFX:"
 """The v7 preview's sound-effect prompt."""
 
-DEFAULT_VERSION = "v6"
+DEFAULT_VERSION = "v7"
+V6 = "v6"
 V7_PREVIEW = "v7_preview"
-READER_VERSIONS = (DEFAULT_VERSION, V7_PREVIEW)
-"""The readers :meth:`OcrReader.load` knows: v6 (one prompt, :data:`CROP_PAD`
-crops) and the opt-in v7 preview (two prompts, :func:`tight_pad_box` crops)."""
+READER_VERSIONS = (DEFAULT_VERSION, V6, V7_PREVIEW)
+"""The readers :meth:`OcrReader.load` knows: v7 (one prompt, :func:`tight_pad_box`
+crops), the opt-in v6 (one prompt, :data:`CROP_PAD` crops) and the opt-in v7
+preview (two prompts, :func:`tight_pad_box` crops)."""
 
-_CATALOG_ROW = {DEFAULT_VERSION: "ocr_reader", V7_PREVIEW: "ocr_reader_v7_preview"}
+_CATALOG_ROW = {
+    DEFAULT_VERSION: "ocr_reader",
+    V6: "ocr_reader_v6",
+    V7_PREVIEW: "ocr_reader_v7_preview",
+}
 
 TASK_KIND = {PROMPT: "speech", SFX_PROMPT: "sfx"}
 """What a v7 preview read under each prompt is
 (:data:`~anime_tools.captions.ocr_sidecar.LINE_KINDS`)."""
 
 CROP_PAD = 0.12
-"""Padding around a box, as a fraction of its longer side. The polygons hug the
-glyphs and the model was trained on crops with this margin; a zero-pad crop
+"""v6's padding around a box, as a fraction of its longer side. The polygons hug
+the glyphs and v6 was trained on crops with this margin; a zero-pad crop
 clips the strokes of the outer characters."""
 
 TIGHT_PAD_FRAC = 0.12
 TIGHT_PAD_SHORT_FRAC = 0.3
 TIGHT_PAD_PX = 4
-"""The v7 preview's margin: min(0.12 · long side, 0.3 · short side, 4 px). Its
-training crops were detector boxes cut this way; the 12 % margin pulls a
+"""The margin of v7 and the v7 preview: min(0.12 · long side, 0.3 · short side,
+4 px). Their training crops were detector boxes cut this way; the 12 % margin pulls a
 neighbouring line into a quarter of the COO SFX crops."""
 
 MAX_NEW_TOKENS = 200
@@ -265,7 +278,7 @@ def pad_box(
 def tight_pad_box(
     box: Sequence[int], width: int, height: int
 ) -> tuple[int, int, int, int]:
-    """``(x0, y0, x1, y1)`` grown by the v7 preview's margin
+    """``(x0, y0, x1, y1)`` grown by v7's margin
     (:data:`TIGHT_PAD_PX` capped by the box's sides), clipped to the image —
     the trainer's ``build_sfx_prefix.margin_box``."""
     x0, y0, x1, y1 = (int(v) for v in box)
@@ -281,7 +294,7 @@ def tight_pad_box(
 
 def crop_box(bgr, box: Sequence[int], pad: float = CROP_PAD, *, tight: bool = False):
     """The padded crop of an axis-aligned box, or ``None`` if it is empty.
-    ``tight`` cuts the v7 preview's margin (:func:`tight_pad_box`) instead of
+    ``tight`` cuts v7's margin (:func:`tight_pad_box`) instead of
     ``pad``."""
     h, w = bgr.shape[:2]
     x0, y0, x1, y1 = tight_pad_box(box, w, h) if tight else pad_box(box, w, h, pad)
@@ -439,6 +452,12 @@ class OcrReader:
         )
 
     @property
+    def tight(self) -> bool:
+        """Whether boxes are cut with :func:`tight_pad_box` (v7 and the v7
+        preview) rather than :data:`CROP_PAD` (v6)."""
+        return self.version != V6
+
+    @property
     def two_prompt(self) -> bool:
         """Whether every box is read under ``OCR:`` and ``SFX:`` (the v7 preview)."""
         return self.version == V7_PREVIEW
@@ -552,14 +571,15 @@ class OcrReader:
         """One page, many boxes: :func:`crop_box` each, :meth:`read_scored`
         them all. What :class:`~anime_tools.ocr.reread.RereadEngine` calls.
 
-        v6: one ``(text, confidence)`` or ``None`` per box (an empty box reads
-        as ``None``). The v7 preview cuts its own tight margin (``pad`` is
-        unused) and reads every crop under ``OCR:`` and ``SFX:``: a list per
+        v7 and v6: one ``(text, confidence)`` or ``None`` per box (an empty box
+        reads as ``None``). v7 and the v7 preview cut their own tight margin
+        (``pad`` is unused); the v7 preview reads every crop under ``OCR:`` and
+        ``SFX:``: a list per
         box of ``(text, confidence, kind)``, one per prompt that found text —
         empty for a box neither did."""
         crops, owners = [], []
         for i, box in enumerate(boxes):
-            crop = crop_box(bgr, box, pad, tight=self.two_prompt)
+            crop = crop_box(bgr, box, pad, tight=self.tight)
             if crop is not None and crop.size:
                 crops.append(crop)
                 owners.append(i)
@@ -591,6 +611,7 @@ __all__ = [
     "SFX_PROMPT",
     "SHAPE_FOLD",
     "TASK_KIND",
+    "V6",
     "V7_PREVIEW",
     "OcrReader",
     "OcrReaderWeightsMissing",
