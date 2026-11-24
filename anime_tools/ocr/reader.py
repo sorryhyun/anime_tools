@@ -525,19 +525,38 @@ class OcrReader:
         self, bgr, boxes: Sequence[Sequence[int]], pad: float = CROP_PAD
     ) -> list:
         """One page, many boxes: :func:`crop_box` each, :meth:`read_scored`
-        them all. What :class:`~anime_tools.ocr.reread.RereadEngine` calls.
+        them all.
 
         One ``(text, confidence)`` or ``None`` per box (an empty box reads as
         ``None``). v7 cuts its own tight margin (``pad`` is unused)."""
+        return self.read_pages_scored([(bgr, boxes)], pad)[0]
+
+    def read_pages_scored(
+        self,
+        pages: Sequence[tuple[Any, Sequence[Sequence[int]]]],
+        pad: float = CROP_PAD,
+    ) -> list[list]:
+        """Many pages in one read: ``[(bgr, boxes), …]`` in, one
+        :meth:`read_boxes_scored` answer per page out.
+
+        Every crop of every page goes into one :meth:`read_scored`, so batches
+        fill across pages and the pooled crops sort by area together. Read page
+        by page, a page's handful of boxes left most ``generate`` calls far
+        under ``batch_size`` (240 dataset pages, 2026-11-24: median 2 crops a
+        call, 19.4 crops/s; pooled 32.8 at bs 16, 39.3 at bs 32). What
+        :class:`~anime_tools.ocr.reread.RereadEngine` calls as ``read_pages``.
+        """
         crops, owners = [], []
-        for i, box in enumerate(boxes):
-            crop = crop_box(bgr, box, pad, tight=self.tight)
-            if crop is not None and crop.size:
-                crops.append(crop)
-                owners.append(i)
-        out: list = [None] * len(boxes)
-        for i, r in zip(owners, self.read_scored(crops), strict=True):
-            out[i] = r
+        out: list[list] = []
+        for p, (bgr, boxes) in enumerate(pages):
+            out.append([None] * len(boxes))
+            for i, box in enumerate(boxes):
+                crop = crop_box(bgr, box, pad, tight=self.tight)
+                if crop is not None and crop.size:
+                    crops.append(crop)
+                    owners.append((p, i))
+        for (p, i), r in zip(owners, self.read_scored(crops), strict=True):
+            out[p][i] = r
         return out
 
 

@@ -71,6 +71,15 @@ KindedReads = list[tuple[str, float, str]]
 prompt that found text; empty when none did."""
 ReadBoxes = Callable[[object, Sequence[Box]], list[Read | KindedReads]]
 """``(bgr, boxes) → reads``: :meth:`~anime_tools.ocr.reader.OcrReader.read_boxes_scored`."""
+ReadPages = Callable[
+    [Sequence[tuple[object, Sequence[Box]]]], list[list[Read | KindedReads]]
+]
+"""``[(bgr, boxes), …] → reads per page``: :meth:`~anime_tools.ocr.reader.OcrReader.read_pages_scored`."""
+
+WINDOW_CROPS = 256
+"""How many crops :class:`RereadEngine` pools across pages before one
+``read_pages`` call: several reader batches' worth, so the batches fill and
+the area sort has a spread to sort."""
 
 NO_SCORE = 0.0
 """The ``score`` (or ``det``) of a line nothing stood behind — a read with no
@@ -216,6 +225,29 @@ def reread_lines(
     none. Whatever text a line arrived with is not consulted — the engine hands
     over none.
     """
+    boxes, dets, comps = plan_page(
+        lines, mask=mask, comp_min_side=comp_min_side, comp_max=comp_max
+    )
+    if not boxes and not comps:
+        return []
+    return settle_page(
+        boxes,
+        dets,
+        comps,
+        read_boxes(bgr, boxes + comps),
+        min_chars=min_chars,
+        skip_en=skip_en,
+        min_det=min_det,
+        min_score=min_score,
+        strip_symbols=strip_symbols,
+    )
+
+
+def plan_page(
+    lines: Sequence[OcrLine], *, mask=None, comp_min_side: int = 32, comp_max: int = 16
+) -> tuple[list[Box], list[float], list[Box]]:
+    """The first half of :func:`reread_lines`: ``(boxes, dets, comps)``, the
+    crops a page asks the reader for (``boxes + comps``, in that order)."""
     boxes: list[Box] = [tuple(int(v) for v in ln.box) for ln in lines]
     dets: list[float] = [float(ln.det) for ln in lines]
     comps: list[Box] = []
@@ -225,9 +257,25 @@ def reread_lines(
             for c in mask_components(mask, min_side=comp_min_side)
             if not covered(c, boxes)
         ][:comp_max]
-    if not boxes and not comps:
-        return []
-    reads = [split_reads(r) for r in read_boxes(bgr, boxes + comps)]
+    return boxes, dets, comps
+
+
+def settle_page(
+    boxes: Sequence[Box],
+    dets: Sequence[float],
+    comps: Sequence[Box],
+    raw_reads: Sequence[Read | KindedReads],
+    *,
+    min_chars: int = 2,
+    skip_en: bool = True,
+    min_det: float = LINE_MIN_DET,
+    min_score: float = LINE_MIN_SCORE,
+    strip_symbols: bool = True,
+) -> list[OcrLine]:
+    """The second half of :func:`reread_lines`: the reads of a page's
+    :func:`plan_page` crops (one per crop, same order) through the floors,
+    the nesting and reading order."""
+    reads = [split_reads(r) for r in raw_reads]
     if strip_symbols:
         reads = [
             [(t if t is None else drop_symbols(t), c, k) for t, c, k in rs]
@@ -303,11 +351,15 @@ class RereadEngine:
     """An :class:`~anime_tools.ocr.engine.OcrEngine` with the VL pass behind it.
 
     ``read`` / ``read_iter`` answer the engine's boxes, each page then run
-    through :func:`reread_lines`. The pixels come from the engine's own pass
-    (``read_iter(..., with_pixels=True)``) rather than a second decode: they are
-    alive for the length of its chunk anyway, and a page is decoded once.
+    through :func:`reread_lines`'s two halves. The pixels come from the engine's
+    own pass (``read_iter(..., with_pixels=True)``) rather than a second decode.
     ``masks`` is the mask tree, resolved per image against ``resized_dir`` by
     :func:`mask_for`; ``None`` reads no components.
+
+    With ``read_pages`` the reads are pooled across pages: pages are planned
+    until :attr:`window_crops` crops wait, read in one ``read_pages`` call, then
+    settled and yielded in arrival order. Without it each page calls
+    ``read_boxes`` alone. Both give the same lines for the same reads.
     """
 
     engine: object
@@ -321,8 +373,12 @@ class RereadEngine:
     min_det: float = LINE_MIN_DET
     min_score: float = LINE_MIN_SCORE
     strip_symbols: bool = True
+    read_pages: ReadPages | None = None
+    window_crops: int = WINDOW_CROPS
 
-    def _page(self, path: Path, lines: list[OcrLine], bgr=None) -> list[OcrLine]:
+    def _plan(self, path: Path, lines: list[OcrLine], bgr=None):
+        """A page's finished lines (a ``list``), or ``(bgr, boxes, dets, comps)``
+        when it has crops for the reader."""
         mask = None
         if self.masks is not None:
             try:
@@ -346,13 +402,19 @@ class RereadEngine:
             mask = cv2.resize(
                 mask, (bgr.shape[1], bgr.shape[0]), interpolation=cv2.INTER_NEAREST
             )
-        return reread_lines(
-            bgr,
-            lines,
-            self.read_boxes,
-            mask=mask,
-            comp_min_side=self.comp_min_side,
-            comp_max=self.comp_max,
+        boxes, dets, comps = plan_page(
+            lines, mask=mask, comp_min_side=self.comp_min_side, comp_max=self.comp_max
+        )
+        if not boxes and not comps:
+            return []
+        return bgr, boxes, dets, comps
+
+    def _settle(self, boxes, dets, comps, reads) -> list[OcrLine]:
+        return settle_page(
+            boxes,
+            dets,
+            comps,
+            reads,
             min_chars=self.min_chars,
             skip_en=self.skip_en,
             min_det=self.min_det,
@@ -366,8 +428,41 @@ class RereadEngine:
     def read_iter(self, image_paths: Sequence[Path]) -> Iterator[list[OcrLine]]:
         paths = list(image_paths)
         pages = self.engine.read_iter(paths, with_pixels=True)
+        if self.read_pages is None:
+            for path, (lines, bgr) in zip(paths, pages, strict=True):
+                planned = self._plan(path, lines, bgr)
+                if isinstance(planned, list):
+                    yield planned
+                    continue
+                bgr, boxes, dets, comps = planned
+                yield self._settle(
+                    boxes, dets, comps, self.read_boxes(bgr, boxes + comps)
+                )
+            return
+
+        window: list = []  # each page's finished lines or its plan, in arrival order
+        waiting = 0
         for path, (lines, bgr) in zip(paths, pages, strict=True):
-            yield self._page(path, lines, bgr)
+            planned = self._plan(path, lines, bgr)
+            window.append(planned)
+            if not isinstance(planned, list):
+                waiting += len(planned[1]) + len(planned[3])
+            if waiting >= self.window_crops:
+                yield from self._flush(window)
+                window, waiting = [], 0
+        yield from self._flush(window)
+
+    def _flush(self, window: list) -> Iterator[list[OcrLine]]:
+        """One ``read_pages`` call over the window's planned pages, then every
+        page of the window in order."""
+        todo = [(p[0], p[1] + p[3]) for p in window if not isinstance(p, list)]
+        reads = iter(self.read_pages(todo) if todo else [])
+        for p in window:
+            if isinstance(p, list):
+                yield p
+            else:
+                _bgr, boxes, dets, comps = p
+                yield self._settle(boxes, dets, comps, next(reads))
 
 
 __all__ = [
@@ -377,7 +472,9 @@ __all__ = [
     "NESTED_CONTAINMENT",
     "NO_SCORE",
     "KindedReads",
+    "WINDOW_CROPS",
     "Read",
+    "ReadPages",
     "RereadEngine",
     "covered",
     "drop_nested",
@@ -385,7 +482,9 @@ __all__ = [
     "mask_components",
     "mask_for",
     "overlap",
+    "plan_page",
     "reread_lines",
+    "settle_page",
     "split_read",
     "split_reads",
 ]

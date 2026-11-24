@@ -947,7 +947,11 @@ class OcrRequest(StageRequest):
         "fetched on first use)",
         group=VL_READER,
     )
-    vl_batch_size: int = arg(16, help="Crops per VL forward pass", group=VL_READER)
+    vl_batch_size: int = arg(
+        32,
+        help="Crops per VL forward pass; the stage pools 8 batches of crops across pages per read",
+        group=VL_READER,
+    )
     min_score: float = arg(
         0.6,
         help="Write a line only if the reader's mean token confidence in it is at "

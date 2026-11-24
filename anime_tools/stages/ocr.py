@@ -170,6 +170,8 @@ def _vl_engine(
     return RereadEngine(
         engine=engine,
         read_boxes=reader.read_boxes_scored,
+        read_pages=reader.read_pages_scored,
+        window_crops=8 * req.vl_batch_size,
         resized_dir=resized_dir,
         masks=mask_dir,
         comp_min_side=req.comp_min_side,

@@ -301,6 +301,9 @@ def test_the_ocr_stage_resolves_one_device_and_gives_it_to_both_models(
         def read_boxes_scored(self, *a, **kw):
             return []
 
+        def read_pages_scored(self, *a, **kw):
+            return []
+
     def fake_resolve(requested=None):
         probes.append(requested)
         return "cuda:7"

@@ -266,6 +266,49 @@ def test_the_engine_wrapper_rereads_each_page_the_engine_yields(
     assert [ln.text for ln in eng.read(dst / "a.png")] == ["ぱんぱん"]
 
 
+def test_pooled_reads_fill_across_pages_and_answer_what_per_page_reads_do(
+    tmp_path: Path,
+):
+    dst = tmp_path / "resized"
+    names = [f"{i}.png" for i in range(7)]
+    # page i holds i % 3 boxes; the texts say which page and box they came from
+    found = {
+        n: [line("あい", (10 + 30 * j, 10, 38 + 30 * j, 60)) for j in range(i % 3)]
+        for i, n in enumerate(names)
+    }
+
+    class Engine:
+        def read_iter(self, paths, *, with_pixels=False):
+            for p in paths:
+                yield (found[p.name], page()) if with_pixels else found[p.name]
+
+    def text(box):
+        return f"か{box[0]}"
+
+    def read_boxes(bgr, boxes):
+        return [(text(b), 0.9) for b in boxes]
+
+    pooled = []
+
+    def read_pages(pages):
+        pooled.append(sum(len(b) for _, b in pages))
+        return [read_boxes(bgr, boxes) for bgr, boxes in pages]
+
+    paths = [dst / n for n in names]
+    one = reread.RereadEngine(engine=Engine(), read_boxes=read_boxes, resized_dir=dst)
+    many = reread.RereadEngine(
+        engine=Engine(),
+        read_boxes=lambda *a: pytest.fail("pooled engine read a page alone"),
+        read_pages=read_pages,
+        window_crops=3,
+        resized_dir=dst,
+    )
+    assert list(many.read_iter(paths)) == list(one.read_iter(paths))
+    # boxes per page 0,1,2,0,1,2,0: windows close at 3 crops, the tail flushes
+    assert pooled == [3, 3]
+    assert many.read(dst / "0.png") == []
+
+
 # ---- the request ----------------------------------------------------------
 
 
