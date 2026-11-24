@@ -79,39 +79,34 @@ VL16_BASE_DIR = "models/paddleocr_vl_1.6"
 # decoder layers, trained on AnimeText detector boxes over Manga109-s (the main
 # text of each box), KO / ZH pseudo-labelled SFX and KO speech
 # (attribution and citations on the model card). Weights only — no Manga109-s
-# image ships. ``v4/`` / ``v5/`` / ``v6/`` hold the earlier versions; v1–v3 (LM LoRA + ``tower.safetensors`` at
-# the repo root) were removed from the head 2026-11-18 and stay at their commits below.
+# image ships. ``v6/`` holds the previous version; v1–v5 and the two-prompt v7 preview were
+# removed from the head (2026-11-18, 2026-11-24) and stay at their commits below.
 OCR_READER_REPO = "sorryhyun/paddleocr-vl-1.6-manga-lora"
 OCR_READER_SUBFOLDER = "v7"
 OCR_READER_ADAPTER_FILES = ("adapter_config.json", "adapter_model.safetensors")
 OCR_READER_LM_FILE = "lm.safetensors"
 OCR_READER_FILES = (*OCR_READER_ADAPTER_FILES, OCR_READER_LM_FILE)
 OCR_READER_DIR = "models/paddleocr_vl_1.6_manga_lora"
-OCR_READER_REVISION = "59768fc6cbebe5cb2b1dd0806a14ebb413eed64d"
-"""Hub commit of the reader the package ships — **v7** (``mainsub_1124_0151``: ``OCR:``
-reads the main text of a detector box cut with a 4 px margin; its ``OCR2:`` prompt for
-the rest of the box is not used here. v6 ``57e7c650`` in ``v6/``: ``vl16_p2b_kozh_nl_swaprelax``,
-v5 plus 20,745 proofread Korean speech lines; v5 ``fb08a10b`` in ``v5/`` — v4's
-recipe with the labels' line breaks kept as ``\\n`` and the crops cut at the
-page edge; v4 ``926eafb1`` in ``v4/``, its 1-epoch run ``9fe3d41e``; v3
-``26292839``, v2 ``4caffe65``, v1 ``3b5fe022``, at the repo root of those commits). The
+OCR_READER_REVISION = "169eacbcd325e2eb93d9ca7c8606ab4248745df8"
+"""Hub commit of the reader the package ships — **v7** (``mainsub_1124_1923``, the v7
+recipe retrained on reviewed labels, swapped into ``v7/`` in place; ``OCR:`` reads the
+main text of a detector box cut with a 4 px margin, its ``OCR2:`` prompt for the rest of
+the box is not used here). The first v7 weights (``mainsub_1124_0151``, 0.14.0) are at
+``59768fc6``; the two-prompt v7 preview at ``1987992e`` in ``v7_preview/``. v6 ``57e7c650``
+in ``v6/``: ``vl16_p2b_kozh_nl_swaprelax``, v5 plus 20,745 proofread Korean speech lines;
+v5 ``fb08a10b`` in ``v5/`` — v4's recipe with the labels' line breaks kept as ``\\n`` and
+the crops cut at the page edge; v4 ``926eafb1`` in ``v4/``, its 1-epoch run ``9fe3d41e``;
+v3 ``26292839``, v2 ``4caffe65``, v1 ``3b5fe022``, at the repo root of those commits). The
 adapter file names are shared across versions, so the catalog row pins this and
 stamps it under the dest — an install that predates the pin re-fetches instead
 of reading an older adapter under the new name."""
 
 # The opt-in v6 (the default until 0.14.0) in ``v6/``: one prompt on 12 %-margin crops,
 # the better reader for polygon crops of sound effects (COO test SFX 85.2 % against
-# v7's 80.8 %). Its own dest, so it installs beside v7.
+# v7's 81.9 %). Its own dest, so it installs beside v7.
 OCR_READER_V6_SUBFOLDER = "v6"
 OCR_READER_V6_DIR = "models/paddleocr_vl_1.6_manga_lora_v6"
 OCR_READER_V6_REVISION = "57e7c65024d753022299340b3b9b6aafc158a79b"
-
-# The opt-in v7 preview (``sfxpc_1118_0412``) in ``v7_preview/``: v6's file layout, read
-# under two prompts (``OCR:`` speech, ``SFX:`` sound effects) on 4 px-margin crops. Its
-# own dest, so it installs beside the default rather than over it.
-OCR_READER_V7_PREVIEW_SUBFOLDER = "v7_preview"
-OCR_READER_V7_PREVIEW_DIR = "models/paddleocr_vl_1.6_manga_lora_v7_preview"
-OCR_READER_V7_PREVIEW_REVISION = "1987992e57e516a1eb80988c63f348463311ab11"
 
 # The AnimeText text-block detector: a YOLO12-l trained on deepghs/AnimeText
 # (735k anime / manga pages, one class), the OCR stage's one detector.
@@ -158,12 +153,6 @@ def default_ocr_reader_v6_dir() -> Path:
     """``<home>/models/paddleocr_vl_1.6_manga_lora_v6`` — the opt-in v6 reader
     (``OcrReader.load(version="v6")``)."""
     return resolve_path(OCR_READER_V6_DIR)
-
-
-def default_ocr_reader_v7_preview_dir() -> Path:
-    """``<home>/models/paddleocr_vl_1.6_manga_lora_v7_preview`` — the opt-in
-    two-prompt reader (``OcrReader.load(version="v7_preview")``)."""
-    return resolve_path(OCR_READER_V7_PREVIEW_DIR)
 
 
 def default_animetext_dir() -> Path:

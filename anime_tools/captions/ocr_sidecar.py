@@ -14,9 +14,9 @@ confidence in the text (both ``0.000`` when nothing stood behind them). There
 is no language column — the reader returns a string, never a language. A pre-``det`` record (``seq ⇥ box ⇥ score ⇥ text``, four
 fields) still reads, with ``det`` as ``0.0``.
 
-A line whose kind the reader decided — the two-prompt v7 preview reads each box
-under ``OCR:`` (speech) and ``SFX:`` (sound effects) — is the six-field
-``seq ⇥ box ⇥ det ⇥ score ⇥ kind ⇥ text``, ``kind`` one of :data:`LINE_KINDS`.
+A line whose kind the reader decided is the six-field
+``seq ⇥ box ⇥ det ⇥ score ⇥ kind ⇥ text``, ``kind`` one of :data:`LINE_KINDS`
+(the two-prompt v7 preview, removed in 0.15.0, wrote these; they still read).
 A line without one is written in five fields as before, and the text rules
 (:func:`~anime_tools.captions.ocr_sfx.line_kind`) decide it at combine time.
 
@@ -115,7 +115,7 @@ class OcrLine:
     reader stood behind the line). ``det`` is the detector's confidence in the
     box itself (YOLO objectness; ``0.0`` for a box no detector scored, such as a
     text-mask component). ``kind`` is ``"speech"`` / ``"sfx"`` when the reader
-    decided it (the two-prompt reader), ``""`` when the text rules decide later.
+    decided it (a kinded sidecar line), ``""`` when the text rules decide later.
     """
 
     seq: int

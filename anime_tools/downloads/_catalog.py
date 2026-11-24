@@ -36,8 +36,6 @@ from anime_tools.downloads._locations import (
     OCR_READER_SUBFOLDER,
     OCR_READER_V6_REVISION,
     OCR_READER_V6_SUBFOLDER,
-    OCR_READER_V7_PREVIEW_REVISION,
-    OCR_READER_V7_PREVIEW_SUBFOLDER,
     PE_SPATIAL_FILENAME,
     PE_SPATIAL_REPO,
     SAM3_DIR,
@@ -54,7 +52,6 @@ from anime_tools.downloads._locations import (
     default_animetext_dir,
     default_ocr_reader_dir,
     default_ocr_reader_v6_dir,
-    default_ocr_reader_v7_preview_dir,
     default_pe_spatial_path,
     default_vl16_base_dir,
 )
@@ -221,25 +218,8 @@ def catalog() -> tuple[Asset, ...]:
             stages=(),
             notes="Opt-in: 0.65 GB, fetched on first use of --vl_reader v6. One prompt "
             "on 12 %-margin crops. Against v7 on the same crops: COO SFX 85.2 % "
-            "(v7 80.8 %), COO speech 88.4 % (89.0 %), doujin SFX strict 294 / 593 (334), "
-            "KO 28 / 48 (30), ZH 30 / 48 (33).",
-        ),
-        Asset(
-            id="ocr_reader_v7_preview",
-            pack="ocr",
-            title="Manga OCR reader v7 preview (two prompts: speech / SFX)",
-            repo=OCR_READER_REPO,
-            subfolder=OCR_READER_V7_PREVIEW_SUBFOLDER,
-            files=OCR_READER_FILES,
-            revision=OCR_READER_V7_PREVIEW_REVISION,
-            dest=default_ocr_reader_v7_preview_dir(),
-            used_by="OCR text with --vl_reader v7_preview (anime_tools.ocr.reader)",
-            stages=(),
-            notes="Opt-in: 0.65 GB, fetched on first use of --vl_reader v7_preview. "
-            "Reads each box twice, under OCR: (speech) and SFX: "
-            "(sound effects), on 4 px-margin crops, so a line's kind comes from the "
-            "image; v7 replaced it. Against v6: doujin SFX strict 349 → 358, COO speech 88.9 → 89.0 %, "
-            "COO SFX 85.3 → 78.0 %.",
+            "(v7 81.9 %), COO speech 88.4 % (89.1 %), doujin SFX 294 / 593 (350), "
+            "KO 26 / 48 (32), ZH 32 / 49 (36).",
         ),
         Asset(
             id="animetext_det",

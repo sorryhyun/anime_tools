@@ -275,10 +275,10 @@ def test_the_request_round_trips_the_vl_flags():
     assert "--mask_dir" in argv and "--vl_batch_size" in argv
     assert OcrRequest.from_argv(OcrRequest.parser(), argv) == req
     # One detector, no flag for it; the VL reader is v7 unless --vl_reader opts
-    # into v6 or the v7 preview, and the default stays off the command line.
+    # into v6, and the default stays off the command line.
     assert "--vl_reader" not in argv and "--detector" not in argv
     assert not hasattr(OcrRequest(), "detector")
-    for name in ("v6", "v7_preview"):
+    for name in ("v6",):
         opt = OcrRequest(vl_reader=name)
         assert "--vl_reader" in opt.to_argv()
         assert OcrRequest.from_argv(OcrRequest.parser(), opt.to_argv()) == opt
@@ -307,7 +307,7 @@ def test_the_export_request_carries_the_det_floor():
     assert ExportRequest().ocr_min_det == 0.5
 
 
-# ---- the two-prompt reader ------------------------------------------------
+# ---- a multi-prompt reader (kinded reads) ------------------------------------
 
 
 def test_kinded_reads_give_a_line_per_kind_and_nest_only_within_a_kind():

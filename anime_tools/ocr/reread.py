@@ -40,9 +40,10 @@ Measured on the sincos shard (the trainer's ``project/cjk_aware_anima_dit``,
 (``91`` → ``9``) and two-glyph crops. A VL line's ``score`` is the reader's
 mean greedy token probability (:meth:`~anime_tools.ocr.reader.OcrReader.read_boxes_scored`);
 a reader answering bare strings leaves :data:`NO_SCORE`. The detector's box
-confidence rides through as ``det`` (a mask component has none). The two-prompt
-v7 preview answers a list per crop (:data:`KindedReads`): each read becomes a line
-carrying its ``kind``, so one box can give a speech line and an SFX line.
+confidence rides through as ``det`` (a mask component has none). A reader may
+answer a list per crop (:data:`KindedReads`): each read becomes a line carrying
+its ``kind``, so one box can give several lines (the two-prompt v7 preview did;
+the shipped reader answers one read per crop).
 
 Torch-free to import; cv2 loads inside the two functions that need it.
 """
@@ -66,8 +67,8 @@ Read = str | tuple[str, float] | None
 """One crop's read: the text with the reader's confidence, a bare text (no
 confidence — :data:`NO_SCORE`), or ``None`` for a read the guard rejected."""
 KindedReads = list[tuple[str, float, str]]
-"""One crop's reads from the two-prompt reader: ``(text, confidence, kind)`` per
-prompt that found text (``kind`` ``"speech"`` / ``"sfx"``); empty when none did."""
+"""One crop's reads from a multi-prompt reader: ``(text, confidence, kind)`` per
+prompt that found text; empty when none did."""
 ReadBoxes = Callable[[object, Sequence[Box]], list[Read | KindedReads]]
 """``(bgr, boxes) → reads``: :meth:`~anime_tools.ocr.reader.OcrReader.read_boxes_scored`."""
 
@@ -280,7 +281,7 @@ def split_read(read: Read) -> tuple[str | None, float]:
 
 
 def split_reads(read: Read | KindedReads) -> list[tuple[str | None, float, str]]:
-    """One crop's reads as ``(text, confidence, kind)`` rows: a two-prompt
+    """One crop's reads as ``(text, confidence, kind)`` rows: a multi-prompt
     reader's list as is, a one-prompt :data:`Read` as one row of kind ``""``."""
     if isinstance(read, list):
         return [(t, float(c), k) for t, c, k in read]

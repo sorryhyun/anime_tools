@@ -277,17 +277,14 @@ def test_tight_pad_box_is_the_v7_margin_capped_by_the_sides():
 def test_the_opt_in_rows_install_beside_the_default(home):
     by = DL.by_id()
     assert by["ocr_reader"].subfolder == "v7"
-    for row_id, name in (
-        ("ocr_reader_v6", "v6"),
-        ("ocr_reader_v7_preview", "v7_preview"),
-    ):
+    for row_id, name in (("ocr_reader_v6", "v6"),):
         row = by[row_id]
         assert row.dest == home / "models" / f"paddleocr_vl_1.6_manga_lora_{name}"
         assert row.dest != by["ocr_reader"].dest
         assert row.subfolder == name and row.revision
         assert row.revision != by["ocr_reader"].revision
         assert row.files == by["ocr_reader"].files and row.pack == "ocr"
-    assert reader.READER_VERSIONS == ("v7", "v6", "v7_preview")
+    assert reader.READER_VERSIONS == ("v7", "v6")
     assert reader.DEFAULT_VERSION == "v7"
     with pytest.raises(ValueError, match="unknown reader version"):
         reader.OcrReader.load(fetch=False, version="v8")

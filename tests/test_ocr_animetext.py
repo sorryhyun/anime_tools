@@ -350,18 +350,17 @@ def test_the_row_lands_where_the_loader_looks_and_names_the_stage(home):
     assert DL.ANIMETEXT_WEIGHTS in row.files and "threshold.json" in row.files
     # The stage's one detector, so the stage bar warns before a run; the VL
     # reader's two rows are the stage's too, and all three sit in the ocr pack
-    # beside the opt-in v6 and v7 preview readers.
+    # beside the opt-in v6 reader.
     assert row.stages == ("ocr",) and row.pack == "ocr"
     assert {a.id for a in DL.by_pack()["ocr"]} == {
         "animetext_det",
         "vl16_base",
         "ocr_reader",
         "ocr_reader_v6",
-        "ocr_reader_v7_preview",
     }
     # an opt-in reader names no stage, so a default run's stage bar does not
     # ask for it
-    opt_in = {"ocr_reader_v6", "ocr_reader_v7_preview"}
+    opt_in = {"ocr_reader_v6"}
     assert all(
         a.stages == (() if a.id in opt_in else ("ocr",)) for a in DL.by_pack()["ocr"]
     )
