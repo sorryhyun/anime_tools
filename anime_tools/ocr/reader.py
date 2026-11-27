@@ -134,6 +134,13 @@ the bullet ``◯`` and the kanji zero ``〇`` (``二〇三六年``) are the same
 lettering, and the labels spell them all three ways. The cross likewise: ``☓`` /
 ``✕`` / ``✖`` / ``╳`` / ``✗`` / ``✘`` → ``×`` (one label wrote ``☓☓☓と☓×☓``).
 Latin ``O`` / ``x`` / ``X`` stay."""
+_HANGUL_RE = re.compile(r"[\uac00-\ud7a3\u3131-\u318e]")
+_HYPHENS = frozenset("-–‒‐－")
+_LINE_RUN_RE = re.compile(r"[ー―—─\-–‒‐－]+")
+_KO_DASH_FOLD = str.maketrans({c: "-" for c in "―—─–‒‐－"})
+_KO_LINE_RUN_RE = re.compile(r"[ー-]{2,}")
+_WAVE_FOLD = str.maketrans({c: "~" for c in "〜〰～"})
+_WAVE_RUN_RE = re.compile(r"~{2,}")
 
 
 def is_runaway(text: str) -> bool:
@@ -197,12 +204,51 @@ def normalize_read(text: str) -> str:
     return "\n".join(line for line in lines if line)
 
 
+def _ascii_alnum(ch: str) -> bool:
+    ch = unicodedata.normalize("NFKC", ch)
+    return bool(ch) and ch.isascii() and ch.isalnum()
+
+
+def _line_run(m: re.Match) -> str:
+    if _HYPHENS.issuperset(m[0]):
+        s = m.string
+        before = s[m.start() - 1] if m.start() else ""
+        after = s[m.end()] if m.end() < len(s) else ""
+        if _ascii_alnum(before) or _ascii_alnum(after):
+            return "-"
+    return "ー"
+
+
+def fold_drawn_lines(text: str) -> str:
+    """A drawn-out line as one glyph: a run of ``ー`` / ``―`` / hyphens (any mix, any
+    count, one included) → one ``ー`` (``ええーーーっ`` → ``ええーっ``, ``でも――`` →
+    ``でもー``, ``―――?`` → ``ー?``, ``二年前──…`` → ``二年前ー…``); every wave (``〜``,
+    ``〰``, ``～``) → ``~`` and a ``~`` run → one ``~``. In vertical lettering ``ー`` and
+    ``―`` are one stroke, and how many the reader writes for it is not a reading.
+
+    The hyphen stays, as one ``-``, in two places: a run of hyphens alone beside an ASCII
+    letter or digit (``747-400D``), and a read holding Hangul, for its dashes and its
+    ``ー`` / ``-`` runs (``만세-!``; a lone ``ー`` there stays). A Chinese read folds as
+    Japanese does (``——全部剪掉吧`` → ``ー全部剪掉吧``): ideographs alone do not say
+    which language a line is in.
+
+    The reader's training target folds the same way from ``TARGET_NORM = 13`` on (the
+    trainer's ``textnorm`` fold 7), so a reader trained on it writes this form itself."""
+    if _HANGUL_RE.search(text):
+        text = _KO_LINE_RUN_RE.sub("-", text.translate(_KO_DASH_FOLD))
+    else:
+        text = _LINE_RUN_RE.sub(_line_run, text)
+    return _WAVE_RUN_RE.sub("~", text.translate(_WAVE_FOLD))
+
+
 def guard(text: str, width: int, height: int) -> str | None:
     """The read, or ``None`` when it is not one.
 
     Rejects an empty decode, a runaway (:func:`is_runaway`) and a read longer
     than :func:`length_cap` for the crop's shape. Everything that passes is
-    :func:`normalize_read`'s form.
+    :func:`normalize_read`'s form with its drawn-out lines folded
+    (:func:`fold_drawn_lines`): both tests see the read before that fold, so a
+    ``ー`` runaway is still one.
     """
     read = normalize_read(text)
     if not read or is_runaway(read):
@@ -210,7 +256,7 @@ def guard(text: str, width: int, height: int) -> str | None:
     n = sum(1 for ch in read if not ch.isspace())
     if n > length_cap(width, height, latin=is_latin(read)):
         return None
-    return read
+    return fold_drawn_lines(read)
 
 
 def token_confidence(
@@ -576,6 +622,7 @@ __all__ = [
     "OcrReader",
     "OcrReaderWeightsMissing",
     "crop_box",
+    "fold_drawn_lines",
     "guard",
     "is_latin",
     "is_runaway",

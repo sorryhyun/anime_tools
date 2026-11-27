@@ -169,6 +169,45 @@ def test_every_dot_run_is_one_ellipsis(raw, norm):
 
 
 @pytest.mark.parametrize(
+    ("raw", "folded"),
+    [
+        ("ええーーーっ!?", "ええーっ!?"),
+        ("でも――", "でもー"),
+        ("やっだ──っ", "やっだーっ"),
+        ("も－ーう", "もーう"),
+        ("―――?", "ー?"),
+        ("!!―!", "!!ー!"),
+        ("夢ーーー", "夢ー"),
+        ("ケーキ", "ケーキ"),
+        ("むうーーー~~", "むうー~"),
+        ("せっかく詰めたのに〰〰", "せっかく詰めたのに~"),
+        ("ピンポ〰ン", "ピンポ~ン"),
+        ("なっ…成島〜～", "なっ…成島~"),
+        # kanji alone, and Chinese with it: the long mark
+        ("二年前──…", "二年前ー…"),
+        ("——全部剪掉吧?", "ー全部剪掉吧?"),
+        ("NO――!!", "NOー!!"),
+        ("747-400D", "747-400D"),
+        ("Ｇ－3!!", "Ｇ-3!!"),
+        ("Just--do", "Just-do"),
+        # a read holding Hangul keeps the hyphen
+        ("짜안―\n손님용", "짜안-\n손님용"),
+        ("만세--!", "만세-!"),
+        ("하ー아", "하ー아"),
+    ],
+)
+def test_a_drawn_out_line_is_one_glyph(raw, folded):
+    assert reader.fold_drawn_lines(raw) == folded
+    assert reader.fold_drawn_lines(folded) == folded
+
+
+def test_the_guard_folds_after_its_tests():
+    assert reader.guard("ええーーーっ", 60, 200) == "ええーっ"
+    # sixteen of one glyph is a runaway whatever the fold would leave of it
+    assert reader.guard("ぐく" + "ー" * 16, 400, 400) is None
+
+
+@pytest.mark.parametrize(
     "text",
     [
         # The two sincos blocks the first guard threw away (2026-09-07): the
