@@ -25,10 +25,10 @@ both repos in step.
 ## Commands
 
 ```bash
-uv sync                       # torch/sam3 are plain dependencies (no extras); on CPU add
+uv sync --all-extras          # the core is torch-free; torch/sam3/tagger/OCR are extras; on CPU add
                               #   --index https://download.pytorch.org/whl/cpu
                               # Windows: the default `cuda-windows` group binds torch to cu132
-make install                  # bun (frontend bundler) + uv sync + git hooks
+make install                  # bun (frontend bundler) + uv sync --all-extras + git hooks
 make gui                      # anime-tools-gui dev server (GUI_HOST / GUI_PORT / GUI_ARGS)
 make frontend                 # rebuild the committed anime_tools/gui/static/ bundle; CI fails on drift
 uv run pytest -q              # CPU-only unless ANIMA_TEST_GPU=1

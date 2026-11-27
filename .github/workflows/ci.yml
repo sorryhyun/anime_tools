@@ -13,7 +13,7 @@ jobs:
           python-version: "3.13"
       # CPU torch (the tagger/grouping/masking tests run on CPU; conftest blanks
       # CUDA_VISIBLE_DEVICES anyway).
-      - run: uv sync --index https://download.pytorch.org/whl/cpu
+      - run: uv sync --all-extras --index https://download.pytorch.org/whl/cpu
       - run: uv run ruff format --check .
       # Lint rules live in the maintainer's user-level ruff config (see CLAUDE.md);
       # the default rule set here is advisory only.

@@ -27,15 +27,15 @@ FRONTEND_DEV := cd frontend && bun install && ANIME_TOOLS_API=http://$(GUI_HOST)
 endif
 
 .PHONY: install gui sync test hooks frontend frontend-dev
-install:  ## one-shot dev setup: bun (frontend bundler) + uv sync + git hooks
+install:  ## one-shot dev setup: bun (frontend bundler) + uv sync --all-extras + git hooks
 	@$(REQUIRE_UV)
 	$(ENSURE_BUN)
-	uv sync
+	uv sync --all-extras
 	$(MAKE) hooks
 	@echo ""
 	@echo "ready -- run 'make gui' to open the web GUI"
 sync:
-	uv sync
+	uv sync --all-extras
 gui:  ## run the web GUI from this checkout and open it in a chromeless app window
 	uv run anime-tools-gui --host $(GUI_HOST) --port $(GUI_PORT) --open $(GUI_ARGS)
 test:

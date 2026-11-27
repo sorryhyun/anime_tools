@@ -1,11 +1,15 @@
 [project]
 name = "anime-tools"
-version = "0.15.1"
+version = "0.16.0"
 description = "Dataset curation for anime diffusion training: caption grammar + polishing, the Anima Tagger (pixai backbone), position clauses, multiview audit, PE-Spatial grouping, SAM3 masking."
 readme = "README.md"
 license = { file = "LICENSE" }
-requires-python = ">=3.13"
+requires-python = ">=3.12"
 dependencies = [
+    # The core: caption grammar, layout JSON, tag correction, the model catalog and the
+    # web GUI server -- everything that runs without torch. The GUI stays in the core so
+    # an install made by a pre-0.16 updater (which spells no extra) still starts and can
+    # offer the reinstall (`update.missing_extras`).
     "numpy>=2.0",
     "Pillow",
     "pyyaml",
@@ -13,23 +17,45 @@ dependencies = [
     "huggingface-hub>=0.30",
     "tqdm",
     "rich>=13",
-    # Anima Tagger (pixai backbone via transformers remote code at a pinned commit; the dbv4
-    # caformer via timm, GPL weights fetched from the gated upstream repo at load)
-    # + PE-Spatial grouping (vendored tower, weights fetched from the Hub at load).
-    "torch>=2.12",
+    "fastapi>=0.115",
+    "uvicorn>=0.30",
+]
+
+# Each extra names its torch without a floor, so installing one into an environment
+# that already has torch (ComfyUI) leaves that torch alone; `all` carries the floor the
+# full install is tested on. ComfyUI nodes take the narrowest extra they import
+# (MOSS Toolkit -> ocr, the Anima Tagger node -> tagger); the standalone install, the
+# updater and the trainer take `all`.
+[project.optional-dependencies]
+# The manga OCR: AnimeText detector + PaddleOCR-VL reader with its LoRA merged (peft).
+ocr = [
+    "torch",
+    "transformers>=5.16",
+    "sentencepiece",
+    "peft>=0.20",
+    "opencv-python>=4.11",
+]
+# The Anima Tagger (pixai backbone via transformers remote code at a pinned commit; the dbv4
+# caformer via timm, GPL weights fetched from the gated upstream repo at load), and the
+# Danbooru wiki mirror, one parquet read directly (`downloads.py`'s danbooru_tags_en row).
+tagger = [
+    "torch",
     "torchvision",
     "timm>=1.0",
     "einops",
-    # The Danbooru wiki mirror (English tag descriptions) ships as one parquet;
-    # `downloads.py`'s danbooru_tags_en row reads it directly rather than pulling
-    # the whole `datasets` stack in for a single table.
     "pyarrow>=17",
-    # Tokenizer-length checks in the correction / position stages.
     "transformers>=5.16",
     "sentencepiece",
-    # The manga OCR reader (anime_tools.ocr.reader) merges a LoRA onto PaddleOCR-VL-1.6.
-    "peft>=0.20",
-    # Position clauses, multiview audit, masking: SAM3 subject detection, contact sheets.
+]
+# PE-Spatial grouping (vendored tower, weights fetched from the Hub at load).
+group = [
+    "torch",
+    "timm>=1.0",
+    "einops",
+]
+# Position clauses, multiview audit, masking: SAM3 subject detection, contact sheets.
+mask = [
+    "torch",
     "sam3 @ git+https://github.com/facebookresearch/sam3.git",
     # sam3 under-declares what it imports; the next three rows are all "make `import sam3`
     # work". (1) sam3.model_builder does `import pkg_resources` at module scope, to locate the
@@ -53,9 +79,15 @@ dependencies = [
     "psutil",
     "matplotlib",
     "opencv-python>=4.11",
-    # Web GUI (`anime-tools-gui`): FastAPI + uvicorn; the server process never imports torch.
-    "fastapi>=0.115",
-    "uvicorn>=0.30",
+]
+all = [
+    "anime-tools[ocr,tagger,group,mask]",
+    # Split on the platform so the checkout's lock forks there: Windows takes torch from
+    # the cuda-windows group's cu132 source, everything else from PyPI. One unmarked row
+    # resolves every platform onto the cu132 index, which has no macOS wheel.
+    "torch>=2.12; sys_platform != 'win32'",
+    "torch>=2.12; sys_platform == 'win32'",
+    "torchvision",
 ]
 
 [project.scripts]

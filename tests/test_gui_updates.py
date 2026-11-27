@@ -71,7 +71,20 @@ def test_update_argv_is_the_installers_command():
     assert argv[:4] == ["uv", "tool", "install", "--force"]
     assert argv[argv.index("--overrides") + 1] == "/tmp/o.txt"
     assert argv[argv.index("--index") + 1] == "https://cpu"
-    assert argv[-1] == f"{U.PACKAGE} @ git+{U.REPO_URL}@v0.6.0"
+    assert argv[-1] == f"{U.PACKAGE}[all] @ git+{U.REPO_URL}@v0.6.0"
+
+
+def test_a_core_only_tool_install_is_offered_its_own_release(monkeypatch):
+    """A pre-0.16 updater installed the core alone; the same tag comes back as
+    an update, with the note saying what is missing. A checkout never is."""
+    monkeypatch.setattr(U, "missing_extras", lambda: ["torch", "sam3"])
+    state, note = U.update_status("0.16.0", "v0.16.0", "uv-tool")
+    assert state == U.AVAILABLE and "torch, sam3" in note
+    assert U.update_status("0.16.0", "v0.16.0", "checkout") == (U.CURRENT, "")
+
+    monkeypatch.setattr(U, "missing_extras", list)
+    assert U.update_status("0.16.0", "v0.16.0", "uv-tool") == (U.CURRENT, "")
+    assert U.update_status("0.15.1", "v0.16.0", "uv-tool") == (U.AVAILABLE, "")
 
 
 def test_an_index_carries_the_strategy_that_makes_it_resolvable():

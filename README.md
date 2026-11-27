@@ -17,8 +17,8 @@ walkthrough from a folder of images to a published dataset, and what the GUI's �
 ## Install
 
 One line, no checkout — installs [uv](https://astral.sh/uv) if missing, then
-`uv tool install`s the latest release (torch and sam3 included; there are no
-extras) and puts `anime-tools-gui` on PATH:
+`uv tool install`s the latest release with every extra (`anime-tools[all]`: torch, sam3, the
+tagger and the OCR) and puts `anime-tools-gui` on PATH:
 
 ```bash
 curl -fsSL https://github.com/sorryhyun/anime_tools/releases/latest/download/install.sh | sh
@@ -30,7 +30,7 @@ Windows (PowerShell)
 irm https://github.com/sorryhyun/anime_tools/releases/latest/download/install.ps1 | iex
 ```
 
-`ANIME_TOOLS_VERSION=v0.15.1` pins a tag, `TORCH_INDEX=https://download.pytorch.org/whl/cu128` picks
+`ANIME_TOOLS_VERSION=v0.16.0` pins a tag, `TORCH_INDEX=https://download.pytorch.org/whl/cu128` picks
 a torch
 index (PyPI's Linux wheel is already CUDA; the Windows installer defaults to cu132, since PyPI's
 win32 wheel is CPU-only).
@@ -50,14 +50,20 @@ Updating: the GUI's **☰ → Update** pane compares the installed version with 
 shows its notes and installs it in place (`python -m anime_tools.update`, which is the installer's
 own `uv tool install --force` at the new tag); it checks GitHub on startup unless you turn that off,
 and the GUI needs a restart afterwards. From a terminal, `uv tool upgrade anime-tools` does the same
-thing. A git checkout updates with `git pull && uv sync`, and the pane says so instead of offering a
+thing. A git checkout updates with `git pull && uv sync --all-extras`, and the pane says so instead of offering a
 button.
 
 As a library dependency:
 
 ```bash
-uv add "anime-tools @ git+https://github.com/sorryhyun/anime_tools"   # git dependency; no PyPI
+uv add "anime-tools[all] @ git+https://github.com/sorryhyun/anime_tools"   # git dependency; no PyPI
 ```
+
+The bare package is the torch-free core (caption grammar, layout JSON, tag correction, the model
+catalog, the GUI server). Each heavy part is an extra, and each extra names torch without a floor,
+so it leaves an existing torch alone: `ocr` (AnimeText + the PaddleOCR-VL reader), `tagger`,
+`group` (PE-Spatial), `mask` (SAM3). `all` is all four plus the torch floor the full install is
+tested on.
 
 The repo is the product (kohya-ss/sd-scripts style): pin a tag, or use a
 `[tool.uv.sources]` path override for a live checkout.
@@ -180,7 +186,7 @@ rest are per-piece references:
 ## Development
 
 ```bash
-make install       # install bun (frontend bundler) + uv sync
+make install       # install bun (frontend bundler) + uv sync --all-extras
 uv run pytest -q
 make gui           # dev server on http://127.0.0.1:8790, opens your browser
 make frontend      # rebuild anime_tools/gui/static/ from frontend/ (Solid, needs bun)

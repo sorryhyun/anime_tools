@@ -28,7 +28,7 @@ repo once and link (or copy) the node directory into `custom_nodes/`:
 
 ```bash
 git clone https://github.com/sorryhyun/anime_tools
-pip install ./anime_tools                                   # the tagger implementation (timm, transformers)
+pip install './anime_tools[tagger]'                         # the tagger implementation (timm, transformers)
 ln -s "$PWD/anime_tools/comfyui/anima_tagger" ComfyUI/custom_nodes/comfyui-anima-tagger
 # Windows / no symlinks: copy anime_tools\comfyui\anima_tagger to ComfyUI\custom_nodes\comfyui-anima-tagger instead
 ```

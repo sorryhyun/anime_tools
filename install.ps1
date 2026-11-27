@@ -48,7 +48,7 @@ Set-Content -Path $Overrides -Value "numpy>=2.0" -Encoding ascii
 
 Say "installing anime-tools @ $Version (torch from $Torch; may take a while)"
 try {
-  uv tool install --force --python 3.13 --overrides $Overrides --index $Torch --index-strategy unsafe-best-match "anime-tools @ git+https://github.com/$Repo@$Version"
+  uv tool install --force --python 3.13 --overrides $Overrides --index $Torch --index-strategy unsafe-best-match "anime-tools[all] @ git+https://github.com/$Repo@$Version"
   if ($LASTEXITCODE -ne 0) { throw "uv tool install failed" }
 } finally {
   Remove-Item $Overrides -ErrorAction SilentlyContinue

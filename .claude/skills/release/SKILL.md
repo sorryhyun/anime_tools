@@ -57,5 +57,12 @@ ordering, the cache and the refusals, and never touches the network.
 - **No bare `[tool.uv.sources]`.** uv honors a git dependency's own sources, so a bare torch
   index here lands in the trainer's lock and collides with its Windows backend groups (0.6.1
   did; 0.6.2 bound it to the `cuda-windows` group). Sources stay group- or extra-conditioned.
+- **The bare package is the torch-free core**; torch, sam3, the tagger and the OCR are extras
+  (`ocr`, `tagger`, `group`, `mask`, `all`). The installer, the updater, the trainer pin and a
+  checkout (`uv sync --all-extras`) take `[all]`; the ComfyUI nodes take one extra each, pinned to
+  a tag (MOSS Toolkit `ocr`, `comfyui/anima_tagger` `tagger`). An extra never puts a floor on
+  torch, so it leaves ComfyUI's torch alone; only `all` carries one. A tool install missing an
+  extra (a pre-0.16 updater spelled none) is offered its own release again
+  (`update.update_status`).
 - `packages.find` includes only `anime_tools*`: `comfyui/`, `design/`, `examples/` and
   `frontend/` sources are not in the wheel; `anime_tools/gui/static/*` is.

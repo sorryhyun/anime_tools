@@ -122,7 +122,9 @@ def check(*, force: bool = False, ttl: float = CACHE_TTL) -> dict[str, Any]:
             url=entry.get("url") or U.RELEASES_URL,
             checked_at=entry.get("checked_at"),
         )
-        out["status"] = U.compare_versions(current, str(out["latest"]))
+        out["status"], note = U.update_status(current, str(out["latest"]), kind)
+        if note:
+            out["notes"] = "\n\n".join(n for n in (note, out["notes"]) if n)
     return out
 
 

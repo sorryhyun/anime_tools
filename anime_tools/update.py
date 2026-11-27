@@ -2,7 +2,7 @@
 command that moves between them.
 
 ``install.sh`` / ``install.ps1`` put this package in its *own* uv tool
-environment (``uv tool install "anime-tools @ git+…@<tag>"``), so an update here
+environment (``uv tool install "anime-tools[all] @ git+…@<tag>"``), so an update here
 is not the file merge over a working tree that the trainer's ``scripts/update.py``
 performs — there is no tree to merge and no baseline manifest to keep. It is the
 same ``uv tool install --force`` at a newer tag, and the installed version is
@@ -12,7 +12,7 @@ one of them may be rewritten from here:
 ``uv-tool``
     the installer's shape — an isolated tool environment this module owns.
 ``checkout``
-    a git clone of this repo (``uv sync``); ``git pull`` owns that tree.
+    a git clone of this repo (``uv sync --all-extras``); ``git pull`` owns that tree.
 ``other``
     a venv install, or the trainer's git dependency — its own resolver owns it.
 
@@ -30,6 +30,7 @@ cannot be replaced at all while it is held open.
 from __future__ import annotations
 
 import argparse
+import importlib.util
 import json
 import os
 import shutil
@@ -50,6 +51,14 @@ _RELEASE_API = f"https://api.github.com/repos/{REPO}/releases"
 
 PACKAGE = "anime-tools"
 """The distribution name — what ``uv tool`` knows this by."""
+
+PACKAGE_SPEC = f"{PACKAGE}[all]"
+"""What the installer and the updater install: the core plus every extra. The bare
+distribution is the torch-free core (what a ComfyUI node builds on), so a spec
+without ``[all]`` lands an install whose stages cannot run."""
+
+FULL_MODULES = ("torch", "transformers", "peft", "timm", "cv2", "sam3")
+"""One import per extra of ``all``; :func:`missing_extras` probes them."""
 
 TOOL_PYTHON = "3.13"
 """Kept in step with ``install.sh``; ``requires-python`` is >= 3.13."""
@@ -92,7 +101,7 @@ AHEAD = "ahead"
 UNKNOWN = "unknown"
 
 INSTALL_HINTS: dict[str, str] = {
-    "checkout": "a git checkout of the repo — `git pull && uv sync` owns this tree",
+    "checkout": "a git checkout of the repo — `git pull && uv sync --all-extras` owns this tree",
     "other": (
         "installed by something other than `uv tool` (a venv, or the trainer's "
         "git dependency) — update it with the resolver that put it here"
@@ -184,6 +193,34 @@ def can_update() -> bool:
     return install_kind() == "uv-tool"
 
 
+def missing_extras() -> list[str]:
+    """The :data:`FULL_MODULES` this environment cannot import.
+
+    An updater from before 0.16 (and ``uv tool upgrade`` of what it installed)
+    spells no extra, so it lands the core alone; :func:`update_status` then offers
+    the same release again, which this module installs with ``[all]``.
+    """
+    return [m for m in FULL_MODULES if importlib.util.find_spec(m) is None]
+
+
+REPAIR_NOTE = (
+    "This install is missing {missing}: an update from before 0.16 installed the "
+    "core only. Installing the release again brings back every stage."
+)
+
+
+def update_status(current: str, latest: str, kind: str) -> tuple[str, str]:
+    """``(status, note)``: :func:`compare_versions`, except that a ``uv tool``
+    install missing extras is :data:`AVAILABLE` at its own release, with the note
+    saying why."""
+    state = compare_versions(current, latest)
+    if state == CURRENT and kind == "uv-tool":
+        missing = missing_extras()
+        if missing:
+            return AVAILABLE, REPAIR_NOTE.format(missing=", ".join(missing))
+    return state, ""
+
+
 def update_argv(
     tag: str, *, overrides: str | os.PathLike[str], index: str | None = None
 ) -> list[str]:
@@ -207,7 +244,7 @@ def update_argv(
     ]
     if index:
         argv += ["--index", index, "--index-strategy", INDEX_STRATEGY]
-    return [*argv, f"{PACKAGE} @ git+{REPO_URL}@{tag}"]
+    return [*argv, f"{PACKAGE_SPEC} @ git+{REPO_URL}@{tag}"]
 
 
 def status(tag: str | None = None, *, timeout: float = 15.0) -> dict[str, object]:
@@ -219,11 +256,12 @@ def status(tag: str | None = None, *, timeout: float = 15.0) -> dict[str, object
     release = latest_release(tag, timeout=timeout)
     current = current_version()
     kind = install_kind()
+    state, note = update_status(current, release.tag, kind)
     return {
         "current": current,
         "latest": release.tag,
-        "status": compare_versions(current, release.tag),
-        "notes": release.notes,
+        "status": state,
+        "notes": "\n\n".join(n for n in (note, release.notes) if n),
         "url": release.url,
         "install": kind,
         "can_update": can_update(),
@@ -244,7 +282,7 @@ def run_update(
     holding the same one line.
     """
     kind = install_kind()
-    fallback = f'uv tool install --force "{PACKAGE} @ git+{REPO_URL}@<tag>"'
+    fallback = f'uv tool install --force "{PACKAGE_SPEC} @ git+{REPO_URL}@<tag>"'
     if index is None:
         index = default_index()
 

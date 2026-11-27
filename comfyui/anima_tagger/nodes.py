@@ -40,7 +40,7 @@ try:
 except ImportError as e:  # pragma: no cover — install-time guidance
     raise ImportError(
         "comfyui-anima-tagger needs the `anime-tools` package: "
-        "pip install 'anime-tools @ git+https://github.com/sorryhyun/anime_tools'"
+        "pip install 'anime-tools[tagger] @ git+https://github.com/sorryhyun/anime_tools@v0.16.0'"
     ) from e
 
 logger = logging.getLogger(__name__)

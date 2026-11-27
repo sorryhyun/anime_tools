@@ -59,7 +59,7 @@ printf 'numpy>=2.0\n' > "$OVERRIDES"
 say "installing anime-tools @ $VERSION (resolves torch + sam3; may take a while)"
 set -- --python 3.13 --overrides "$OVERRIDES"
 [ -n "${TORCH_INDEX:-}" ] && set -- "$@" --index "$TORCH_INDEX" --index-strategy unsafe-best-match
-uv tool install --force "$@" "anime-tools @ git+https://github.com/$REPO@$VERSION"
+uv tool install --force "$@" "anime-tools[all] @ git+https://github.com/$REPO@$VERSION"
 uv tool update-shell >/dev/null 2>&1 || true
 
 # 4. launcher (best-effort -- never fail a finished install over a convenience) ----
