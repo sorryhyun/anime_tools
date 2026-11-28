@@ -74,36 +74,49 @@ VL16_BASE_FILES = (
 )
 VL16_BASE_DIR = "models/paddleocr_vl_1.6"
 
-# The manga OCR reader, **v7** under the repo's ``v7/`` subfolder: a peft LoRA
-# on the base's vision tower + projector plus its fully fine-tuned ERNIE
-# decoder layers, trained on AnimeText detector boxes over Manga109-s (the main
-# text of each box), KO / ZH pseudo-labelled SFX and KO speech
-# (attribution and citations on the model card). Weights only — no Manga109-s
-# image ships. ``v6/`` holds the previous version; v1–v5 and the two-prompt v7 preview were
-# removed from the head (2026-11-18, 2026-11-24) and stay at their commits below.
+# The manga OCR reader, **v8_preview** under the repo's ``v8_preview/`` subfolder: a peft
+# LoRA on the base's vision tower + projector, its fully fine-tuned ERNIE decoder layers,
+# and the embedding / ``lm_head`` rows of two tokens it adds (``♡``, ``💢``), trained on
+# AnimeText detector boxes over Manga109-s (the main text of each box), KO / ZH
+# pseudo-labelled SFX and KO speech (attribution and citations on the model card). Weights
+# only — no Manga109-s image ships. ``v7/`` and ``v6/`` hold the previous versions; v1–v5
+# and the two-prompt v7 preview were removed from the head (2026-11-18, 2026-11-24) and stay
+# at their commits below.
 OCR_READER_REPO = "sorryhyun/paddleocr-vl-1.6-manga-lora"
-OCR_READER_SUBFOLDER = "v7"
+OCR_READER_SUBFOLDER = "v8_preview"
 OCR_READER_ADAPTER_FILES = ("adapter_config.json", "adapter_model.safetensors")
 OCR_READER_LM_FILE = "lm.safetensors"
-OCR_READER_FILES = (*OCR_READER_ADAPTER_FILES, OCR_READER_LM_FILE)
+OCR_READER_VOCAB_FILE = "vocab.safetensors"
+"""The rows of the tokens a reader adds to the base tokenizer (``embed`` / ``lm_head``,
+the tokens in the file's ``tokens`` metadata); v8_preview has one, v7 and v6 do not."""
+OCR_READER_LEGACY_FILES = (*OCR_READER_ADAPTER_FILES, OCR_READER_LM_FILE)
+"""What the v7 and v6 rows fetch: no added tokens."""
+OCR_READER_FILES = (*OCR_READER_LEGACY_FILES, OCR_READER_VOCAB_FILE)
 OCR_READER_DIR = "models/paddleocr_vl_1.6_manga_lora"
-OCR_READER_REVISION = "169eacbcd325e2eb93d9ca7c8606ab4248745df8"
-"""Hub commit of the reader the package ships — **v7** (``mainsub_1124_1923``, the v7
-recipe retrained on reviewed labels, swapped into ``v7/`` in place; ``OCR:`` reads the
-main text of a detector box cut with a 4 px margin, its ``OCR2:`` prompt for the rest of
-the box is not used here). The first v7 weights (``mainsub_1124_0151``, 0.14.0) are at
-``59768fc6``; the two-prompt v7 preview at ``1987992e`` in ``v7_preview/``. v6 ``57e7c650``
-in ``v6/``: ``vl16_p2b_kozh_nl_swaprelax``, v5 plus 20,745 proofread Korean speech lines;
-v5 ``fb08a10b`` in ``v5/`` — v4's recipe with the labels' line breaks kept as ``\\n`` and
-the crops cut at the page edge; v4 ``926eafb1`` in ``v4/``, its 1-epoch run ``9fe3d41e``;
-v3 ``26292839``, v2 ``4caffe65``, v1 ``3b5fe022``, at the repo root of those commits). The
-adapter file names are shared across versions, so the catalog row pins this and
-stamps it under the dest — an install that predates the pin re-fetches instead
-of reading an older adapter under the new name."""
+OCR_READER_REVISION = "e018dac5690e76d2fd4f2563ab42ba5a62d2f5ca"
+"""Hub commit of the reader the package ships — **v8_preview** (``mainsub_1127_2337``:
+v7's recipe on the labels reviewed since, 3 epochs on the full data, ``♥`` and ``♡`` read
+apart, a drawn-out run read as one ``ー``; weights at ``3ac66a6b``, cards since). ``OCR:``
+reads the main text of a detector box cut with a 4 px margin; its ``OCR2:`` prompt for the
+rest of the box is not used here. v7 ``169eacbc`` in ``v7/`` (``mainsub_1124_1923``; the
+first v7 weights, 0.14.0, at ``59768fc6``; the two-prompt v7 preview at ``1987992e`` in
+``v7_preview/``). v6 ``57e7c650`` in ``v6/``: ``vl16_p2b_kozh_nl_swaprelax``, v5 plus
+20,745 proofread Korean speech lines; v5 ``fb08a10b`` in ``v5/`` — v4's recipe with the
+labels' line breaks kept as ``\\n`` and the crops cut at the page edge; v4 ``926eafb1`` in
+``v4/``, its 1-epoch run ``9fe3d41e``; v3 ``26292839``, v2 ``4caffe65``, v1 ``3b5fe022``, at
+the repo root of those commits). The adapter file names are shared across versions, so
+the catalog row pins this and stamps it under the dest — an install that predates the
+pin re-fetches instead of reading an older adapter under the new name."""
+
+# The opt-in v7 (the default from 0.14.0 to 0.16.x) in ``v7/``: the same task and crops,
+# no added tokens (hearts read as ``♥``). Its own dest, so it installs beside the default.
+OCR_READER_V7_SUBFOLDER = "v7"
+OCR_READER_V7_DIR = "models/paddleocr_vl_1.6_manga_lora_v7"
+OCR_READER_V7_REVISION = "169eacbcd325e2eb93d9ca7c8606ab4248745df8"
 
 # The opt-in v6 (the default until 0.14.0) in ``v6/``: one prompt on 12 %-margin crops,
-# the better reader for polygon crops of sound effects (COO test SFX 85.2 % against
-# v7's 81.9 %). Its own dest, so it installs beside v7.
+# the better reader for polygon crops of sound effects (COO test SFX 85.3 % against
+# v8_preview's 80.9 %, both scored with the current folds). Its own dest.
 OCR_READER_V6_SUBFOLDER = "v6"
 OCR_READER_V6_DIR = "models/paddleocr_vl_1.6_manga_lora_v6"
 OCR_READER_V6_REVISION = "57e7c65024d753022299340b3b9b6aafc158a79b"
@@ -147,6 +160,12 @@ def default_ocr_reader_dir() -> Path:
     """``<home>/models/paddleocr_vl_1.6_manga_lora`` — adapter + fine-tuned
     tower, what :class:`anime_tools.ocr.reader.OcrReader` loads."""
     return resolve_path(OCR_READER_DIR)
+
+
+def default_ocr_reader_v7_dir() -> Path:
+    """``<home>/models/paddleocr_vl_1.6_manga_lora_v7`` — the opt-in v7 reader
+    (``OcrReader.load(version="v7")``)."""
+    return resolve_path(OCR_READER_V7_DIR)
 
 
 def default_ocr_reader_v6_dir() -> Path:

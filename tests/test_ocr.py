@@ -313,7 +313,7 @@ def test_the_ocr_stage_resolves_one_device_and_gives_it_to_both_models(
         return _Engine()
 
     def fake_reader_load(*, device, batch_size, version):
-        assert version == "v7"
+        assert version == "v8_preview"
         given.append(device)
         return _Reader()
 

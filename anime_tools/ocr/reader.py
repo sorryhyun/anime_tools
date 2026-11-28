@@ -5,14 +5,15 @@ effects drawn onto the artwork — ``ぱんぱん``, ``びくっ``, ``ばるん`
 as ``はんぱん`` / ``でくv`` / nothing from the CTC stack this package retired.
 :class:`OcrReader` is the reader for those lines and the speech alike: a crop
 in, a string out, no detection. It is the
-PaddleOCR-VL-1.6 base with a LoRA on the vision tower + projector **and fully
-fine-tuned ERNIE decoder layers** (v7), trained on AnimeText detector boxes
-over the Manga109-s train pages with the box's main text as target (official
-COO book split), KO / ZH SFX crops pseudo-labelled by the stock model and
-proofread KO speech lines (on 4 px-margin crops: COO test SFX exact 81.9 %,
-speech 89.1 %, doujin SFX 350 / 593, KO 32 / 48 and ZH 36 / 49 —
-``sorryhyun/paddleocr-vl-1.6-manga-lora`` ``v7/``, Manga109-s attribution on the
-card). Its crops are detector boxes grown by min(0.12 · long, 0.3 · short, 4 px)
+PaddleOCR-VL-1.6 base with a LoRA on the vision tower + projector, **fully
+fine-tuned ERNIE decoder layers** and two tokens of its own (``♡``, ``💢``)
+(v8_preview), trained on AnimeText detector boxes over the Manga109-s train
+pages with the box's main text as target (official COO book split), KO / ZH SFX
+crops pseudo-labelled by the stock model and proofread KO speech lines (on 4
+px-margin crops, scored with the trainer's current folds: COO test SFX exact
+80.9 %, speech 96.2 %, doujin SFX 428 / 593, KO 31 / 48 and ZH 32 / 49 —
+``sorryhyun/paddleocr-vl-1.6-manga-lora`` ``v8_preview/``, Manga109-s attribution
+on the card). Its crops are detector boxes grown by min(0.12 · long, 0.3 · short, 4 px)
 (:func:`tight_pad_box`); the model's second prompt, ``OCR2:`` for a box's smaller
 text, is not read here. It reads ``♡`` / ``ー`` / small kana natively, vertical or horizontal, so
 it needs no symbol patching, and returns a block's line breaks as ``\\n``
@@ -41,11 +42,17 @@ counts it.
 
 Weights are two catalog rows (:mod:`anime_tools.downloads`): ``vl16_base``
 (the Apache-2.0 base, 1.9 GB) and ``ocr_reader`` (tower LoRA 143 MB + LM
-layers 510 MB). :meth:`OcrReader.load` fetches what is missing.
+layers 510 MB + ``vocab.safetensors``, the embedding and ``lm_head`` rows of the
+added tokens). :meth:`OcrReader.load` fetches what is missing and adds the tokens
+when the adapter dir holds that file.
+
+**v7 (opt-in, ``version="v7"``)**: the reader of 0.14.0 to 0.16.x, the same task
+and crops without the added tokens. On the same crops: COO SFX 82.0 %, speech
+95.7 %, doujin SFX 351 / 593, KO 32 and ZH 36 (catalog row ``ocr_reader_v7``).
 
 **v6 (opt-in, ``version="v6"``)**: the reader before 0.14.0, trained on the COO
 onomatopoeia polygons and the ``<text>`` speech boxes and read on :data:`CROP_PAD`
-crops. On the same 4 px crops it reads COO SFX at 85.2 %, speech 88.4 %, doujin
+crops. On the same 4 px crops it reads COO SFX at 85.3 %, speech 95.3 %, doujin
 SFX 294 / 593, KO 26 and ZH 32 (catalog row ``ocr_reader_v6``).
 """
 
@@ -61,19 +68,25 @@ from functools import cache, cached_property
 from pathlib import Path
 from typing import Any
 
-from anime_tools.downloads import OCR_READER_ADAPTER_FILES, OCR_READER_LM_FILE
+from anime_tools.downloads import (
+    OCR_READER_ADAPTER_FILES,
+    OCR_READER_LM_FILE,
+    OCR_READER_VOCAB_FILE,
+)
 
 PROMPT = "OCR:"
 """The crop task of the base model's chat template; the fine-tune kept it."""
 
-DEFAULT_VERSION = "v7"
+DEFAULT_VERSION = "v8_preview"
+V7 = "v7"
 V6 = "v6"
-READER_VERSIONS = (DEFAULT_VERSION, V6)
-"""The readers :meth:`OcrReader.load` knows: v7 (:func:`tight_pad_box` crops) and
-the opt-in v6 (:data:`CROP_PAD` crops)."""
+READER_VERSIONS = (DEFAULT_VERSION, V7, V6)
+"""The readers :meth:`OcrReader.load` knows: v8_preview and the opt-in v7
+(:func:`tight_pad_box` crops), and the opt-in v6 (:data:`CROP_PAD` crops)."""
 
 _CATALOG_ROW = {
     DEFAULT_VERSION: "ocr_reader",
+    V7: "ocr_reader_v7",
     V6: "ocr_reader_v6",
 }
 
@@ -395,6 +408,40 @@ def _ensure(row_id: str, fetch: bool) -> Path:
     )
 
 
+def _load_added_tokens(adapter: Path, model, tokenizer) -> list[int]:
+    """Add the tokens of ``adapter``'s :data:`OCR_READER_VOCAB_FILE` to ``tokenizer`` and
+    load their embedding and ``lm_head`` rows; ``[]`` when the dir has no such file (v7,
+    v6). The base's tables hold spare rows past the tokenizer (103,424 against 101,316),
+    so the tokens land there and nothing is resized."""
+    path = adapter / OCR_READER_VOCAB_FILE
+    if not path.is_file():
+        return []
+    import torch
+    from safetensors import safe_open
+    from tokenizers import AddedToken
+
+    with safe_open(str(path), "pt") as f:
+        tokens = f.metadata()["tokens"].split("\t")
+        rows = {k: f.get_tensor(k) for k in ("embed", "lm_head")}
+    tokenizer.add_tokens(
+        [AddedToken(t, normalized=False, special=False) for t in tokens]
+    )
+    ids = tokenizer.convert_tokens_to_ids(tokens)
+    tables = (
+        (model.get_input_embeddings().weight, "embed"),
+        (model.get_output_embeddings().weight, "lm_head"),
+    )
+    if max(ids) >= min(w.shape[0] for w, _ in tables):
+        raise RuntimeError(
+            f"{path}: token ids {ids} past the base's tables "
+            f"({[tuple(w.shape) for w, _ in tables]})"
+        )
+    with torch.no_grad():
+        for w, k in tables:
+            w[torch.tensor(ids, device=w.device)] = rows[k].to(w.device, w.dtype)
+    return ids
+
+
 @dataclass
 class OcrReader:
     """The fine-tuned VL crop reader, loaded once, read many."""
@@ -465,6 +512,7 @@ class OcrReader:
             raise RuntimeError(
                 f"{OCR_READER_LM_FILE} carries keys the base has no home for: {unexpected[:5]}"
             )
+        _load_added_tokens(adapter, model, processor.tokenizer)
         model = model.to(device).eval()
         return cls(
             model=model,
@@ -477,8 +525,8 @@ class OcrReader:
 
     @property
     def tight(self) -> bool:
-        """Whether boxes are cut with :func:`tight_pad_box` (v7) rather than
-        :data:`CROP_PAD` (v6)."""
+        """Whether boxes are cut with :func:`tight_pad_box` (v8_preview, v7) rather
+        than :data:`CROP_PAD` (v6)."""
         return self.version != V6
 
     @cached_property
@@ -574,7 +622,7 @@ class OcrReader:
         them all.
 
         One ``(text, confidence)`` or ``None`` per box (an empty box reads as
-        ``None``). v7 cuts its own tight margin (``pad`` is unused)."""
+        ``None``). v8_preview and v7 cut their own tight margin (``pad`` is unused)."""
         return self.read_pages_scored([(bgr, boxes)], pad)[0]
 
     def read_pages_scored(

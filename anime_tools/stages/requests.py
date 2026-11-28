@@ -942,9 +942,10 @@ class OcrRequest(StageRequest):
     vl_reader: str = arg(
         OCR_READER_DEFAULT,
         choices=OCR_READER_VERSIONS,
-        help="Which manga VL reader: v7 (detector boxes on 4 px-margin crops) or "
-        "the opt-in v6 (a 0.12 margin; the reader before 0.14.0, 0.65 GB more, "
-        "fetched on first use)",
+        help="Which manga VL reader: v8_preview (detector boxes on 4 px-margin crops), "
+        "the opt-in v7 (the same crops; the reader of 0.14.0 to 0.16.x) or the opt-in "
+        "v6 (a 0.12 margin; the reader before 0.14.0). An opt-in reader is 0.65 GB "
+        "more, fetched on first use",
         group=VL_READER,
     )
     vl_batch_size: int = arg(

@@ -356,11 +356,12 @@ def test_the_row_lands_where_the_loader_looks_and_names_the_stage(home):
         "animetext_det",
         "vl16_base",
         "ocr_reader",
+        "ocr_reader_v7",
         "ocr_reader_v6",
     }
     # an opt-in reader names no stage, so a default run's stage bar does not
     # ask for it
-    opt_in = {"ocr_reader_v6"}
+    opt_in = {"ocr_reader_v7", "ocr_reader_v6"}
     assert all(
         a.stages == (() if a.id in opt_in else ("ocr",)) for a in DL.by_pack()["ocr"]
     )

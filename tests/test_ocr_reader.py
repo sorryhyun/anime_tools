@@ -259,6 +259,11 @@ def test_the_reader_rows_land_where_the_loader_looks(home):
     assert set(DL.OCR_READER_FILES) == {
         *DL.OCR_READER_ADAPTER_FILES,
         DL.OCR_READER_LM_FILE,
+        DL.OCR_READER_VOCAB_FILE,
+    }
+    assert set(DL.OCR_READER_LEGACY_FILES) == {
+        *DL.OCR_READER_ADAPTER_FILES,
+        DL.OCR_READER_LM_FILE,
     }
     assert "model.safetensors" in DL.VL16_BASE_FILES
     # The OCR stage reads every box with it (2026-09-07, no other reader), so
@@ -315,15 +320,59 @@ def test_tight_pad_box_is_the_v7_margin_capped_by_the_sides():
 
 def test_the_opt_in_rows_install_beside_the_default(home):
     by = DL.by_id()
-    assert by["ocr_reader"].subfolder == "v7"
-    for row_id, name in (("ocr_reader_v6", "v6"),):
+    assert by["ocr_reader"].subfolder == "v8_preview"
+    for row_id, name in (("ocr_reader_v7", "v7"), ("ocr_reader_v6", "v6")):
         row = by[row_id]
         assert row.dest == home / "models" / f"paddleocr_vl_1.6_manga_lora_{name}"
         assert row.dest != by["ocr_reader"].dest
         assert row.subfolder == name and row.revision
         assert row.revision != by["ocr_reader"].revision
-        assert row.files == by["ocr_reader"].files and row.pack == "ocr"
-    assert reader.READER_VERSIONS == ("v7", "v6")
-    assert reader.DEFAULT_VERSION == "v7"
+        assert row.files == DL.OCR_READER_LEGACY_FILES and row.pack == "ocr"
+    assert reader.READER_VERSIONS == ("v8_preview", "v7", "v6")
+    assert reader.DEFAULT_VERSION == "v8_preview"
     with pytest.raises(ValueError, match="unknown reader version"):
         reader.OcrReader.load(fetch=False, version="v8")
+
+
+def test_added_tokens_load_into_the_spare_rows(tmp_path):
+    torch = pytest.importorskip("torch")
+    pytest.importorskip("tokenizers")
+    from safetensors.torch import save_file
+
+    class _Tok:
+        def __init__(self):
+            self.added = []
+
+        def add_tokens(self, toks):
+            self.added += [t.content for t in toks]
+
+        def convert_tokens_to_ids(self, toks):
+            return [10 + self.added.index(t) for t in toks]
+
+    class _Model(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.emb = torch.nn.Embedding(16, 4)
+            self.head = torch.nn.Linear(4, 16, bias=False)
+
+        def get_input_embeddings(self):
+            return self.emb
+
+        def get_output_embeddings(self):
+            return self.head
+
+    model, tok = _Model(), _Tok()
+    # no vocab file (v7, v6): nothing added, nothing touched
+    before = model.emb.weight.detach().clone()
+    assert reader._load_added_tokens(tmp_path, model, tok) == []
+    assert tok.added == [] and torch.equal(model.emb.weight, before)
+
+    rows = {"embed": torch.ones(2, 4), "lm_head": torch.full((2, 4), 2.0)}
+    save_file(
+        rows, str(tmp_path / DL.OCR_READER_VOCAB_FILE), metadata={"tokens": "♡\t💢"}
+    )
+    assert reader._load_added_tokens(tmp_path, model, tok) == [10, 11]
+    assert tok.added == ["♡", "💢"]
+    assert torch.equal(model.emb.weight[10:12], rows["embed"])
+    assert torch.equal(model.head.weight[10:12], rows["lm_head"])
+    assert torch.equal(model.emb.weight[:10], before[:10])
