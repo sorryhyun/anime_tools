@@ -332,7 +332,7 @@ def test_a_line_read_inside_another_surviving_line_is_the_same_text_twice():
     lines = [line("", outer, score=0.0), line("", inner, seq=2, score=0.0)]
     out = reread.reread_lines(page(600, 1300), lines, lambda b, x: ["ぱん~", "ぱん"])
     assert [(ln.box, ln.text) for ln in out] == [(outer, "ぱん~")]
-    # but only when the outer read lived: a runaway on the block keeps its line
+    # but only when the outer read lived: a dropped read of the block keeps its line
     out = reread.reread_lines(page(600, 1300), lines, lambda b, x: [None, "ぱん"])
     assert [(ln.box, ln.text) for ln in out] == [(inner, "ぱん")]
     # side-by-side columns (no containment) are untouched

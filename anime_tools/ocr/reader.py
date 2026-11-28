@@ -25,20 +25,10 @@ the OCR stage's detector: balloon lines and the SFX on the artwork alike);
 :meth:`OcrReader.read_boxes_scored` cuts the padded crops for you. Batch by area: a
 1.9 B-parameter model at ~0.25 s per crop is the run's whole wall.
 
-**The decode guard is part of the reader**, not an option. An autoregressive
-decoder on a two-glyph crop runs away on ~4 % of inputs (``びく♡`` →
-``ぐくーーー…``), so every read passes :func:`guard` — a repetition test and a
-length cap tied to the crop's area — and a read that fails comes back as
-``None`` rather than as junk. :func:`is_runaway` / :func:`length_cap` are
-torch-free so the rule is testable on strings alone.
-
-The guard sees the read in :func:`normalize_read`'s form, and the repetition
-test is **ellipsis-blind**: the reader spells an ellipsis as ``......`` or
-``・・・・・・`` (never ``…``), and six dots hold the trigram ``...`` four times
-over, so the test as first shipped took every dialogue line of nine characters
-or more that paused twice — 94 lines on 64 of the 859 sincos pages (2026-09-07),
-the longest speech on each page. A dot run is now one ``…`` before anything
-counts it.
+Every read passes :func:`guard`: an empty decode and a read longer than
+:func:`length_cap` for the crop's area come back as ``None``. A repeat is not
+judged: lettering repeats (``오라`` × 10, ``ぎゃあああ``), and a repetition test
+threw away correct reads. :func:`length_cap` is torch-free.
 
 Weights are two catalog rows (:mod:`anime_tools.downloads`): ``vl16_base``
 (the Apache-2.0 base, 1.9 GB) and ``ocr_reader`` (tower LoRA 143 MB + LM
@@ -104,8 +94,7 @@ neighbouring line into a quarter of the COO SFX crops."""
 MAX_NEW_TOKENS = 200
 """The tokenizer spends about one token per CJK character; COO's longest
 onomatopoeia is 28 characters and a doujin speech balloon runs to ~60, a
-page's timetable or profile block to ~160. Past this a decode is a runaway,
-and the guard drops it anyway."""
+page's timetable or profile block to ~160."""
 
 MAX_PIXELS = 1280 * 28 * 28
 """The vision tower's pixel budget per crop (the training and eval setting)."""
@@ -121,16 +110,6 @@ LATIN_GLYPH_AREA = MIN_GLYPH_PX * MIN_GLYPH_PX // 2
 at the CJK area overran the cap on plain balloons (``Yesterday's video was
 amazing.``, 27 letters on a 15-glyph crop — 37 of the 84 English reads the
 guard dropped on 150 hitocrawl ``en`` pages, 2026-10-29)."""
-
-RUNAWAY_RUN = 16
-RUNAWAY_UNIT_REPEATS = 8
-LOOP_UNIT = 40
-"""The runaway test: a glyph run of :data:`RUNAWAY_RUN`, a unit of two to eight
-glyphs repeated :data:`RUNAWAY_UNIT_REPEATS` times back to back, or a unit up to
-:data:`LOOP_UNIT` long three times back to back. A held vowel, a chant
-(``NO, NO, NO, NO!``), a repeated sound effect (``ぐゅぐゅぐゅぐゅ``) and a list's
-recurring labels (``:30``, ``「안녕하세요week」``) are lettering, not a decode
-loop."""
 
 _LATEX_RE = re.compile(r"\\[(),]|\\\s")
 _ELLIPSIS_RE = re.compile(r"[.．・…‥]{2,}")
@@ -156,22 +135,6 @@ _WAVE_FOLD = str.maketrans({c: "~" for c in "〜〰～"})
 _WAVE_RUN_RE = re.compile(r"~{2,}")
 
 
-def is_runaway(text: str) -> bool:
-    """The autoregressive failure class: ``ぉぉぉ…`` × 100, ``ふくっ`` × 100.
-
-    The tests of :data:`RUNAWAY_RUN`. Every dot run is one ``…`` first, so
-    ``え...な...ない......`` is a pause and not a repeat; a hundred dots alone
-    collapse to one and are then no letter at all
-    (:func:`~anime_tools.ocr.reread.has_script`).
-    """
-    t = _ELLIPSIS_RE.sub(ELLIPSIS, "".join(text.split()))
-    return bool(
-        re.search(rf"(.)\1{{{RUNAWAY_RUN - 1},}}", t)
-        or re.search(rf"(.{{2,8}}?)\1{{{RUNAWAY_UNIT_REPEATS - 1},}}", t)
-        or re.search(rf"(.{{9,{LOOP_UNIT}}}?)\1\1", t)
-    )
-
-
 def is_latin(text: str) -> bool:
     """Whether a read is Latin lettering: an ASCII letter, and no letter
     outside ASCII. Hearts, digits and punctuation do not decide it."""
@@ -185,9 +148,8 @@ def length_cap(width: int, height: int, *, latin: bool = False) -> int:
     Area over the smallest glyph (:data:`MIN_GLYPH_PX` squared, or
     :data:`LATIN_GLYPH_AREA` for ``latin``), never under
     :data:`MIN_LENGTH_CAP`. A two-glyph crop caps near the floor, so a
-    48-token runaway on it is rejected; a multi-column balloon block caps in
-    the hundreds and is left to the repetition test — a block's character
-    count is not readable off its shape (an aspect rule measured 2026-09-06
+    48-token decode on it is rejected; a multi-column balloon block caps in
+    the hundreds — a block's character count is not readable off its shape (an aspect rule measured 2026-09-06
     threw away 60 % of the speech reads).
     """
     area = max(width, 0) * max(height, 0)
@@ -257,14 +219,13 @@ def fold_drawn_lines(text: str) -> str:
 def guard(text: str, width: int, height: int) -> str | None:
     """The read, or ``None`` when it is not one.
 
-    Rejects an empty decode, a runaway (:func:`is_runaway`) and a read longer
-    than :func:`length_cap` for the crop's shape. Everything that passes is
-    :func:`normalize_read`'s form with its drawn-out lines folded
-    (:func:`fold_drawn_lines`): both tests see the read before that fold, so a
-    ``ー`` runaway is still one.
+    Rejects an empty decode and a read longer than :func:`length_cap` for the
+    crop's shape. Everything that passes is :func:`normalize_read`'s form with
+    its drawn-out lines folded (:func:`fold_drawn_lines`); the length test sees
+    the read before that fold.
     """
     read = normalize_read(text)
-    if not read or is_runaway(read):
+    if not read:
         return None
     n = sum(1 for ch in read if not ch.isspace())
     if n > length_cap(width, height, latin=is_latin(read)):
@@ -663,8 +624,6 @@ __all__ = [
     "MAX_NEW_TOKENS",
     "PROMPT",
     "READER_VERSIONS",
-    "RUNAWAY_RUN",
-    "RUNAWAY_UNIT_REPEATS",
     "SHAPE_FOLD",
     "V6",
     "OcrReader",
@@ -673,7 +632,6 @@ __all__ = [
     "fold_drawn_lines",
     "guard",
     "is_latin",
-    "is_runaway",
     "length_cap",
     "normalize_read",
     "pad_box",

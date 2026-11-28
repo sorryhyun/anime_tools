@@ -29,7 +29,7 @@ and joining those measured a loss (sincos, 2026-09-06: manga-ocr best-match
 and ``ぱん`` again inside it, or a balloon block with one of its lines — and
 that is settled here, after the reads: a line whose box sits inside another
 line's box (:data:`NESTED_CONTAINMENT`) is dropped, but only once the outer
-read survived the guard, so a runaway on the block never costs its line
+read survived the guard, so a dropped read of the block never costs its line
 (:func:`drop_nested`; sincos 2026-09-07: 83 such pairs on 52 pages, the two
 reads a wash against the hand labels — 29 / 25 / 29 — and 5 pairs where only
 the inner read lived).

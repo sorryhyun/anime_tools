@@ -30,72 +30,13 @@ def test_the_guard_is_torch_free():
     assert r.returncode == 0, r.stderr
 
 
-@pytest.mark.parametrize(
-    "text",
-    [
-        "るにいい~っ" + "♥" * 12,
-        "ずぷっぐゅぐゅぐゅぐゅ",
-        "ぱこんぱこんっぱこんっ",
-        "ドボドボドボドボ",
-    ],
-)
-def test_a_repeated_sound_effect_is_not_a_runaway(text):
-    assert not reader.is_runaway(text)
-
-
-@pytest.mark.parametrize(
-    "text", ["ぱんぱん", "おおおん", "ばるん", "びく♡", "ぱんッ ぱんッ"]
-)
-def test_a_doubled_onomatopoeia_is_not_a_runaway(text):
-    assert not reader.is_runaway(text)
-
-
-@pytest.mark.parametrize(
-    "text",
-    ["ぐく" + "ー" * 30, "ふくっ" * 10, "ぉ" * 16],
-)
-def test_a_glyph_run_or_a_back_to_back_loop_is_a_runaway(text):
-    assert reader.is_runaway(text)
-
-
-def test_a_timetable_is_not_a_runaway():
+def test_a_timetable_passes_the_guard():
     text = (
         "05:30 기상 06:30 출근 06:50 메이크업 07:30 아침 회의 "
         "08:00 「안녕하세요week」 방송 09:55 「안녕하세요week」 종료 "
         "10:15 「안녕하세요week」 반성회 10:45 사무활동 12:00 중식"
     )
-    assert not reader.is_runaway(text)
     assert reader.guard(text, 233, 236) is not None
-
-
-def test_a_long_loop_is_still_a_runaway():
-    assert reader.is_runaway(
-        "처음 한 줄은 멀쩡한 대사였습니다 그리고" + "저기 말이야 있잖아 " * 6
-    )
-
-
-@pytest.mark.parametrize(
-    "text",
-    [
-        "NO, NO, NO, NO!",
-        "WAIT, WAIT, WAIT.",
-        "WHAAAAAAAAT?!",
-        "Cock♡ Cock♡ Cock♡ Cock♡",
-        (
-            "BUT… YOU CAN COME TO MY ROOM, OKAY? YOU KNOW WHERE IT IS, RIGHT? "
-            "ANYTIME, EVEN IN THE MIDDLE OF THE NIGHT! OH, BUT I REALLY WANT YOU TO"
-        ),
-    ],
-)
-def test_latin_lettering_is_not_a_runaway(text):
-    assert not reader.is_runaway(text)
-
-
-@pytest.mark.parametrize(
-    "text", ["AHAAH " + "♡ " * 38, "o" * 16, "ahahahahahahahah", "LapLap" * 8]
-)
-def test_a_latin_loop_is_a_runaway(text):
-    assert reader.is_runaway(text)
 
 
 def test_is_latin_reads_the_letters_only():
@@ -107,7 +48,7 @@ def test_is_latin_reads_the_letters_only():
 
 def test_the_length_cap_follows_the_crop_area():
     # A two-glyph crop sits at the floor; a five-glyph column and a balloon
-    # block cap well above what they hold (the repetition test owns those).
+    # block cap well above what they hold.
     assert reader.length_cap(30, 60) == reader.MIN_LENGTH_CAP
     assert reader.length_cap(40, 200) == 41
     assert reader.length_cap(300, 300) == 459
@@ -116,10 +57,10 @@ def test_the_length_cap_follows_the_crop_area():
     assert reader.length_cap(40, 200, latin=True) == 82
 
 
-def test_the_guard_rejects_empty_runaway_and_overlong_reads():
+def test_the_guard_rejects_empty_and_overlong_reads():
     assert reader.guard("", 40, 120) is None
     assert reader.guard("   ", 40, 120) is None
-    assert reader.guard("ぐく" + "ー" * 30, 40, 120) is None
+    assert reader.guard("ぐく" + "ー" * 30, 40, 120) is None  # 32 on a 12 cap
     # 20 distinct characters on a two-glyph crop: no repetition, too long.
     assert reader.guard("あいうえおかきくけこさしすせそたちつてと", 40, 80) is None
     # The same read on a column that could hold it passes.
@@ -203,8 +144,6 @@ def test_a_drawn_out_line_is_one_glyph(raw, folded):
 
 def test_the_guard_folds_after_its_tests():
     assert reader.guard("ええーーーっ", 60, 200) == "ええーっ"
-    # sixteen of one glyph is a runaway whatever the fold would leave of it
-    assert reader.guard("ぐく" + "ー" * 16, 400, 400) is None
 
 
 @pytest.mark.parametrize(
@@ -218,13 +157,12 @@ def test_the_guard_folds_after_its_tests():
         "...あ............いや...寝たフリだな...これ.........",
     ],
 )
-def test_a_pause_is_not_a_runaway(text):
-    assert not reader.is_runaway(text)
+def test_a_pause_passes_the_guard(text):
     assert reader.guard(text, 130, 300) is not None
 
 
 def test_a_hundred_dots_alone_collapse_to_one():
-    # No longer a runaway — but no letter either, so ``has_script`` drops it.
+    # One ellipsis, and no letter, so ``has_script`` drops it.
     from anime_tools.ocr.reread import has_script
 
     read = reader.guard("・" * 100, 60, 60)
